@@ -3,11 +3,15 @@ using FalloutPoc.Viewer;
 string? gameDir = null;
 string mapName = "artemple.map";
 string? screenshot = null;
+bool roofs = true;
 
 for (int i = 0; i < args.Length; i++)
 {
     switch (args[i])
     {
+        case "--no-roofs":
+            roofs = false;
+            break;
         case "--game-dir" when i + 1 < args.Length:
             gameDir = args[++i];
             break;
@@ -31,6 +35,6 @@ if (!Directory.Exists(gameDir))
     return 1;
 }
 
-using var game = new ViewerGame(gameDir, mapName, screenshot);
+using var game = new ViewerGame(gameDir, mapName, screenshot, roofs);
 game.Run();
 return 0;

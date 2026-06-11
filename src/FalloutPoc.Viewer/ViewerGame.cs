@@ -25,14 +25,22 @@ public sealed class ViewerGame : Game
     private SpriteBatch _spriteBatch = null!;
 
     private int _elevation;
+    private bool _roofsVisible = true;
     private MouseState _previousMouse;
     private KeyboardState _previousKeyboard;
+    private readonly HashSet<int> _failedFids = [];
 
-    public ViewerGame(string gameDir, string mapName, string? screenshotPath = null)
+    /// <summary>Objects per elevation, pre-sorted for drawing: flats then
+    /// non-flats, each in ascending hex tile order (stable within a tile).</summary>
+    private readonly List<MapObject>[] _flatObjects = new List<MapObject>[MapFile.ElevationCount];
+    private readonly List<MapObject>[] _solidObjects = new List<MapObject>[MapFile.ElevationCount];
+
+    public ViewerGame(string gameDir, string mapName, string? screenshotPath = null, bool roofsVisible = true)
     {
         _gameDir = gameDir;
         _mapName = mapName;
         _screenshotPath = screenshotPath;
+        _roofsVisible = roofsVisible;
 
         _graphics = new GraphicsDeviceManager(this)
         {
@@ -61,6 +69,19 @@ public sealed class ViewerGame : Game
         _elevation = _map.Header.EnteringElevation;
         if (_map.Elevations[_elevation] is null)
             _elevation = Array.FindIndex(_map.Elevations, e => e is not null);
+
+        // ported from fallout2-ce src/object.cc _obj_render_pre_roof(): flat
+        // objects draw first, then non-flat, both in hex tile order (the order
+        // table sorts by tile-number offset). Critters/heads are out of scope.
+        for (int elevation = 0; elevation < MapFile.ElevationCount; elevation++)
+        {
+            IEnumerable<MapObject> drawable = (_map.Elevations[elevation]?.Objects ?? [])
+                .Where(o => !o.IsHidden
+                    && Fid.Type(o.Fid) is not (ObjectType.Critter or ObjectType.Head)
+                    && o.HexTile >= 0);
+            _flatObjects[elevation] = [.. drawable.Where(o => o.IsFlat).OrderBy(o => o.HexTile)];
+            _solidObjects[elevation] = [.. drawable.Where(o => !o.IsFlat).OrderBy(o => o.HexTile)];
+        }
 
         _camera.SetWindowSize(Window.ClientBounds.Width, Window.ClientBounds.Height);
         _camera.SetCenter(_map.Header.EnteringTile);
@@ -98,6 +119,9 @@ public sealed class ViewerGame : Game
         if (IsKeyPressed(keyboard, Keys.PageDown))
             SwitchElevation(-1);
 
+        if (IsKeyPressed(keyboard, Keys.R))
+            _roofsVisible = !_roofsVisible;
+
         _previousMouse = mouse;
         _previousKeyboard = keyboard;
         base.Update(gameTime);
@@ -123,8 +147,15 @@ public sealed class ViewerGame : Game
     {
         GraphicsDevice.Clear(Color.Black);
 
+        // Draw order ported from the fallout2-ce render loop (src/map.cc
+        // isoWindowRefreshRectGame): floors -> flat objects -> non-flat
+        // objects -> roofs.
         _spriteBatch.Begin(samplerState: SamplerState.PointClamp);
         DrawFloors();
+        DrawObjects(_flatObjects[_elevation]);
+        DrawObjects(_solidObjects[_elevation]);
+        if (_roofsVisible)
+            DrawRoofs();
         _spriteBatch.End();
 
         base.Draw(gameTime);
@@ -158,6 +189,81 @@ public sealed class ViewerGame : Game
                 continue;
 
             (int x, int y) = _camera.SquareToScreen(square);
+            if (x < viewport.Left - 80 || x > viewport.Right || y < viewport.Top - 36 || y > viewport.Bottom)
+                continue;
+
+            Texture2D texture = _frmCache.GetTexture(Fid.Build(ObjectType.Tile, tileId));
+            _spriteBatch.Draw(texture, new Vector2(x, y), Color.White);
+        }
+    }
+
+    private void DrawObjects(List<MapObject> objects)
+    {
+        Rectangle viewport = GraphicsDevice.Viewport.Bounds;
+
+        foreach (MapObject obj in objects)
+        {
+            if (_failedFids.Contains(obj.Fid))
+                continue;
+
+            Formats.Frm.FrmFile frm;
+            Formats.Frm.FrmFrame frame;
+            Texture2D texture;
+            int rotation;
+            try
+            {
+                frm = _frmCache.GetFrm(obj.Fid);
+                rotation = Math.Clamp(obj.Rotation, 0, Formats.Frm.FrmFile.RotationCount - 1);
+                int frameIndex = Math.Clamp(obj.Frame, 0, frm.FrameCount - 1);
+                frame = frm.GetFrame(frameIndex, rotation);
+                texture = _frmCache.GetTexture(obj.Fid, frameIndex, rotation);
+            }
+            catch (Exception ex) when (ex is FileNotFoundException or InvalidDataException or NotSupportedException)
+            {
+                _failedFids.Add(obj.Fid);
+                Console.Error.WriteLine($"skipping FID 0x{obj.Fid:X8}: {ex.Message}");
+                continue;
+            }
+
+            // ported from fallout2-ce src/object.cc objectGetRect(): anchor is
+            // the hex tile center (+16,+8 from the 32x16 cell origin), shifted
+            // by the FRM per-rotation offset and the object's own pixel nudge;
+            // art is bottom-centered on that point.
+            (int hexX, int hexY) = _camera.HexToScreen(obj.HexTile);
+            int anchorX = hexX + 16 + frm.RotationOffsetsX[rotation] + obj.X;
+            int anchorY = hexY + 8 + frm.RotationOffsetsY[rotation] + obj.Y;
+            int left = anchorX - frame.Width / 2;
+            int top = anchorY - (frame.Height - 1);
+
+            if (left > viewport.Right || left + frame.Width < viewport.Left
+                || top > viewport.Bottom || top + frame.Height < viewport.Top)
+                continue;
+
+            _spriteBatch.Draw(texture, new Vector2(left, top), Color.White);
+        }
+    }
+
+    private void DrawRoofs()
+    {
+        MapElevation? elevation = _map.Elevations[_elevation];
+        if (elevation is null)
+            return;
+
+        Rectangle viewport = GraphicsDevice.Viewport.Bounds;
+
+        // ported from fallout2-ce src/tile.cc tileRenderRoofsInRect(): skip
+        // flag bit 12 and the blank tile id 1; roofs draw 96 px up.
+        for (int square = 0; square < MapElevation.SquareGridSize; square++)
+        {
+            int roofValue = (elevation.Squares[square] >> 16) & 0xFFFF;
+            if ((((roofValue & 0xF000) >> 12) & 0x01) != 0)
+                continue;
+
+            int tileId = roofValue & 0xFFF;
+            if (tileId == 1)
+                continue;
+
+            (int x, int y) = _camera.SquareToRoofScreen(square);
             if (x < viewport.Left - 80 || x > viewport.Right || y < viewport.Top - 36 || y > viewport.Bottom)
                 continue;
 

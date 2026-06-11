@@ -40,12 +40,20 @@ public sealed class MapObject
     /// <summary>Hex grid tile number (0..39999), or -1 for inventory items.</summary>
     public required int HexTile { get; init; }
 
+    /// <summary>Pixel offset from the hex tile center (objects can be nudged off-grid).</summary>
+    public required int X { get; init; }
+    public required int Y { get; init; }
+
     public required int Frame { get; init; }
     public required int Rotation { get; init; }
     public required int Fid { get; set; }
     public required int Flags { get; init; }
     public required int Pid { get; init; }
     public List<MapObject> Inventory { get; } = [];
+
+    // ported from fallout2-ce src/obj_types.h
+    public bool IsHidden => (Flags & 0x01) != 0;
+    public bool IsFlat => (Flags & 0x08) != 0;
 }
 
 /// <summary>
@@ -202,7 +210,9 @@ public sealed class MapFile
     {
         int id = reader.ReadInt32();
         int tile = reader.ReadInt32();
-        reader.Skip(4 * 4); // x, y, sx, sy — screen coords, recomputed by the renderer
+        int x = reader.ReadInt32();
+        int y = reader.ReadInt32();
+        reader.Skip(2 * 4); // sx, sy — screen coords, recomputed by the renderer
         int frame = reader.ReadInt32();
         int rotation = reader.ReadInt32();
         int fid = reader.ReadInt32();
@@ -215,6 +225,8 @@ public sealed class MapFile
         {
             Id = id,
             HexTile = tile,
+            X = x,
+            Y = y,
             Frame = frame,
             Rotation = rotation,
             Fid = fid,
