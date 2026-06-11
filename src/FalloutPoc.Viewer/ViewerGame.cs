@@ -28,6 +28,17 @@ public sealed class ViewerGame : Game
     /// <summary>Pre-advances palette cycling before the first frame (screenshot testing).</summary>
     public double AdvanceCyclingMs { get; set; }
 
+    /// <summary>When set, measures this many frames, prints a timing report and exits.</summary>
+    public int BenchFrames { get; set; }
+
+    private readonly System.Diagnostics.Stopwatch _frameClock = new();
+    private readonly List<double> _updateMs = [];
+    private readonly List<double> _drawMs = [];
+    private int _paletteUploads;
+    private double _fpsTimer;
+    private int _fpsFrames;
+    private string _baseTitle = "FalloutPoc viewer";
+
     private int _elevation;
     private bool _roofsVisible = true;
     private MouseState _previousMouse;
@@ -55,6 +66,22 @@ public sealed class ViewerGame : Game
         Window.AllowUserResizing = true;
         Window.ClientSizeChanged += (_, _) =>
             _camera.SetWindowSize(Window.ClientBounds.Width, Window.ClientBounds.Height);
+    }
+
+    protected override void Initialize()
+    {
+        // The simulation is wall-time driven (palette cycling, soon animations),
+        // so rendering speed never affects game speed. MonoGame's default fixed
+        // 60 Hz update is kept for interactive use; benchmarks unlock both the
+        // timestep and vsync to measure raw frame cost.
+        if (BenchFrames > 0)
+        {
+            IsFixedTimeStep = false;
+            _graphics.SynchronizeWithVerticalRetrace = false;
+            _graphics.ApplyChanges();
+        }
+
+        base.Initialize();
     }
 
     protected override void LoadContent()
@@ -97,11 +124,13 @@ public sealed class ViewerGame : Game
         _camera.SetWindowSize(Window.ClientBounds.Width, Window.ClientBounds.Height);
         _camera.SetCenter(_map.Header.EnteringTile);
 
-        Window.Title = $"FalloutPoc viewer — {_map.Header.Name} (elevation {_elevation})";
+        _baseTitle = $"FalloutPoc viewer — {_map.Header.Name} (elevation {_elevation})";
+        Window.Title = _baseTitle;
     }
 
     protected override void Update(GameTime gameTime)
     {
+        _frameClock.Restart();
         KeyboardState keyboard = Keyboard.GetState();
         MouseState mouse = Mouse.GetState();
 
@@ -134,11 +163,15 @@ public sealed class ViewerGame : Game
             _roofsVisible = !_roofsVisible;
 
         if (_cycler.Update(gameTime.ElapsedGameTime.TotalMilliseconds))
+        {
             _frmCache.OnPaletteChanged(_palette);
+            _paletteUploads++;
+        }
 
         _previousMouse = mouse;
         _previousKeyboard = keyboard;
         base.Update(gameTime);
+        _updateMs.Add(_frameClock.Elapsed.TotalMilliseconds);
     }
 
     private bool IsKeyPressed(KeyboardState keyboard, Keys key) =>
@@ -151,7 +184,7 @@ public sealed class ViewerGame : Game
             if (_map.Elevations[next] is not null)
             {
                 _elevation = next;
-                Window.Title = $"FalloutPoc viewer — {_map.Header.Name} (elevation {_elevation})";
+                _baseTitle = $"FalloutPoc viewer — {_map.Header.Name} (elevation {_elevation})";
                 break;
             }
         }
@@ -173,12 +206,40 @@ public sealed class ViewerGame : Game
         _spriteBatch.End();
 
         base.Draw(gameTime);
+        _drawMs.Add(_frameClock.Elapsed.TotalMilliseconds);
+
+        _fpsFrames++;
+        _fpsTimer += gameTime.ElapsedGameTime.TotalSeconds;
+        if (_fpsTimer >= 1.0)
+        {
+            Window.Title = $"{_baseTitle} — {_fpsFrames / _fpsTimer:F0} fps";
+            _fpsTimer = 0;
+            _fpsFrames = 0;
+        }
+
+        if (BenchFrames > 0 && _drawMs.Count >= BenchFrames)
+        {
+            PrintBenchReport();
+            Exit();
+        }
 
         if (_screenshotPath is not null)
         {
             SaveScreenshot(_screenshotPath);
             Exit();
         }
+    }
+
+    private void PrintBenchReport()
+    {
+        // _frameClock spans Update begin -> Draw end, so _drawMs holds full
+        // frame times; skip warm-up frames where textures are first created.
+        var frames = _drawMs.Skip(Math.Min(30, _drawMs.Count / 10)).OrderBy(t => t).ToList();
+        double avg = frames.Average();
+        double p95 = frames[(int)(frames.Count * 0.95)];
+        Console.WriteLine($"bench: {frames.Count} frames (after warm-up), full frame avg {avg:F2} ms, "
+            + $"p95 {p95:F2} ms, max {frames[^1]:F2} ms (~{1000 / avg:F0} fps uncapped)");
+        Console.WriteLine($"bench: palette uploads {_paletteUploads}, cycling FRMs {_frmCache.CyclingEntryCount}");
     }
 
     private void DrawFloors()

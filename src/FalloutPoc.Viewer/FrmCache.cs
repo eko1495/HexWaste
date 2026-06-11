@@ -33,6 +33,9 @@ public sealed class FrmCache(GameFileSystem vfs, ArtIndex artIndex, GraphicsDevi
 
     public FrmFile GetFrm(int fid) => GetEntry(fid).Frm;
 
+    /// <summary>Number of loaded FRMs containing animated palette indices.</summary>
+    public int CyclingEntryCount => _entries.Values.Count(e => e.HasCyclingColors);
+
     public Texture2D GetTexture(int fid, int frame = 0, int rotation = 0)
     {
         Entry entry = GetEntry(fid);

@@ -5,6 +5,7 @@ string mapName = "artemple.map";
 string? screenshot = null;
 bool roofs = true;
 double advanceMs = 0;
+int benchFrames = 0;
 
 for (int i = 0; i < args.Length; i++)
 {
@@ -15,6 +16,9 @@ for (int i = 0; i < args.Length; i++)
             break;
         case "--advance-ms" when i + 1 < args.Length:
             advanceMs = double.Parse(args[++i]);
+            break;
+        case "--bench" when i + 1 < args.Length:
+            benchFrames = int.Parse(args[++i]);
             break;
         case "--game-dir" when i + 1 < args.Length:
             gameDir = args[++i];
@@ -39,6 +43,10 @@ if (!Directory.Exists(gameDir))
     return 1;
 }
 
-using var game = new ViewerGame(gameDir, mapName, screenshot, roofs) { AdvanceCyclingMs = advanceMs };
+using var game = new ViewerGame(gameDir, mapName, screenshot, roofs)
+{
+    AdvanceCyclingMs = advanceMs,
+    BenchFrames = benchFrames,
+};
 game.Run();
 return 0;

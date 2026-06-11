@@ -33,7 +33,8 @@ All six milestones are complete.
 | Esc | quit |
 
 Extra CLI flags: `--screenshot out.png` (render one frame and exit),
-`--no-roofs`, `--advance-ms N` (pre-advance palette cycling — for testing).
+`--no-roofs`, `--advance-ms N` (pre-advance palette cycling — for testing),
+`--bench N` (measure N uncapped frames, print timing report, exit).
 
 ## Implementation notes
 

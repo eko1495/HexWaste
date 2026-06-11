@@ -32,12 +32,28 @@ If a format detail can't be confirmed from fallout2-ce sources, **stop and ask**
 
 ## Milestones (commit after each)
 
-1. **M1** — DAT2 reader: list/extract `master.dat` contents. `dotnet run --project tools/DatDump -- --game-dir game-data list`.
-2. **M2** — PAL + FRM: decode FRM → PNG dump tool.
-3. **M3** — MAP parsing: `artemple.map` summary (elevations, tile counts, object counts).
-4. **M4** — Static render: floor tiles elevation 0, rhombus layout, camera pan.
-5. **M5** — Objects + z-sorting; roof toggle.
-6. **M6** — Palette cycling at original speeds.
+Phase 1 (DONE): M1 DAT2 reader, M2 PAL+FRM, M3 MAP parsing, M4 static floor
+render, M5 objects + z-sorting + roofs, M6 palette cycling.
+
+Phase 2 — "walking simulator" (per research report
+`compass_artifact_…_text_markdown.md`; NO combat, NO script VM — hard scope line):
+
+0. **P2-M0** — DONE. Benchmark on newr1.map (heaviest: 2841 objects):
+   avg 3.6 ms / p95 6.2 ms / max 13.6 ms full frame with cycling active —
+   far under the 16 ms threshold. **Decision: CPU palette conversion stays;
+   no shader, no Wine.** Simulation is wall-time driven, fixed 60 Hz update
+   kept; `--bench N` measures uncapped frame cost; FPS shown in title.
+1. **P2-M1** — static critters: FID→FRM name via critters.lst + anim-code
+   suffix (`src/art.cc` `artBuildFilePath()`/`_art_get_code()`), correct
+   direction, z-sorted with solid objects.
+2. **P2-M2** — idle/breath animation + walk cycle in place (`src/animation.cc`);
+   FRM frame offsets accumulate across frames.
+3. **P2-M3** — mouse picking: per-pixel alpha hit-test in reverse draw order,
+   hover shows PID/FID (`src/object.cc`, `src/tile.cc` screen↔hex).
+4. **P2-M4** — dude movement: A* on hex grid (`src/path.cc`), blocking objects,
+   walk along path, camera follow.
+5. **P2-M5** — hardcoded interactions, no VM: doors (open/close animation),
+   exit grids (map/elevation transition), stairs/ladders.
 
 After each milestone: run tests, run the app if possible, update README progress checklist, conventional commit.
 
