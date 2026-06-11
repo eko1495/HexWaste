@@ -1,6 +1,7 @@
 <Solution>
   <Folder Name="/src/">
     <Project Path="src/FalloutPoc.Formats/FalloutPoc.Formats.csproj" />
+    <Project Path="src/FalloutPoc.Viewer/FalloutPoc.Viewer.csproj" />
   </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/FalloutPoc.Formats.Tests/FalloutPoc.Formats.Tests.csproj" />
