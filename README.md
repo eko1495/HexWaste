@@ -30,6 +30,9 @@ All six milestones are complete.
 | mouse drag / arrow keys | pan (hold Shift for fast) |
 | hover / click | highlight object under cursor; click prints its PID/FID |
 | click open ground | dude walks there (A* on the hex grid, camera follows) |
+| click a door (adjacent) | opens/closes it — open doors stop blocking paths |
+| click stairs/ladder (adjacent) | travel to their destination (may load another map) |
+| walk onto an exit grid | map transition (e.g. Temple of Trials → Arroyo bridge) |
 | R | toggle roofs |
 | T | toggle critter walk cycle (in place) |
 | PgUp / PgDn | switch elevation |
@@ -40,7 +43,17 @@ Extra CLI flags: `--screenshot out.png` (render one frame and exit),
 `--bench N` (measure N uncapped frames, print timing report, exit),
 `--walk` (start with critters walking — for testing),
 `--pick X,Y` (print the object at a screen point — for testing),
-`--goto TILE` (walk the dude to a hex tile after load — for testing).
+`--goto TILE` (walk the dude to a hex tile after load — for testing),
+`--door TILE` (toggle the door at a hex tile after load — for testing).
+
+## Phase 2 — walking simulator
+
+On top of the original viewer scope, the PoC now renders critters (composed
+FRM names, correct directions), plays FRM animations (looping fires, critter
+walk cycles), supports per-pixel mouse picking, moves a player stand-in with
+A* hex pathfinding, and handles doors/exit grids/stairs **without any script
+VM** — interactions are hardcoded, per the phase-2 research recommendation.
+Combat, dialogs, and the INT script engine remain explicitly out of scope.
 
 ## Implementation notes
 

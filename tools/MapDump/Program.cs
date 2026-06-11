@@ -61,6 +61,36 @@ for (int elevation = 0; elevation < MapFile.ElevationCount; elevation++)
 
     Console.WriteLine($"  elevation {elevation}: {floorTiles} floor tiles, {roofTiles} roof tiles, "
         + $"{elev.Objects.Count} objects ({string.Join(", ", byType)})");
+
+    var doors = elev.Objects.Where(o =>
+        Fid.Type(o.Fid) == ObjectType.Scenery
+        && Fid.PidType(o.Pid) == (int)ObjectType.Scenery
+        && TryGetSubType(o.Pid) == 0).ToList();
+    if (doors.Count > 0)
+        Console.WriteLine($"    doors x{doors.Count} (e.g. {string.Join(", ", doors.Take(6).Select(d => $"hex {d.HexTile} flags 0x{d.Flags:X}"))})");
+
+    foreach (var group in elev.Objects
+        .Where(o => o.Destination is not null)
+        .GroupBy(o => (o.Destination!.Map, o.Destination.Tile, o.Destination.Elevation,
+            IsExit: Fid.IsExitGridPid(o.Pid))))
+    {
+        ((int destMap, int destTile, int destElev, bool isExit), int count) = (group.Key, group.Count());
+        string kind = isExit ? "exit grid" : "stairs/ladder";
+        string sample = $"hex {group.First().HexTile}";
+        Console.WriteLine($"    {kind} x{count} -> map {destMap}, tile {destTile}, elev {destElev} (e.g. {sample})");
+    }
 }
 
 return 0;
+
+int TryGetSubType(int pid)
+{
+    try
+    {
+        return protos.Get(pid).SubType;
+    }
+    catch (Exception ex) when (ex is FileNotFoundException or InvalidDataException)
+    {
+        return -1;
+    }
+}

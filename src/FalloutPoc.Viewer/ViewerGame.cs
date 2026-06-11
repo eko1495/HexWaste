@@ -50,9 +50,16 @@ public sealed class ViewerGame : Game
     private bool _pickPrinted;
     private DudeController? _dude;
     private HashSet<int> _blockedTiles = [];
+    private MapList _mapList = null!;
+    private string _currentMapName = "";
+    private readonly HashSet<MapObject> _openDoors = [];
+    private MapDestination? _pendingTransition;
 
     /// <summary>Hex tile the dude should walk to right after load (screenshot testing).</summary>
     public int? WalkToTile { get; set; }
+
+    /// <summary>Toggles the door at this hex right after load, ignoring distance (screenshot testing).</summary>
+    public int? ToggleDoorAtTile { get; set; }
 
     /// <summary>Screen point to pick before the first frame (screenshot testing).</summary>
     public Point? PickAt { get; set; }
@@ -110,17 +117,64 @@ public sealed class ViewerGame : Game
         _palette = Palette.Load(_vfs.ReadAllBytes("color.pal"));
 
         _protos = new ProtoDatabase(_vfs);
-        using (Stream stream = _vfs.OpenRead($@"maps\{_mapName}"))
-            _map = MapFile.Load(stream, _protos);
-
         _cycler = new PaletteCycler(_palette);
         _artIndex = new ArtIndex(_vfs);
         _frmCache = new FrmCache(_vfs, _artIndex, GraphicsDevice, _palette);
+        _mapList = MapList.Load(_vfs);
+
+        LoadMap(_mapName, spawnAt: null);
+
+        if (StartInWalkMode)
+            ToggleWalkMode();
+        if (ToggleDoorAtTile is { } doorTile)
+        {
+            MapObject? door = _solidObjects[_elevation].FirstOrDefault(o => o.HexTile == doorTile && IsDoor(o));
+            if (door is not null)
+                ToggleDoor(door);
+            else
+                Console.Error.WriteLine($"no door at hex {doorTile}");
+        }
+
+        if (WalkToTile is { } walkTarget && _dude is not null && !_dude.WalkTo(walkTarget))
+            Console.Error.WriteLine($"no path to hex {walkTarget}");
+
+        // Step cycling/animations in small increments so pre-advancing N ms
+        // lands on the same state as N ms of real frames (screenshot testing).
+        for (double advanced = 0; advanced < AdvanceCyclingMs; advanced += 10)
+        {
+            _cycler.Update(10);
+            _animator.Update(10);
+            _dude?.Update(10);
+            if (_pendingTransition is { } transition)
+            {
+                _pendingTransition = null;
+                ApplyTransition(transition);
+            }
+        }
+        _frmCache.OnPaletteChanged(_palette);
+    }
+
+    /// <summary>
+    /// Loads (or transitions to) a map. <paramref name="spawnAt"/> places the
+    /// dude at an exit-grid/stairs destination; null uses the map's entering
+    /// position.
+    /// </summary>
+    private void LoadMap(string mapName, MapDestination? spawnAt)
+    {
+        _currentMapName = mapName;
+        using (Stream stream = _vfs.OpenRead($@"maps\{mapName}"))
+            _map = MapFile.Load(stream, _protos);
+
         _animator = new ObjectAnimator(_frmCache);
+        _walkMode = false;
+        _hoveredObject = null;
+        _dude = null;
+        _openDoors.Clear();
 
-
-        _elevation = _map.Header.EnteringElevation;
-        if (_map.Elevations[_elevation] is null)
+        int spawnTile = spawnAt?.Tile ?? _map.Header.EnteringTile;
+        int spawnRotation = spawnAt?.Rotation ?? _map.Header.EnteringRotation;
+        _elevation = spawnAt?.Elevation ?? _map.Header.EnteringElevation;
+        if (_elevation is < 0 or >= MapFile.ElevationCount || _map.Elevations[_elevation] is null)
             _elevation = Array.FindIndex(_map.Elevations, e => e is not null);
 
         // ported from fallout2-ce src/object.cc _obj_render_pre_roof(): flat
@@ -151,24 +205,12 @@ public sealed class ViewerGame : Game
         }
 
         StartLoopingAnimations();
-        if (StartInWalkMode)
-            ToggleWalkMode();
-        SpawnDude();
-        if (WalkToTile is { } walkTarget && _dude is not null && !_dude.WalkTo(walkTarget))
-            Console.Error.WriteLine($"no path to hex {walkTarget}");
-
-        // Step cycling/animations in small increments so pre-advancing N ms
-        // lands on the same state as N ms of real frames (screenshot testing).
-        for (double advanced = 0; advanced < AdvanceCyclingMs; advanced += 10)
-        {
-            _cycler.Update(10);
-            _animator.Update(10);
-            _dude?.Update(10);
-        }
-        _frmCache.OnPaletteChanged(_palette);
+        SpawnDude(spawnTile, spawnRotation);
 
         _camera.SetWindowSize(Window.ClientBounds.Width, Window.ClientBounds.Height);
         _camera.SetCenter(_dude?.Dude.HexTile ?? _map.Header.EnteringTile);
+        _camera.PanX = 0;
+        _camera.PanY = 0;
 
         _baseTitle = $"FalloutPoc viewer — {_map.Header.Name} (elevation {_elevation})";
         Window.Title = _baseTitle;
@@ -214,6 +256,14 @@ public sealed class ViewerGame : Game
         _animator.Update(gameTime.ElapsedGameTime.TotalMilliseconds);
         _dude?.Update(gameTime.ElapsedGameTime.TotalMilliseconds);
 
+        // Map transitions are queued by exit grids/stairs and applied here,
+        // never while DudeController.Update is still on the stack.
+        if (_pendingTransition is { } transition)
+        {
+            _pendingTransition = null;
+            ApplyTransition(transition);
+        }
+
         if (_cycler.Update(gameTime.ElapsedGameTime.TotalMilliseconds))
         {
             _frmCache.OnPaletteChanged(_palette);
@@ -236,13 +286,12 @@ public sealed class ViewerGame : Game
         if (_hoveredObject != previousHover)
             Window.Title = _hoveredObject is null ? _baseTitle : $"{_baseTitle} — {DescribeObject(_hoveredObject)}";
 
-        // Click: on an object — identify it; on open ground — walk there.
+        // Click: doors toggle, stairs/ladders travel, other objects identify,
+        // open ground walks.
         if (mouse.LeftButton == ButtonState.Pressed && _previousMouse.LeftButton == ButtonState.Released)
         {
             if (_hoveredObject is not null && _hoveredObject != _dude?.Dude)
-            {
-                Console.WriteLine($"picked: {DescribeObject(_hoveredObject)}");
-            }
+                InteractWith(_hoveredObject);
             else if (_dude is not null)
             {
                 int target = _camera.ScreenToHex(mouse.X, mouse.Y);
@@ -301,7 +350,7 @@ public sealed class ViewerGame : Game
     /// Spawns the player stand-in (tribal male) at the map's entering tile and
     /// builds the blocking set the pathfinder consults.
     /// </summary>
-    private void SpawnDude()
+    private void SpawnDude(int tile, int rotation)
     {
         int critterIndex = _artIndex.FindCritterIndex("hmwarr");
         if (critterIndex < 0)
@@ -313,11 +362,11 @@ public sealed class ViewerGame : Game
         var dude = new MapObject
         {
             Id = -1,
-            HexTile = _map.Header.EnteringTile,
+            HexTile = tile,
             X = 0,
             Y = 0,
             Frame = 0,
-            Rotation = Math.Clamp(_map.Header.EnteringRotation, 0, 5),
+            Rotation = Math.Clamp(rotation, 0, 5),
             Fid = Fid.Build(ObjectType.Critter, critterIndex),
             Flags = 0,
             Pid = 0x01000001,
@@ -334,6 +383,7 @@ public sealed class ViewerGame : Game
             _camera.SetCenter(tile);
             _camera.PanX = 0;
             _camera.PanY = 0;
+            CheckExitGridAt(tile);
         };
 
         InsertSorted(_solidObjects[_elevation], dude);
@@ -370,6 +420,147 @@ public sealed class ViewerGame : Game
                 for (int rotation = 0; rotation < 6; rotation++)
                     _blockedTiles.Add(Formats.Hex.HexGrid.TileInDirection(obj.HexTile, rotation));
         }
+
+        foreach (MapObject door in _openDoors)
+            _blockedTiles.Remove(door.HexTile);
+    }
+
+    private bool IsAdjacentToDude(MapObject obj)
+    {
+        if (_dude is null)
+            return false;
+        int dudeTile = _dude.Dude.HexTile;
+        if (obj.HexTile == dudeTile)
+            return true;
+        return Enumerable.Range(0, 6).Any(r => Formats.Hex.HexGrid.TileInDirection(dudeTile, r) == obj.HexTile);
+    }
+
+    private bool IsDoor(MapObject obj)
+    {
+        if (Fid.Type(obj.Fid) is not ObjectType.Scenery || Fid.PidType(obj.Pid) != (int)ObjectType.Scenery)
+            return false;
+        try
+        {
+            return _protos.Get(obj.Pid).SubType == 0; // SCENERY_TYPE_DOOR
+        }
+        catch (Exception ex) when (ex is FileNotFoundException or InvalidDataException)
+        {
+            return false;
+        }
+    }
+
+    /// <summary>
+    /// Hardcoded interactions, no script VM: doors open/close with their FRM
+    /// animation and unblock/block their hex; stairs and ladders travel to
+    /// their stored destination.
+    /// </summary>
+    private void InteractWith(MapObject obj)
+    {
+        if (IsDoor(obj))
+        {
+            if (!IsAdjacentToDude(obj))
+            {
+                Console.WriteLine("too far from the door");
+                return;
+            }
+            ToggleDoor(obj);
+            return;
+        }
+
+        if (obj.Destination is { } destination && Fid.Type(obj.Fid) is ObjectType.Scenery)
+        {
+            if (!IsAdjacentToDude(obj))
+            {
+                Console.WriteLine("too far to use");
+                return;
+            }
+            _pendingTransition = destination;
+            return;
+        }
+
+        Console.WriteLine($"picked: {DescribeObject(obj)}");
+    }
+
+    private void ToggleDoor(MapObject door)
+    {
+        int frameCount;
+        try
+        {
+            frameCount = _frmCache.GetFrm(door.Fid).FrameCount;
+        }
+        catch (Exception ex) when (ex is FileNotFoundException or InvalidDataException)
+        {
+            return;
+        }
+
+        if (_openDoors.Remove(door))
+        {
+            _animator.PlayOnceReverse(door, frameCount - 1);
+            _blockedTiles.Add(door.HexTile);
+            Console.WriteLine("door closes");
+        }
+        else
+        {
+            _openDoors.Add(door);
+            _animator.PlayOnce(door);
+            _blockedTiles.Remove(door.HexTile);
+            Console.WriteLine("door opens");
+        }
+    }
+
+    /// <summary>
+    /// Exit grid / stairs / ladder travel, mirroring fallout2-ce
+    /// src/proto_instance.cc useStairs()/useLadder*(): map &gt; 0 loads another
+    /// map via maps.txt; otherwise it's a teleport within the current map.
+    /// </summary>
+    private void ApplyTransition(MapDestination destination)
+    {
+        if (destination.Map > 0)
+        {
+            string? mapFile = _mapList.GetMapFileName(destination.Map);
+            if (mapFile is null)
+            {
+                Console.WriteLine($"unknown destination map index {destination.Map}");
+                return;
+            }
+
+            Console.WriteLine($"travelling to {mapFile} (tile {destination.Tile}, elevation {destination.Elevation})");
+            LoadMap(mapFile, destination);
+            return;
+        }
+
+        if (destination.Map < 0)
+        {
+            Console.WriteLine("exit to the worldmap — not part of this PoC");
+            return;
+        }
+
+        // Same-map teleport (stairs/ladders with map == 0).
+        if (_dude is null)
+            return;
+        _dude.Stop();
+        _solidObjects[_elevation].Remove(_dude.Dude);
+        _elevation = destination.Elevation is >= 0 and < MapFile.ElevationCount
+            && _map.Elevations[destination.Elevation] is not null
+            ? destination.Elevation
+            : _elevation;
+        _dude.Dude.HexTile = destination.Tile;
+        InsertSorted(_solidObjects[_elevation], _dude.Dude);
+        RebuildBlockedTiles(_dude.Dude);
+        _camera.SetCenter(destination.Tile);
+        _camera.PanX = 0;
+        _camera.PanY = 0;
+        _baseTitle = $"FalloutPoc viewer — {_map.Header.Name} (elevation {_elevation})";
+        Window.Title = _baseTitle;
+    }
+
+    /// <summary>Queues the transition when the dude steps onto an exit grid.</summary>
+    private void CheckExitGridAt(int tile)
+    {
+        MapObject? exitGrid = _flatObjects[_elevation]
+            .FirstOrDefault(o => o.HexTile == tile && Fid.IsExitGridPid(o.Pid) && o.Destination is not null);
+        if (exitGrid?.Destination is { } destination)
+            _pendingTransition = destination;
     }
 
     /// <summary>Toggles all critters between their map pose and a walk cycle in place.</summary>

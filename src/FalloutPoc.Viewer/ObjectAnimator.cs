@@ -11,19 +11,37 @@ namespace FalloutPoc.Viewer;
 /// (offsets accumulate across frames); wrapping to frame 0 resets the
 /// accumulated shift.
 /// </summary>
+public enum AnimationMode
+{
+    /// <summary>Wraps to frame 0 forever (fires, signs).</summary>
+    Loop,
+
+    /// <summary>Plays to the last frame and holds it (door opening).</summary>
+    Once,
+
+    /// <summary>Plays backwards to frame 0 and finishes (door closing).</summary>
+    OnceReverse,
+}
+
 public sealed class AnimationState
 {
     /// <summary>FID drawn instead of the object's own (e.g. walk-cycle art); 0 = use object FID.</summary>
     public int DisplayFid { get; init; }
 
-    public int Frame { get; private set; }
+    public AnimationMode Mode { get; init; } = AnimationMode.Loop;
+
+    public int Frame { get; set; }
     public int OffsetX { get; private set; }
     public int OffsetY { get; private set; }
+    public bool Finished { get; private set; }
 
     private double _accumulatorMs;
 
     public void Advance(double elapsedMs, FrmFile frm, int rotation)
     {
+        if (Finished && Mode != AnimationMode.Loop)
+            return;
+
         double msPerFrame = 1000.0 / frm.FramesPerSecond;
         _accumulatorMs += elapsedMs;
 
@@ -31,18 +49,41 @@ public sealed class AnimationState
         {
             _accumulatorMs -= msPerFrame;
 
-            if (Frame + 1 >= frm.FrameCount)
+            switch (Mode)
             {
-                Frame = 0;
-                OffsetX = 0;
-                OffsetY = 0;
-            }
-            else
-            {
-                Frame++;
-                FrmFrame frame = frm.GetFrame(Frame, rotation);
-                OffsetX += frame.OffsetX;
-                OffsetY += frame.OffsetY;
+                case AnimationMode.Loop:
+                    if (Frame + 1 >= frm.FrameCount)
+                    {
+                        Frame = 0;
+                        OffsetX = 0;
+                        OffsetY = 0;
+                    }
+                    else
+                    {
+                        Frame++;
+                        FrmFrame frame = frm.GetFrame(Frame, rotation);
+                        OffsetX += frame.OffsetX;
+                        OffsetY += frame.OffsetY;
+                    }
+                    break;
+
+                case AnimationMode.Once:
+                    if (Frame + 1 >= frm.FrameCount)
+                    {
+                        Finished = true;
+                        return;
+                    }
+                    Frame++;
+                    break;
+
+                case AnimationMode.OnceReverse:
+                    if (Frame == 0)
+                    {
+                        Finished = true;
+                        return;
+                    }
+                    Frame--;
+                    break;
             }
         }
     }
@@ -66,6 +107,14 @@ public sealed class ObjectAnimator(FrmCache frmCache)
 
     public void SetCritterAnimation(MapObject obj, int displayFid) =>
         _states[obj] = new AnimationState { DisplayFid = displayFid };
+
+    /// <summary>Plays the object's frames forward once and holds the last frame (door opening).</summary>
+    public void PlayOnce(MapObject obj) =>
+        _states[obj] = new AnimationState { Mode = AnimationMode.Once };
+
+    /// <summary>Plays backwards from the last frame to frame 0 (door closing).</summary>
+    public void PlayOnceReverse(MapObject obj, int lastFrame) =>
+        _states[obj] = new AnimationState { Mode = AnimationMode.OnceReverse, Frame = lastFrame };
 
     public void Remove(MapObject obj) => _states.Remove(obj);
 

@@ -54,6 +54,31 @@ public sealed class MapObject
     // ported from fallout2-ce src/obj_types.h
     public bool IsHidden => (Flags & 0x01) != 0;
     public bool IsFlat => (Flags & 0x08) != 0;
+
+    /// <summary>Travel destination of exit grids, stairs and ladders; null otherwise.</summary>
+    public MapDestination? Destination { get; set; }
+}
+
+/// <summary>
+/// Where an exit grid / stairs / ladder leads. Map &gt; 0 means another map
+/// (index into data\maps.txt); otherwise the same map. ported from
+/// fallout2-ce src/proto_instance.cc useStairs()/useLadder*() and the exit
+/// grid fields in objectDataRead().
+/// </summary>
+public sealed record MapDestination(int Map, int Tile, int Elevation, int Rotation)
+{
+    /// <summary>Decodes a built tile: bits 0..25 tile, 26..28 rotation, 29..31 elevation
+    /// (fallout2-ce src/obj_types.h builtTileGet*).</summary>
+    public static MapDestination? FromBuiltTile(int map, int builtTile)
+    {
+        if (builtTile == -1)
+            return null;
+        return new MapDestination(
+            map,
+            builtTile & 0x3FFFFFF,
+            (builtTile & unchecked((int)0xE0000000)) >>> 29,
+            (builtTile & 0x1C000000) >> 26);
+    }
 }
 
 /// <summary>
@@ -234,11 +259,11 @@ public sealed class MapFile
             Pid = pid,
         };
 
-        int inventoryLength = ReadObjectData(reader, obj, protos, mapVersion, out int exitMap);
+        int inventoryLength = ReadObjectData(reader, obj, protos, mapVersion);
 
         // ported from fallout2-ce src/object.cc objectRead(): remap legacy exit
         // grid art to the green/red variants.
-        if (Fid.IsExitGridPid(pid) && exitMap <= 0 && (obj.Fid & 0xFFF) < 33)
+        if (Fid.IsExitGridPid(pid) && obj.Destination?.Map <= 0 && (obj.Fid & 0xFFF) < 33)
             obj.Fid = Fid.Build(ObjectType.Misc, (obj.Fid & 0xFFF) + 16, Fid.AnimType(obj.Fid));
 
         for (int i = 0; i < inventoryLength; i++)
@@ -255,10 +280,8 @@ public sealed class MapFile
     /// inventory length; the items themselves follow as nested object records.
     /// </summary>
     private static int ReadObjectData(BigEndianReader reader, MapObject obj,
-        ProtoDatabase protos, int mapVersion, out int exitMap)
+        ProtoDatabase protos, int mapVersion)
     {
-        exitMap = 0;
-
         int inventoryLength = reader.ReadInt32();
         reader.Skip(8); // capacity + meaningless serialized pointer
 
@@ -284,21 +307,41 @@ public sealed class MapFile
                 break;
 
             case ObjectType.Scenery:
-                int sceneryType = protos.Get(obj.Pid).SubType;
-                reader.Skip(sceneryType switch
+                switch (protos.Get(obj.Pid).SubType)
                 {
-                    0 => 4, // SCENERY_TYPE_DOOR: openFlags
-                    1 or 2 => 8, // STAIRS: tile+map / ELEVATOR: type+level
-                    3 or 4 => mapVersion == 19 ? 4 : 8, // ladders gained a field in v20
-                    _ => 0,
-                });
+                    case 0: // SCENERY_TYPE_DOOR
+                        reader.Skip(4); // openFlags
+                        break;
+                    case 1: // SCENERY_TYPE_STAIRS: builtTile then map
+                    {
+                        int builtTile = reader.ReadInt32();
+                        int map = reader.ReadInt32();
+                        obj.Destination = MapDestination.FromBuiltTile(map, builtTile);
+                        break;
+                    }
+                    case 2: // SCENERY_TYPE_ELEVATOR: type+level (hardcoded tables; out of scope)
+                        reader.Skip(8);
+                        break;
+                    case 3 or 4: // ladders: v19 has builtTile only; v20 adds map first
+                    {
+                        int map = 0;
+                        if (mapVersion != 19)
+                            map = reader.ReadInt32();
+                        int builtTile = reader.ReadInt32();
+                        obj.Destination = MapDestination.FromBuiltTile(map, builtTile);
+                        break;
+                    }
+                }
                 break;
 
             case ObjectType.Misc:
                 if (Fid.IsExitGridPid(obj.Pid))
                 {
-                    exitMap = reader.ReadInt32();
-                    reader.Skip(12); // tile, elevation, rotation
+                    int map = reader.ReadInt32();
+                    int tile = reader.ReadInt32();
+                    int elevation = reader.ReadInt32();
+                    int rotation = reader.ReadInt32();
+                    obj.Destination = new MapDestination(map, tile, elevation, rotation);
                 }
                 break;
         }
