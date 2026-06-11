@@ -38,14 +38,14 @@ public sealed class MapObject
     public required int Id { get; init; }
 
     /// <summary>Hex grid tile number (0..39999), or -1 for inventory items.</summary>
-    public required int HexTile { get; init; }
+    public required int HexTile { get; set; }
 
     /// <summary>Pixel offset from the hex tile center (objects can be nudged off-grid).</summary>
     public required int X { get; init; }
     public required int Y { get; init; }
 
     public required int Frame { get; init; }
-    public required int Rotation { get; init; }
+    public required int Rotation { get; set; }
     public required int Fid { get; set; }
     public required int Flags { get; init; }
     public required int Pid { get; init; }

@@ -29,6 +29,7 @@ All six milestones are complete.
 | --- | --- |
 | mouse drag / arrow keys | pan (hold Shift for fast) |
 | hover / click | highlight object under cursor; click prints its PID/FID |
+| click open ground | dude walks there (A* on the hex grid, camera follows) |
 | R | toggle roofs |
 | T | toggle critter walk cycle (in place) |
 | PgUp / PgDn | switch elevation |
@@ -38,7 +39,8 @@ Extra CLI flags: `--screenshot out.png` (render one frame and exit),
 `--no-roofs`, `--advance-ms N` (pre-advance palette cycling — for testing),
 `--bench N` (measure N uncapped frames, print timing report, exit),
 `--walk` (start with critters walking — for testing),
-`--pick X,Y` (print the object at a screen point — for testing).
+`--pick X,Y` (print the object at a screen point — for testing),
+`--goto TILE` (walk the dude to a hex tile after load — for testing).
 
 ## Implementation notes
 

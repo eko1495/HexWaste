@@ -48,6 +48,11 @@ public sealed class ViewerGame : Game
     private bool _walkMode;
     private MapObject? _hoveredObject;
     private bool _pickPrinted;
+    private DudeController? _dude;
+    private HashSet<int> _blockedTiles = [];
+
+    /// <summary>Hex tile the dude should walk to right after load (screenshot testing).</summary>
+    public int? WalkToTile { get; set; }
 
     /// <summary>Screen point to pick before the first frame (screenshot testing).</summary>
     public Point? PickAt { get; set; }
@@ -148,6 +153,9 @@ public sealed class ViewerGame : Game
         StartLoopingAnimations();
         if (StartInWalkMode)
             ToggleWalkMode();
+        SpawnDude();
+        if (WalkToTile is { } walkTarget && _dude is not null && !_dude.WalkTo(walkTarget))
+            Console.Error.WriteLine($"no path to hex {walkTarget}");
 
         // Step cycling/animations in small increments so pre-advancing N ms
         // lands on the same state as N ms of real frames (screenshot testing).
@@ -155,11 +163,12 @@ public sealed class ViewerGame : Game
         {
             _cycler.Update(10);
             _animator.Update(10);
+            _dude?.Update(10);
         }
         _frmCache.OnPaletteChanged(_palette);
 
         _camera.SetWindowSize(Window.ClientBounds.Width, Window.ClientBounds.Height);
-        _camera.SetCenter(_map.Header.EnteringTile);
+        _camera.SetCenter(_dude?.Dude.HexTile ?? _map.Header.EnteringTile);
 
         _baseTitle = $"FalloutPoc viewer — {_map.Header.Name} (elevation {_elevation})";
         Window.Title = _baseTitle;
@@ -203,6 +212,7 @@ public sealed class ViewerGame : Game
             ToggleWalkMode();
 
         _animator.Update(gameTime.ElapsedGameTime.TotalMilliseconds);
+        _dude?.Update(gameTime.ElapsedGameTime.TotalMilliseconds);
 
         if (_cycler.Update(gameTime.ElapsedGameTime.TotalMilliseconds))
         {
@@ -226,9 +236,20 @@ public sealed class ViewerGame : Game
         if (_hoveredObject != previousHover)
             Window.Title = _hoveredObject is null ? _baseTitle : $"{_baseTitle} — {DescribeObject(_hoveredObject)}";
 
-        if (mouse.LeftButton == ButtonState.Pressed && _previousMouse.LeftButton == ButtonState.Released
-            && _hoveredObject is not null)
-            Console.WriteLine($"picked: {DescribeObject(_hoveredObject)}");
+        // Click: on an object — identify it; on open ground — walk there.
+        if (mouse.LeftButton == ButtonState.Pressed && _previousMouse.LeftButton == ButtonState.Released)
+        {
+            if (_hoveredObject is not null && _hoveredObject != _dude?.Dude)
+            {
+                Console.WriteLine($"picked: {DescribeObject(_hoveredObject)}");
+            }
+            else if (_dude is not null)
+            {
+                int target = _camera.ScreenToHex(mouse.X, mouse.Y);
+                if (target >= 0 && !_dude.WalkTo(target))
+                    Console.WriteLine($"no path to hex {target}");
+            }
+        }
 
         _previousMouse = mouse;
         _previousKeyboard = keyboard;
@@ -276,6 +297,81 @@ public sealed class ViewerGame : Game
         Console.WriteLine($"animating {animatedCount} multi-frame scenery/misc object(s)");
     }
 
+    /// <summary>
+    /// Spawns the player stand-in (tribal male) at the map's entering tile and
+    /// builds the blocking set the pathfinder consults.
+    /// </summary>
+    private void SpawnDude()
+    {
+        int critterIndex = _artIndex.FindCritterIndex("hmwarr");
+        if (critterIndex < 0)
+        {
+            Console.Error.WriteLine("hmwarr not found in critters.lst — no dude");
+            return;
+        }
+
+        var dude = new MapObject
+        {
+            Id = -1,
+            HexTile = _map.Header.EnteringTile,
+            X = 0,
+            Y = 0,
+            Frame = 0,
+            Rotation = Math.Clamp(_map.Header.EnteringRotation, 0, 5),
+            Fid = Fid.Build(ObjectType.Critter, critterIndex),
+            Flags = 0,
+            Pid = 0x01000001,
+        };
+
+        RebuildBlockedTiles(dude);
+        _dude = new DudeController(dude, _frmCache, tile => _blockedTiles.Contains(tile));
+        _dude.TileChanged += tile =>
+        {
+            // Keep hex z-order: re-insert at the new tile's sorted position.
+            List<MapObject> solids = _solidObjects[_elevation];
+            solids.Remove(dude);
+            InsertSorted(solids, dude);
+            _camera.SetCenter(tile);
+            _camera.PanX = 0;
+            _camera.PanY = 0;
+        };
+
+        InsertSorted(_solidObjects[_elevation], dude);
+        _camera.SetCenter(dude.HexTile);
+    }
+
+    private static void InsertSorted(List<MapObject> objects, MapObject obj)
+    {
+        int index = objects.FindIndex(o => o.HexTile > obj.HexTile);
+        objects.Insert(index < 0 ? objects.Count : index, obj);
+    }
+
+    /// <summary>
+    /// Blocking per fallout2-ce src/object.cc _obj_blocking_at(): visible,
+    /// non-NO_BLOCK critters/scenery/walls block their tile; MULTIHEX objects
+    /// also block their six neighbors. Computed once per elevation (static
+    /// scene — only the dude moves).
+    /// </summary>
+    private void RebuildBlockedTiles(MapObject? exclude)
+    {
+        const int objectNoBlock = 0x10;
+        const int objectMultiHex = 0x800;
+
+        _blockedTiles = [];
+        foreach (MapObject obj in _solidObjects[_elevation])
+        {
+            if (obj == exclude || (obj.Flags & objectNoBlock) != 0)
+                continue;
+            if (Fid.Type(obj.Fid) is not (ObjectType.Critter or ObjectType.Scenery or ObjectType.Wall))
+                continue;
+
+            _blockedTiles.Add(obj.HexTile);
+            if ((obj.Flags & objectMultiHex) != 0)
+                for (int rotation = 0; rotation < 6; rotation++)
+                    _blockedTiles.Add(Formats.Hex.HexGrid.TileInDirection(obj.HexTile, rotation));
+        }
+    }
+
     /// <summary>Toggles all critters between their map pose and a walk cycle in place.</summary>
     private void ToggleWalkMode()
     {
@@ -307,7 +403,16 @@ public sealed class ViewerGame : Game
         {
             if (_map.Elevations[next] is not null)
             {
+                if (_dude is not null)
+                {
+                    _dude.Stop();
+                    _solidObjects[_elevation].Remove(_dude.Dude);
+                    InsertSorted(_solidObjects[next], _dude.Dude);
+                }
+
                 _elevation = next;
+                if (_dude is not null)
+                    RebuildBlockedTiles(_dude.Dude);
                 _baseTitle = $"FalloutPoc viewer — {_map.Header.Name} (elevation {_elevation})";
                 break;
             }
@@ -412,8 +517,14 @@ public sealed class ViewerGame : Game
         if (_failedFids.Contains(obj.Fid))
             return null;
 
-        bool animated = _animator.TryGetState(obj, out AnimationState animation);
-        int fid = animated && animation.DisplayFid != 0 ? animation.DisplayFid : obj.Fid;
+        bool isDude = _dude is not null && obj == _dude.Dude;
+        AnimationState? animation = null;
+        if (!isDude && _animator.TryGetState(obj, out AnimationState state))
+            animation = state;
+
+        int fid = isDude ? _dude!.CurrentFid
+            : animation is { DisplayFid: not 0 } ? animation.DisplayFid
+            : obj.Fid;
 
         Formats.Frm.FrmFile frm;
         Formats.Frm.FrmFrame frame;
@@ -423,7 +534,9 @@ public sealed class ViewerGame : Game
         {
             frm = _frmCache.GetFrm(fid);
             rotation = Math.Clamp(obj.Rotation, 0, Formats.Frm.FrmFile.RotationCount - 1);
-            frameIndex = animated ? animation.Frame : Math.Clamp(obj.Frame, 0, frm.FrameCount - 1);
+            frameIndex = isDude ? Math.Min(_dude!.Frame, frm.FrameCount - 1)
+                : animation is not null ? animation.Frame
+                : Math.Clamp(obj.Frame, 0, frm.FrameCount - 1);
             frame = frm.GetFrame(frameIndex, rotation);
         }
         catch (Exception ex) when (ex is FileNotFoundException or InvalidDataException or NotSupportedException)
@@ -433,9 +546,12 @@ public sealed class ViewerGame : Game
             return null;
         }
 
+        int extraX = isDude ? _dude!.OffsetX : animation?.OffsetX ?? 0;
+        int extraY = isDude ? _dude!.OffsetY : animation?.OffsetY ?? 0;
+
         (int hexX, int hexY) = _camera.HexToScreen(obj.HexTile);
-        int anchorX = hexX + 16 + frm.RotationOffsetsX[rotation] + obj.X + (animated ? animation.OffsetX : 0);
-        int anchorY = hexY + 8 + frm.RotationOffsetsY[rotation] + obj.Y + (animated ? animation.OffsetY : 0);
+        int anchorX = hexX + 16 + frm.RotationOffsetsX[rotation] + obj.X + extraX;
+        int anchorY = hexY + 8 + frm.RotationOffsetsY[rotation] + obj.Y + extraY;
         int left = anchorX - frame.Width / 2;
         int top = anchorY - (frame.Height - 1);
 

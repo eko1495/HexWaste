@@ -132,4 +132,90 @@ public sealed class Camera
         (int x, int y) = SquareToScreen(squareTile);
         return (x, y - 96);
     }
+
+    /// <summary>
+    /// Corner-correction mask for hex hit testing inside the 32x16 cell,
+    /// built exactly like fallout2-ce src/tile.cc tileSetupTileGrid():
+    /// 0 = inside, 1..4 = NW/NE/SW/SE neighbor corrections.
+    /// </summary>
+    private static readonly byte[] TileMask = BuildTileMask();
+
+    private static byte[] BuildTileMask()
+    {
+        var mask = new byte[512];
+        int i = 0;
+        for (int row = 0; row != 64; row += 16)
+        {
+            for (int v = 64; v != 0; v -= 4)
+                mask[i++] = (byte)(v > row ? 1 : 0);
+            for (int v = 0; v != 64; v += 4)
+                mask[i++] = (byte)(v > row ? 2 : 0);
+        }
+
+        i += 8 * 32; // middle rows are all 0 (inside the hex)
+
+        for (int row = 0; row != 64; row += 16)
+        {
+            for (int v = 0; v != 64; v += 4)
+                mask[i++] = (byte)(v > row ? 0 : 3);
+            for (int v = 64; v != 0; v -= 4)
+                mask[i++] = (byte)(v > row ? 0 : 4);
+        }
+
+        return mask;
+    }
+
+    /// <summary>ported from fallout2-ce src/tile.cc tileFromScreenXY().</summary>
+    public int ScreenToHex(int screenX, int screenY)
+    {
+        screenX -= PanX;
+        screenY -= PanY;
+
+        int v2 = screenY - _tileOffY;
+        int v3 = v2 >= 0 ? v2 / 12 : (v2 + 1) / 12 - 1;
+
+        int v4 = screenX - _tileOffX - 16 * v3;
+        int v5 = v2 - 12 * v3;
+
+        int v6 = v4 >= 0 ? v4 / 64 : (v4 + 1) / 64 - 1;
+
+        int v7 = v6 + v3;
+        int v8 = v4 - v6 * 64;
+        int v9 = 2 * v6;
+
+        if (v8 >= 32)
+        {
+            v8 -= 32;
+            v9++;
+        }
+
+        int v10 = _tileY + v7;
+        int v11 = _tileX + v9;
+
+        switch (TileMask[32 * v5 + v8])
+        {
+            case 2:
+                v11++;
+                if ((v11 & 1) != 0)
+                    v10--;
+                break;
+            case 1:
+                v10--;
+                break;
+            case 3:
+                v11--;
+                if ((v11 & 1) == 0)
+                    v10++;
+                break;
+            case 4:
+                v10++;
+                break;
+        }
+
+        int v12 = HexGridWidth - 1 - v11;
+        if (v12 >= 0 && v12 < HexGridWidth && v10 >= 0 && v10 < HexGridHeight)
+            return HexGridWidth * v10 + v12;
+
+        return -1;
+    }
 }

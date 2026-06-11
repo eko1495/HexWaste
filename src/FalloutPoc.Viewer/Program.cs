@@ -8,6 +8,7 @@ double advanceMs = 0;
 int benchFrames = 0;
 bool walk = false;
 Microsoft.Xna.Framework.Point? pick = null;
+int? gotoTile = null;
 
 for (int i = 0; i < args.Length; i++)
 {
@@ -24,6 +25,9 @@ for (int i = 0; i < args.Length; i++)
             break;
         case "--walk":
             walk = true;
+            break;
+        case "--goto" when i + 1 < args.Length:
+            gotoTile = int.Parse(args[++i]);
             break;
         case "--pick" when i + 1 < args.Length:
         {
@@ -60,6 +64,7 @@ using var game = new ViewerGame(gameDir, mapName, screenshot, roofs)
     BenchFrames = benchFrames,
     StartInWalkMode = walk,
     PickAt = pick,
+    WalkToTile = gotoTile,
 };
 game.Run();
 return 0;

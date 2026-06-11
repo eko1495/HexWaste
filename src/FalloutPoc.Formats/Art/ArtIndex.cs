@@ -35,6 +35,13 @@ public sealed class ArtIndex(GameFileSystem vfs)
         return $@"art\{TypeDirs[typeIndex]}\{list[index]}";
     }
 
+    /// <summary>Finds a critter's index in critters.lst by base name (e.g. "hmwarr"), or -1.</summary>
+    public int FindCritterIndex(string baseName)
+    {
+        string[] list = GetList((int)ObjectType.Critter);
+        return Array.FindIndex(list, n => string.Equals(n, baseName, StringComparison.OrdinalIgnoreCase));
+    }
+
     /// <summary>
     /// Critter FRM names are composed: base name from critters.lst + a
     /// two-character animation/weapon code + ".frm" (or ".fr0".." for
