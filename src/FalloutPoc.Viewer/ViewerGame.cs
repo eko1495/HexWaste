@@ -20,9 +20,13 @@ public sealed class ViewerGame : Game
 
     private GameFileSystem _vfs = null!;
     private Palette _palette = null!;
+    private PaletteCycler _cycler = null!;
     private MapFile _map = null!;
     private FrmCache _frmCache = null!;
     private SpriteBatch _spriteBatch = null!;
+
+    /// <summary>Pre-advances palette cycling before the first frame (screenshot testing).</summary>
+    public double AdvanceCyclingMs { get; set; }
 
     private int _elevation;
     private bool _roofsVisible = true;
@@ -64,7 +68,14 @@ public sealed class ViewerGame : Game
         using (Stream stream = _vfs.OpenRead($@"maps\{_mapName}"))
             _map = MapFile.Load(stream, protos);
 
+        _cycler = new PaletteCycler(_palette);
         _frmCache = new FrmCache(_vfs, new ArtIndex(_vfs), GraphicsDevice, _palette);
+
+        // Step cycling in original-period increments so pre-advancing N ms
+        // lands on the same palette state as N ms of real frames.
+        for (double advanced = 0; advanced < AdvanceCyclingMs; advanced += 10)
+            _cycler.Update(10);
+        _frmCache.OnPaletteChanged(_palette);
 
         _elevation = _map.Header.EnteringElevation;
         if (_map.Elevations[_elevation] is null)
@@ -121,6 +132,9 @@ public sealed class ViewerGame : Game
 
         if (IsKeyPressed(keyboard, Keys.R))
             _roofsVisible = !_roofsVisible;
+
+        if (_cycler.Update(gameTime.ElapsedGameTime.TotalMilliseconds))
+            _frmCache.OnPaletteChanged(_palette);
 
         _previousMouse = mouse;
         _previousKeyboard = keyboard;
