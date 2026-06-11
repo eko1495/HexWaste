@@ -46,6 +46,11 @@ public sealed class ViewerGame : Game
     private ArtIndex _artIndex = null!;
     private ObjectAnimator _animator = null!;
     private bool _walkMode;
+    private MapObject? _hoveredObject;
+    private bool _pickPrinted;
+
+    /// <summary>Screen point to pick before the first frame (screenshot testing).</summary>
+    public Point? PickAt { get; set; }
 
     private int _elevation;
     private bool _roofsVisible = true;
@@ -204,6 +209,26 @@ public sealed class ViewerGame : Game
             _frmCache.OnPaletteChanged(_palette);
             _paletteUploads++;
         }
+
+        // Hover picking; click prints the object's identity.
+        MapObject? previousHover = _hoveredObject;
+        _hoveredObject = PickAt is { } fixedPoint
+            ? PickObject(fixedPoint.X, fixedPoint.Y)
+            : PickObject(mouse.X, mouse.Y);
+
+        if (PickAt is { } p && !_pickPrinted)
+        {
+            Console.WriteLine($"pick@{p.X},{p.Y}: "
+                + (_hoveredObject is null ? "nothing" : DescribeObject(_hoveredObject)));
+            _pickPrinted = true;
+        }
+
+        if (_hoveredObject != previousHover)
+            Window.Title = _hoveredObject is null ? _baseTitle : $"{_baseTitle} — {DescribeObject(_hoveredObject)}";
+
+        if (mouse.LeftButton == ButtonState.Pressed && _previousMouse.LeftButton == ButtonState.Released
+            && _hoveredObject is not null)
+            Console.WriteLine($"picked: {DescribeObject(_hoveredObject)}");
 
         _previousMouse = mouse;
         _previousKeyboard = keyboard;
@@ -371,55 +396,113 @@ public sealed class ViewerGame : Game
         }
     }
 
+    private sealed record SpriteInfo(int Fid, int FrameIndex, int Rotation,
+        Formats.Frm.FrmFrame Frame, int Left, int Top);
+
+    /// <summary>
+    /// Resolves the drawn sprite and its screen rectangle for an object —
+    /// shared by rendering and mouse picking so both always agree.
+    /// Anchor math ported from fallout2-ce src/object.cc objectGetRect():
+    /// hex tile center (+16,+8 from the 32x16 cell origin) + FRM per-rotation
+    /// offset + the object's own pixel nudge; art is bottom-centered there.
+    /// Animations add their accumulated per-frame offset deltas.
+    /// </summary>
+    private SpriteInfo? ResolveSprite(MapObject obj)
+    {
+        if (_failedFids.Contains(obj.Fid))
+            return null;
+
+        bool animated = _animator.TryGetState(obj, out AnimationState animation);
+        int fid = animated && animation.DisplayFid != 0 ? animation.DisplayFid : obj.Fid;
+
+        Formats.Frm.FrmFile frm;
+        Formats.Frm.FrmFrame frame;
+        int rotation;
+        int frameIndex;
+        try
+        {
+            frm = _frmCache.GetFrm(fid);
+            rotation = Math.Clamp(obj.Rotation, 0, Formats.Frm.FrmFile.RotationCount - 1);
+            frameIndex = animated ? animation.Frame : Math.Clamp(obj.Frame, 0, frm.FrameCount - 1);
+            frame = frm.GetFrame(frameIndex, rotation);
+        }
+        catch (Exception ex) when (ex is FileNotFoundException or InvalidDataException or NotSupportedException)
+        {
+            _failedFids.Add(obj.Fid);
+            Console.Error.WriteLine($"skipping FID 0x{obj.Fid:X8}: {ex.Message}");
+            return null;
+        }
+
+        (int hexX, int hexY) = _camera.HexToScreen(obj.HexTile);
+        int anchorX = hexX + 16 + frm.RotationOffsetsX[rotation] + obj.X + (animated ? animation.OffsetX : 0);
+        int anchorY = hexY + 8 + frm.RotationOffsetsY[rotation] + obj.Y + (animated ? animation.OffsetY : 0);
+        int left = anchorX - frame.Width / 2;
+        int top = anchorY - (frame.Height - 1);
+
+        return new SpriteInfo(fid, frameIndex, rotation, frame, left, top);
+    }
+
     private void DrawObjects(List<MapObject> objects)
     {
         Rectangle viewport = GraphicsDevice.Viewport.Bounds;
 
         foreach (MapObject obj in objects)
         {
-            if (_failedFids.Contains(obj.Fid))
+            if (ResolveSprite(obj) is not { } sprite)
                 continue;
 
-            bool animated = _animator.TryGetState(obj, out AnimationState animation);
-            int fid = animated && animation.DisplayFid != 0 ? animation.DisplayFid : obj.Fid;
-
-            Formats.Frm.FrmFile frm;
-            Formats.Frm.FrmFrame frame;
-            Texture2D texture;
-            int rotation;
-            try
-            {
-                frm = _frmCache.GetFrm(fid);
-                rotation = Math.Clamp(obj.Rotation, 0, Formats.Frm.FrmFile.RotationCount - 1);
-                int frameIndex = animated ? animation.Frame : Math.Clamp(obj.Frame, 0, frm.FrameCount - 1);
-                frame = frm.GetFrame(frameIndex, rotation);
-                texture = _frmCache.GetTexture(fid, frameIndex, rotation);
-            }
-            catch (Exception ex) when (ex is FileNotFoundException or InvalidDataException or NotSupportedException)
-            {
-                _failedFids.Add(obj.Fid);
-                Console.Error.WriteLine($"skipping FID 0x{obj.Fid:X8}: {ex.Message}");
-                continue;
-            }
-
-            // ported from fallout2-ce src/object.cc objectGetRect(): anchor is
-            // the hex tile center (+16,+8 from the 32x16 cell origin), shifted
-            // by the FRM per-rotation offset and the object's own pixel nudge;
-            // art is bottom-centered on that point. Animations add their
-            // accumulated per-frame offset deltas (like _obj_offset calls in
-            // _object_animate()).
-            (int hexX, int hexY) = _camera.HexToScreen(obj.HexTile);
-            int anchorX = hexX + 16 + frm.RotationOffsetsX[rotation] + obj.X + (animated ? animation.OffsetX : 0);
-            int anchorY = hexY + 8 + frm.RotationOffsetsY[rotation] + obj.Y + (animated ? animation.OffsetY : 0);
-            int left = anchorX - frame.Width / 2;
-            int top = anchorY - (frame.Height - 1);
-
-            if (left > viewport.Right || left + frame.Width < viewport.Left
-                || top > viewport.Bottom || top + frame.Height < viewport.Top)
+            if (sprite.Left > viewport.Right || sprite.Left + sprite.Frame.Width < viewport.Left
+                || sprite.Top > viewport.Bottom || sprite.Top + sprite.Frame.Height < viewport.Top)
                 continue;
 
-            _spriteBatch.Draw(texture, new Vector2(left, top), Color.White);
+            Texture2D texture = _frmCache.GetTexture(sprite.Fid, sprite.FrameIndex, sprite.Rotation);
+            Color tint = obj == _hoveredObject ? Color.Yellow : Color.White;
+            _spriteBatch.Draw(texture, new Vector2(sprite.Left, sprite.Top), tint);
         }
+    }
+
+    /// <summary>
+    /// Picks the topmost object whose sprite has an opaque pixel under the
+    /// cursor — objects are tested in reverse draw order, and palette index 0
+    /// pixels are transparent, so clicks fall through to whatever is beneath
+    /// (the behavior DarkFO called out as essential for dense scenes).
+    /// </summary>
+    private MapObject? PickObject(int screenX, int screenY)
+    {
+        IEnumerable<MapObject> reverseDrawOrder = Enumerable.Reverse(_solidObjects[_elevation])
+            .Concat(Enumerable.Reverse(_flatObjects[_elevation]));
+
+        foreach (MapObject obj in reverseDrawOrder)
+        {
+            if (ResolveSprite(obj) is not { } sprite)
+                continue;
+
+            int localX = screenX - sprite.Left;
+            int localY = screenY - sprite.Top;
+            if (localX < 0 || localX >= sprite.Frame.Width || localY < 0 || localY >= sprite.Frame.Height)
+                continue;
+
+            if (sprite.Frame.Pixels[localY * sprite.Frame.Width + localX] != Palette.TransparentIndex)
+                return obj;
+        }
+
+        return null;
+    }
+
+    private string DescribeObject(MapObject obj)
+    {
+        string proto;
+        try
+        {
+            ProtoInfo info = _protos.Get(obj.Pid);
+            proto = $"msg {info.MessageId}";
+        }
+        catch (Exception ex) when (ex is FileNotFoundException or InvalidDataException)
+        {
+            proto = "no proto";
+        }
+
+        return $"{Fid.Type(obj.Fid)} pid 0x{obj.Pid:X8} fid 0x{obj.Fid:X8} hex {obj.HexTile} ({proto})";
     }
 
     private void DrawRoofs()

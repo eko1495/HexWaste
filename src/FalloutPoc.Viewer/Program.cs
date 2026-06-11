@@ -7,6 +7,7 @@ bool roofs = true;
 double advanceMs = 0;
 int benchFrames = 0;
 bool walk = false;
+Microsoft.Xna.Framework.Point? pick = null;
 
 for (int i = 0; i < args.Length; i++)
 {
@@ -24,6 +25,12 @@ for (int i = 0; i < args.Length; i++)
         case "--walk":
             walk = true;
             break;
+        case "--pick" when i + 1 < args.Length:
+        {
+            string[] parts = args[++i].Split(',');
+            pick = new Microsoft.Xna.Framework.Point(int.Parse(parts[0]), int.Parse(parts[1]));
+            break;
+        }
         case "--game-dir" when i + 1 < args.Length:
             gameDir = args[++i];
             break;
@@ -52,6 +59,7 @@ using var game = new ViewerGame(gameDir, mapName, screenshot, roofs)
     AdvanceCyclingMs = advanceMs,
     BenchFrames = benchFrames,
     StartInWalkMode = walk,
+    PickAt = pick,
 };
 game.Run();
 return 0;
