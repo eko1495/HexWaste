@@ -16,7 +16,7 @@ dotnet run --project src/FalloutPoc.Viewer -- --game-dir ./game-data --map artem
 
 - [x] M1 — DAT2 archive reader (`master.dat` list/extract) + DatDump CLI
 - [x] M2 — PAL + FRM parsers + FrmDump (FRM → PNG)
-- [ ] M3 — MAP parser (`artemple.map` summary)
+- [x] M3 — MAP parser (`artemple.map` summary)
 - [ ] M4 — Static floor render + camera pan
 - [ ] M5 — Objects + z-sorting + roof toggle
 - [ ] M6 — Palette color cycling
