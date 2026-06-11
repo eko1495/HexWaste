@@ -1,0 +1,30 @@
+# Game assets — NEVER commit (legal guardrail)
+*.dat
+*.DAT
+*.map
+*.MAP
+*.frm
+*.FRM
+*.pal
+*.PAL
+game-data/
+*.exe
+*.bin
+
+# Reference repos (cloned, not ours)
+reference/
+
+# Local tools
+tools/bin/
+
+# .NET
+bin/
+obj/
+*.user
+.vs/
+artifacts/
+
+# OS / editor
+.idea/
+*.swp
+.DS_Store

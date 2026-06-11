@@ -1,0 +1,11 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/FalloutPoc.Formats/FalloutPoc.Formats.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/FalloutPoc.Formats.Tests/FalloutPoc.Formats.Tests.csproj" />
+  </Folder>
+  <Folder Name="/tools/">
+    <Project Path="tools/DatDump/DatDump.csproj" />
+  </Folder>
+</Solution>
