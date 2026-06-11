@@ -96,7 +96,8 @@ public sealed class ViewerGame : Game
             _map = MapFile.Load(stream, protos);
 
         _cycler = new PaletteCycler(_palette);
-        _frmCache = new FrmCache(_vfs, new ArtIndex(_vfs), GraphicsDevice, _palette);
+        var artIndex = new ArtIndex(_vfs);
+        _frmCache = new FrmCache(_vfs, artIndex, GraphicsDevice, _palette);
 
         // Step cycling in original-period increments so pre-advancing N ms
         // lands on the same palette state as N ms of real frames.
@@ -110,15 +111,29 @@ public sealed class ViewerGame : Game
 
         // ported from fallout2-ce src/object.cc _obj_render_pre_roof(): flat
         // objects draw first, then non-flat, both in hex tile order (the order
-        // table sorts by tile-number offset). Critters/heads are out of scope.
+        // table sorts by tile-number offset). Heads are out of scope.
         for (int elevation = 0; elevation < MapFile.ElevationCount; elevation++)
         {
             IEnumerable<MapObject> drawable = (_map.Elevations[elevation]?.Objects ?? [])
-                .Where(o => !o.IsHidden
-                    && Fid.Type(o.Fid) is not (ObjectType.Critter or ObjectType.Head)
-                    && o.HexTile >= 0);
+                .Where(o => !o.IsHidden && Fid.Type(o.Fid) is not ObjectType.Head && o.HexTile >= 0);
             _flatObjects[elevation] = [.. drawable.Where(o => o.IsFlat).OrderBy(o => o.HexTile)];
             _solidObjects[elevation] = [.. drawable.Where(o => !o.IsFlat).OrderBy(o => o.HexTile)];
+        }
+
+        // Some critter FIDs reference weapon-pose art that doesn't ship; fall
+        // back to the unarmed pose like the engine's artExists() probing.
+        foreach (List<MapObject> objects in _flatObjects.Concat(_solidObjects))
+        {
+            foreach (MapObject obj in objects.Where(o => Fid.Type(o.Fid) is ObjectType.Critter))
+            {
+                if (!_vfs.Exists(artIndex.GetFrmPath(obj.Fid)) && Fid.WeaponCode(obj.Fid) != 0)
+                {
+                    int unarmed = Fid.Build(ObjectType.Critter, Fid.Index(obj.Fid),
+                        Fid.AnimType(obj.Fid), 0, Fid.Rotation(obj.Fid));
+                    if (_vfs.Exists(artIndex.GetFrmPath(unarmed)))
+                        obj.Fid = unarmed;
+                }
+            }
         }
 
         _camera.SetWindowSize(Window.ClientBounds.Width, Window.ClientBounds.Height);
