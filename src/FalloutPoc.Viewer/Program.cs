@@ -6,6 +6,7 @@ string? screenshot = null;
 bool roofs = true;
 double advanceMs = 0;
 int benchFrames = 0;
+bool walk = false;
 
 for (int i = 0; i < args.Length; i++)
 {
@@ -19,6 +20,9 @@ for (int i = 0; i < args.Length; i++)
             break;
         case "--bench" when i + 1 < args.Length:
             benchFrames = int.Parse(args[++i]);
+            break;
+        case "--walk":
+            walk = true;
             break;
         case "--game-dir" when i + 1 < args.Length:
             gameDir = args[++i];
@@ -47,6 +51,7 @@ using var game = new ViewerGame(gameDir, mapName, screenshot, roofs)
 {
     AdvanceCyclingMs = advanceMs,
     BenchFrames = benchFrames,
+    StartInWalkMode = walk,
 };
 game.Run();
 return 0;

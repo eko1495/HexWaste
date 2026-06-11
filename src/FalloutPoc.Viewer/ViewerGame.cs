@@ -31,6 +31,9 @@ public sealed class ViewerGame : Game
     /// <summary>When set, measures this many frames, prints a timing report and exits.</summary>
     public int BenchFrames { get; set; }
 
+    /// <summary>Starts with critters in the walk cycle (screenshot testing of the T toggle).</summary>
+    public bool StartInWalkMode { get; set; }
+
     private readonly System.Diagnostics.Stopwatch _frameClock = new();
     private readonly List<double> _updateMs = [];
     private readonly List<double> _drawMs = [];
@@ -38,6 +41,11 @@ public sealed class ViewerGame : Game
     private double _fpsTimer;
     private int _fpsFrames;
     private string _baseTitle = "FalloutPoc viewer";
+
+    private ProtoDatabase _protos = null!;
+    private ArtIndex _artIndex = null!;
+    private ObjectAnimator _animator = null!;
+    private bool _walkMode;
 
     private int _elevation;
     private bool _roofsVisible = true;
@@ -91,19 +99,15 @@ public sealed class ViewerGame : Game
         _vfs = GameFileSystem.Open(_gameDir);
         _palette = Palette.Load(_vfs.ReadAllBytes("color.pal"));
 
-        var protos = new ProtoDatabase(_vfs);
+        _protos = new ProtoDatabase(_vfs);
         using (Stream stream = _vfs.OpenRead($@"maps\{_mapName}"))
-            _map = MapFile.Load(stream, protos);
+            _map = MapFile.Load(stream, _protos);
 
         _cycler = new PaletteCycler(_palette);
-        var artIndex = new ArtIndex(_vfs);
-        _frmCache = new FrmCache(_vfs, artIndex, GraphicsDevice, _palette);
+        _artIndex = new ArtIndex(_vfs);
+        _frmCache = new FrmCache(_vfs, _artIndex, GraphicsDevice, _palette);
+        _animator = new ObjectAnimator(_frmCache);
 
-        // Step cycling in original-period increments so pre-advancing N ms
-        // lands on the same palette state as N ms of real frames.
-        for (double advanced = 0; advanced < AdvanceCyclingMs; advanced += 10)
-            _cycler.Update(10);
-        _frmCache.OnPaletteChanged(_palette);
 
         _elevation = _map.Header.EnteringElevation;
         if (_map.Elevations[_elevation] is null)
@@ -126,15 +130,28 @@ public sealed class ViewerGame : Game
         {
             foreach (MapObject obj in objects.Where(o => Fid.Type(o.Fid) is ObjectType.Critter))
             {
-                if (!_vfs.Exists(artIndex.GetFrmPath(obj.Fid)) && Fid.WeaponCode(obj.Fid) != 0)
+                if (!_vfs.Exists(_artIndex.GetFrmPath(obj.Fid)) && Fid.WeaponCode(obj.Fid) != 0)
                 {
                     int unarmed = Fid.Build(ObjectType.Critter, Fid.Index(obj.Fid),
                         Fid.AnimType(obj.Fid), 0, Fid.Rotation(obj.Fid));
-                    if (_vfs.Exists(artIndex.GetFrmPath(unarmed)))
+                    if (_vfs.Exists(_artIndex.GetFrmPath(unarmed)))
                         obj.Fid = unarmed;
                 }
             }
         }
+
+        StartLoopingAnimations();
+        if (StartInWalkMode)
+            ToggleWalkMode();
+
+        // Step cycling/animations in small increments so pre-advancing N ms
+        // lands on the same state as N ms of real frames (screenshot testing).
+        for (double advanced = 0; advanced < AdvanceCyclingMs; advanced += 10)
+        {
+            _cycler.Update(10);
+            _animator.Update(10);
+        }
+        _frmCache.OnPaletteChanged(_palette);
 
         _camera.SetWindowSize(Window.ClientBounds.Width, Window.ClientBounds.Height);
         _camera.SetCenter(_map.Header.EnteringTile);
@@ -177,6 +194,11 @@ public sealed class ViewerGame : Game
         if (IsKeyPressed(keyboard, Keys.R))
             _roofsVisible = !_roofsVisible;
 
+        if (IsKeyPressed(keyboard, Keys.T))
+            ToggleWalkMode();
+
+        _animator.Update(gameTime.ElapsedGameTime.TotalMilliseconds);
+
         if (_cycler.Update(gameTime.ElapsedGameTime.TotalMilliseconds))
         {
             _frmCache.OnPaletteChanged(_palette);
@@ -191,6 +213,68 @@ public sealed class ViewerGame : Game
 
     private bool IsKeyPressed(KeyboardState keyboard, Keys key) =>
         keyboard.IsKeyDown(key) && _previousKeyboard.IsKeyUp(key);
+
+    /// <summary>
+    /// Multi-frame scenery/misc art loops forever (vanilla starts these via
+    /// scripts; no VM here). Doors stay on their stored frame.
+    /// </summary>
+    private void StartLoopingAnimations()
+    {
+        int animatedCount = 0;
+        foreach (List<MapObject> objects in _flatObjects.Concat(_solidObjects))
+        {
+            foreach (MapObject obj in objects)
+            {
+                if (Fid.Type(obj.Fid) is not (ObjectType.Scenery or ObjectType.Misc))
+                    continue;
+
+                try
+                {
+                    if (Fid.Type(obj.Fid) is ObjectType.Scenery
+                        && Fid.PidType(obj.Pid) == (int)ObjectType.Scenery
+                        && _protos.Get(obj.Pid).SubType == 0) // SCENERY_TYPE_DOOR
+                        continue;
+
+                    if (_frmCache.GetFrm(obj.Fid).FrameCount > 1)
+                    {
+                        _animator.AddLooping(obj);
+                        animatedCount++;
+                    }
+                }
+                catch (Exception ex) when (ex is FileNotFoundException or InvalidDataException)
+                {
+                    // missing art/proto — object simply won't animate
+                }
+            }
+        }
+
+        Console.WriteLine($"animating {animatedCount} multi-frame scenery/misc object(s)");
+    }
+
+    /// <summary>Toggles all critters between their map pose and a walk cycle in place.</summary>
+    private void ToggleWalkMode()
+    {
+        _walkMode = !_walkMode;
+
+        foreach (MapObject obj in _solidObjects[_elevation])
+        {
+            if (Fid.Type(obj.Fid) is not ObjectType.Critter)
+                continue;
+
+            if (!_walkMode)
+            {
+                _animator.Remove(obj);
+                continue;
+            }
+
+            // ANIM_WALK = 1; prefer the armed walk art, fall back to unarmed.
+            int walkFid = Fid.Build(ObjectType.Critter, Fid.Index(obj.Fid), 1, Fid.WeaponCode(obj.Fid));
+            if (!_vfs.Exists(_artIndex.GetFrmPath(walkFid)))
+                walkFid = Fid.Build(ObjectType.Critter, Fid.Index(obj.Fid), 1);
+            if (_vfs.Exists(_artIndex.GetFrmPath(walkFid)))
+                _animator.SetCritterAnimation(obj, walkFid);
+        }
+    }
 
     private void SwitchElevation(int direction)
     {
@@ -296,17 +380,20 @@ public sealed class ViewerGame : Game
             if (_failedFids.Contains(obj.Fid))
                 continue;
 
+            bool animated = _animator.TryGetState(obj, out AnimationState animation);
+            int fid = animated && animation.DisplayFid != 0 ? animation.DisplayFid : obj.Fid;
+
             Formats.Frm.FrmFile frm;
             Formats.Frm.FrmFrame frame;
             Texture2D texture;
             int rotation;
             try
             {
-                frm = _frmCache.GetFrm(obj.Fid);
+                frm = _frmCache.GetFrm(fid);
                 rotation = Math.Clamp(obj.Rotation, 0, Formats.Frm.FrmFile.RotationCount - 1);
-                int frameIndex = Math.Clamp(obj.Frame, 0, frm.FrameCount - 1);
+                int frameIndex = animated ? animation.Frame : Math.Clamp(obj.Frame, 0, frm.FrameCount - 1);
                 frame = frm.GetFrame(frameIndex, rotation);
-                texture = _frmCache.GetTexture(obj.Fid, frameIndex, rotation);
+                texture = _frmCache.GetTexture(fid, frameIndex, rotation);
             }
             catch (Exception ex) when (ex is FileNotFoundException or InvalidDataException or NotSupportedException)
             {
@@ -318,10 +405,12 @@ public sealed class ViewerGame : Game
             // ported from fallout2-ce src/object.cc objectGetRect(): anchor is
             // the hex tile center (+16,+8 from the 32x16 cell origin), shifted
             // by the FRM per-rotation offset and the object's own pixel nudge;
-            // art is bottom-centered on that point.
+            // art is bottom-centered on that point. Animations add their
+            // accumulated per-frame offset deltas (like _obj_offset calls in
+            // _object_animate()).
             (int hexX, int hexY) = _camera.HexToScreen(obj.HexTile);
-            int anchorX = hexX + 16 + frm.RotationOffsetsX[rotation] + obj.X;
-            int anchorY = hexY + 8 + frm.RotationOffsetsY[rotation] + obj.Y;
+            int anchorX = hexX + 16 + frm.RotationOffsetsX[rotation] + obj.X + (animated ? animation.OffsetX : 0);
+            int anchorY = hexY + 8 + frm.RotationOffsetsY[rotation] + obj.Y + (animated ? animation.OffsetY : 0);
             int left = anchorX - frame.Width / 2;
             int top = anchorY - (frame.Height - 1);
 
