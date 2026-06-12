@@ -10,6 +10,7 @@ namespace FalloutPoc.Formats.Int;
 public sealed class ScriptList
 {
     private readonly List<string> _names = [];
+    private readonly List<int> _localVarsCounts = [];
 
     public int Count => _names.Count;
 
@@ -26,10 +27,28 @@ public sealed class ScriptList
             if (dot >= 0)
                 name = name[..dot];
             list._names.Add(name); // keep blanks to preserve line indexing
+
+            // Pristine maps zero localVarsCount; the engine re-derives it from
+            // the "# local_vars=N" comment (scripts.cc _scr_find_str_run_info).
+            int localVars = 0;
+            int marker = line.IndexOf("local_vars=", StringComparison.OrdinalIgnoreCase);
+            if (marker >= 0)
+            {
+                string tail = line[(marker + "local_vars=".Length)..];
+                int end = 0;
+                while (end < tail.Length && char.IsDigit(tail[end]))
+                    end++;
+                _ = int.TryParse(tail[..end], out localVars);
+            }
+            list._localVarsCounts.Add(localVars);
         }
 
         return list;
     }
+
+    /// <summary>Local-variable count for a script (scripts.lst "# local_vars=N").</summary>
+    public int GetLocalVarsCount(int index) =>
+        index >= 0 && index < _localVarsCounts.Count ? _localVarsCounts[index] : 0;
 
     public string? GetName(int index) =>
         index >= 0 && index < _names.Count && _names[index].Length > 0 ? _names[index] : null;

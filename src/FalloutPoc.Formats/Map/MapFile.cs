@@ -67,6 +67,15 @@ public sealed class MapObject
 }
 
 /// <summary>
+/// A map script-section record: which scripts.lst script a sid runs, and the
+/// script's slice of the map's local-variables array (get/set_local_var(v)
+/// addresses mapLocalVars[LocalVarsOffset + v] — fallout2-ce scripts.cc:2808).
+/// Pristine maps store a valid mapper-assigned offset; LocalVarsCount is
+/// zeroed there and re-derived from scripts.lst's "# local_vars=N" comment.
+/// </summary>
+public sealed record MapScriptRecord(int ScriptListIndex, int LocalVarsOffset, int LocalVarsCount);
+
+/// <summary>
 /// Where an exit grid / stairs / ladder leads. Map &gt; 0 means another map
 /// (index into data\maps.txt); otherwise the same map. ported from
 /// fallout2-ce src/proto_instance.cc useStairs()/useLadder*() and the exit
@@ -104,8 +113,8 @@ public sealed class MapFile
     public required int[] GlobalVariables { get; init; }
     public required int[] LocalVariables { get; init; }
 
-    /// <summary>Script id → scripts.lst line index, harvested from the scripts section.</summary>
-    public Dictionary<int, int> ScriptListIndexBySid { get; } = [];
+    /// <summary>Script id → record from the scripts section (scripts.lst index + LVAR slice).</summary>
+    public Dictionary<int, MapScriptRecord> ScriptsBySid { get; } = [];
 
     /// <summary>Indexed by elevation; null when the map has no data for that elevation.</summary>
     public required MapElevation?[] Elevations { get; init; }
@@ -150,7 +159,7 @@ public sealed class MapFile
             Elevations = elevations,
         };
 
-        ReadScripts(reader, map.ScriptListIndexBySid);
+        ReadScripts(reader, map.ScriptsBySid);
         ReadObjects(reader, elevations, protos, header.Version);
 
         return map;
@@ -189,7 +198,7 @@ public sealed class MapFile
     /// padding records beyond each extent's logical length carry garbage and are
     /// discarded.
     /// </summary>
-    private static void ReadScripts(BigEndianReader reader, Dictionary<int, int> listIndexBySid)
+    private static void ReadScripts(BigEndianReader reader, Dictionary<int, MapScriptRecord> scriptsBySid)
     {
         const int scriptTypeCount = 5;
         const int extentSize = 16;
@@ -224,11 +233,14 @@ public sealed class MapFile
 
                     reader.Skip(4); // flags
                     int scriptListIndex = reader.ReadInt32();
-                    reader.Skip(12 * 4); // prg .. field_50
+                    reader.Skip(2 * 4); // prg, ownerId
+                    int localVarsOffset = reader.ReadInt32();
+                    int localVarsCount = reader.ReadInt32();
+                    reader.Skip(8 * 4); // returnValue .. field_50
 
                     bool isPadding = record >= Math.Min(remaining, extentSize);
                     if (!isPadding && sid != -1)
-                        listIndexBySid[sid] = scriptListIndex;
+                        scriptsBySid[sid] = new MapScriptRecord(scriptListIndex, localVarsOffset, localVarsCount);
                 }
 
                 remaining -= extentSize;

@@ -30,6 +30,49 @@ public interface IVmExternals
 
     /// <summary>get_map_var (opGetMapVar).</summary>
     int GetMapVar(int index);
+
+    // ---- script-context protocol (phase-4 M0). Defaults preserve the old
+    // stub behavior so simple hosts (tests) keep working unchanged.
+
+    /// <summary>set_local_var (opSetLocalVar) — writes mapLocalVars[script.localVarsOffset + index].</summary>
+    void SetLocalVar(int index, int value) { }
+
+    /// <summary>set_global_var (opSetGlobalVar).</summary>
+    void SetGlobalVar(int index, int value) { }
+
+    /// <summary>set_map_var (opSetMapVar).</summary>
+    void SetMapVar(int index, int value) { }
+
+    /// <summary>source_obj (opGetSource) — the object that triggered the proc (usually the dude).</summary>
+    int SourceObjectId() => 0;
+
+    /// <summary>target_obj (opGetTarget) — defaults to self per scriptExecProc (scripts.cc:1316).</summary>
+    int TargetObjectId() => SelfObjectId();
+
+    /// <summary>dude_obj (opGetDude).</summary>
+    int DudeObjectId() => 0;
+
+    /// <summary>obj_being_used_with (opGetObjectBeingUsedWith).</summary>
+    int ObjectBeingUsedWithId() => 0;
+
+    /// <summary>fixed_param (opGetFixedParam) — map_enter: first-run flag; timed: timer param.</summary>
+    int FixedParam() => 0;
+
+    /// <summary>action_being_used (opGetActionBeingUsed) — skill id during use_skill_on (lockpick = 9).</summary>
+    int ActionBeingUsed() => -1;
+
+    /// <summary>script_action (opGetScriptAction) — the proc id being executed.</summary>
+    int ScriptAction() => 0;
+
+    /// <summary>
+    /// metarule (opMetarule). The host should answer rule 14 FIRST_RUN
+    /// (pristine map → 1), 22 IS_LOADGAME (0) and 30 CAR_CURRENT_TOWN (0);
+    /// the default matches those for pristine-map sessions.
+    /// </summary>
+    int Metarule(int rule, int argument) => rule == 14 ? 1 : 0;
+
+    /// <summary>Game clock in ticks (10/second; engine boots at 302400). Drives game_time* and month.</summary>
+    int GameTime() => 302400;
 }
 
 /// <summary>
@@ -88,6 +131,28 @@ public sealed class IntVm
     private readonly IntProgram _program;
     private readonly IVmExternals _externals;
     private readonly Action<string>? _onStubbedExternal;
+
+    // ported from fallout2-ce src/random.h ROLL_* enum
+    private const int RollCriticalFailure = 0;
+    private const int RollSuccess = 2;
+    private const int RollCriticalSuccess = 3;
+
+    /// <summary>Deterministic RNG (scripts only use it for stock quantities and flavor).</summary>
+    private readonly Random _random = new(20260612);
+
+    /// <summary>Calendar month (1..12) for a day count since June 24, 2241 (non-leap years).</summary>
+    private static int MonthFromEpochDay(int day)
+    {
+        ReadOnlySpan<int> daysPerMonth = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+        int month = 5; // June (0-based)
+        int dayOfMonth = 23 + day; // June 24 is day 0
+        while (dayOfMonth >= daysPerMonth[month])
+        {
+            dayOfMonth -= daysPerMonth[month];
+            month = (month + 1) % 12;
+        }
+        return month + 1;
+    }
 
     // Data stack (stackValues) and return stack (returnStackValues). Plain
     // lists because store/fetch/fetch_global index into the data stack.
@@ -601,6 +666,107 @@ public sealed class IntVm
                 int messageIndex = PopInt();
                 int messageListIndex = PopInt();
                 PushString(_externals.GetMessage(messageListIndex, messageIndex));
+                break;
+            }
+
+            // ---- variable setters (opSetLocalVar pops value, then index)
+            case 0x80C2: // set_local_var
+            {
+                int value = PopInt();
+                _externals.SetLocalVar(PopInt(), value);
+                break;
+            }
+            case 0x80C4: // set_map_var
+            {
+                int value = PopInt();
+                _externals.SetMapVar(PopInt(), value);
+                break;
+            }
+            case 0x80C6: // set_global_var
+            {
+                int value = PopInt();
+                _externals.SetGlobalVar(PopInt(), value);
+                break;
+            }
+
+            // ---- script context
+            case 0x80BD: // source_obj
+                PushInt(_externals.SourceObjectId());
+                break;
+            case 0x80BE: // target_obj
+                PushInt(_externals.TargetObjectId());
+                break;
+            case 0x80BF: // dude_obj
+                PushInt(_externals.DudeObjectId());
+                break;
+            case 0x80C0: // obj_being_used_with
+                PushInt(_externals.ObjectBeingUsedWithId());
+                break;
+            case 0x80F7: // fixed_param
+                PushInt(_externals.FixedParam());
+                break;
+            case 0x80FA: // action_being_used
+                PushInt(_externals.ActionBeingUsed());
+                break;
+            case 0x80C7: // script_action
+                PushInt(_externals.ScriptAction());
+                break;
+            case 0x810B: // metarule (opMetarule pops param, then rule)
+            {
+                Value param = Pop();
+                int rule = PopInt();
+                PushInt(_externals.Metarule(rule, param.Tag == TypeInt ? param.Raw : 0));
+                break;
+            }
+
+            // ---- pure functions (phase-4 report M0: stub-0 rolls are a trap —
+            // critical(0) would fire jam/explosion branches)
+            case 0x80B4: // random (opRandom pops max, then min)
+            {
+                int max = PopInt();
+                int min = PopInt();
+                PushInt(min >= max ? min : _random.Next(min, max + 1));
+                break;
+            }
+            case 0x80F2: // game_ticks: seconds * 10
+                PushInt(PopInt() * 10);
+                break;
+            case 0x80AC: // roll_vs_skill (pops modifier, skill, obj) — PoC: plain success
+                Pop();
+                Pop();
+                Pop();
+                PushInt(RollSuccess);
+                break;
+            case 0x80AF: // success: ROLL_SUCCESS or ROLL_CRITICAL_SUCCESS
+            {
+                int roll = PopInt();
+                PushInt(roll is RollSuccess or RollCriticalSuccess ? 1 : 0);
+                break;
+            }
+            case 0x80B0: // critical: ROLL_CRITICAL_FAILURE or ROLL_CRITICAL_SUCCESS
+            {
+                int roll = PopInt();
+                PushInt(roll is RollCriticalFailure or RollCriticalSuccess ? 1 : 0);
+                break;
+            }
+
+            // ---- clock (ported from fallout2-ce scripts.cc gameTimeGetHour())
+            case 0x80EA: // game_time (ticks)
+                PushInt(_externals.GameTime());
+                break;
+            case 0x80EB: // game_time_in_seconds
+                PushInt(_externals.GameTime() / 10);
+                break;
+            case 0x80F6: // game_time_hour (hhmm)
+            {
+                int time = _externals.GameTime();
+                PushInt(100 * (time / 600 / 60 % 24) + time / 600 % 60);
+                break;
+            }
+            case 0x8118: // month (epoch June 24, 2241; 10 ticks/s)
+            {
+                int day = _externals.GameTime() / 864000;
+                PushInt(MonthFromEpochDay(day));
                 break;
             }
             default:

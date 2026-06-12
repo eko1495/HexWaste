@@ -80,7 +80,7 @@ public sealed class ViewerGame : Game
     /// <summary>Ambient light as a fraction of full brightness (CLI --ambient).</summary>
     public double InitialAmbient { get; set; } = 1.0;
     private ProtoMessages _protoMessages = null!;
-    private ScriptHost? _scriptHost;
+    private Formats.Int.ScriptHost? _scriptHost;
     private readonly List<string> _messageLog = [];
     private string _currentMapName = "";
 
@@ -164,7 +164,10 @@ public sealed class ViewerGame : Game
         _protoMessages = new ProtoMessages(_vfs, _protos);
         try
         {
-            _scriptHost = new ScriptHost(_vfs, Formats.Int.ScriptList.Load(_vfs));
+            _scriptHost = new Formats.Int.ScriptHost(_vfs, Formats.Int.ScriptList.Load(_vfs))
+            {
+                NameResolver = obj => ObjectName(obj),
+            };
         }
         catch (Exception ex) when (ex is FileNotFoundException or InvalidDataException)
         {
@@ -195,7 +198,7 @@ public sealed class ViewerGame : Game
         {
             MapObject? target = PickObject(examinePoint.X, examinePoint.Y);
             string text = target is null ? "nothing"
-                : _scriptHost?.GetScriptedDescription(target, _map) is { } scripted
+                : _scriptHost?.GetScriptedDescription(target, _map, _dude?.Dude) is { } scripted
                     ? $"{ObjectName(target)} — [script] {string.Join(" / ", scripted)}"
                     : $"{ObjectName(target)} — {ObjectDescription(target)}";
             Console.WriteLine($"examine@{examinePoint.X},{examinePoint.Y}: {text}");
@@ -1178,7 +1181,7 @@ public sealed class ViewerGame : Game
     {
         // Script-provided description first (micro INT VM), proto text as the
         // default — mirroring how look_at/description procs override defaults.
-        if (_scriptHost?.GetScriptedDescription(obj, _map) is { } scripted)
+        if (_scriptHost?.GetScriptedDescription(obj, _map, _dude?.Dude) is { } scripted)
         {
             Log($"{ObjectName(obj)}:");
             foreach (string line in scripted)
