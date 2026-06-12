@@ -90,6 +90,10 @@ public interface IVmExternals
     /// <summary>give_exp_points (opGiveExpPoints → pcAddExperience).</summary>
     void GiveExpPoints(int amount) { }
 
+    /// <summary>override_map_start (opOverrideMapStart, interpreter_extra.cc:522):
+    /// tile = 200·y + x; repositions the dude during map_enter.</summary>
+    void OverrideMapStart(int x, int y, int elevation, int rotation) { }
+
     /// <summary>fixed_param (opGetFixedParam) — map_enter: first-run flag; timed: timer param.</summary>
     int FixedParam() => 0;
 
@@ -990,6 +994,14 @@ public sealed class IntVm
             case 0x80A1: // give_exp_points
                 _externals.GiveExpPoints(PopInt());
                 break;
+            case 0x80A9: // override_map_start (pops rotation, elevation, y, x)
+            {
+                int omsRotation = PopInt();
+                int omsElevation = PopInt();
+                int omsY = PopInt();
+                _externals.OverrideMapStart(PopInt(), omsY, omsElevation, omsRotation);
+                break;
+            }
             case 0x814C: // rotation_to_tile (pops destTile, srcTile)
             {
                 int destTile = PopInt();

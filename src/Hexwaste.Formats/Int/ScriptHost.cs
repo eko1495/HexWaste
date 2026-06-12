@@ -90,6 +90,10 @@ public sealed class ScriptHost(GameFileSystem vfs, ScriptList scripts, Hexwaste.
     /// <summary>give_exp_points: the host adds XP immediately (pcAddExperience).</summary>
     public Action<int>? ExpAwarded { get; set; }
 
+    /// <summary>override_map_start: (tile, elevation, rotation) — the host
+    /// repositions the dude + camera during map_enter.</summary>
+    public Action<int, int, int>? MapStartOverridden { get; set; }
+
     /// <summary>Cross-script external variables (export.cc) — one per session;
     /// shop scripts pass their stock boxes through these.</summary>
     public ExternalVariables ExternalVars { get; } = new();
@@ -772,6 +776,14 @@ public sealed class ScriptHost(GameFileSystem vfs, ScriptList scripts, Hexwaste.
             _host.ObjectOf(objectHandle) is { } obj && (_host.AnimBusyResolver?.Invoke(obj) ?? false);
 
         public void GiveExpPoints(int amount) => _host.ExpAwarded?.Invoke(amount);
+
+        // ported from fallout2-ce interpreter_extra.cc opOverrideMapStart()
+        public void OverrideMapStart(int x, int y, int elevation, int rotation)
+        {
+            int tile = 200 * y + x;
+            if (Hex.HexGrid.IsValid(tile))
+                _host.MapStartOverridden?.Invoke(tile, elevation, rotation);
+        }
 
         // ---- dialog state (one "round" = one reply + its options)
 

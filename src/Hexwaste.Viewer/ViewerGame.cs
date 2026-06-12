@@ -238,6 +238,7 @@ public sealed class ViewerGame : Game
     private readonly Dictionary<string, SaveState.MapDelta> _visitedMaps = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<MapObject, int> _objectOrdinals = [];
     private MapObject[] _ordinalObjects = [];
+    private (int Tile, int Rotation, int Elevation)[] _pristinePositions = [];
 
     /// <summary>Ordinals holding inventory right after map_enter (script-stocked
     /// containers) — captured even when later emptied, so looting sticks.</summary>
@@ -333,6 +334,7 @@ public sealed class ViewerGame : Game
                 StatsResolver = obj => obj == _dude?.Dude ? _dudeGcd?.Stats : null,
                 AttackRequested = (attacker, target) => OnScriptAttack(attacker, target),
                 ExpAwarded = amount => AwardXp(amount),
+                MapStartOverridden = (tile, elevation, rotation) => OverrideDudeStart(tile, elevation, rotation),
                 AnimBusyResolver = obj => _animator.TryGetState(obj, out _)
                     || (_npcWalkers.TryGetValue(obj, out DudeController? walker) && walker.Moving),
                 DudeTraits = _dudeGcd?.Traits ?? [-1, -1],
@@ -770,15 +772,18 @@ public sealed class ViewerGame : Game
         _objectOrdinals.Clear();
         _stockedOrdinals.Clear();
         var ordinalObjects = new List<MapObject>();
-        foreach (MapElevation? elev in _map.Elevations)
+        var pristine = new List<(int, int, int)>();
+        for (int elevation = 0; elevation < MapFile.ElevationCount; elevation++)
         {
-            foreach (MapObject obj in elev?.Objects ?? [])
+            foreach (MapObject obj in _map.Elevations[elevation]?.Objects ?? [])
             {
                 _objectOrdinals[obj] = ordinalObjects.Count;
                 ordinalObjects.Add(obj);
+                pristine.Add((obj.HexTile, obj.Rotation, elevation));
             }
         }
         _ordinalObjects = [.. ordinalObjects];
+        _pristinePositions = [.. pristine];
 
         _visitedMaps.TryGetValue(_map.Header.Name, out SaveState.MapDelta? delta);
         if (delta is not null)
@@ -3565,6 +3570,22 @@ public sealed class ViewerGame : Game
             }
         }
 
+        // Position drift (wandering NPCs, script moves) — V2.
+        var elevationOf = new Dictionary<MapObject, int>();
+        for (int elevation = 0; elevation < MapFile.ElevationCount; elevation++)
+            foreach (MapObject obj in _map.Elevations[elevation]?.Objects ?? [])
+                elevationOf[obj] = elevation;
+        for (int ordinal = 0; ordinal < _ordinalObjects.Length; ordinal++)
+        {
+            MapObject obj = _ordinalObjects[ordinal];
+            if (!elevationOf.TryGetValue(obj, out int currentElevation))
+                continue;
+            (int tile, int rotation, int elevation0) = _pristinePositions[ordinal];
+            if (obj.HexTile != tile || obj.Rotation != rotation || currentElevation != elevation0)
+                delta.MovedOrdinals.Add(new SaveState.MovedObject(
+                    ordinal, obj.HexTile, currentElevation, obj.Rotation));
+        }
+
         // Snapshot containers that hold something now OR were script-stocked
         // at map_enter — an empty snapshot is what keeps looted ones looted.
         // Corpses count as containers (their loot must not resurrect).
@@ -3600,6 +3621,28 @@ public sealed class ViewerGame : Game
                 elev?.Objects.Remove(taken);
             foreach (List<MapObject> list in _flatObjects.Concat(_solidObjects))
                 list.Remove(taken);
+        }
+
+        // Drifted objects settle into their saved spots BEFORE map_enter,
+        // like objects loading from a .SAV.
+        foreach (SaveState.MovedObject moved in delta.MovedOrdinals)
+        {
+            if (moved.Ordinal < 0 || moved.Ordinal >= _ordinalObjects.Length
+                || moved.Elevation is < 0 or >= MapFile.ElevationCount
+                || _map.Elevations[moved.Elevation] is not { } targetElev)
+                continue;
+            MapObject obj = _ordinalObjects[moved.Ordinal];
+
+            foreach (List<MapObject> list in _flatObjects.Concat(_solidObjects))
+                list.Remove(obj);
+            foreach (MapElevation? elev in _map.Elevations)
+                elev?.Objects.Remove(obj);
+
+            obj.HexTile = moved.Tile;
+            obj.Rotation = moved.Rotation;
+            targetElev.Objects.Add(obj);
+            if (!obj.IsHidden && Fid.Type(obj.Fid) is not ObjectType.Head && obj.HexTile >= 0)
+                InsertSorted(obj.IsFlat ? _flatObjects[moved.Elevation] : _solidObjects[moved.Elevation], obj);
         }
 
         // Dead critters: scripts removed BEFORE map_enter (the engine nulls
@@ -3733,6 +3776,29 @@ public sealed class ViewerGame : Game
 
     /// <summary>Fresh start: wipe session state and reload the first map with
     /// the current character sheet.</summary>
+    /// <summary>override_map_start: the map script repositions the dude during
+    /// map_enter; LoadMap's camera setup afterwards picks the new spot up.</summary>
+    private void OverrideDudeStart(int tile, int elevation, int rotation)
+    {
+        if (_dude is null)
+            return;
+        if (elevation is >= 0 and < MapFile.ElevationCount && _map.Elevations[elevation] is not null
+            && elevation != _elevation)
+        {
+            _solidObjects[_elevation].Remove(_dude.Dude);
+            _elevation = elevation;
+            InsertSorted(_solidObjects[_elevation], _dude.Dude);
+        }
+
+        _dude.Dude.HexTile = tile;
+        _dude.Dude.Rotation = Math.Clamp(rotation, 0, 5);
+        _solidObjects[_elevation].Remove(_dude.Dude);
+        InsertSorted(_solidObjects[_elevation], _dude.Dude);
+        RebuildBlockedTiles(_dude.Dude);
+        _camera.SetCenter(tile);
+        Console.WriteLine($"override_map_start: tile={tile} elevation={elevation} rotation={rotation}");
+    }
+
     private void StartNewGame()
     {
         _dudeLevel = 1;

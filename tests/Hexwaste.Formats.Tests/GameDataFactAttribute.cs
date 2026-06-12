@@ -21,3 +21,13 @@ public static class GameData
     public static string RequiredDir => Dir
         ?? throw new InvalidOperationException("FALLOUT2_DIR is not set.");
 }
+
+/// <summary>Theory variant of <see cref="GameDataFactAttribute"/>.</summary>
+public sealed class GameDataTheoryAttribute : TheoryAttribute
+{
+    public GameDataTheoryAttribute()
+    {
+        if (string.IsNullOrEmpty(GameData.Dir))
+            Skip = "FALLOUT2_DIR is not set; skipping test that needs real game data.";
+    }
+}

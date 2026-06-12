@@ -17,7 +17,7 @@ public class SaveStateRoundTripTests
             Elevation = 0,
             ClockTicks = 302400,
             GlobalVars = { [5] = 2 },
-            DudeInventory = { new SaveState.SavedItem(41, 120) },
+            DudeInventory = { new SaveState.SavedItem(41, 120), new SaveState.SavedItem(8, 1, 0, 7, 0x1F) },
             LocalVars = { ["denbus1.map"] = new Dictionary<int, int[]> { [3] = [1, 0, 7] } },
         };
         state.VisitedMaps["denbus2.map"] = new SaveState.MapDelta
@@ -25,6 +25,7 @@ public class SaveStateRoundTripTests
             Doors = { new SaveState.SavedDoor(15000, 0x02000021, Open: true, Locked: false) },
             TakenOrdinals = { 17, 304 },
             DeadOrdinals = { 99 },
+            MovedOrdinals = { new SaveState.MovedObject(12, 18748, 0, 3) },
             Created = { new SaveState.CreatedObject(0x0700004A, 16000, 0, 1) },
             ContainerInventories = { [55] = [new SaveState.SavedItem(41, 50)] },
             MapVars = [9, 8, 7],
@@ -36,13 +37,16 @@ public class SaveStateRoundTripTests
         Assert.Equal(SaveState.CurrentVersion, loaded.Version);
         Assert.Equal(state.Map, loaded.Map);
         Assert.Equal(2, loaded.GlobalVars[5]);
-        Assert.Equal(new SaveState.SavedItem(41, 120), Assert.Single(loaded.DudeInventory));
+        Assert.Equal(new SaveState.SavedItem(41, 120), loaded.DudeInventory[0]);
+        Assert.Equal(new SaveState.SavedItem(8, 1, 0, 7, 0x1F), loaded.DudeInventory[1]); // V2 ammo fields
+        Assert.Equal(-1, new SaveState.SavedItem(40, 1).AmmoQuantity); // sentinel default
         Assert.Equal([1, 0, 7], loaded.LocalVars["denbus1.map"][3]);
 
         SaveState.MapDelta delta = loaded.VisitedMaps["denbus2.map"];
         Assert.Equal(new SaveState.SavedDoor(15000, 0x02000021, true, false), Assert.Single(delta.Doors));
         Assert.Equal([17, 304], delta.TakenOrdinals);
         Assert.Equal(99, Assert.Single(delta.DeadOrdinals));
+        Assert.Equal(new SaveState.MovedObject(12, 18748, 0, 3), Assert.Single(delta.MovedOrdinals));
         Assert.Equal(new SaveState.CreatedObject(0x0700004A, 16000, 0, 1), Assert.Single(delta.Created));
         Assert.Equal(new SaveState.SavedItem(41, 50), Assert.Single(delta.ContainerInventories[55]));
         Assert.Equal([9, 8, 7], delta.MapVars);

@@ -15,8 +15,9 @@ namespace Hexwaste.Formats;
 public sealed class SaveState
 {
     /// <summary>Bump on any shape change. Loads refuse mismatches (no silent
-    /// misreads of ordinal-keyed deltas); pre-versioning saves deserialize as 0.</summary>
-    public const int CurrentVersion = 1;
+    /// misreads of ordinal-keyed deltas); pre-versioning saves deserialize as 0.
+    /// V2: SavedItem ammo fields + MapDelta.MovedOrdinals (NPC positions).</summary>
+    public const int CurrentVersion = 2;
 
     public int Version { get; set; }
 
@@ -39,13 +40,18 @@ public sealed class SaveState
     /// <summary>Per-map LVAR slices: mapName → sid → values.</summary>
     public Dictionary<string, Dictionary<int, int[]>> LocalVars { get; set; } = [];
 
-    /// <summary>Flags carries the equip bits (in-hand 0x3000000, worn 0x4000000).</summary>
-    public sealed record SavedItem(int Pid, int Count, int Flags = 0);
+    /// <summary>Flags carries the equip bits (in-hand 0x3000000, worn 0x4000000).
+    /// Ammo sentinels: -1 = derive from the prototype on load (V2).</summary>
+    public sealed record SavedItem(int Pid, int Count, int Flags = 0,
+        int AmmoQuantity = -1, int AmmoTypePid = -1);
 
     public sealed record SavedDoor(int HexTile, int Pid, bool Open, bool Locked);
 
     /// <summary>An object a script or the player added to the world.</summary>
     public sealed record CreatedObject(int Pid, int Tile, int Elevation, int Count);
+
+    /// <summary>A pristine object's new position (V2).</summary>
+    public sealed record MovedObject(int Ordinal, int Tile, int Elevation, int Rotation);
 
     public sealed class MapDelta
     {
@@ -58,6 +64,10 @@ public sealed class SaveState
         /// before map_enter (dead scripts never run — combat.cc:4876) and a
         /// corpse conversion after.</summary>
         public List<int> DeadOrdinals { get; set; } = [];
+
+        /// <summary>Objects that drifted from their pristine spot (wandering
+        /// NPCs, script moves): replayed BEFORE map_enter like a .SAV reload.</summary>
+        public List<MovedObject> MovedOrdinals { get; set; } = [];
 
         /// <summary>Player-dropped or script-created objects still on the map.</summary>
         public List<CreatedObject> Created { get; set; } = [];
