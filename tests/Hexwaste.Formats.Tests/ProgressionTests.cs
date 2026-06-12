@@ -70,3 +70,21 @@ public class CombatRulesTests
             Critter(Hex.HexGrid.TileInDirection(dudeTile, 1, 30), 4), [hostile], dudeTile));
     }
 }
+
+public class BarterMathTests
+{
+    [Fact]
+    public void BuyPriceMatchesWorkedExample()
+    {
+        // Track-A worked example: stimpak (cost 175) vs an Average Merchant
+        // (barter 80), dude barter 20, modifier 0:
+        // 175 × 2 × (160+80)/(160+20) = 466.67 → 466.
+        Assert.Equal(466, Combat.BarterMath.BuyPrice(175, 0, 80, 20));
+        // With dude barter 35 (the report's table): 430.
+        Assert.Equal(430, Combat.BarterMath.BuyPrice(175, 0, 80, 35));
+        // Player goods always credit at face value.
+        Assert.Equal(175, Combat.BarterMath.SellPrice(175));
+        // A hostile modifier raises the demand.
+        Assert.True(Combat.BarterMath.BuyPrice(100, 25, 80, 20) > Combat.BarterMath.BuyPrice(100, 0, 80, 20));
+    }
+}

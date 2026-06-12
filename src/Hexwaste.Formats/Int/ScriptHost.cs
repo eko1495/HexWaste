@@ -90,6 +90,10 @@ public sealed class ScriptHost(GameFileSystem vfs, ScriptList scripts, Hexwaste.
     /// <summary>give_exp_points: the host adds XP immediately (pcAddExperience).</summary>
     public Action<int>? ExpAwarded { get; set; }
 
+    /// <summary>Cross-script external variables (export.cc) — one per session;
+    /// shop scripts pass their stock boxes through these.</summary>
+    public ExternalVariables ExternalVars { get; } = new();
+
     /// <summary>The dude's two selected traits (gcd), -1 = none.</summary>
     public int[] DudeTraits { get; set; } = [-1, -1];
 
@@ -351,7 +355,7 @@ public sealed class ScriptHost(GameFileSystem vfs, ScriptList scripts, Hexwaste.
                 FixedParamValue = fixedParam,
                 ActionBeingUsedValue = actionBeingUsed,
             };
-            var vm = new IntVm(program, externals, OnStubbedExternal);
+            var vm = new IntVm(program, externals, OnStubbedExternal, ExternalVars);
             foreach (string name in procedureNames)
             {
                 if (vm.TryRunProcedure(name))
@@ -468,6 +472,13 @@ public sealed class ScriptHost(GameFileSystem vfs, ScriptList scripts, Hexwaste.
             NpcName = npcName;
         }
 
+        /// <summary>A picked option called gdialog_barter: the host should open
+        /// the trade window now; the queued reply is already in place.</summary>
+        public bool TakeBarterRequest(out int modifier) => _context.TakeBarterRequest(out modifier);
+
+        /// <summary>The shopkeeper's live stock container (see ScriptContext.StockBox).</summary>
+        public MapObject? StockBox => _context.StockBox;
+
         /// <summary>Picks an option (0-based). Returns false when the dialog has ended.</summary>
         public bool Choose(int optionIndex)
         {
@@ -519,7 +530,7 @@ public sealed class ScriptHost(GameFileSystem vfs, ScriptList scripts, Hexwaste.
                 return null;
 
             var context = new ScriptContext(this, map, obj.Sid, record, self: obj, source: dude, dude: dude);
-            var vm = new IntVm(program, context, OnStubbedExternal);
+            var vm = new IntVm(program, context, OnStubbedExternal, ExternalVars);
             if (!vm.TryRunProcedure("talk_p_proc"))
                 return null;
 
@@ -803,7 +814,55 @@ public sealed class ScriptHost(GameFileSystem vfs, ScriptList scripts, Hexwaste.
                 Messages.Add(text.Trim());
         }
 
-        public void Barter(int modifier) => Messages.Add("[Barter is not part of this PoC.]");
+        // ported from fallout2-ce game_dialog.cc gameDialogBarter(): the
+        // opcode only flags the session; its arg OVERWRITES the modifier.
+        public bool BarterRequested { get; private set; }
+        public int BarterModifier { get; private set; }
+
+        public void Barter(int modifier)
+        {
+            BarterModifier = modifier;
+            BarterRequested = true;
+        }
+
+        public void GdialogSetBarterMod(int modifier) => BarterModifier = modifier;
+
+        public bool TakeBarterRequest(out int modifier)
+        {
+            modifier = BarterModifier;
+            bool requested = BarterRequested;
+            BarterRequested = false;
+            return requested;
+        }
+
+        // ported from fallout2-ce interpreter_extra.cc
+        // opMoveObjectInventoryToObject(): everything moves, stacks merge.
+        /// <summary>Where the talk script parked its stock: shopkeepers load
+        /// goods from a box in the talk_p_proc prologue and return them in the
+        /// epilogue — which, in our run-to-completion dialog model, has already
+        /// executed by the time the trade window opens. The last container the
+        /// npc moved its inventory INTO is the live stock.</summary>
+        public MapObject? StockBox { get; private set; }
+
+        public void MoveAllInventory(int sourceHandle, int targetHandle)
+        {
+            if (_host.ObjectOf(sourceHandle) is not { } source
+                || _host.ObjectOf(targetHandle) is not { } target || source == target)
+                return;
+
+            if (source == _self && target != _dude)
+                StockBox = target;
+
+            foreach (MapObject item in source.Inventory.ToList())
+            {
+                if (target.Inventory.FirstOrDefault(i => i.Pid == item.Pid) is { } existing)
+                    existing.StackCount += Math.Max(item.StackCount, 1);
+                else
+                    target.Inventory.Add(item);
+            }
+
+            source.Inventory.Clear();
+        }
 
         // ---- door/container state (handle 0 no-ops like the engine)
 

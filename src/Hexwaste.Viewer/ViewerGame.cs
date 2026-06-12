@@ -105,6 +105,12 @@ public sealed class ViewerGame : Game
     /// <summary>Kill XP accrued this combat, paid at combat end like the
     /// engine's _combat_exps → _combat_give_exps (combat.cc:2816).</summary>
     private int _combatXpPending;
+
+    /// <summary>Open trade session (gdialog_barter): merchant + price modifier.</summary>
+    private MapObject? _barterNpc;
+    private MapObject? _barterStock;
+    private int _barterModifier;
+    private MapObject? _dialogNpc;
     private readonly Random _ambientRandom = new(20260612);
     private double _fidgetTimerMs;
     private double _wanderTimerMs;
@@ -137,7 +143,10 @@ public sealed class ViewerGame : Game
     private Formats.Int.ScriptHost.DialogSession? _dialog;
     private MapObject? _lootContainer;
     private bool _inventoryOpen;
-    private readonly List<MapObject> _dudeInventory = [];
+    /// <summary>The dude's bag. Aliased to the dude MapObject's Inventory at
+    /// spawn so script externals (item_caps_*, inventory checks) see the same
+    /// pocket the panels do.</summary>
+    private List<MapObject> _dudeInventory = [];
     private readonly GameClock _clock = new();
     private bool _dudeUnderRoof;
     private int _lastAmbientHour = -1;
@@ -169,6 +178,9 @@ public sealed class ViewerGame : Game
         public sealed record Fight(int Hex) : StartupAction;
         public sealed record Give(int Pid, int Count) : StartupAction;
         public sealed record UseItemByPid(int Pid) : StartupAction;
+        public sealed record Buy(int Pid) : StartupAction;
+        public sealed record Sell(int Pid) : StartupAction;
+        public sealed record EndBarter : StartupAction;
         public sealed record TakeAll : StartupAction;
         public sealed record Transit(string MapFile, int Tile, int Elevation) : StartupAction;
         public sealed record SaveNow : StartupAction;
@@ -352,6 +364,51 @@ public sealed class ViewerGame : Game
         if (LoadOnStart)
             LoadGame();
 
+        // Dialog hooks run first so --choose can open barter for the
+        // --buy/--sell startup actions below.
+        if (TalkAtHex is { } talkHex)
+        {
+            MapObject? hexNpc = _solidObjects[_elevation]
+                .FirstOrDefault(o => o.HexTile == talkHex && Fid.Type(o.Fid) is ObjectType.Critter);
+            if (hexNpc is not null)
+            {
+                _camera.SetCenter(talkHex);
+                TalkTo(hexNpc);
+                foreach (int choice in AutoChoose)
+                {
+                    if (_dialog is null)
+                        break;
+                    Console.WriteLine($"CHOOSE: {choice}");
+                    ChooseDialogOption(choice - 1);
+                }
+            }
+            else
+            {
+                Console.Error.WriteLine($"no critter at hex {talkHex}");
+            }
+        }
+
+        if (TalkAt is { } talkPoint)
+        {
+            MapObject? npc = PickObject(talkPoint.X, talkPoint.Y);
+            if (npc is not null)
+            {
+                TalkTo(npc);
+                foreach (int choice in AutoChoose)
+                {
+                    if (_dialog is null)
+                        break;
+                    Console.WriteLine($"CHOOSE: {choice}");
+                    ChooseDialogOption(choice - 1); // 1-based on the CLI
+                }
+            }
+            else
+            {
+                Console.WriteLine($"talk@{talkPoint.X},{talkPoint.Y}: nothing");
+            }
+        }
+
+
         foreach (StartupAction action in StartupActions)
         {
             switch (action)
@@ -516,6 +573,27 @@ public sealed class ViewerGame : Game
                         Console.Error.WriteLine($"use-item: pid 0x{usePid:X8} not in bag");
                     break;
                 }
+                case StartupAction.Buy(var buyPid):
+                {
+                    int index = BarterStock().FindIndex(i => i.Pid == buyPid);
+                    if (index >= 0)
+                        BarterBuy(index);
+                    else
+                        Console.Error.WriteLine($"buy: pid 0x{buyPid:X8} not in stock (barter open: {_barterNpc is not null})");
+                    break;
+                }
+                case StartupAction.Sell(var sellPid):
+                {
+                    int index = BarterGoods().FindIndex(i => i.Pid == sellPid);
+                    if (index >= 0)
+                        BarterSell(index);
+                    else
+                        Console.Error.WriteLine($"sell: pid 0x{sellPid:X8} not in bag (barter open: {_barterNpc is not null})");
+                    break;
+                }
+                case StartupAction.EndBarter:
+                    CloseBarter();
+                    break;
                 case StartupAction.TakeAll:
                     if (_lootContainer is not null)
                     {
@@ -535,48 +613,6 @@ public sealed class ViewerGame : Game
                 case StartupAction.LoadNow:
                     LoadGame();
                     break;
-            }
-        }
-
-        if (TalkAtHex is { } talkHex)
-        {
-            MapObject? hexNpc = _solidObjects[_elevation]
-                .FirstOrDefault(o => o.HexTile == talkHex && Fid.Type(o.Fid) is ObjectType.Critter);
-            if (hexNpc is not null)
-            {
-                _camera.SetCenter(talkHex);
-                TalkTo(hexNpc);
-                foreach (int choice in AutoChoose)
-                {
-                    if (_dialog is null)
-                        break;
-                    Console.WriteLine($"CHOOSE: {choice}");
-                    ChooseDialogOption(choice - 1);
-                }
-            }
-            else
-            {
-                Console.Error.WriteLine($"no critter at hex {talkHex}");
-            }
-        }
-
-        if (TalkAt is { } talkPoint)
-        {
-            MapObject? npc = PickObject(talkPoint.X, talkPoint.Y);
-            if (npc is not null)
-            {
-                TalkTo(npc);
-                foreach (int choice in AutoChoose)
-                {
-                    if (_dialog is null)
-                        break;
-                    Console.WriteLine($"CHOOSE: {choice}");
-                    ChooseDialogOption(choice - 1); // 1-based on the CLI
-                }
-            }
-            else
-            {
-                Console.WriteLine($"talk@{talkPoint.X},{talkPoint.Y}: nothing");
             }
         }
 
@@ -728,8 +764,13 @@ public sealed class ViewerGame : Game
         // (LVARs survive in the host, keyed by map name).
         if (_scriptHost is not null)
         {
-            IEnumerable<MapObject> scripted = _flatObjects.Concat(_solidObjects)
-                .SelectMany(list => list)
+            // ALL scripted objects, hidden ones included — shopkeeper stock
+            // boxes are invisible items whose map_enter stocks the store and
+            // store_external()s the box (the engine runs scripts regardless
+            // of visibility).
+            IEnumerable<MapObject> scripted = _map.Elevations
+                .Where(e => e is not null)
+                .SelectMany(e => e!.Objects)
                 .Where(o => o.Sid != -1 && o != _dude?.Dude);
             _scriptHost.RunMapEnter(_map, scripted, _dude?.Dude,
                 firstRunOverride: delta is not null ? false : null);
@@ -769,6 +810,31 @@ public sealed class ViewerGame : Game
                 LoadGame();
             if (keyboard.IsKeyDown(Keys.Escape))
                 Exit();
+            _previousMouse = mouse;
+            _previousKeyboard = keyboard;
+            base.Update(gameTime);
+            return;
+        }
+
+        // Barter mode: 1-9 buy, Shift+1-9 sell, Esc close (back to dialog).
+        if (_barterNpc is not null)
+        {
+            bool shift = keyboard.IsKeyDown(Keys.LeftShift) || keyboard.IsKeyDown(Keys.RightShift);
+            for (int i = 0; i < 9; i++)
+            {
+                if (IsKeyPressed(keyboard, Keys.D1 + i) || IsKeyPressed(keyboard, Keys.NumPad1 + i))
+                {
+                    if (shift)
+                        BarterSell(i);
+                    else
+                        BarterBuy(i);
+                    break;
+                }
+            }
+
+            if (IsKeyPressed(keyboard, Keys.Escape))
+                CloseBarter();
+
             _previousMouse = mouse;
             _previousKeyboard = keyboard;
             base.Update(gameTime);
@@ -1075,6 +1141,12 @@ public sealed class ViewerGame : Game
             dude.CurrentHp = stats.MaxHp;
             _dudeAp = stats.MaxActionPoints;
         }
+
+        // Carry the bag over and alias it to the new dude object so scripts
+        // (caps payments, inventory checks) and panels share one pocket.
+        foreach (MapObject item in _dudeInventory)
+            dude.Inventory.Add(item);
+        _dudeInventory = dude.Inventory;
 
         RebuildBlockedTiles(dude);
         _dude = new DudeController(dude, _frmCache, tile => _blockedTiles.Contains(tile));
@@ -1581,6 +1653,7 @@ public sealed class ViewerGame : Game
         if (session is not null)
         {
             _dialog = session;
+            _dialogNpc = npc;
             PrintDialogRound();
         }
         else if (floaters.Count == 0)
@@ -1607,6 +1680,16 @@ public sealed class ViewerGame : Game
         foreach (string line in _dialog.SideMessages)
             Log(line);
 
+        // gdialog_barter fired inside the option proc: the queued reply is
+        // already computed; the trade window opens on top of the dialog and
+        // the session's fate (queued node vs end) resolves in CloseBarter.
+        if (_dialog.TakeBarterRequest(out int barterModifier) && _dialogNpc is not null)
+        {
+            OpenBarter(_dialogNpc, barterModifier);
+            if (_barterNpc is not null)
+                return;
+        }
+
         if (!_dialog.Active)
         {
             Log("[conversation ends]");
@@ -1616,6 +1699,190 @@ public sealed class ViewerGame : Game
         {
             PrintDialogRound();
         }
+    }
+
+    /// <summary>Opens the trade window (engine: inventoryOpenTrade after the
+    /// option proc returns). CRITTER_BARTER (proto critter flags bit 0x02)
+    /// gates who trades at all (game_dialog.cc:4272).</summary>
+    private void OpenBarter(MapObject npc, int modifier)
+    {
+        try
+        {
+            if ((_protos.Get(npc.Pid).Critter?.CritterFlags & 0x02) == 0)
+            {
+                Log($"{ObjectName(npc)} refuses to barter.");
+                return;
+            }
+        }
+        catch (Exception ex) when (ex is FileNotFoundException or InvalidDataException)
+        {
+            return;
+        }
+
+        _barterNpc = npc;
+        // Stock lives in the shop box once the talk epilogue has run; loose
+        // merchants (no box choreography) trade from their own pockets.
+        _barterStock = _dialog?.StockBox ?? npc;
+        _barterModifier = modifier;
+        PrewarmItemTextures(_barterStock.Inventory);
+        PrewarmItemTextures(_dudeInventory);
+        Console.WriteLine($"barter: open with {ObjectName(npc)} (mod {modifier},"
+            + $" npcSkill {NpcBarterSkill(npc)}, dudeSkill {DudeBarterSkill()},"
+            + $" npcCaps {_scriptHost?.CapsTotal(_barterStock) ?? 0}, dudeCaps {DudeCaps()})");
+    }
+
+    private void CloseBarter()
+    {
+        _barterNpc = null;
+        _barterStock = null;
+        Console.WriteLine("barter: closed");
+        if (_dialog is not null)
+        {
+            PrintDialogRound(); // the queued post-barter node (may be a closer)
+            if (!_dialog.Active)
+            {
+                Log("[conversation ends]");
+                Console.WriteLine("[conversation ends]");
+                _dialog = null;
+            }
+        }
+    }
+
+    private int DudeBarterSkill() =>
+        _dude is not null && GetCritterState(_dude.Dude) is { } stats
+            ? Formats.Combat.BarterMath.BarterSkill(stats) : 0;
+
+    private int NpcBarterSkill(MapObject npc) =>
+        GetCritterState(npc) is { } stats ? Formats.Combat.BarterMath.BarterSkill(stats) : 0;
+
+    private int DudeCaps() => _dude is not null ? _scriptHost?.CapsTotal(_dude.Dude) ?? 0 : 0;
+
+    /// <summary>Merchant goods the panel offers (caps trade only as balance).</summary>
+    private List<MapObject> BarterStock() =>
+        _barterStock is { } stock
+            ? [.. stock.Inventory.Where(i => i.Pid != Formats.Int.ScriptHost.MoneyPid)]
+            : [];
+
+    private List<MapObject> BarterGoods() =>
+        [.. _dudeInventory.Where(i => i.Pid != Formats.Int.ScriptHost.MoneyPid)];
+
+    private int BarterBuyPrice(MapObject item)
+    {
+        int cost;
+        try
+        {
+            cost = _protos.Get(item.Pid).Cost;
+        }
+        catch (Exception ex) when (ex is FileNotFoundException or InvalidDataException)
+        {
+            return 0;
+        }
+        return Formats.Combat.BarterMath.BuyPrice(cost, _barterModifier,
+            _barterNpc is { } npc ? NpcBarterSkill(npc) : 0, DudeBarterSkill());
+    }
+
+    private int BarterSellPrice(MapObject item)
+    {
+        try
+        {
+            return Formats.Combat.BarterMath.SellPrice(_protos.Get(item.Pid).Cost);
+        }
+        catch (Exception ex) when (ex is FileNotFoundException or InvalidDataException)
+        {
+            return 0;
+        }
+    }
+
+    /// <summary>Buy one unit of the merchant's i-th item at the marked-up
+    /// price; refusal mirrors inventry.msg {28}.</summary>
+    private void BarterBuy(int index)
+    {
+        if (_barterNpc is not { } npc || _dude is null || _scriptHost is null)
+            return;
+        List<MapObject> stock = BarterStock();
+        if (index < 0 || index >= stock.Count)
+            return;
+
+        MapObject item = stock[index];
+        MapObject till = _barterStock ?? npc;
+        int price = BarterBuyPrice(item);
+        if (_scriptHost.CapsAdjust(_dude.Dude, -price) != 0)
+        {
+            Log("No, your offer is not good enough."); // inventry.msg {28}
+            return;
+        }
+
+        _scriptHost.CapsAdjust(till, price);
+        TransferOne(item, till.Inventory, _dudeInventory);
+        Log($"OK, that's a good trade. (-{price} caps for {ObjectNameByPid(item.Pid)})"); // {27}
+        Console.WriteLine($"barter-buy: {ObjectNameByPid(item.Pid)} for {price} (dudeCaps {DudeCaps()})");
+    }
+
+    /// <summary>Sell one unit at face value (the engine credits player goods
+    /// at plain cost); the merchant must hold the caps.</summary>
+    private void BarterSell(int index)
+    {
+        if (_barterNpc is not { } npc || _dude is null || _scriptHost is null)
+            return;
+        List<MapObject> goods = BarterGoods();
+        if (index < 0 || index >= goods.Count)
+            return;
+
+        MapObject item = goods[index];
+        if (item.IsInHand || item.IsWorn)
+        {
+            Log("You should unequip that first.");
+            return;
+        }
+
+        MapObject till = _barterStock ?? npc;
+        int price = BarterSellPrice(item);
+        if (_scriptHost.CapsAdjust(till, -price) != 0)
+        {
+            Log($"{ObjectName(npc)} can't afford that.");
+            return;
+        }
+
+        _scriptHost.CapsAdjust(_dude.Dude, price);
+        TransferOne(item, _dudeInventory, till.Inventory);
+        Log($"OK, that's a good trade. (+{price} caps for {ObjectNameByPid(item.Pid)})");
+        Console.WriteLine($"barter-sell: {ObjectNameByPid(item.Pid)} for {price} (dudeCaps {DudeCaps()})");
+    }
+
+    private static void TransferOne(MapObject item, List<MapObject> from, List<MapObject> to)
+    {
+        if (item.StackCount > 1)
+        {
+            item.StackCount--;
+            if (to.FirstOrDefault(i => i.Pid == item.Pid) is { } existing)
+            {
+                existing.StackCount++;
+                return;
+            }
+
+            var unit = new MapObject
+            {
+                Id = -4,
+                HexTile = -1,
+                X = 0,
+                Y = 0,
+                Frame = 0,
+                Rotation = 0,
+                Fid = item.Fid,
+                Flags = 0,
+                Pid = item.Pid,
+                Sid = -1,
+            };
+            to.Add(unit);
+            return;
+        }
+
+        from.Remove(item);
+        item.Flags &= ~(MapObject.FlagInLeftHand | MapObject.FlagInRightHand | MapObject.FlagWorn);
+        if (to.FirstOrDefault(i => i.Pid == item.Pid) is { } stack)
+            stack.StackCount += 1;
+        else
+            to.Add(item);
     }
 
     /// <summary>
@@ -2988,18 +3255,26 @@ public sealed class ViewerGame : Game
         if (_fontRenderer is null)
             return;
 
-        if (_lootContainer is { } container)
+        if (_barterNpc is { } merchant)
+        {
+            DrawItemList($"{ObjectName(merchant)} sells (caps {(_barterStock is { } till ? _scriptHost?.CapsTotal(till) : 0) ?? 0}) - 1-9 buy",
+                BarterStock(), 40, BarterBuyPrice);
+            DrawItemList($"You sell (caps {DudeCaps()}) - Shift+1-9 sell, Esc done",
+                BarterGoods(), 420, BarterSellPrice);
+        }
+        else if (_lootContainer is { } container)
         {
             DrawItemList($"{ObjectName(container)} - 1-9 take, A take all, Esc close",
                 container.Inventory, 40);
         }
         else if (_inventoryOpen)
         {
-            DrawItemList("Inventory - 1-9 drop, Esc close", _dudeInventory, 40);
+            DrawItemList("Inventory - 1-9 use/equip, Shift+1-9 drop, Esc close", _dudeInventory, 40);
         }
     }
 
-    private void DrawItemList(string title, List<MapObject> items, int x)
+    private void DrawItemList(string title, List<MapObject> items, int x,
+        Func<MapObject, int>? price = null)
     {
         _panelPixel ??= CreatePixel();
         int lineHeight = Math.Max(_fontRenderer!.LineHeight, 26);
@@ -3020,8 +3295,9 @@ public sealed class ViewerGame : Game
             MapObject item = items[i];
             DrawItemIcon(item, new Rectangle(x + 28, rowY - 2, 28, 22));
             string count = item.StackCount > 1 ? $" x{item.StackCount}" : "";
+            string tag = price is null ? "" : $"  ${price(item)}";
             _fontRenderer.Draw(_spriteBatch, $"{i + 1}.", new Vector2(x + 10, rowY), green);
-            _fontRenderer.Draw(_spriteBatch, $"{ObjectName(item)}{count}", new Vector2(x + 62, rowY), green);
+            _fontRenderer.Draw(_spriteBatch, $"{ObjectName(item)}{count}{tag}", new Vector2(x + 62, rowY), green);
             rowY += lineHeight;
         }
 

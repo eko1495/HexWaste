@@ -125,6 +125,15 @@ for (int i = 0; i < args.Length; i++)
         case "--use-item" when i + 1 < args.Length:
             actions.Add(new ViewerGame.StartupAction.UseItemByPid(int.Parse(args[++i])));
             break;
+        case "--buy" when i + 1 < args.Length:
+            actions.Add(new ViewerGame.StartupAction.Buy(int.Parse(args[++i])));
+            break;
+        case "--sell" when i + 1 < args.Length:
+            actions.Add(new ViewerGame.StartupAction.Sell(int.Parse(args[++i])));
+            break;
+        case "--end-barter":
+            actions.Add(new ViewerGame.StartupAction.EndBarter());
+            break;
         case "--take-all":
             actions.Add(new ViewerGame.StartupAction.TakeAll());
             break;

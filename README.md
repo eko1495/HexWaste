@@ -52,12 +52,12 @@ Prebuilt self-contained builds (Linux x64 / Windows x64) are produced by
 | mouse drag / arrow keys | pan (hold Shift for fast) |
 | click open ground | walk there (A* on the hex grid) |
 | click door / container / item / stairs | use / loot (1–9 take, A take all) / pick up / travel |
-| click a critter | talk (real scripted dialog, 1–9 to choose) |
+| click a critter | talk (real scripted dialog, 1–9 to choose; shopkeepers open a barter panel) |
 | right-click | examine (critters show HP/AC) |
 | F | attack the hovered critter (starts combat) |
 | Space | end combat turn |
 | L | lockpick the hovered door |
-| I | inventory (1–9 drop) |
+| I | inventory (1–9 use/equip/consume, Shift+1–9 drop) |
 | F5 / F9 | save / load |
 | R / T / PgUp / PgDn | roofs / walk-cycle / elevation |
 | [ / ] | ambient light (night ↔ day) |

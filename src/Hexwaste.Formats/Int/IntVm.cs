@@ -136,8 +136,16 @@ public interface IVmExternals
     /// <summary>float_msg — floating head-text over an object.</summary>
     void FloatMessage(int objectHandle, string text, int type) { }
 
-    /// <summary>gdialog_barter / gdialog_set_barter_mod — out of scope, surface a notice.</summary>
+    /// <summary>gdialog_barter (gameDialogBarter, game_dialog.cc:3163): sets
+    /// the trade flag; its argument OVERWRITES gdialog_set_barter_mod (:3169).</summary>
     void Barter(int modifier) { }
+
+    /// <summary>gdialog_set_barter_mod.</summary>
+    void GdialogSetBarterMod(int modifier) { }
+
+    /// <summary>move_obj_inven_to_obj (opMoveObjectInventoryToObject): move the
+    /// whole inventory from source to target.</summary>
+    void MoveAllInventory(int sourceHandle, int targetHandle) { }
 
     // ---- door/container state (phase-4 M2); handle 0 must no-op like the
     // engine's scriptPredefinedError paths.
@@ -231,6 +239,19 @@ public interface IVmExternals
 /// are arity-stubbed via <see cref="ExternalArity"/> so the stack never
 /// desyncs; stubbed calls are reported through an optional callback.
 /// </summary>
+/// <summary>
+/// Cross-script external variables (the engine's export.cc): one store per
+/// host session, shared by every VM it spawns. Values are ints (numbers and
+/// object handles); the rare string store is logged and dropped.
+/// </summary>
+public sealed class ExternalVariables
+{
+    internal Dictionary<string, int> Ints { get; } = new(StringComparer.OrdinalIgnoreCase);
+
+    public void Clear() => Ints.Clear();
+    public int Count => Ints.Count;
+}
+
 public sealed class IntVm
 {
     // Value tags, ported from interpreter.h VALUE_TYPE_*.
@@ -306,6 +327,7 @@ public sealed class IntVm
     // engine shares these across programs (export.cc); a per-VM dictionary is
     // enough for single-script runs, with absent imports defaulting to 0.
     private readonly Dictionary<string, Value> _externalVariables = new(StringComparer.OrdinalIgnoreCase);
+    private readonly ExternalVariables? _sharedExternalVariables;
 
     private int _instructionPointer;
     private int _framePointer = -1;
@@ -314,11 +336,13 @@ public sealed class IntVm
     private int _windowId;
     private bool _initialized;
 
-    public IntVm(IntProgram program, IVmExternals externals, Action<string>? onStubbedExternal = null)
+    public IntVm(IntProgram program, IVmExternals externals, Action<string>? onStubbedExternal = null,
+        ExternalVariables? externalVariables = null)
     {
         _program = program;
         _externals = externals;
         _onStubbedExternal = onStubbedExternal;
+        _sharedExternalVariables = externalVariables;
     }
 
     /// <summary>
@@ -468,7 +492,10 @@ public sealed class IntVm
             case 0x8016: // export_variable
             {
                 string identifier = _program.GetIdentifier(Pop().Raw);
-                _externalVariables.TryAdd(identifier, Value.Int(0));
+                if (_sharedExternalVariables is { } shared)
+                    shared.Ints.TryAdd(identifier, 0);
+                else
+                    _externalVariables.TryAdd(identifier, Value.Int(0));
                 break;
             }
             case 0x8018: // swap
@@ -721,6 +748,18 @@ public sealed class IntVm
     private void ExecuteFetchExternal()
     {
         string identifier = _program.GetIdentifier(Pop().Raw);
+
+        if (_sharedExternalVariables is { } shared)
+        {
+            if (!shared.Ints.TryGetValue(identifier, out int raw))
+            {
+                _onStubbedExternal?.Invoke($"fetch_external of undefined variable '{identifier}' -> 0");
+                raw = 0;
+            }
+            Push(Value.Int(raw));
+            return;
+        }
+
         if (!_externalVariables.TryGetValue(identifier, out Value value))
         {
             // The engine fatals here; an import owned by another (unloaded)
@@ -735,7 +774,20 @@ public sealed class IntVm
     private void ExecuteStoreExternal()
     {
         string identifier = _program.GetIdentifier(Pop().Raw);
-        _externalVariables[identifier] = Pop();
+        Value value = Pop();
+
+        if (_sharedExternalVariables is { } shared)
+        {
+            // Cross-program string offsets don't transfer; the shop scripts
+            // only store ints and object handles.
+            if (value.Tag == TypeInt)
+                shared.Ints[identifier] = value.Raw;
+            else
+                _onStubbedExternal?.Invoke($"store_external of non-int '{identifier}' dropped");
+            return;
+        }
+
+        _externalVariables[identifier] = value;
     }
 
     /// <summary>
@@ -1026,10 +1078,18 @@ public sealed class IntVm
                 _externals.FloatMessage(objectHandle, AsString(msg), type);
                 break;
             }
-            case 0x8129: // gdialog_barter
-            case 0x814E: // gdialog_set_barter_mod
+            case 0x8129: // gdialog_barter — flag-only; arg OVERWRITES the modifier
                 _externals.Barter(PopInt());
                 break;
+            case 0x814E: // gdialog_set_barter_mod
+                _externals.GdialogSetBarterMod(PopInt());
+                break;
+            case 0x8147: // move_obj_inven_to_obj (pops dest, then source)
+            {
+                int moveDest = PopInt();
+                _externals.MoveAllInventory(PopInt(), moveDest);
+                break;
+            }
 
             // ---- door/container state
             case 0x812D: // obj_is_locked
