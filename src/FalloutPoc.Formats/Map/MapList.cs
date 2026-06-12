@@ -57,6 +57,11 @@ public sealed class MapList
     public int FindByLookupName(string lookupName) =>
         _byLookupName.TryGetValue(lookupName.Trim(), out int index) ? index : -1;
 
+    /// <summary>maps.txt index for a map file name (cur_map_index), or -1.</summary>
+    public int GetIndexByFileName(string mapFileName) =>
+        _indexByMapName.TryGetValue(System.IO.Path.GetFileNameWithoutExtension(mapFileName), out int index)
+            ? index : -1;
+
     /// <summary>Music track name for a map (maps.txt music= key), e.g. "07desert"; null if none.</summary>
     public string? GetMusic(string mapFileName)
     {

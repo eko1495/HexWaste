@@ -64,6 +64,128 @@ public sealed class ScriptHost(GameFileSystem vfs, ScriptList scripts, FalloutPo
     /// <summary>Game clock backing the game_time externals (host-provided).</summary>
     public Func<long>? ClockTicks { get; set; }
 
+    /// <summary>maps.txt index of the current map (cur_map_index; host-provided).</summary>
+    public Func<int>? CurrentMapIndexProvider { get; set; }
+
+    /// <summary>Sink for messages produced outside interactive runs (timer float text).</summary>
+    public Action<string>? OnScriptMessage { get; set; }
+
+    /// <summary>A script requested a walk animation (animate_move_obj_to_tile).</summary>
+    public Action<MapObject, int>? MoveRequested { get; set; }
+
+    // ---- script timer queue, ported from fallout2-ce queue.cc/scripts.cc:
+    // absolute due time, sorted, stable FIFO for equal times. Delays are game
+    // ticks at the ENGINE rate (10/s real time, 100 ms per tick) — independent
+    // of any accelerated day/night clock. The engine drops all script timers
+    // on map exit (_queue_leaving_map) — call ClearTimers() on transitions.
+
+    private sealed record TimerEntry(double DueMs, MapFile Map, MapObject Owner, int Param);
+
+    private readonly List<TimerEntry> _timers = [];
+    private double _timerClockMs;
+
+    public int PendingTimerCount => _timers.Count;
+
+    public void AddTimer(MapFile map, MapObject owner, int delayTicks, int param)
+    {
+        double due = _timerClockMs + Math.Max(delayTicks, 0) * 100.0;
+        int index = _timers.FindIndex(t => t.DueMs > due); // insert after equal times
+        var entry = new TimerEntry(due, map, owner, param);
+        if (index < 0)
+            _timers.Add(entry);
+        else
+            _timers.Insert(index, entry);
+    }
+
+    public void RemoveTimers(MapObject owner, int? param = null) =>
+        _timers.RemoveAll(t => t.Owner == owner && (param is null || t.Param == param));
+
+    public void ClearTimers() => _timers.Clear();
+
+    public const int MoneyPid = 41; // PROTO_ID_MONEY (proto_types.h:139)
+
+    /// <summary>Caps in an inventory (item.cc itemGetTotalCaps, sans container recursion).</summary>
+    public int CapsTotal(MapObject obj) =>
+        obj.Inventory.Where(i => i.Pid == MoneyPid).Sum(i => i.StackCount);
+
+    /// <summary>ported from fallout2-ce item.cc itemCapsAdjust(): -1 when
+    /// removing more than the total; adding creates a money stack.</summary>
+    public int CapsAdjust(MapObject obj, int amount)
+    {
+        if (amount >= 0)
+        {
+            if (amount == 0)
+                return 0;
+            if (obj.Inventory.FirstOrDefault(i => i.Pid == MoneyPid) is { } stack)
+            {
+                stack.StackCount += amount;
+                return 0;
+            }
+
+            try
+            {
+                var money = new MapObject
+                {
+                    Id = -5,
+                    HexTile = -1,
+                    X = 0,
+                    Y = 0,
+                    Frame = 0,
+                    Rotation = 0,
+                    Fid = Protos.Get(MoneyPid).Fid,
+                    Flags = 0,
+                    Pid = MoneyPid,
+                    Sid = -1,
+                };
+                money.StackCount = amount;
+                obj.Inventory.Add(money);
+                return 0;
+            }
+            catch (Exception ex) when (ex is FileNotFoundException or InvalidDataException)
+            {
+                Console.Error.WriteLine($"caps_adjust: {ex.Message}");
+                return -1;
+            }
+        }
+
+        int toRemove = -amount;
+        if (CapsTotal(obj) < toRemove)
+            return -1;
+
+        foreach (MapObject stackEntry in obj.Inventory.Where(i => i.Pid == MoneyPid).ToList())
+        {
+            int take = Math.Min(stackEntry.StackCount, toRemove);
+            stackEntry.StackCount -= take;
+            toRemove -= take;
+            if (stackEntry.StackCount <= 0)
+                obj.Inventory.Remove(stackEntry);
+            if (toRemove == 0)
+                break;
+        }
+
+        return 0;
+    }
+
+    /// <summary>
+    /// Advances the timer clock and runs due timed_event_p_procs. The caller
+    /// gates this like the engine does (not during dialog/loot — scripts arm
+    /// timers mid-conversation expecting them to fire after it closes).
+    /// </summary>
+    public void PumpTimers(double elapsedMs, MapObject? dude)
+    {
+        _timerClockMs += elapsedMs;
+        while (_timers.Count > 0 && _timers[0].DueMs <= _timerClockMs)
+        {
+            TimerEntry entry = _timers[0];
+            _timers.RemoveAt(0);
+            ScriptRunResult? result = RunObjectProc(entry.Owner, entry.Map, dude,
+                entry.Param, -1, "timed_event_p_proc");
+            if (result is not null && OnScriptMessage is not null)
+                foreach (string message in result.Messages)
+                    OnScriptMessage(message);
+        }
+    }
+
     /// <summary>Session GVARs, exposed for save/load.</summary>
     public Dictionary<int, int> GlobalVars => _globalVars;
 
@@ -406,6 +528,52 @@ public sealed class ScriptHost(GameFileSystem vfs, ScriptList scripts, FalloutPo
             rule == 14 ? ((_map.Header.Flags & 0x01) == 0 ? 1 : 0) : 0;
 
         public int GameTime() => (int)(_host.ClockTicks?.Invoke() ?? 302400);
+
+        // ---- timers + geometry + caps (phase-5 M0)
+
+        public void AddTimerEvent(int objectHandle, int delayTicks, int param)
+        {
+            if (_host.ObjectOf(objectHandle) is { } obj)
+                _host.AddTimer(_map, obj, delayTicks, param);
+        }
+
+        public void RemoveTimerEvents(int objectHandle)
+        {
+            if (_host.ObjectOf(objectHandle) is { } obj)
+                _host.RemoveTimers(obj);
+        }
+
+        public void RemoveTimerEventsWithParam(int objectHandle, int param)
+        {
+            if (_host.ObjectOf(objectHandle) is { } obj)
+                _host.RemoveTimers(obj, param);
+        }
+
+        public int ObjTile(int objectHandle) => _host.ObjectOf(objectHandle)?.HexTile ?? -1;
+
+        public int CurrentMapIndex() => _host.CurrentMapIndexProvider?.Invoke() ?? 0;
+
+        public int CapsTotal(int objectHandle) =>
+            _host.ObjectOf(objectHandle) is { } obj ? _host.CapsTotal(obj) : 0;
+
+        public int CapsAdjust(int objectHandle, int amount) =>
+            _host.ObjectOf(objectHandle) is { } obj ? _host.CapsAdjust(obj, amount) : -1;
+
+        /// <summary>PoC sight: within 20 hexes, no wall LOS (engine uses PE*2 + obstacles).</summary>
+        public bool ObjCanSee(int objectHandle, int targetHandle)
+        {
+            MapObject? source = _host.ObjectOf(objectHandle);
+            MapObject? target = _host.ObjectOf(targetHandle);
+            if (source is null || target is null)
+                return false;
+            return Hex.HexGrid.Distance(source.HexTile, target.HexTile) <= 20;
+        }
+
+        public void AnimateMoveToTile(int objectHandle, int tile, int speed)
+        {
+            if (_host.ObjectOf(objectHandle) is { } obj && Hex.HexGrid.IsValid(tile))
+                _host.MoveRequested?.Invoke(obj, tile);
+        }
 
         // ---- dialog state (one "round" = one reply + its options)
 

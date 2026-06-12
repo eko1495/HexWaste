@@ -144,6 +144,35 @@ public interface IVmExternals
 
     /// <summary>tile_contains_pid_obj — handle of a matching object, or 0.</summary>
     int TileContainsPidObj(int tile, int elevation, int pid) => 0;
+
+    // ---- timers + geometry + caps (phase-5 M0)
+
+    /// <summary>add_timer_event — delay is in game ticks (10/second, 1:1 real time).</summary>
+    void AddTimerEvent(int objectHandle, int delayTicks, int param) { }
+
+    /// <summary>rm_timer_event — removes all timers owned by the object.</summary>
+    void RemoveTimerEvents(int objectHandle) { }
+
+    /// <summary>metarule3 rule 100 — removes timers matching (object, param).</summary>
+    void RemoveTimerEventsWithParam(int objectHandle, int param) { }
+
+    /// <summary>tile_num — the object's hex tile, or -1.</summary>
+    int ObjTile(int objectHandle) => -1;
+
+    /// <summary>cur_map_index.</summary>
+    int CurrentMapIndex() => 0;
+
+    /// <summary>item_caps_total — caps (pid 41) in the object's inventory.</summary>
+    int CapsTotal(int objectHandle) => 0;
+
+    /// <summary>item_caps_adjust — mutates the caps stack; 0 on success, -1 when insufficient.</summary>
+    int CapsAdjust(int objectHandle, int amount) => -1;
+
+    /// <summary>obj_can_see_obj — PoC: distance-based sight (no line-of-sight walls).</summary>
+    bool ObjCanSee(int objectHandle, int targetHandle) => false;
+
+    /// <summary>animate_move_obj_to_tile — the host may start a walk animation.</summary>
+    void AnimateMoveToTile(int objectHandle, int tile, int speed) { }
 }
 
 /// <summary>
@@ -995,6 +1024,82 @@ public sealed class IntVm
                 int pid = PopInt();
                 int elevation = PopInt();
                 PushInt(_externals.TileContainsPidObj(PopInt(), elevation, pid));
+                break;
+            }
+
+            // ---- timers + geometry + caps (phase-5 M0)
+            case 0x80F0: // add_timer_event (pops param, delay, obj)
+            {
+                int param = PopInt();
+                int delay = PopInt();
+                _externals.AddTimerEvent(PopInt(), delay, param);
+                break;
+            }
+            case 0x80F1: // rm_timer_event
+                _externals.RemoveTimerEvents(PopInt());
+                break;
+            case 0x80E1: // metarule3 (pops p3, p2, p1, rule); rule 100 clears (obj, param) timers
+            {
+                Value p3 = Pop();
+                Value p2 = Pop();
+                Value p1 = Pop();
+                int rule = PopInt();
+                _ = p3;
+                if (rule == 100 && p1.Tag == TypeInt && p2.Tag == TypeInt)
+                    _externals.RemoveTimerEventsWithParam(p1.Raw, p2.Raw);
+                PushInt(0);
+                break;
+            }
+            case 0x80D4: // tile_num
+                PushInt(_externals.ObjTile(PopInt()));
+                break;
+            case 0x80D2: // tile_distance (pops tile2, tile1)
+            {
+                int tile2 = PopInt();
+                PushInt(Hex.HexGrid.Distance(PopInt(), tile2));
+                break;
+            }
+            case 0x80D3: // tile_distance_objs (pops obj2, obj1)
+            {
+                int tileB = _externals.ObjTile(PopInt());
+                int tileA = _externals.ObjTile(PopInt());
+                PushInt(Hex.HexGrid.Distance(tileA, tileB));
+                break;
+            }
+            case 0x80D5: // tile_num_in_direction (pops distance, rotation, tile)
+            {
+                int distance = PopInt();
+                int rotation = PopInt();
+                int tile = PopInt();
+                PushInt(rotation is >= 0 and < 6
+                    ? Hex.HexGrid.TileInDirection(tile, rotation, Math.Max(distance, 0))
+                    : tile);
+                break;
+            }
+            case 0x8101: // cur_map_index
+                PushInt(_externals.CurrentMapIndex());
+                break;
+            case 0x8138: // item_caps_total
+                PushInt(_externals.CapsTotal(PopInt()));
+                break;
+            case 0x8139: // item_caps_adjust (pops amount, obj)
+            {
+                int amount = PopInt();
+                PushInt(_externals.CapsAdjust(PopInt(), amount));
+                break;
+            }
+            case 0x80DC: // obj_can_see_obj (pops target, source)
+            case 0x80F5: // obj_can_hear_obj — same PoC distance check
+            {
+                int target = PopInt();
+                PushInt(_externals.ObjCanSee(PopInt(), target) ? 1 : 0);
+                break;
+            }
+            case 0x80CE: // animate_move_obj_to_tile (pops speed, tile, obj)
+            {
+                int speed = PopInt();
+                int tile = PopInt();
+                _externals.AnimateMoveToTile(PopInt(), tile, speed);
                 break;
             }
 

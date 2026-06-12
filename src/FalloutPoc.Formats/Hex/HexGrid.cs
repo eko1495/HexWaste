@@ -78,6 +78,53 @@ public static class HexGrid
         return (screenX, screenY);
     }
 
+    /// <summary>
+    /// Hex distance, ported from fallout2-ce src/tile.cc tileDistanceBetween():
+    /// greedily steps toward the target (rotation from the screen-space angle)
+    /// counting hexes. -1 tiles yield 9999 like the original.
+    /// </summary>
+    public static int Distance(int tile1, int tile2)
+    {
+        if (tile1 == -1 || tile2 == -1)
+            return 9999;
+
+        (int targetX, int targetY) = ScreenEmbedding(tile2);
+
+        int current = tile1;
+        for (int steps = 0; steps < Size; steps++)
+        {
+            if (current == tile2)
+                return steps;
+
+            (int x, int y) = ScreenEmbedding(current);
+            int dx = targetX - x;
+            int dy = targetY - y;
+
+            int rotation;
+            if (dx == 0)
+            {
+                rotation = dy < 0 ? 0 : 2;
+            }
+            else
+            {
+                int angle = (int)Math.Truncate(Math.Atan2(-dy, dx) * 180.0 * 0.3183098862851122);
+                rotation = 360 - (angle + 180) - 90;
+                if (rotation < 0)
+                    rotation += 360;
+                rotation /= 60;
+                if (rotation >= 6)
+                    rotation = 5;
+            }
+
+            int next = TileInDirection(current, rotation);
+            if (next == current)
+                return steps; // hit the map edge
+            current = next;
+        }
+
+        return 9999;
+    }
+
     /// <summary>ported from fallout2-ce src/animation.cc _idist(): octile-ish integer distance.</summary>
     public static int ScreenDistance(int tile1, int tile2)
     {

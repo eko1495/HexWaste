@@ -204,6 +204,9 @@ public sealed class ViewerGame : Game
                 ObjectPlaced = (obj, map) => OnScriptObjectPlaced(obj),
                 ObjectRemoved = obj => OnScriptObjectRemoved(obj),
                 ClockTicks = () => _clock.Ticks,
+                CurrentMapIndexProvider = () => _mapList.GetIndexByFileName(_currentMapName),
+                OnScriptMessage = message => Log(message),
+                MoveRequested = (npc, tile) => StartNpcWalk(npc, tile),
             };
         }
         catch (Exception ex) when (ex is FileNotFoundException or InvalidDataException)
@@ -337,6 +340,7 @@ public sealed class ViewerGame : Game
             _dude?.Update(10);
             UpdateAmbientLife(10);
             UpdateClock(10);
+            _scriptHost?.PumpTimers(10, _dude?.Dude);
             if (_pendingTransition is { } transition)
             {
                 _pendingTransition = null;
@@ -358,6 +362,7 @@ public sealed class ViewerGame : Game
             _map = MapFile.Load(stream, _protos);
 
         _animator = new ObjectAnimator(_frmCache);
+        _scriptHost?.ClearTimers();
         _walkMode = false;
         _hoveredObject = null;
         _dude = null;
@@ -587,6 +592,10 @@ public sealed class ViewerGame : Game
         _animator.Update(gameTime.ElapsedGameTime.TotalMilliseconds);
         _dude?.Update(gameTime.ElapsedGameTime.TotalMilliseconds);
         UpdateAmbientLife(gameTime.ElapsedGameTime.TotalMilliseconds);
+
+        // Script timers: pumped only here — dialog/loot/worldmap modes return
+        // earlier in Update, matching the engine's _gdialogActive() gate.
+        _scriptHost?.PumpTimers(gameTime.ElapsedGameTime.TotalMilliseconds, _dude?.Dude);
 
         // Map transitions are queued by exit grids/stairs and applied here,
         // never while DudeController.Update is still on the stack.
@@ -897,6 +906,42 @@ public sealed class ViewerGame : Game
             if (candidates.Count > 0)
                 TryStartWander(candidates[_ambientRandom.Next(candidates.Count)]);
         }
+    }
+
+    /// <summary>Starts a script- or ambient-driven NPC walk (shared walker plumbing).</summary>
+    private bool StartNpcWalk(MapObject npc, int target)
+    {
+        if (npc == _dude?.Dude || _npcWalkers.ContainsKey(npc)
+            || Fid.Type(npc.Fid) is not ObjectType.Critter)
+            return false;
+
+        int walkFid = Fid.Build(ObjectType.Critter, Fid.Index(npc.Fid), 1, Fid.WeaponCode(npc.Fid));
+        if (!_vfs.Exists(_artIndex.GetFrmPath(walkFid)))
+        {
+            walkFid = Fid.Build(ObjectType.Critter, Fid.Index(npc.Fid), 1);
+            if (!_vfs.Exists(_artIndex.GetFrmPath(walkFid)))
+                return false;
+        }
+
+        if (target == npc.HexTile || _blockedTiles.Contains(target))
+            return false;
+
+        var walker = new DudeController(npc, _frmCache, tile => _blockedTiles.Contains(tile));
+        int previousTile = npc.HexTile;
+        walker.TileChanged += tile =>
+        {
+            _blockedTiles.Remove(previousTile);
+            _blockedTiles.Add(tile);
+            previousTile = tile;
+            List<MapObject> solids = _solidObjects[_elevation];
+            solids.Remove(npc);
+            InsertSorted(solids, npc);
+        };
+
+        if (!walker.WalkTo(target))
+            return false;
+        _npcWalkers[npc] = walker;
+        return true;
     }
 
     private void TryStartWander(MapObject npc)
@@ -1568,7 +1613,8 @@ public sealed class ViewerGame : Game
         return 2 * sy * Camera.HexGridWidth + 2 * sx + 1;
     }
 
-    private sealed record SpriteInfo(int Fid, int FrameIndex, int Rotation,
+    /// <summary>Struct: resolved per scanned object every frame — must not allocate.</summary>
+    private readonly record struct SpriteInfo(int Fid, int FrameIndex, int Rotation,
         Formats.Frm.FrmFrame Frame, int Left, int Top);
 
     /// <summary>
@@ -1669,11 +1715,16 @@ public sealed class ViewerGame : Game
     /// </summary>
     private MapObject? PickObject(int screenX, int screenY)
     {
-        IEnumerable<MapObject> reverseDrawOrder = Enumerable.Reverse(_solidObjects[_elevation])
-            .Concat(Enumerable.Reverse(_flatObjects[_elevation]));
+        // Reverse draw order without allocating (hot path: every frame for hover).
+        MapObject? hit = PickFromList(_solidObjects[_elevation], screenX, screenY);
+        return hit ?? PickFromList(_flatObjects[_elevation], screenX, screenY);
+    }
 
-        foreach (MapObject obj in reverseDrawOrder)
+    private MapObject? PickFromList(List<MapObject> objects, int screenX, int screenY)
+    {
+        for (int i = objects.Count - 1; i >= 0; i--)
         {
+            MapObject obj = objects[i];
             if (ResolveSprite(obj) is not { } sprite)
                 continue;
 
