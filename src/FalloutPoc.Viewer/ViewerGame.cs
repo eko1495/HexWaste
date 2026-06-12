@@ -109,8 +109,18 @@ public sealed class ViewerGame : Game
     /// <summary>Open dialog with the critter at this hex tile on start (testing).</summary>
     public int? TalkAtHex { get; set; }
 
-    /// <summary>Use/lockpick objects at hex tiles on start, in order (testing).</summary>
-    public List<(int Hex, bool Lockpick)> UseAtHexes { get; set; } = [];
+    /// <summary>Scripted startup sequence (testing): use/lockpick objects,
+    /// loot open containers, transition maps, save/load — in CLI order.</summary>
+    public abstract record StartupAction
+    {
+        public sealed record UseHex(int Hex, bool Lockpick) : StartupAction;
+        public sealed record TakeAll : StartupAction;
+        public sealed record Transit(string MapFile, int Tile, int Elevation) : StartupAction;
+        public sealed record SaveNow : StartupAction;
+        public sealed record LoadNow : StartupAction;
+    }
+
+    public List<StartupAction> StartupActions { get; set; } = [];
 
     /// <summary>Auto-pick these option indices after --talk, printing a transcript (testing).</summary>
     public int[] AutoChoose { get; set; } = [];
@@ -143,6 +153,18 @@ public sealed class ViewerGame : Game
     /// non-flats, each in ascending hex tile order (stable within a tile).</summary>
     private readonly List<MapObject>[] _flatObjects = new List<MapObject>[MapFile.ElevationCount];
     private readonly List<MapObject>[] _solidObjects = new List<MapObject>[MapFile.ElevationCount];
+
+    /// <summary>Per-map world deltas (doors, taken/created objects, container
+    /// contents, MVARs), captured on map exit and replayed over pristine
+    /// reloads. Keyed by header map name; pristine objects are identified by
+    /// load-order ordinal because MAP object Ids collide by the hundreds.</summary>
+    private readonly Dictionary<string, SaveState.MapDelta> _visitedMaps = new(StringComparer.OrdinalIgnoreCase);
+    private readonly Dictionary<MapObject, int> _objectOrdinals = [];
+    private MapObject[] _ordinalObjects = [];
+
+    /// <summary>Ordinals holding inventory right after map_enter (script-stocked
+    /// containers) — captured even when later emptied, so looting sticks.</summary>
+    private readonly HashSet<int> _stockedOrdinals = [];
 
     public ViewerGame(string gameDir, string mapName, string? screenshotPath = null, bool roofsVisible = true)
     {
@@ -237,29 +259,56 @@ public sealed class ViewerGame : Game
         if (LoadOnStart)
             LoadGame();
 
-        foreach ((int hex, bool lockpick) in UseAtHexes)
+        foreach (StartupAction action in StartupActions)
         {
-            MapObject? target = _solidObjects[_elevation].FirstOrDefault(o => o.HexTile == hex)
-                ?? _flatObjects[_elevation].FirstOrDefault(o => o.HexTile == hex);
-            if (target is null)
+            switch (action)
             {
-                Console.Error.WriteLine($"nothing at hex {hex}");
-                continue;
-            }
+                case StartupAction.UseHex(var hex, var lockpick):
+                {
+                    MapObject? target = _solidObjects[_elevation].FirstOrDefault(o => o.HexTile == hex)
+                        ?? _flatObjects[_elevation].FirstOrDefault(o => o.HexTile == hex);
+                    if (target is null)
+                    {
+                        Console.Error.WriteLine($"nothing at hex {hex}");
+                        break;
+                    }
 
-            _camera.SetCenter(hex);
-            if (_dude is not null) // teleport adjacent so range checks pass (test plumbing)
-                _dude.Dude.HexTile = Formats.Hex.HexGrid.TileInDirection(hex, 3);
-            if (lockpick)
-                TryLockpick(target);
-            else
-                InteractWith(target);
-            Console.WriteLine($"{(lockpick ? "lockpick" : "use")}@{hex}: locked={target.IsLockedState} open={_openDoors.Contains(target)}");
-            if (_lootContainer is { } looted)
-            {
-                Console.WriteLine($"LOOT {ObjectName(looted)}:");
-                foreach (MapObject item in looted.Inventory)
-                    Console.WriteLine($"  ITEM: {ObjectName(item)} x{item.StackCount}");
+                    _camera.SetCenter(hex);
+                    if (_dude is not null) // teleport adjacent so range checks pass (test plumbing)
+                        _dude.Dude.HexTile = Formats.Hex.HexGrid.TileInDirection(hex, 3);
+                    if (lockpick)
+                        TryLockpick(target);
+                    else
+                        InteractWith(target);
+                    Console.WriteLine($"{(lockpick ? "lockpick" : "use")}@{hex}: locked={target.IsLockedState} open={_openDoors.Contains(target)}");
+                    if (_lootContainer is { } looted)
+                    {
+                        Console.WriteLine($"LOOT {ObjectName(looted)}:");
+                        foreach (MapObject item in looted.Inventory)
+                            Console.WriteLine($"  ITEM: {ObjectName(item)} x{item.StackCount}");
+                    }
+
+                    break;
+                }
+                case StartupAction.TakeAll:
+                    if (_lootContainer is not null)
+                    {
+                        while (_lootContainer.Inventory.Count > 0)
+                            TakeFromContainer(0);
+                        Console.WriteLine($"take-all: bag now {_dudeInventory.Count} stacks");
+                        _lootContainer = null;
+                    }
+                    break;
+                case StartupAction.Transit(var mapFile, var tile, var elevation):
+                    LoadMap(mapFile, tile >= 0 ? new MapDestination(0, tile, elevation, 0) : null);
+                    Console.WriteLine($"transit: now on {_currentMapName} (elevation {_elevation})");
+                    break;
+                case StartupAction.SaveNow:
+                    SaveGame();
+                    break;
+                case StartupAction.LoadNow:
+                    LoadGame();
+                    break;
             }
         }
 
@@ -355,14 +404,21 @@ public sealed class ViewerGame : Game
     /// dude at an exit-grid/stairs destination; null uses the map's entering
     /// position.
     /// </summary>
-    private void LoadMap(string mapName, MapDestination? spawnAt)
+    private void LoadMap(string mapName, MapDestination? spawnAt, bool captureOutgoing = true)
     {
+        // Remember what the player changed on the map being left, so a
+        // revisit can replay it over the pristine file (engine: SAVE.DAT
+        // serializes whole visited maps; the PoC keeps deltas instead).
+        if (captureOutgoing && _map is not null)
+            CaptureMapDelta();
+
         _currentMapName = mapName;
         using (Stream stream = _vfs.OpenRead($@"maps\{mapName}"))
             _map = MapFile.Load(stream, _protos);
 
         _animator = new ObjectAnimator(_frmCache);
         _scriptHost?.ClearTimers();
+        _scriptHost?.ResetHandles();
         _walkMode = false;
         _hoveredObject = null;
         _dude = null;
@@ -407,18 +463,47 @@ public sealed class ViewerGame : Game
             }
         }
 
+        // Load-order ordinals are the stable cross-visit identity for
+        // pristine objects (MAP object Ids repeat across records).
+        _objectOrdinals.Clear();
+        _stockedOrdinals.Clear();
+        var ordinalObjects = new List<MapObject>();
+        foreach (MapElevation? elev in _map.Elevations)
+        {
+            foreach (MapObject obj in elev?.Objects ?? [])
+            {
+                _objectOrdinals[obj] = ordinalObjects.Count;
+                ordinalObjects.Add(obj);
+            }
+        }
+        _ordinalObjects = [.. ordinalObjects];
+
+        _visitedMaps.TryGetValue(_map.Header.Name, out SaveState.MapDelta? delta);
+        if (delta is not null)
+            ApplyDeltaBeforeScripts(delta);
+
         StartLoopingAnimations();
         SpawnDude(spawnTile, spawnRotation);
 
         // Run map-entry scripts: locks get set, containers stocked (M3),
-        // before lighting is computed.
+        // before lighting is computed. Revisits run with map_first_run = 0
+        // (LVARs survive in the host, keyed by map name).
         if (_scriptHost is not null)
         {
             IEnumerable<MapObject> scripted = _flatObjects.Concat(_solidObjects)
                 .SelectMany(list => list)
                 .Where(o => o.Sid != -1 && o != _dude?.Dude);
-            _scriptHost.RunMapEnter(_map, scripted, _dude?.Dude);
+            _scriptHost.RunMapEnter(_map, scripted, _dude?.Dude,
+                firstRunOverride: delta is not null ? false : null);
         }
+
+        foreach ((MapObject obj, int ordinal) in _objectOrdinals)
+        {
+            if (obj.Inventory.Count > 0)
+                _stockedOrdinals.Add(ordinal);
+        }
+        if (delta is not null)
+            ApplyDeltaAfterScripts(delta);
 
         RebuildLighting();
 
@@ -2030,8 +2115,143 @@ public sealed class ViewerGame : Game
             Formats.Light.LightGrid.IntensityMin, Formats.Light.LightGrid.IntensityMax);
     }
 
+    /// <summary>Snapshots the current map's player-visible changes — every
+    /// door's open/locked state, pristine objects gone from the world (by
+    /// ordinal), created objects still in it, full container contents, MVARs
+    /// — so revisits and saves replay them over pristine + map_enter(0).</summary>
+    private void CaptureMapDelta()
+    {
+        var delta = new SaveState.MapDelta { MapVars = [.. _map.GlobalVariables] };
+
+        var present = new HashSet<MapObject>();
+        foreach (MapElevation? elev in _map.Elevations)
+            if (elev is not null)
+                present.UnionWith(elev.Objects);
+
+        for (int ordinal = 0; ordinal < _ordinalObjects.Length; ordinal++)
+        {
+            if (!present.Contains(_ordinalObjects[ordinal]))
+                delta.TakenOrdinals.Add(ordinal);
+        }
+
+        for (int elevation = 0; elevation < MapFile.ElevationCount; elevation++)
+        {
+            foreach (MapObject obj in _map.Elevations[elevation]?.Objects ?? [])
+            {
+                if (!_objectOrdinals.ContainsKey(obj) && obj != _dude?.Dude)
+                    delta.Created.Add(new SaveState.CreatedObject(
+                        obj.Pid, obj.HexTile, elevation, Math.Max(obj.StackCount, 1)));
+                if (IsDoor(obj))
+                    delta.Doors.Add(new SaveState.SavedDoor(
+                        obj.HexTile, obj.Pid, _openDoors.Contains(obj), obj.IsLockedState));
+            }
+        }
+
+        // Snapshot containers that hold something now OR were script-stocked
+        // at map_enter — an empty snapshot is what keeps looted ones looted.
+        foreach ((MapObject obj, int ordinal) in _objectOrdinals)
+        {
+            if (present.Contains(obj) && (obj.Inventory.Count > 0 || _stockedOrdinals.Contains(ordinal)))
+                delta.ContainerInventories[ordinal] =
+                    [.. obj.Inventory.Select(i => new SaveState.SavedItem(i.Pid, Math.Max(i.StackCount, 1)))];
+        }
+
+        _visitedMaps[_map.Header.Name] = delta;
+    }
+
+    /// <summary>Pre-map_enter delta replay: MVARs scripts read, and removal of
+    /// taken objects (their scripts must not run, like absent .SAV objects).</summary>
+    private void ApplyDeltaBeforeScripts(SaveState.MapDelta delta)
+    {
+        for (int i = 0; i < delta.MapVars.Length && i < _map.GlobalVariables.Length; i++)
+            _map.GlobalVariables[i] = delta.MapVars[i];
+
+        foreach (int ordinal in delta.TakenOrdinals)
+        {
+            if (ordinal < 0 || ordinal >= _ordinalObjects.Length)
+                continue;
+            MapObject taken = _ordinalObjects[ordinal];
+            foreach (MapElevation? elev in _map.Elevations)
+                elev?.Objects.Remove(taken);
+            foreach (List<MapObject> list in _flatObjects.Concat(_solidObjects))
+                list.Remove(taken);
+        }
+    }
+
+    /// <summary>Post-map_enter delta replay: door states, created objects,
+    /// and container snapshots (overwriting whatever map_enter restocked).</summary>
+    private void ApplyDeltaAfterScripts(SaveState.MapDelta delta)
+    {
+        foreach (SaveState.SavedDoor saved in delta.Doors)
+        {
+            MapObject? door = _solidObjects.SelectMany(list => list)
+                .FirstOrDefault(o => o.HexTile == saved.HexTile && o.Pid == saved.Pid);
+            if (door is null)
+                continue;
+            door.IsLockedState = saved.Locked;
+            SetDoorState(door, saved.Open);
+        }
+
+        foreach (SaveState.CreatedObject created in delta.Created)
+        {
+            if (created.Elevation is < 0 or >= MapFile.ElevationCount
+                || _map.Elevations[created.Elevation] is not { } elev
+                || RebuildObject(created.Pid, created.Count) is not { } obj)
+                continue;
+            obj.HexTile = created.Tile;
+            elev.Objects.Add(obj);
+            if (!obj.IsHidden && Fid.Type(obj.Fid) is not ObjectType.Head && obj.HexTile >= 0)
+                InsertSorted(obj.IsFlat ? _flatObjects[created.Elevation] : _solidObjects[created.Elevation], obj);
+        }
+
+        foreach ((int ordinal, List<SaveState.SavedItem> items) in delta.ContainerInventories)
+        {
+            if (ordinal < 0 || ordinal >= _ordinalObjects.Length)
+                continue;
+            MapObject container = _ordinalObjects[ordinal];
+            container.Inventory.Clear();
+            foreach (SaveState.SavedItem item in items)
+            {
+                if (RebuildObject(item.Pid, item.Count) is { } obj)
+                    container.Inventory.Add(obj);
+            }
+        }
+
+        RebuildBlockedTiles(_dude?.Dude);
+    }
+
+    /// <summary>Reinstantiates a serialized object from its prototype (deltas
+    /// keep only pid + count); null for unknown/broken pids.</summary>
+    private MapObject? RebuildObject(int pid, int count)
+    {
+        try
+        {
+            var obj = new MapObject
+            {
+                Id = -4,
+                HexTile = -1,
+                X = 0,
+                Y = 0,
+                Frame = 0,
+                Rotation = 0,
+                Fid = _protos.Get(pid).Fid,
+                Flags = 0,
+                Pid = pid,
+                Sid = -1,
+            };
+            obj.StackCount = Math.Max(count, 1);
+            return obj;
+        }
+        catch (Exception ex) when (ex is FileNotFoundException or InvalidDataException)
+        {
+            Console.Error.WriteLine($"load: dropping unknown pid 0x{pid:X8}: {ex.Message}");
+            return null;
+        }
+    }
+
     private void SaveGame()
     {
+        CaptureMapDelta();
         var state = new SaveState
         {
             Map = _currentMapName,
@@ -2041,13 +2261,12 @@ public sealed class ViewerGame : Game
             ClockTicks = _clock.Ticks,
             GlobalVars = new Dictionary<int, int>(_scriptHost?.GlobalVars ?? []),
             DudeInventory = [.. _dudeInventory.Select(i => new SaveState.SavedItem(i.Pid, i.StackCount))],
-            Doors = [.. _solidObjects[_elevation]
-                .Where(o => IsDoor(o) && (_openDoors.Contains(o) || o.IsLockedState))
-                .Select(o => new SaveState.SavedDoor(o.HexTile, o.Pid, _openDoors.Contains(o), o.IsLockedState))],
+            VisitedMaps = new Dictionary<string, SaveState.MapDelta>(_visitedMaps),
+            LocalVars = _scriptHost?.ExportAllLocalVars() ?? [],
         };
         state.Save(SavePath);
         Log($"Game saved ({Path.GetFileName(SavePath)}).");
-        Console.WriteLine($"saved: map={state.Map} tile={state.DudeTile} clock={state.ClockTicks} items={state.DudeInventory.Count} doors={state.Doors.Count}");
+        Console.WriteLine($"saved: map={state.Map} tile={state.DudeTile} clock={state.ClockTicks} items={state.DudeInventory.Count} maps={state.VisitedMaps.Count}");
     }
 
     private void LoadGame()
@@ -2066,51 +2285,33 @@ public sealed class ViewerGame : Game
             _scriptHost.GlobalVars.Clear();
             foreach ((int key, int value) in state.GlobalVars)
                 _scriptHost.GlobalVars[key] = value;
+
+            // LVARs must be in place BEFORE map_enter runs on the restored
+            // map — scripts gate their one-time work on them.
+            _scriptHost.ClearAllLocalVars();
+            foreach ((string mapName, Dictionary<int, int[]> slices) in state.LocalVars)
+                _scriptHost.ImportLocalVars(mapName, slices);
         }
 
-        LoadMap(state.Map, new MapDestination(0, state.DudeTile, state.Elevation, state.DudeRotation));
+        _visitedMaps.Clear();
+        foreach ((string mapName, SaveState.MapDelta delta) in state.VisitedMaps)
+            _visitedMaps[mapName] = delta;
 
-        // Re-apply door deltas over the freshly scripted map.
-        foreach (SaveState.SavedDoor saved in state.Doors)
-        {
-            MapObject? door = _solidObjects[_elevation]
-                .FirstOrDefault(o => o.HexTile == saved.HexTile && o.Pid == saved.Pid);
-            if (door is null)
-                continue;
-            door.IsLockedState = saved.Locked;
-            SetDoorState(door, saved.Open);
-        }
+        // captureOutgoing: false — the pre-load world must not leak into the
+        // freshly imported VisitedMaps.
+        LoadMap(state.Map, new MapDestination(0, state.DudeTile, state.Elevation, state.DudeRotation),
+            captureOutgoing: false);
 
         // Rebuild the dude's bag from prototypes.
         _dudeInventory.Clear();
         foreach (SaveState.SavedItem item in state.DudeInventory)
         {
-            try
-            {
-                var obj = new MapObject
-                {
-                    Id = -4,
-                    HexTile = -1,
-                    X = 0,
-                    Y = 0,
-                    Frame = 0,
-                    Rotation = 0,
-                    Fid = _protos.Get(item.Pid).Fid,
-                    Flags = 0,
-                    Pid = item.Pid,
-                    Sid = -1,
-                };
-                obj.StackCount = item.Count;
+            if (RebuildObject(item.Pid, item.Count) is { } obj)
                 _dudeInventory.Add(obj);
-            }
-            catch (Exception ex) when (ex is FileNotFoundException or InvalidDataException)
-            {
-                Console.Error.WriteLine($"load: dropping unknown item pid 0x{item.Pid:X8}: {ex.Message}");
-            }
         }
 
         Log("Game loaded.");
-        Console.WriteLine($"loaded: map={state.Map} tile={state.DudeTile} clock={state.ClockTicks} items={_dudeInventory.Count}");
+        Console.WriteLine($"loaded: map={state.Map} tile={state.DudeTile} clock={state.ClockTicks} items={_dudeInventory.Count} maps={_visitedMaps.Count}");
     }
 
     private void SaveScreenshot(string path)

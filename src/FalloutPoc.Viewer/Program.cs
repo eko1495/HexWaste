@@ -12,7 +12,7 @@ Microsoft.Xna.Framework.Point? examine = null;
 Microsoft.Xna.Framework.Point? talk = null;
 int[] choose = [];
 int? talkHex = null;
-List<(int, bool)> useHexes = [];
+List<ViewerGame.StartupAction> actions = [];
 int? gotoTile = null;
 int? doorTile = null;
 double ambient = 1.0;
@@ -96,10 +96,28 @@ for (int i = 0; i < args.Length; i++)
             talkHex = int.Parse(args[++i]);
             break;
         case "--use-hex" when i + 1 < args.Length:
-            useHexes.Add((int.Parse(args[++i]), false));
+            actions.Add(new ViewerGame.StartupAction.UseHex(int.Parse(args[++i]), Lockpick: false));
             break;
         case "--lockpick-hex" when i + 1 < args.Length:
-            useHexes.Add((int.Parse(args[++i]), true));
+            actions.Add(new ViewerGame.StartupAction.UseHex(int.Parse(args[++i]), Lockpick: true));
+            break;
+        case "--take-all":
+            actions.Add(new ViewerGame.StartupAction.TakeAll());
+            break;
+        case "--goto-map" when i + 1 < args.Length:
+        {
+            // file[:tile[:elevation]] — tile omitted = map's entering position
+            string[] parts = args[++i].Split(':');
+            actions.Add(new ViewerGame.StartupAction.Transit(parts[0],
+                parts.Length > 1 ? int.Parse(parts[1]) : -1,
+                parts.Length > 2 ? int.Parse(parts[2]) : 0));
+            break;
+        }
+        case "--save-now":
+            actions.Add(new ViewerGame.StartupAction.SaveNow());
+            break;
+        case "--load-now":
+            actions.Add(new ViewerGame.StartupAction.LoadNow());
             break;
         case "--game-dir" when i + 1 < args.Length:
             gameDir = args[++i];
@@ -133,7 +151,7 @@ using var game = new ViewerGame(gameDir, mapName, screenshot, roofs)
     ExamineAt = examine,
     TalkAt = talk,
     TalkAtHex = talkHex,
-    UseAtHexes = useHexes,
+    StartupActions = actions,
     AutoChoose = choose,
     WalkToTile = gotoTile,
     ToggleDoorAtTile = doorTile,

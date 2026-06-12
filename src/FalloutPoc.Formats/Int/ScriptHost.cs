@@ -17,9 +17,12 @@ public sealed class ScriptHost(GameFileSystem vfs, ScriptList scripts, FalloutPo
     private readonly Dictionary<int, MessageFile?> _dialogMessages = [];
     private readonly Dictionary<int, int> _globalVars = [];
 
-    /// <summary>Lazily allocated LVAR slices per (map, sid) — the engine appends
-    /// zeroed slices to the map array on first access (scripts.cc:2805/2836).</summary>
-    private readonly Dictionary<(MapFile Map, int Sid), int[]> _localVarSlices = [];
+    /// <summary>Lazily allocated LVAR slices per (map NAME, sid) — the engine
+    /// appends zeroed slices to the map array on first access
+    /// (scripts.cc:2805/2836). Keyed by the header map name so slices survive
+    /// pristine reloads (in-session persistence) and dead MapFile instances
+    /// are never pinned (the phase-5 measured leak).</summary>
+    private readonly Dictionary<(string Map, int Sid), int[]> _localVarSlices = [];
 
     // Object handle table: scripts see objects as opaque ints; 0 = null.
     private readonly List<MapObject> _handles = [];
@@ -227,9 +230,13 @@ public sealed class ScriptHost(GameFileSystem vfs, ScriptList scripts, FalloutPo
     /// (scripts.lst index = header.ScriptIndex - 1) with fixedParam =
     /// first-run flag, then every scripted object's map_enter_p_proc.
     /// </summary>
-    public void RunMapEnter(MapFile map, IEnumerable<MapObject> objects, MapObject? dude)
+    public void RunMapEnter(MapFile map, IEnumerable<MapObject> objects, MapObject? dude,
+        bool? firstRunOverride = null)
     {
-        int firstRun = (map.Header.Flags & 0x01) == 0 ? 1 : 0;
+        int firstRun = firstRunOverride.HasValue
+            ? (firstRunOverride.Value ? 1 : 0)
+            : ((map.Header.Flags & 0x01) == 0 ? 1 : 0);
+        _firstRunByMap[map.Header.Name] = firstRun == 1;
 
         if (map.Header.ScriptIndex > 0)
         {
@@ -257,6 +264,14 @@ public sealed class ScriptHost(GameFileSystem vfs, ScriptList scripts, FalloutPo
         foreach (MapObject obj in objects.ToList())
             RunObjectProc(obj, map, dude, firstRun, -1, "map_enter_p_proc");
     }
+
+    /// <summary>Revisit tracking: metarule 14 FIRST_RUN consults this.</summary>
+    private readonly Dictionary<string, bool> _firstRunByMap = [];
+
+    internal bool IsFirstRun(MapFile map) =>
+        _firstRunByMap.TryGetValue(map.Header.Name, out bool firstRun)
+            ? firstRun
+            : (map.Header.Flags & 0x01) == 0;
 
     private ScriptRunResult? RunProc(int scriptListIndex, MapFile map, int sid, MapScriptRecord record,
         MapObject self, MapObject? dude, int fixedParam, int actionBeingUsed, string[] procedureNames)
@@ -323,7 +338,7 @@ public sealed class ScriptHost(GameFileSystem vfs, ScriptList scripts, FalloutPo
 
     private int[] GetLocalVarSlice(MapFile map, int sid, MapScriptRecord record)
     {
-        if (_localVarSlices.TryGetValue((map, sid), out int[]? slice))
+        if (_localVarSlices.TryGetValue((map.Header.Name, sid), out int[]? slice))
             return slice;
 
         int count = record.LocalVarsCount > 0
@@ -339,9 +354,35 @@ public sealed class ScriptHost(GameFileSystem vfs, ScriptList scripts, FalloutPo
                 slice[i] = map.LocalVariables[record.LocalVarsOffset + i];
         }
 
-        _localVarSlices[(map, sid)] = slice;
+        _localVarSlices[(map.Header.Name, sid)] = slice;
         return slice;
     }
+
+    /// <summary>Clears the object handle table — call on map transitions
+    /// (handles never outlive a VM run / dialog session).</summary>
+    public void ResetHandles()
+    {
+        _handles.Clear();
+        _handleByObject.Clear();
+    }
+
+    /// <summary>LVAR slices of one map, for save serialization.</summary>
+    public Dictionary<int, int[]> ExportLocalVars(string mapName) =>
+        _localVarSlices.Where(kv => kv.Key.Map == mapName)
+            .ToDictionary(kv => kv.Key.Sid, kv => (int[])kv.Value.Clone());
+
+    /// <summary>All maps' LVAR slices (save serialization).</summary>
+    public Dictionary<string, Dictionary<int, int[]>> ExportAllLocalVars() =>
+        _localVarSlices.GroupBy(kv => kv.Key.Map)
+            .ToDictionary(g => g.Key, g => g.ToDictionary(kv => kv.Key.Sid, kv => (int[])kv.Value.Clone()));
+
+    public void ImportLocalVars(string mapName, Dictionary<int, int[]> slices)
+    {
+        foreach ((int sid, int[] values) in slices)
+            _localVarSlices[(mapName, sid)] = (int[])values.Clone();
+    }
+
+    public void ClearAllLocalVars() => _localVarSlices.Clear();
 
     /// <summary>
     /// A running conversation: the same VM + context persist across option
@@ -522,10 +563,10 @@ public sealed class ScriptHost(GameFileSystem vfs, ScriptList scripts, FalloutPo
                 _map.GlobalVariables[index] = value;
         }
 
-        // metarule: 14 FIRST_RUN = pristine map (MAP_SAVED bit clear);
-        // 22 IS_LOADGAME = 0; everything else 0.
+        // metarule: 14 FIRST_RUN (host tracks revisits); 22 IS_LOADGAME = 0;
+        // everything else 0.
         public int Metarule(int rule, int argument) =>
-            rule == 14 ? ((_map.Header.Flags & 0x01) == 0 ? 1 : 0) : 0;
+            rule == 14 ? (_host.IsFirstRun(_map) ? 1 : 0) : 0;
 
         public int GameTime() => (int)(_host.ClockTicks?.Invoke() ?? 302400);
 
