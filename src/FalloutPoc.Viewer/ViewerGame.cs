@@ -3,6 +3,7 @@ using FalloutPoc.Formats.Art;
 using FalloutPoc.Formats.Map;
 using FalloutPoc.Formats.Pal;
 using FalloutPoc.Formats.Proto;
+using FalloutPoc.Formats.Text;
 using Microsoft.Xna.Framework;
 using Microsoft.Xna.Framework.Graphics;
 using Microsoft.Xna.Framework.Input;
@@ -51,7 +52,13 @@ public sealed class ViewerGame : Game
     private DudeController? _dude;
     private HashSet<int> _blockedTiles = [];
     private MapList _mapList = null!;
+    private AafFontRenderer? _fontRenderer;
+    private ProtoMessages _protoMessages = null!;
+    private readonly List<string> _messageLog = [];
     private string _currentMapName = "";
+
+    /// <summary>Screen point to examine before the first frame (screenshot testing).</summary>
+    public Point? ExamineAt { get; set; }
     private readonly HashSet<MapObject> _openDoors = [];
     private MapDestination? _pendingTransition;
 
@@ -121,8 +128,24 @@ public sealed class ViewerGame : Game
         _artIndex = new ArtIndex(_vfs);
         _frmCache = new FrmCache(_vfs, _artIndex, GraphicsDevice, _palette);
         _mapList = MapList.Load(_vfs);
+        _protoMessages = new ProtoMessages(_vfs, _protos);
+
+        // font1.aaf is the standard readable interface font.
+        if (_vfs.Exists("font1.aaf"))
+            _fontRenderer = new AafFontRenderer(GraphicsDevice, AafFont.Load(_vfs.ReadAllBytes("font1.aaf")));
+        else
+            Console.Error.WriteLine("font1.aaf not found — text overlay disabled");
 
         LoadMap(_mapName, spawnAt: null);
+
+        if (ExamineAt is { } examinePoint)
+        {
+            MapObject? target = PickObject(examinePoint.X, examinePoint.Y);
+            Console.WriteLine($"examine@{examinePoint.X},{examinePoint.Y}: "
+                + (target is null ? "nothing" : $"{ObjectName(target)} — {ObjectDescription(target)}"));
+            if (target is not null)
+                Examine(target);
+        }
 
         if (StartInWalkMode)
             ToggleWalkMode();
@@ -285,6 +308,11 @@ public sealed class ViewerGame : Game
 
         if (_hoveredObject != previousHover)
             Window.Title = _hoveredObject is null ? _baseTitle : $"{_baseTitle} — {DescribeObject(_hoveredObject)}";
+
+        // Right-click examines the object under the cursor.
+        if (mouse.RightButton == ButtonState.Pressed && _previousMouse.RightButton == ButtonState.Released
+            && _hoveredObject is not null && _hoveredObject != _dude?.Dude)
+            Examine(_hoveredObject);
 
         // Click: doors toggle, stairs/ladders travel, other objects identify,
         // open ground walks.
@@ -498,6 +526,7 @@ public sealed class ViewerGame : Game
             _animator.PlayOnceReverse(door, frameCount - 1);
             _blockedTiles.Add(door.HexTile);
             Console.WriteLine("door closes");
+            Log($"The {ObjectName(door)} closes.");
         }
         else
         {
@@ -505,6 +534,7 @@ public sealed class ViewerGame : Game
             _animator.PlayOnce(door);
             _blockedTiles.Remove(door.HexTile);
             Console.WriteLine("door opens");
+            Log($"The {ObjectName(door)} opens.");
         }
     }
 
@@ -623,6 +653,7 @@ public sealed class ViewerGame : Game
         DrawObjects(_solidObjects[_elevation]);
         if (_roofsVisible)
             DrawRoofs();
+        DrawTextOverlay();
         _spriteBatch.End();
 
         base.Draw(gameTime);
@@ -796,6 +827,22 @@ public sealed class ViewerGame : Game
         return null;
     }
 
+    private string ObjectName(MapObject obj) =>
+        _protoMessages.GetName(obj.Pid) ?? $"object 0x{obj.Pid:X8}";
+
+    private string ObjectDescription(MapObject obj) =>
+        _protoMessages.GetDescription(obj.Pid)
+        ?? "You see nothing out of the ordinary."; // the game's default examine line
+
+    private void Log(string message)
+    {
+        _messageLog.Add(message);
+        if (_messageLog.Count > 5)
+            _messageLog.RemoveAt(0);
+    }
+
+    private void Examine(MapObject obj) => Log($"{ObjectName(obj)}: {ObjectDescription(obj)}");
+
     private string DescribeObject(MapObject obj)
     {
         string proto;
@@ -838,6 +885,29 @@ public sealed class ViewerGame : Game
 
             Texture2D texture = _frmCache.GetTexture(Fid.Build(ObjectType.Tile, tileId));
             _spriteBatch.Draw(texture, new Vector2(x, y), Color.White);
+        }
+    }
+
+    /// <summary>Hover name near the cursor + the message log, bottom-left, in Fallout green.</summary>
+    private void DrawTextOverlay()
+    {
+        if (_fontRenderer is null)
+            return;
+
+        var green = new Color(0, 252, 0);
+
+        if (_hoveredObject is not null && _hoveredObject != _dude?.Dude)
+        {
+            MouseState mouse = Mouse.GetState();
+            _fontRenderer.Draw(_spriteBatch, ObjectName(_hoveredObject),
+                new Vector2(mouse.X + 14, mouse.Y + 6), green);
+        }
+
+        int y = GraphicsDevice.Viewport.Height - 8 - _messageLog.Count * _fontRenderer.LineHeight;
+        foreach (string message in _messageLog)
+        {
+            _fontRenderer.Draw(_spriteBatch, message, new Vector2(8, y), green);
+            y += _fontRenderer.LineHeight;
         }
     }
 

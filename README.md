@@ -31,6 +31,7 @@ All six milestones are complete.
 | hover / click | highlight object under cursor; click prints its PID/FID |
 | click open ground | dude walks there (A* on the hex grid, camera follows) |
 | click a door (adjacent) | opens/closes it — open doors stop blocking paths |
+| right-click an object | examine — name + description in the message log |
 | click stairs/ladder (adjacent) | travel to their destination (may load another map) |
 | walk onto an exit grid | map transition (e.g. Temple of Trials → Arroyo bridge) |
 | R | toggle roofs |
@@ -44,7 +45,8 @@ Extra CLI flags: `--screenshot out.png` (render one frame and exit),
 `--walk` (start with critters walking — for testing),
 `--pick X,Y` (print the object at a screen point — for testing),
 `--goto TILE` (walk the dude to a hex tile after load — for testing),
-`--door TILE` (toggle the door at a hex tile after load — for testing).
+`--door TILE` (toggle the door at a hex tile after load — for testing),
+`--examine X,Y` (print/log name+description of the object at a screen point — for testing).
 
 ## Phase 2 — walking simulator
 
