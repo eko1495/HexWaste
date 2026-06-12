@@ -19,7 +19,34 @@ public sealed record ProtoInfo(
     /// <summary>Inventory-list icon FID (items only); -1 otherwise.</summary>
     int InventoryFid = -1,
     /// <summary>The critter stat block; null for non-critter protos.</summary>
-    CritterProtoStats? Critter = null);
+    CritterProtoStats? Critter = null,
+    /// <summary>Base price (items only; proto.cc protoRead cost @ byte 48).</summary>
+    int Cost = 0,
+    WeaponProtoStats? Weapon = null,
+    ArmorProtoStats? Armor = null,
+    DrugProtoStats? Drug = null);
+
+/// <summary>Weapon payload, ported from fallout2-ce src/proto.cc
+/// protoItemDataRead() ITEM_TYPE_WEAPON. The attack animation comes from
+/// extendedFlags &amp; 0xF via item.cc _attack_anim[].</summary>
+public sealed record WeaponProtoStats(
+    int AnimationCode,
+    int MinDamage,
+    int MaxDamage,
+    int DamageType,
+    int MaxRange1,
+    int MaxRange2,
+    int ApCost);
+
+/// <summary>Armor payload (protoItemDataRead ITEM_TYPE_ARMOR): AC then
+/// DR[7] then DT[7], by damage type (0 = normal).</summary>
+public sealed record ArmorProtoStats(int ArmorClass, int[] DamageResistance, int[] DamageThreshold);
+
+/// <summary>Drug payload (protoItemDataRead ITEM_TYPE_DRUG): three affected
+/// stats + immediate amounts. Stat -1 = unused; stats[0] == -2 means
+/// amounts[0..1] are a random range applied to stats[1] (item.cc
+/// _perform_drug_effect — the stimpak heal roll).</summary>
+public sealed record DrugProtoStats(int[] Stats, int[] Amounts);
 
 /// <summary>
 /// Critter prototype combat data, ported from fallout2-ce src/proto.cc
@@ -99,7 +126,11 @@ public sealed class ProtoDatabase(GameFileSystem vfs)
         int subType = -1;
         byte soundId = 0;
         int inventoryFid = -1;
+        int cost = 0;
         CritterProtoStats? critter = null;
+        WeaponProtoStats? weapon = null;
+        ArmorProtoStats? armor = null;
+        DrugProtoStats? drug = null;
         switch ((ObjectType)type)
         {
             // ported from fallout2-ce src/proto.cc protoRead(): misc protos
@@ -132,9 +163,36 @@ public sealed class ProtoDatabase(GameFileSystem vfs)
                 }
                 else if ((ObjectType)type is ObjectType.Item)
                 {
-                    reader.Skip(4 * 4); // material, size, weight, cost
+                    reader.Skip(3 * 4); // material, size, weight
+                    cost = reader.ReadInt32();
                     inventoryFid = reader.ReadInt32();
                     soundId = reader.ReadByte();
+
+                    // ported from fallout2-ce src/proto.cc protoItemDataRead()
+                    switch (subType)
+                    {
+                        case 0: // ITEM_TYPE_ARMOR: AC, DR[7], DT[7]
+                            armor = new ArmorProtoStats(reader.ReadInt32(),
+                                reader.ReadInt32Array(7), reader.ReadInt32Array(7));
+                            break;
+                        case 2: // ITEM_TYPE_DRUG: stat[3], amount[3]
+                            drug = new DrugProtoStats(reader.ReadInt32Array(3), reader.ReadInt32Array(3));
+                            break;
+                        case 3: // ITEM_TYPE_WEAPON
+                        {
+                            int animationCode = reader.ReadInt32();
+                            int minDamage = reader.ReadInt32();
+                            int maxDamage = reader.ReadInt32();
+                            int damageType = reader.ReadInt32();
+                            int maxRange1 = reader.ReadInt32();
+                            int maxRange2 = reader.ReadInt32();
+                            reader.Skip(2 * 4); // projectilePid, minStrength
+                            int apCost = reader.ReadInt32(); // actionPointCost1
+                            weapon = new WeaponProtoStats(animationCode, minDamage, maxDamage,
+                                damageType, maxRange1, maxRange2, apCost);
+                            break;
+                        }
+                    }
                 }
                 else if ((ObjectType)type is ObjectType.Critter)
                 {
@@ -176,7 +234,7 @@ public sealed class ProtoDatabase(GameFileSystem vfs)
                 throw new InvalidDataException($"PID 0x{pid:X8}: unexpected type {type}.");
         }
 
-        return new ProtoInfo(filePid, messageId, fid, flags, extendedFlags, subType, soundId, inventoryFid, critter);
+        return new ProtoInfo(filePid, messageId, fid, flags, extendedFlags, subType, soundId, inventoryFid, critter, cost, weapon, armor, drug);
     }
 
     private string[] GetList(int type)

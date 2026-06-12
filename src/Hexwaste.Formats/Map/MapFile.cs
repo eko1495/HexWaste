@@ -117,6 +117,15 @@ public sealed class MapObject
     public bool IsHidden => (Flags & 0x01) != 0;
     public bool IsFlat => (Flags & 0x08) != 0;
 
+    // Equip state lives as flags on the ITEM object (obj_types.h:78-87);
+    // MAP files store them verbatim.
+    public const int FlagInLeftHand = 0x01000000;
+    public const int FlagInRightHand = 0x02000000;
+    public const int FlagWorn = 0x04000000;
+
+    public bool IsInHand => (Flags & (FlagInLeftHand | FlagInRightHand)) != 0;
+    public bool IsWorn => (Flags & FlagWorn) != 0;
+
     /// <summary>Travel destination of exit grids, stairs and ladders; null otherwise.</summary>
     public MapDestination? Destination { get; set; }
 }

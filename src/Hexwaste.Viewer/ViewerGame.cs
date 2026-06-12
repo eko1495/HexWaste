@@ -167,6 +167,8 @@ public sealed class ViewerGame : Game
         public sealed record ExamineCritter(int Hex) : StartupAction;
         public sealed record Attack(int Hex) : StartupAction;
         public sealed record Fight(int Hex) : StartupAction;
+        public sealed record Give(int Pid, int Count) : StartupAction;
+        public sealed record UseItemByPid(int Pid) : StartupAction;
         public sealed record TakeAll : StartupAction;
         public sealed record Transit(string MapFile, int Tile, int Elevation) : StartupAction;
         public sealed record SaveNow : StartupAction;
@@ -466,9 +468,20 @@ public sealed class ViewerGame : Game
                             }
                             else if (_combatPhase == CombatPhase.PlayerTurn)
                             {
+                                // Heal when hurt, then swing at anything in
+                                // reach, then end the turn.
+                                int stimpak = _dude is { } d
+                                    && d.Dude.CurrentHp <= Math.Max(20, (GetCritterState(d.Dude)?.MaxHp ?? 30) * 2 / 3)
+                                    ? _dudeInventory.FindIndex(i => i.Pid == 40)
+                                    : -1;
+                                (ProtoInfo? fightWeapon, _) = EquippedWeapon(_dude!.Dude);
+                                int reach = fightWeapon?.Weapon?.MaxRange1 ?? 1;
+                                int swingCost = fightWeapon?.Weapon?.ApCost ?? Formats.Combat.CombatMath.PunchApCost;
                                 MapObject? victim = _hostiles.FirstOrDefault(h => !h.IsDead
-                                    && RotationToAdjacent(_dude!.Dude.HexTile, h.HexTile) >= 0);
-                                if (victim is not null && _dudeAp >= Formats.Combat.CombatMath.PunchApCost)
+                                    && Formats.Hex.HexGrid.Distance(_dude!.Dude.HexTile, h.HexTile) <= reach);
+                                if (stimpak >= 0 && _dudeAp >= 2)
+                                    UseInventoryItem(stimpak);
+                                else if (victim is not null && _dudeAp >= swingCost)
                                     TryAttack(victim);
                                 else
                                     EndPlayerTurn();
@@ -485,6 +498,22 @@ public sealed class ViewerGame : Game
                     Console.WriteLine($"fight-result: rounds={_combatRound} dudeHp={_dude?.Dude.CurrentHp}"
                         + $" gameOver={_gameOver} targetDead={target.IsDead}"
                         + $" hostilesLeft={_hostiles.Count(h => !h.IsDead)}");
+                    break;
+                }
+                case StartupAction.Give(var givePid, var giveCount):
+                    if (RebuildObject(givePid, giveCount) is { } given)
+                    {
+                        AddToDudeInventory(given);
+                        Console.WriteLine($"give: {ObjectName(given)} x{giveCount}");
+                    }
+                    break;
+                case StartupAction.UseItemByPid(var usePid):
+                {
+                    int index = _dudeInventory.FindIndex(i => i.Pid == usePid);
+                    if (index >= 0)
+                        UseInventoryItem(index);
+                    else
+                        Console.Error.WriteLine($"use-item: pid 0x{usePid:X8} not in bag");
                     break;
                 }
                 case StartupAction.TakeAll:
@@ -755,8 +784,10 @@ public sealed class ViewerGame : Game
                 {
                     if (_lootContainer is not null)
                         TakeFromContainer(i);
-                    else
+                    else if (keyboard.IsKeyDown(Keys.LeftShift) || keyboard.IsKeyDown(Keys.RightShift))
                         DropFromInventory(i);
+                    else
+                        UseInventoryItem(i);
                     break;
                 }
             }
@@ -1388,6 +1419,134 @@ public sealed class ViewerGame : Game
         Log($"You drop: {ObjectName(item)}.");
     }
 
+    /// <summary>Inventory "use": weapons toggle the right hand, armor toggles
+    /// worn (equip-time bonus-stat mutation — inventory.cc _adjust_ac), drugs
+    /// are consumed (_perform_drug_effect's HP path).</summary>
+    private void UseInventoryItem(int index)
+    {
+        if (index < 0 || index >= _dudeInventory.Count)
+            return;
+        MapObject item = _dudeInventory[index];
+        ProtoInfo proto;
+        try
+        {
+            proto = _protos.Get(item.Pid);
+        }
+        catch (Exception ex) when (ex is FileNotFoundException or InvalidDataException)
+        {
+            return;
+        }
+
+        if (proto.Weapon is not null)
+        {
+            bool equip = !item.IsInHand;
+            foreach (MapObject other in _dudeInventory)
+                other.Flags &= ~(MapObject.FlagInLeftHand | MapObject.FlagInRightHand);
+            if (equip)
+                item.Flags |= MapObject.FlagInRightHand;
+            Log(equip ? $"You ready the {ObjectName(item)}." : $"You put away the {ObjectName(item)}.");
+            Console.WriteLine($"equip: {ObjectName(item)} {(equip ? "readied" : "stowed")}");
+            return;
+        }
+
+        if (proto.Armor is not null)
+        {
+            if (item.IsWorn)
+            {
+                ApplyArmorBonus(proto.Armor, -1);
+                item.Flags &= ~MapObject.FlagWorn;
+                Log($"You take off the {ObjectName(item)}.");
+            }
+            else
+            {
+                foreach (MapObject other in _dudeInventory.Where(o => o.IsWorn))
+                {
+                    try
+                    {
+                        if (_protos.Get(other.Pid).Armor is { } oldArmor)
+                            ApplyArmorBonus(oldArmor, -1);
+                    }
+                    catch (Exception ex) when (ex is FileNotFoundException or InvalidDataException)
+                    {
+                    }
+                    other.Flags &= ~MapObject.FlagWorn;
+                }
+
+                item.Flags |= MapObject.FlagWorn;
+                ApplyArmorBonus(proto.Armor, +1);
+                Log($"You put on the {ObjectName(item)}.");
+            }
+
+            if (GetCritterState(_dude!.Dude) is { } stats)
+                Console.WriteLine($"armor: AC={stats.ArmorClass} DT={stats.DamageThreshold} DR={stats.DamageResistance}");
+            return;
+        }
+
+        if (proto.Drug is not null)
+        {
+            UseDrug(item, proto.Drug);
+            return;
+        }
+
+        Log($"You can't use the {ObjectName(item)} that way.");
+    }
+
+    /// <summary>Equipping armor mutates bonus stats (inventory.cc:2544
+    /// _adjust_ac); index 0 of DT/DR = normal damage.</summary>
+    private void ApplyArmorBonus(ArmorProtoStats armor, int sign)
+    {
+        if (_dudeGcd is null)
+            return;
+        int[] bonus = _dudeGcd.Stats.BonusStats;
+        bonus[Formats.Combat.CritterStat.ArmorClass] += sign * armor.ArmorClass;
+        bonus[Formats.Combat.CritterStat.DamageThreshold] += sign * armor.DamageThreshold[0];
+        bonus[Formats.Combat.CritterStat.DamageResistance] += sign * armor.DamageResistance[0];
+    }
+
+    private void UseDrug(MapObject item, DrugProtoStats drug)
+    {
+        if (_combatPhase == CombatPhase.PlayerTurn)
+        {
+            const int useApCost = 2; // engine item-use cost in combat
+            if (_dudeAp < useApCost)
+            {
+                Log("Not enough action points.");
+                return;
+            }
+            _dudeAp -= useApCost;
+        }
+        else if (_combatPhase != CombatPhase.Idle)
+        {
+            return;
+        }
+
+        // _perform_drug_effect: stats[0] == -2 → amounts[0..1] are a random
+        // range for stats[1] (the stimpak heal roll); 35 = current HP.
+        int healed = 0;
+        if (drug.Stats[0] == -2 && drug.Stats[1] == 35)
+            healed = _combatRng.Next(drug.Amounts[0], drug.Amounts[1] + 1);
+        else
+            for (int i = 0; i < 3; i++)
+                if (drug.Stats[i] == 35)
+                    healed += drug.Amounts[i];
+
+        if (healed > 0 && _dude is not null && GetCritterState(_dude.Dude) is { } stats)
+        {
+            int before = _dude.Dude.CurrentHp;
+            _dude.Dude.CurrentHp = Math.Min(before + healed, stats.MaxHp);
+            Log($"You gain {_dude.Dude.CurrentHp - before} hit points.");
+            Console.WriteLine($"drug: {ObjectName(item)} healed {_dude.Dude.CurrentHp - before} (hp {_dude.Dude.CurrentHp})");
+        }
+        else
+        {
+            Log("Nothing happens."); // non-HP chem effects are out of PoC scope
+        }
+
+        item.StackCount--;
+        if (item.StackCount <= 0)
+            _dudeInventory.Remove(item);
+    }
+
     private bool IsDoor(MapObject obj)
     {
         if (Fid.Type(obj.Fid) is not ObjectType.Scenery || Fid.PidType(obj.Pid) != (int)ObjectType.Scenery)
@@ -1473,8 +1632,10 @@ public sealed class ViewerGame : Game
         if (GetCritterState(_dude.Dude) is not { } attacker || GetCritterState(target) is not { } defender)
             return;
 
-        int rotation = RotationToAdjacent(_dude.Dude.HexTile, target.HexTile);
-        if (rotation < 0)
+        (ProtoInfo? weaponProto, _) = EquippedWeapon(_dude.Dude);
+        int range = weaponProto?.Weapon?.MaxRange1 ?? 1;
+        int apCost = weaponProto?.Weapon?.ApCost ?? Formats.Combat.CombatMath.PunchApCost;
+        if (Formats.Hex.HexGrid.Distance(_dude.Dude.HexTile, target.HexTile) > range)
         {
             Log("Too far away.");
             return;
@@ -1484,7 +1645,7 @@ public sealed class ViewerGame : Game
         // with a fresh budget.
         switch (_combatPhase)
         {
-            case CombatPhase.PlayerTurn when _dudeAp < Formats.Combat.CombatMath.PunchApCost:
+            case CombatPhase.PlayerTurn when _dudeAp < apCost:
                 Log("Not enough action points.");
                 return;
             case CombatPhase.EnemyTurn or CombatPhase.GameOver:
@@ -1493,7 +1654,7 @@ public sealed class ViewerGame : Game
                 _dudeAp = attacker.MaxActionPoints;
                 break;
         }
-        _dudeAp -= Formats.Combat.CombatMath.PunchApCost;
+        _dudeAp -= apCost;
 
         // The engine reg_anim_clear()s both parties before choreographing.
         _animator.Remove(target);
@@ -1502,27 +1663,87 @@ public sealed class ViewerGame : Game
             walker.Stop();
             _npcWalkers.Remove(target);
         }
-        _dude.Dude.Rotation = rotation;
+        _dude.Dude.Rotation = Formats.Hex.HexGrid.RotationTo(_dude.Dude.HexTile, target.HexTile);
 
-        int chance = Formats.Combat.CombatMath.ToHitChance(attacker, defender);
-        bool hit = Formats.Combat.CombatMath.RollHit(_combatRng, chance);
-        int damage = hit ? Formats.Combat.CombatMath.RollDamage(_combatRng, attacker, defender) : 0;
+        (int chance, bool hit, int damage) = RollAttack(attacker, defender, weaponProto);
         _pendingAttack = new PendingAttack(_dude.Dude, target, chance, hit, damage);
-        Console.WriteLine($"attack {ObjectName(target)}@{target.HexTile}: chance={chance}% hit={hit} damage={damage}");
+        Console.WriteLine($"attack {ObjectName(target)}@{target.HexTile}"
+            + $"{(weaponProto is null ? "" : $" [{ObjectNameByPid(weaponProto.Pid)}]")}: chance={chance}% hit={hit} damage={damage}");
 
-        StartPunchAnimation(_dude.Dude);
+        StartAttackAnimation(_dude.Dude, weaponProto);
 
         if (_combatPhase == CombatPhase.Idle)
             BeginCombat(target);
     }
 
-    private void StartPunchAnimation(MapObject attacker)
+    /// <summary>Roll an attack with the equipped weapon (or fists): melee
+    /// skill vs unarmed skill, weapon min/max + melee bonus vs the punch die.</summary>
+    private (int Chance, bool Hit, int Damage) RollAttack(
+        Formats.Combat.CritterState attacker, Formats.Combat.CritterState defender, ProtoInfo? weaponProto)
     {
-        const int animThrowPunch = 16;
-        int punchFid = Fid.Build(ObjectType.Critter, Fid.Index(attacker.Fid), animThrowPunch, 0);
-        if (_vfs.Exists(_artIndex.GetFrmPath(punchFid)))
-            _animator.PlayActionOnce(attacker, punchFid);
+        int skill = weaponProto is null ? attacker.UnarmedSkill : attacker.MeleeWeaponsSkill;
+        int chance = Formats.Combat.CombatMath.ToHitChance(skill, defender);
+        bool hit = Formats.Combat.CombatMath.RollHit(_combatRng, chance);
+        int damage = 0;
+        if (hit)
+        {
+            damage = weaponProto?.Weapon is { } weapon
+                ? Formats.Combat.CombatMath.RollWeaponDamage(_combatRng, attacker, defender,
+                    weapon.MinDamage, weapon.MaxDamage)
+                : Formats.Combat.CombatMath.RollDamage(_combatRng, attacker, defender);
+        }
+
+        return (chance, hit, damage);
     }
+
+    /// <summary>The critter's in-hand weapon proto + item; the dude's bag is
+    /// the separate _dudeInventory list.</summary>
+    private (ProtoInfo? Proto, MapObject? Item) EquippedWeapon(MapObject critter)
+    {
+        List<MapObject> bag = critter == _dude?.Dude ? _dudeInventory : critter.Inventory;
+        foreach (MapObject item in bag.Where(i => i.IsInHand))
+        {
+            try
+            {
+                ProtoInfo proto = _protos.Get(item.Pid);
+                if (proto.Weapon is not null)
+                    return (proto, item);
+            }
+            catch (Exception ex) when (ex is FileNotFoundException or InvalidDataException)
+            {
+            }
+        }
+
+        return (null, null);
+    }
+
+    /// <summary>Attack art: the weapon's animation code goes into FID bits
+    /// 12-15 and the attack anim comes from extendedFlags &amp; 0xF via
+    /// item.cc _attack_anim[] (THRUST=41, SWING=42; fists punch at 16).</summary>
+    private void StartAttackAnimation(MapObject attacker, ProtoInfo? weaponProto)
+    {
+        // item.cc:116 _attack_anim, indexed by extendedFlags & 0xF
+        ReadOnlySpan<int> attackAnims = [0, 16, 17, 42, 41, 18, 45, 46, 47];
+        const int animThrowPunch = 16;
+
+        int anim = animThrowPunch;
+        int weaponCode = 0;
+        if (weaponProto?.Weapon is { } weapon)
+        {
+            int index = weaponProto.ExtendedFlags & 0xF;
+            anim = index < attackAnims.Length ? attackAnims[index] : animThrowPunch;
+            weaponCode = weapon.AnimationCode;
+        }
+
+        int fid = Fid.Build(ObjectType.Critter, Fid.Index(attacker.Fid), anim, weaponCode);
+        if (!_vfs.Exists(_artIndex.GetFrmPath(fid)))
+            fid = Fid.Build(ObjectType.Critter, Fid.Index(attacker.Fid), animThrowPunch, 0);
+        if (_vfs.Exists(_artIndex.GetFrmPath(fid)))
+            _animator.PlayActionOnce(attacker, fid);
+    }
+
+    private string ObjectNameByPid(int pid) =>
+        _protoMessages.GetName(pid) ?? $"0x{pid:X8}";
 
     private static int RotationToAdjacent(int from, int to)
     {
@@ -1899,12 +2120,15 @@ public sealed class ViewerGame : Game
             return false;
 
         int dudeTile = _dude.Dude.HexTile;
-        if (RotationToAdjacent(enemy.HexTile, dudeTile) >= 0)
+        (ProtoInfo? enemyWeapon, _) = EquippedWeapon(enemy);
+        int attackRange = enemyWeapon?.Weapon?.MaxRange1 ?? 1;
+        int attackCost = enemyWeapon?.Weapon?.ApCost ?? Formats.Combat.CombatMath.PunchApCost;
+        if (Formats.Hex.HexGrid.Distance(enemy.HexTile, dudeTile) <= attackRange)
         {
-            if (_actingEnemyAp < Formats.Combat.CombatMath.PunchApCost)
+            if (_actingEnemyAp < attackCost)
                 return false;
-            _actingEnemyAp -= Formats.Combat.CombatMath.PunchApCost;
-            EnemyAttack(enemy);
+            _actingEnemyAp -= attackCost;
+            EnemyAttack(enemy, enemyWeapon);
             return true;
         }
 
@@ -1923,23 +2147,20 @@ public sealed class ViewerGame : Game
         return StartNpcWalk(enemy, targetTile);
     }
 
-    private void EnemyAttack(MapObject enemy)
+    private void EnemyAttack(MapObject enemy, ProtoInfo? weaponProto)
     {
         if (_dude is null || GetCritterState(enemy) is not { } attacker
             || GetCritterState(_dude.Dude) is not { } defender)
             return;
 
-        int rotation = RotationToAdjacent(enemy.HexTile, _dude.Dude.HexTile);
-        if (rotation >= 0)
-            enemy.Rotation = rotation;
+        enemy.Rotation = Formats.Hex.HexGrid.RotationTo(enemy.HexTile, _dude.Dude.HexTile);
 
-        int chance = Formats.Combat.CombatMath.ToHitChance(attacker, defender);
-        bool hit = Formats.Combat.CombatMath.RollHit(_combatRng, chance);
-        int damage = hit ? Formats.Combat.CombatMath.RollDamage(_combatRng, attacker, defender) : 0;
+        (int chance, bool hit, int damage) = RollAttack(attacker, defender, weaponProto);
         _pendingAttack = new PendingAttack(enemy, _dude.Dude, chance, hit, damage);
-        Console.WriteLine($"enemy-attack {ObjectName(enemy)}@{enemy.HexTile}: chance={chance}% hit={hit} damage={damage}");
+        Console.WriteLine($"enemy-attack {ObjectName(enemy)}@{enemy.HexTile}"
+            + $"{(weaponProto is null ? "" : $" [{ObjectNameByPid(weaponProto.Pid)}]")}: chance={chance}% hit={hit} damage={damage}");
 
-        StartPunchAnimation(enemy);
+        StartAttackAnimation(enemy, weaponProto);
     }
 
     private void ResetCombatState()
@@ -2962,7 +3183,8 @@ public sealed class ViewerGame : Game
             if (obj.Inventory.Count > 0 || _stockedOrdinals.Contains(ordinal)
                 || (obj.IsDead && Fid.PidType(obj.Pid) == (int)ObjectType.Critter))
                 delta.ContainerInventories[ordinal] =
-                    [.. obj.Inventory.Select(i => new SaveState.SavedItem(i.Pid, Math.Max(i.StackCount, 1)))];
+                    [.. obj.Inventory.Select(i => new SaveState.SavedItem(i.Pid, Math.Max(i.StackCount, 1),
+                        i.Flags & (MapObject.FlagInLeftHand | MapObject.FlagInRightHand | MapObject.FlagWorn)))];
         }
 
         _visitedMaps[_map.Header.Name] = delta;
@@ -3046,7 +3268,10 @@ public sealed class ViewerGame : Game
             foreach (SaveState.SavedItem item in items)
             {
                 if (RebuildObject(item.Pid, item.Count) is { } obj)
+                {
+                    obj.Flags |= item.Flags;
                     container.Inventory.Add(obj);
+                }
             }
         }
 
@@ -3097,7 +3322,7 @@ public sealed class ViewerGame : Game
             Elevation = _elevation,
             ClockTicks = _clock.Ticks,
             GlobalVars = new Dictionary<int, int>(_scriptHost?.GlobalVars ?? []),
-            DudeInventory = [.. _dudeInventory.Select(i => new SaveState.SavedItem(i.Pid, i.StackCount))],
+            DudeInventory = [.. _dudeInventory.Select(i => new SaveState.SavedItem(i.Pid, i.StackCount, i.Flags & (MapObject.FlagInLeftHand | MapObject.FlagInRightHand | MapObject.FlagWorn)))],
             VisitedMaps = new Dictionary<string, SaveState.MapDelta>(_visitedMaps),
             LocalVars = _scriptHost?.ExportAllLocalVars() ?? [],
         };
@@ -3168,12 +3393,27 @@ public sealed class ViewerGame : Game
                 ? state.DudeHp
                 : GetCritterState(_dude.Dude)?.MaxHp ?? _dude.Dude.CurrentHp;
 
-        // Rebuild the dude's bag from prototypes.
+        // Rebuild the dude's bag from prototypes; worn armor re-applies its
+        // bonus stats over the freshly reloaded sheet.
         _dudeInventory.Clear();
         foreach (SaveState.SavedItem item in state.DudeInventory)
         {
             if (RebuildObject(item.Pid, item.Count) is { } obj)
+            {
+                obj.Flags |= item.Flags;
                 _dudeInventory.Add(obj);
+                if (obj.IsWorn)
+                {
+                    try
+                    {
+                        if (_protos.Get(obj.Pid).Armor is { } armor)
+                            ApplyArmorBonus(armor, +1);
+                    }
+                    catch (Exception ex) when (ex is FileNotFoundException or InvalidDataException)
+                    {
+                    }
+                }
+            }
         }
 
         Log("Game loaded.");

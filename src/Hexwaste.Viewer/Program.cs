@@ -114,6 +114,17 @@ for (int i = 0; i < args.Length; i++)
         case "--rng-seed" when i + 1 < args.Length:
             rngSeed = int.Parse(args[++i]);
             break;
+        case "--give" when i + 1 < args.Length:
+        {
+            // pid[:count] — test plumbing: drop an item into the dude's bag
+            string[] parts = args[++i].Split(':');
+            actions.Add(new ViewerGame.StartupAction.Give(int.Parse(parts[0]),
+                parts.Length > 1 ? int.Parse(parts[1]) : 1));
+            break;
+        }
+        case "--use-item" when i + 1 < args.Length:
+            actions.Add(new ViewerGame.StartupAction.UseItemByPid(int.Parse(args[++i])));
+            break;
         case "--take-all":
             actions.Add(new ViewerGame.StartupAction.TakeAll());
             break;

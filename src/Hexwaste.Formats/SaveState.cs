@@ -39,7 +39,8 @@ public sealed class SaveState
     /// <summary>Per-map LVAR slices: mapName → sid → values.</summary>
     public Dictionary<string, Dictionary<int, int[]>> LocalVars { get; set; } = [];
 
-    public sealed record SavedItem(int Pid, int Count);
+    /// <summary>Flags carries the equip bits (in-hand 0x3000000, worn 0x4000000).</summary>
+    public sealed record SavedItem(int Pid, int Count, int Flags = 0);
 
     public sealed record SavedDoor(int HexTile, int Pid, bool Open, bool Locked);
 

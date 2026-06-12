@@ -55,5 +55,10 @@ public sealed class CritterState(MapObject critter, CritterProtoStats proto)
     public int UnarmedSkill => 30 + 2 * (Stat(CritterStat.Agility) + Stat(CritterStat.Strength))
         + proto.Skills[3];
 
+    /// <summary>skill.cc gSkillDescriptions[4]: melee weapons = 20 + 2 × (AG + ST)
+    /// + proto skill points (skill index 4).</summary>
+    public int MeleeWeaponsSkill => 20 + 2 * (Stat(CritterStat.Agility) + Stat(CritterStat.Strength))
+        + proto.Skills[4];
+
     public bool IsDead => critter.IsDead;
 }
