@@ -80,6 +80,7 @@ public sealed class ViewerGame : Game
     /// <summary>Ambient light as a fraction of full brightness (CLI --ambient).</summary>
     public double InitialAmbient { get; set; } = 1.0;
     private ProtoMessages _protoMessages = null!;
+    private ScriptHost? _scriptHost;
     private readonly List<string> _messageLog = [];
     private string _currentMapName = "";
 
@@ -161,6 +162,14 @@ public sealed class ViewerGame : Game
         if (!DisableAudio)
             _audio = new AudioManager(_vfs, _gameDir);
         _protoMessages = new ProtoMessages(_vfs, _protos);
+        try
+        {
+            _scriptHost = new ScriptHost(_vfs, Formats.Int.ScriptList.Load(_vfs));
+        }
+        catch (Exception ex) when (ex is FileNotFoundException or InvalidDataException)
+        {
+            Console.Error.WriteLine($"scripts.lst unavailable — script examine disabled: {ex.Message}");
+        }
 
         // font1.aaf is the standard readable interface font.
         if (_vfs.Exists("font1.aaf"))
@@ -185,8 +194,11 @@ public sealed class ViewerGame : Game
         if (ExamineAt is { } examinePoint)
         {
             MapObject? target = PickObject(examinePoint.X, examinePoint.Y);
-            Console.WriteLine($"examine@{examinePoint.X},{examinePoint.Y}: "
-                + (target is null ? "nothing" : $"{ObjectName(target)} — {ObjectDescription(target)}"));
+            string text = target is null ? "nothing"
+                : _scriptHost?.GetScriptedDescription(target, _map) is { } scripted
+                    ? $"{ObjectName(target)} — [script] {string.Join(" / ", scripted)}"
+                    : $"{ObjectName(target)} — {ObjectDescription(target)}";
+            Console.WriteLine($"examine@{examinePoint.X},{examinePoint.Y}: {text}");
             if (target is not null)
                 Examine(target);
         }
@@ -1162,7 +1174,20 @@ public sealed class ViewerGame : Game
             _messageLog.RemoveAt(0);
     }
 
-    private void Examine(MapObject obj) => Log($"{ObjectName(obj)}: {ObjectDescription(obj)}");
+    private void Examine(MapObject obj)
+    {
+        // Script-provided description first (micro INT VM), proto text as the
+        // default — mirroring how look_at/description procs override defaults.
+        if (_scriptHost?.GetScriptedDescription(obj, _map) is { } scripted)
+        {
+            Log($"{ObjectName(obj)}:");
+            foreach (string line in scripted)
+                Log(line);
+            return;
+        }
+
+        Log($"{ObjectName(obj)}: {ObjectDescription(obj)}");
+    }
 
     private string DescribeObject(MapObject obj)
     {

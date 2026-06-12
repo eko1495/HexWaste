@@ -53,6 +53,9 @@ public sealed class MapObject
     /// <summary>Light emission: radius in hexes (max 8) and intensity (0..65536).</summary>
     public int LightDistance { get; init; }
     public int LightIntensity { get; init; }
+
+    /// <summary>Script id (type in the high byte), or -1; key into MapFile.ScriptListIndexBySid.</summary>
+    public int Sid { get; init; }
     public List<MapObject> Inventory { get; } = [];
 
     // ported from fallout2-ce src/obj_types.h
@@ -101,6 +104,9 @@ public sealed class MapFile
     public required int[] GlobalVariables { get; init; }
     public required int[] LocalVariables { get; init; }
 
+    /// <summary>Script id → scripts.lst line index, harvested from the scripts section.</summary>
+    public Dictionary<int, int> ScriptListIndexBySid { get; } = [];
+
     /// <summary>Indexed by elevation; null when the map has no data for that elevation.</summary>
     public required MapElevation?[] Elevations { get; init; }
 
@@ -136,16 +142,18 @@ public sealed class MapFile
             elevations[elevation] = new MapElevation { Squares = squares };
         }
 
-        SkipScripts(reader);
-        ReadObjects(reader, elevations, protos, header.Version);
-
-        return new MapFile
+        var map = new MapFile
         {
             Header = header,
             GlobalVariables = globalVars,
             LocalVariables = localVars,
             Elevations = elevations,
         };
+
+        ReadScripts(reader, map.ScriptListIndexBySid);
+        ReadObjects(reader, elevations, protos, header.Version);
+
+        return map;
     }
 
     private static MapHeader ReadHeader(BigEndianReader reader)
@@ -172,13 +180,16 @@ public sealed class MapFile
     }
 
     /// <summary>
-    /// Advances the stream past the scripts section without keeping anything.
+    /// Reads the scripts section, keeping only the sid → scripts.lst index
+    /// mapping needed to bind objects to script files.
     /// ported from fallout2-ce src/scripts.cc scriptLoadAll()/scriptListExtentRead()/
     /// scriptRead(): 5 script-type groups; each non-empty group is ceil(count/16)
     /// extents of 16 records + 2 trailing ints; every record is read in full even
-    /// beyond the extent's logical length (the writer writes them symmetrically).
+    /// beyond the extent's logical length (the writer writes them symmetrically) —
+    /// padding records beyond each extent's logical length carry garbage and are
+    /// discarded.
     /// </summary>
-    private static void SkipScripts(BigEndianReader reader)
+    private static void ReadScripts(BigEndianReader reader, Dictionary<int, int> listIndexBySid)
     {
         const int scriptTypeCount = 5;
         const int extentSize = 16;
@@ -191,6 +202,7 @@ public sealed class MapFile
             if (count == 0)
                 continue;
 
+            int remaining = count;
             int extents = (count + extentSize - 1) / extentSize;
             for (int extent = 0; extent < extents; extent++)
             {
@@ -210,9 +222,16 @@ public sealed class MapFile
                             break;
                     }
 
-                    reader.Skip(14 * 4); // flags .. field_50
+                    reader.Skip(4); // flags
+                    int scriptListIndex = reader.ReadInt32();
+                    reader.Skip(12 * 4); // prg .. field_50
+
+                    bool isPadding = record >= Math.Min(remaining, extentSize);
+                    if (!isPadding && sid != -1)
+                        listIndexBySid[sid] = scriptListIndex;
                 }
 
+                remaining -= extentSize;
                 reader.Skip(8); // extent length + next pointer
             }
         }
@@ -251,7 +270,9 @@ public sealed class MapFile
         reader.Skip(4); // cid
         int lightDistance = reader.ReadInt32();
         int lightIntensity = reader.ReadInt32();
-        reader.Skip(3 * 4); // field_74, sid, scriptIndex
+        reader.Skip(4); // field_74
+        int sid = reader.ReadInt32();
+        reader.Skip(4); // scriptIndex — resolved at runtime via the scripts section
 
         var obj = new MapObject
         {
@@ -266,6 +287,7 @@ public sealed class MapFile
             Pid = pid,
             LightDistance = lightDistance,
             LightIntensity = lightIntensity,
+            Sid = sid,
         };
 
         int inventoryLength = ReadObjectData(reader, obj, protos, mapVersion);

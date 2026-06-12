@@ -53,6 +53,17 @@ Extra CLI flags: `--screenshot out.png` (render one frame and exit),
 `--worldmap` (open the worldmap on start), `--travel N` (travel to city.txt area N — for testing),
 `--no-audio` (mute), `--no-ambient` (freeze NPC fidget/wander — for deterministic screenshots).
 
+## Phase 3 — the world becomes real
+
+Native AAF font rendering with real game text (names + examine descriptions
+from `pro_*.msg`), the full static lighting engine (occluded light pools,
+day/night ambient), a click-to-travel worldmap, sound (a complete C# port of
+the Interplay ACM decoder — door sfx, footsteps, per-map music), ambient NPC
+life (engine-faithful fidget + faked wander), and a **micro INT-script VM**
+(39 core opcodes, arity-stubbed externals) that runs real `look_at`/
+`description` procedures — scripted examine text works, e.g. the Den's chem
+addicts describe themselves with their authentic script lines.
+
 ## Phase 2 — walking simulator
 
 On top of the original viewer scope, the PoC now renders critters (composed

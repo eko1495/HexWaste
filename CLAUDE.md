@@ -55,6 +55,16 @@ Phase 2 — "walking simulator" (per research report
 5. **P2-M5** — hardcoded interactions, no VM: doors (open/close animation),
    exit grids (map/elevation transition), stairs/ladders.
 
+Phase 3 (DONE, per phase3-research-report.md): M0 AAF fonts + MSG + examine,
+M1 static lighting (LightGrid port incl. the 36-case occlusion switch;
+CPU tints — per-object exact, per-square floor approximation), M2 worldmap
+travel (city.txt/maps.txt lookup names), M3 sound (full ACM decoder port,
+door sfx names, footstep approximation, maps.txt music; music is LOOSE files
+under <game>/sound/music), M4 ambient life (fidget per _dude_fidget; wander
+is a documented fake), M5 micro INT VM (39 core ops + 181 arity-mapped
+externals; examine override path only — use_p_proc/map_enter NOT wired).
+Scripts.lst is 0-based; message_str list ids are scripts.lst index + 1.
+
 After each milestone: run tests, run the app if possible, update README progress checklist, conventional commit.
 
 ## Critical gotchas
