@@ -79,12 +79,26 @@ public sealed class ViewerGame : Game
 
     /// <summary>Ambient light as a fraction of full brightness (CLI --ambient).</summary>
     public double InitialAmbient { get; set; } = 1.0;
+
+    /// <summary>True when --ambient or [ ] pinned the ambient level (clock stops driving it).</summary>
+    public bool AmbientFixed { get; set; }
     private ProtoMessages _protoMessages = null!;
     private Formats.Int.ScriptHost? _scriptHost;
     private Formats.Int.ScriptHost.DialogSession? _dialog;
     private MapObject? _lootContainer;
     private bool _inventoryOpen;
     private readonly List<MapObject> _dudeInventory = [];
+    private readonly GameClock _clock = new();
+    private int _lastAmbientHour = -1;
+
+    /// <summary>Path for F5/F9 saves and the --save-to/--load-from flags.</summary>
+    public string SavePath { get; set; } = "fpoc-save.json";
+
+    /// <summary>Save right before exiting a screenshot run (testing).</summary>
+    public bool SaveOnExit { get; set; }
+
+    /// <summary>Load this save after startup (testing / resume).</summary>
+    public bool LoadOnStart { get; set; }
     private Texture2D? _panelPixel;
     private readonly List<string> _messageLog = [];
 
@@ -188,6 +202,7 @@ public sealed class ViewerGame : Game
                 OpenStateChanged = (obj, open) => SetDoorState(obj, open),
                 ObjectPlaced = (obj, map) => OnScriptObjectPlaced(obj),
                 ObjectRemoved = obj => OnScriptObjectRemoved(obj),
+                ClockTicks = () => _clock.Ticks,
             };
         }
         catch (Exception ex) when (ex is FileNotFoundException or InvalidDataException)
@@ -214,6 +229,9 @@ public sealed class ViewerGame : Game
             else
                 Console.Error.WriteLine($"no area {areaIndex} in city.txt");
         }
+
+        if (LoadOnStart)
+            LoadGame();
 
         foreach ((int hex, bool lockpick) in UseAtHexes)
         {
@@ -316,6 +334,7 @@ public sealed class ViewerGame : Game
             _animator.Update(10);
             _dude?.Update(10);
             UpdateAmbientLife(10);
+            UpdateClock(10);
             if (_pendingTransition is { } transition)
             {
                 _pendingTransition = null;
@@ -450,6 +469,11 @@ public sealed class ViewerGame : Game
             PrewarmItemTextures(_dudeInventory);
         }
 
+        if (IsKeyPressed(keyboard, Keys.F5))
+            SaveGame();
+        if (IsKeyPressed(keyboard, Keys.F9))
+            LoadGame();
+
         // Dialog mode swallows all input.
         if (_dialog is not null)
         {
@@ -543,6 +567,7 @@ public sealed class ViewerGame : Game
             double step = IsKeyPressed(keyboard, Keys.OemOpenBrackets) ? -0.1 : 0.1;
             InitialAmbient = Math.Clamp(InitialAmbient + step, 0.25, 1.0);
             _lightGrid.Ambient = (int)(InitialAmbient * Formats.Light.LightGrid.IntensityMax);
+            AmbientFixed = true;
             Log($"ambient light {InitialAmbient:P0}");
         }
 
@@ -563,6 +588,8 @@ public sealed class ViewerGame : Game
             _frmCache.OnPaletteChanged(_palette);
             _paletteUploads++;
         }
+
+        UpdateClock(gameTime.ElapsedGameTime.TotalMilliseconds);
 
         // Hover picking; click prints the object's identity.
         MapObject? previousHover = _hoveredObject;
@@ -1301,6 +1328,7 @@ public sealed class ViewerGame : Game
         }
 
         _worldmapOpen = false;
+        _clock.AdvanceHours(8); // travel takes time
         Console.WriteLine($"travelling to {area.Name} -> {mapFile}");
         LoadMap(mapFile, new MapDestination(mapIndex, entrance.Tile, entrance.Elevation, entrance.Rotation));
         Log($"You arrive at {area.Name}.");
@@ -1430,6 +1458,8 @@ public sealed class ViewerGame : Game
 
         if (_screenshotPath is not null)
         {
+            if (SaveOnExit)
+                SaveGame();
             SaveScreenshot(_screenshotPath);
             Exit();
         }
@@ -1865,6 +1895,106 @@ public sealed class ViewerGame : Game
             _fontRenderer.Draw(_spriteBatch, message, new Vector2(8, y), green);
             y += _fontRenderer.LineHeight;
         }
+    }
+
+    /// <summary>Idle clock + hour-driven ambient (skipped when --ambient fixed it).</summary>
+    private void UpdateClock(double elapsedMs)
+    {
+        _clock.AdvanceRealTime(elapsedMs);
+
+        int hour = _clock.Hour / 100;
+        if (hour == _lastAmbientHour)
+            return;
+        _lastAmbientHour = hour;
+
+        if (AmbientFixed)
+            return;
+        _lightGrid.Ambient = (int)Math.Clamp(
+            _clock.AmbientFraction * Formats.Light.LightGrid.IntensityMax,
+            Formats.Light.LightGrid.IntensityMin, Formats.Light.LightGrid.IntensityMax);
+    }
+
+    private void SaveGame()
+    {
+        var state = new SaveState
+        {
+            Map = _currentMapName,
+            DudeTile = _dude?.Dude.HexTile ?? _map.Header.EnteringTile,
+            DudeRotation = _dude?.Dude.Rotation ?? 0,
+            Elevation = _elevation,
+            ClockTicks = _clock.Ticks,
+            GlobalVars = new Dictionary<int, int>(_scriptHost?.GlobalVars ?? []),
+            DudeInventory = [.. _dudeInventory.Select(i => new SaveState.SavedItem(i.Pid, i.StackCount))],
+            Doors = [.. _solidObjects[_elevation]
+                .Where(o => IsDoor(o) && (_openDoors.Contains(o) || o.IsLockedState))
+                .Select(o => new SaveState.SavedDoor(o.HexTile, o.Pid, _openDoors.Contains(o), o.IsLockedState))],
+        };
+        state.Save(SavePath);
+        Log($"Game saved ({Path.GetFileName(SavePath)}).");
+        Console.WriteLine($"saved: map={state.Map} tile={state.DudeTile} clock={state.ClockTicks} items={state.DudeInventory.Count} doors={state.Doors.Count}");
+    }
+
+    private void LoadGame()
+    {
+        SaveState? state = SaveState.Load(SavePath);
+        if (state is null)
+        {
+            Log("No saved game found.");
+            return;
+        }
+
+        _clock.Ticks = state.ClockTicks;
+        _lastAmbientHour = -1;
+        if (_scriptHost is not null)
+        {
+            _scriptHost.GlobalVars.Clear();
+            foreach ((int key, int value) in state.GlobalVars)
+                _scriptHost.GlobalVars[key] = value;
+        }
+
+        LoadMap(state.Map, new MapDestination(0, state.DudeTile, state.Elevation, state.DudeRotation));
+
+        // Re-apply door deltas over the freshly scripted map.
+        foreach (SaveState.SavedDoor saved in state.Doors)
+        {
+            MapObject? door = _solidObjects[_elevation]
+                .FirstOrDefault(o => o.HexTile == saved.HexTile && o.Pid == saved.Pid);
+            if (door is null)
+                continue;
+            door.IsLockedState = saved.Locked;
+            SetDoorState(door, saved.Open);
+        }
+
+        // Rebuild the dude's bag from prototypes.
+        _dudeInventory.Clear();
+        foreach (SaveState.SavedItem item in state.DudeInventory)
+        {
+            try
+            {
+                var obj = new MapObject
+                {
+                    Id = -4,
+                    HexTile = -1,
+                    X = 0,
+                    Y = 0,
+                    Frame = 0,
+                    Rotation = 0,
+                    Fid = _protos.Get(item.Pid).Fid,
+                    Flags = 0,
+                    Pid = item.Pid,
+                    Sid = -1,
+                };
+                obj.StackCount = item.Count;
+                _dudeInventory.Add(obj);
+            }
+            catch (Exception ex) when (ex is FileNotFoundException or InvalidDataException)
+            {
+                Console.Error.WriteLine($"load: dropping unknown item pid 0x{item.Pid:X8}: {ex.Message}");
+            }
+        }
+
+        Log("Game loaded.");
+        Console.WriteLine($"loaded: map={state.Map} tile={state.DudeTile} clock={state.ClockTicks} items={_dudeInventory.Count}");
     }
 
     private void SaveScreenshot(string path)

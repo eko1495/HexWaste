@@ -34,6 +34,7 @@ All six milestones are complete.
 | L on a hovered locked door | lockpick |
 | click a container/item (adjacent) | loot (1–9 take, A take all) / pick up |
 | I | inventory (1–9 drop) |
+| F5 / F9 | save / load (JSON snapshot; doors, position, clock, vars, bag) |
 | right-click an object | examine — name + description in the message log |
 | click a critter (nearby) | talk — real scripted dialog (keys 1–9 or click to choose) |
 | click stairs/ladder (adjacent) | travel to their destination (may load another map) |

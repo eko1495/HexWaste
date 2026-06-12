@@ -61,6 +61,12 @@ public sealed class ScriptHost(GameFileSystem vfs, ScriptList scripts, FalloutPo
     /// <summary>The prototype database (item icons, fids for created objects).</summary>
     public FalloutPoc.Formats.Proto.ProtoDatabase Protos => protos;
 
+    /// <summary>Game clock backing the game_time externals (host-provided).</summary>
+    public Func<long>? ClockTicks { get; set; }
+
+    /// <summary>Session GVARs, exposed for save/load.</summary>
+    public Dictionary<int, int> GlobalVars => _globalVars;
+
     /// <summary>
     /// Runs the object's description_p_proc (falling back to look_at_p_proc).
     /// Returns the display_msg lines when the script overrides the default
@@ -398,6 +404,8 @@ public sealed class ScriptHost(GameFileSystem vfs, ScriptList scripts, FalloutPo
         // 22 IS_LOADGAME = 0; everything else 0.
         public int Metarule(int rule, int argument) =>
             rule == 14 ? ((_map.Header.Flags & 0x01) == 0 ? 1 : 0) : 0;
+
+        public int GameTime() => (int)(_host.ClockTicks?.Invoke() ?? 302400);
 
         // ---- dialog state (one "round" = one reply + its options)
 

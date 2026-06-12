@@ -16,6 +16,10 @@ List<(int, bool)> useHexes = [];
 int? gotoTile = null;
 int? doorTile = null;
 double ambient = 1.0;
+bool ambientFixed = false;
+string? savePath = null;
+bool saveOnExit = false;
+bool loadOnStart = false;
 bool worldmap = false;
 int? travelArea = null;
 bool noAudio = false;
@@ -57,6 +61,15 @@ for (int i = 0; i < args.Length; i++)
             break;
         case "--ambient" when i + 1 < args.Length:
             ambient = double.Parse(args[++i], System.Globalization.CultureInfo.InvariantCulture);
+            ambientFixed = true;
+            break;
+        case "--save-to" when i + 1 < args.Length:
+            savePath = args[++i];
+            saveOnExit = true;
+            break;
+        case "--load-from" when i + 1 < args.Length:
+            savePath = args[++i];
+            loadOnStart = true;
             break;
         case "--pick" when i + 1 < args.Length:
         {
@@ -125,6 +138,10 @@ using var game = new ViewerGame(gameDir, mapName, screenshot, roofs)
     WalkToTile = gotoTile,
     ToggleDoorAtTile = doorTile,
     InitialAmbient = ambient,
+    AmbientFixed = ambientFixed,
+    SaveOnExit = saveOnExit,
+    LoadOnStart = loadOnStart,
+    SavePath = savePath ?? "fpoc-save.json",
     StartOnWorldmap = worldmap,
     TravelToArea = travelArea,
     DisableAudio = noAudio,
