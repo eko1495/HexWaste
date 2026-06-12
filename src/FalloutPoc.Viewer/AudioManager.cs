@@ -105,10 +105,24 @@ public sealed class AudioManager : IDisposable
             return null;
         }
 
-        byte[] pcm = new byte[audio.Samples.Length * 2];
+        // Some stereo ACMs declare an odd total sample count (e.g. FOOTSTEP),
+        // which violates SoundEffect's block alignment (channels * 2 bytes) —
+        // truncate the dangling sample.
+        int channels = audio.Channels >= 2 ? 2 : 1;
+        int alignedSamples = audio.Samples.Length / channels * channels;
+        byte[] pcm = new byte[alignedSamples * 2];
         Buffer.BlockCopy(audio.Samples, 0, pcm, 0, pcm.Length);
-        return new SoundEffect(pcm, audio.SampleRate,
-            audio.Channels >= 2 ? AudioChannels.Stereo : AudioChannels.Mono);
+
+        try
+        {
+            return new SoundEffect(pcm, audio.SampleRate,
+                channels == 2 ? AudioChannels.Stereo : AudioChannels.Mono);
+        }
+        catch (ArgumentException ex)
+        {
+            Console.Error.WriteLine($"sfx rejected by audio backend: {ex.Message}");
+            return null;
+        }
     }
 
     public void Dispose()
