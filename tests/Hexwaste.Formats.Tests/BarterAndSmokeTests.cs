@@ -92,3 +92,44 @@ public class OpeningMapsSmokeTests
         host.RunMapEnter(map, scripted, dude: null);
     }
 }
+
+public class SpatialScriptTests
+{
+    [GameDataFact]
+    public void ArcavesCarriesTheEighteenSpearTraps()
+    {
+        using var vfs = GameFileSystem.Open(GameData.RequiredDir);
+        var protos = new ProtoDatabase(vfs);
+        using Stream stream = vfs.OpenRead(@"maps\arcaves.map");
+        MapFile map = MapFile.Load(stream, protos);
+
+        Assert.Equal(18, map.SpatialScripts.Count);
+        Assert.All(map.SpatialScripts, sp =>
+        {
+            Assert.Equal(1, sp.Sid >> 24); // spatial sid type
+            Assert.InRange(sp.Radius, 0, 10);
+            Assert.True(Hexwaste.Formats.Hex.HexGrid.IsValid(sp.Tile));
+        });
+
+        // Spatial triggers run through the host without throwing, and the
+        // _scr_SpatialsEnabled gate suppresses them when disabled.
+        var host = new ScriptHost(vfs, ScriptList.Load(vfs), protos);
+        var mover = new MapObject
+        {
+            Id = 1,
+            HexTile = map.SpatialScripts[0].Tile,
+            X = 0,
+            Y = 0,
+            Frame = 0,
+            Rotation = 0,
+            Fid = 0x01000000,
+            Flags = 0,
+            Pid = 0x01000001,
+            Sid = -1,
+        };
+        host.SpatialsEnabled = false;
+        host.RunSpatialsAt(map, mover.HexTile, map.SpatialScripts[0].Elevation, mover);
+        host.SpatialsEnabled = true;
+        host.RunSpatialsAt(map, mover.HexTile, map.SpatialScripts[0].Elevation, mover);
+    }
+}

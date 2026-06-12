@@ -94,6 +94,79 @@ public sealed class ScriptHost(GameFileSystem vfs, ScriptList scripts, Hexwaste.
     /// repositions the dude + camera during map_enter.</summary>
     public Action<int, int, int>? MapStartOverridden { get; set; }
 
+    /// <summary>play_gmovie: the host shows a caption card for the movie id.</summary>
+    public Action<int>? MoviePlayed { get; set; }
+
+    /// <summary>critter_damage: (victim, amount, bypassArmor) — the host
+    /// applies HP loss and the death path.</summary>
+    public Action<MapObject, int, bool>? CritterDamaged { get; set; }
+
+    /// <summary>Runtime sid for a script-created object (engine scr_new): a
+    /// fresh type-3 sid registered into the map's script table.</summary>
+    internal int AllocateSid(MapFile map, int scriptIndex)
+    {
+        int sid = 0x03000000 | 0x00800000; // synthetic range, clear of map sids
+        while (map.ScriptsBySid.ContainsKey(sid))
+            sid++;
+        map.ScriptsBySid[sid] = new MapScriptRecord(scriptIndex, -1, 0);
+        return sid;
+    }
+
+    /// <summary>
+    /// Spatial triggers, ported from fallout2-ce scripts.cc
+    /// scriptsExecSpatialProc(): exact built-tile match OR hex distance
+    /// within radius, exact elevation. self = a lazily created hidden object
+    /// at the trap tile; source = the mover. Disabled around first-run
+    /// map_enter like _scr_SpatialsEnabled (map.cc:973).
+    /// </summary>
+    public bool SpatialsEnabled { get; set; } = true;
+
+    private readonly Dictionary<(string Map, int Sid), MapObject> _spatialSelves = [];
+
+    public void RunSpatialsAt(MapFile map, int tile, int elevation, MapObject mover)
+    {
+        if (!SpatialsEnabled || mover.IsHidden || mover.IsFlat || tile < 10)
+            return;
+
+        foreach (MapFile.SpatialScript spatial in map.SpatialScripts)
+        {
+            if (spatial.Elevation != elevation)
+                continue;
+            bool hit = spatial.Radius <= 0
+                ? spatial.Tile == tile
+                : Hex.HexGrid.Distance(spatial.Tile, tile) <= spatial.Radius;
+            if (!hit)
+                continue;
+
+            if (!_spatialSelves.TryGetValue((map.Header.Name, spatial.Sid), out MapObject? self))
+            {
+                self = new MapObject
+                {
+                    Id = -5,
+                    HexTile = spatial.Tile,
+                    X = 0,
+                    Y = 0,
+                    Frame = 0,
+                    Rotation = 0,
+                    Fid = Fid.Build(ObjectType.Misc, 12),
+                    Flags = 0x01, // hidden
+                    Pid = 0x05000010,
+                    Sid = spatial.Sid,
+                };
+                _spatialSelves[(map.Header.Name, spatial.Sid)] = self;
+            }
+
+            if (!map.ScriptsBySid.ContainsKey(spatial.Sid))
+                map.ScriptsBySid[spatial.Sid] = new MapScriptRecord(spatial.ScriptListIndex, -1, 0);
+
+            ScriptRunResult? result = RunProc(spatial.ScriptListIndex, map, spatial.Sid,
+                map.ScriptsBySid[spatial.Sid], self, mover, 0, -1, ["spatial_p_proc"]);
+            if (result is not null)
+                foreach (string line in result.Messages)
+                    OnScriptMessage?.Invoke(line);
+        }
+    }
+
     /// <summary>Cross-script external variables (export.cc) — one per session;
     /// shop scripts pass their stock boxes through these.</summary>
     public ExternalVariables ExternalVars { get; } = new();
@@ -290,6 +363,73 @@ public sealed class ScriptHost(GameFileSystem vfs, ScriptList scripts, Hexwaste.
 
         return RunProc(record.ScriptListIndex, map, obj.Sid, record, obj, dude,
             fixedParam, actionBeingUsed, procedureNames);
+    }
+
+    /// <summary>
+    /// use item ON object, ported from fallout2-ce proto_instance.cc:1245
+    /// _obj_use_item_on(): the ITEM's use_obj_on_p_proc runs first (self =
+    /// item, usedWith = target); unless it overrides, the TARGET's proc runs
+    /// (self = target, usedWith = item). Returns the merged result, or null
+    /// when neither side has a script.
+    /// </summary>
+    public ScriptRunResult? RunUseObjOn(MapObject item, MapObject target, MapFile map, MapObject? dude)
+    {
+        var messages = new List<string>();
+        bool overridden = false;
+        bool ranAny = false;
+
+        if (item.Sid != -1 && map.ScriptsBySid.TryGetValue(item.Sid, out MapScriptRecord? itemRecord))
+        {
+            ScriptRunResult? result = RunProcWith(itemRecord.ScriptListIndex, map, item.Sid, itemRecord,
+                self: item, dude, usedWith: target, "use_obj_on_p_proc");
+            if (result is not null)
+            {
+                ranAny = true;
+                messages.AddRange(result.Messages);
+                overridden = result.Overridden;
+            }
+        }
+
+        if (!overridden && target.Sid != -1 && map.ScriptsBySid.TryGetValue(target.Sid, out MapScriptRecord? targetRecord))
+        {
+            ScriptRunResult? result = RunProcWith(targetRecord.ScriptListIndex, map, target.Sid, targetRecord,
+                self: target, dude, usedWith: item, "use_obj_on_p_proc");
+            if (result is not null)
+            {
+                ranAny = true;
+                messages.AddRange(result.Messages);
+                overridden |= result.Overridden;
+            }
+        }
+
+        return ranAny ? new ScriptRunResult(overridden, messages) : null;
+    }
+
+    private ScriptRunResult? RunProcWith(int scriptListIndex, MapFile map, int sid, MapScriptRecord record,
+        MapObject self, MapObject? dude, MapObject usedWith, string procedureName)
+    {
+        string? path = scripts.GetScriptPath(scriptListIndex);
+        if (path is null)
+            return null;
+        try
+        {
+            IntProgram? program = GetProgram(path);
+            if (program is null)
+                return null;
+            var externals = new ScriptContext(this, map, sid, record, self, source: dude, dude: dude)
+            {
+                UsedWith = usedWith,
+            };
+            var vm = new IntVm(program, externals, OnStubbedExternal, ExternalVars);
+            return vm.TryRunProcedure(procedureName)
+                ? new ScriptRunResult(externals.Overridden, externals.Messages)
+                : null;
+        }
+        catch (Exception ex) when (ex is InvalidDataException or FileNotFoundException or NotSupportedException)
+        {
+            Console.Error.WriteLine($"script {path}: {ex.Message}");
+            return null;
+        }
     }
 
     /// <summary>
@@ -572,6 +712,12 @@ public sealed class ScriptHost(GameFileSystem vfs, ScriptList scripts, Hexwaste.
         public int FixedParamValue { get; init; }
         public int ActionBeingUsedValue { get; init; } = -1;
 
+        /// <summary>obj_being_used_with: the OTHER party of use_obj_on
+        /// (target's proc sees the item; item's proc sees the target).</summary>
+        public MapObject? UsedWith { get; init; }
+
+        public int ObjectBeingUsedWithId() => _host.HandleOf(UsedWith);
+
         public ScriptContext(ScriptHost host, MapFile map, int sid, MapScriptRecord record,
             MapObject self, MapObject? source, MapObject? dude)
         {
@@ -777,6 +923,16 @@ public sealed class ScriptHost(GameFileSystem vfs, ScriptList scripts, Hexwaste.
 
         public void GiveExpPoints(int amount) => _host.ExpAwarded?.Invoke(amount);
 
+        public void PlayMovie(int movieId) => _host.MoviePlayed?.Invoke(movieId);
+
+        // ported from fallout2-ce interpreter_extra.cc opCritterDamage()
+        public void CritterDamage(int objectHandle, int amount, int damageTypeWithFlags)
+        {
+            if (_host.ObjectOf(objectHandle) is not { } obj || Fid.PidType(obj.Pid) != 1)
+                return;
+            _host.CritterDamaged?.Invoke(obj, amount, (damageTypeWithFlags & 0x100) != 0);
+        }
+
         // ported from fallout2-ce interpreter_extra.cc opOverrideMapStart()
         public void OverrideMapStart(int x, int y, int elevation, int rotation)
         {
@@ -898,7 +1054,7 @@ public sealed class ScriptHost(GameFileSystem vfs, ScriptList scripts, Hexwaste.
 
         // ---- world mutation (phase-4 M3)
 
-        public int CreateObject(int pid, int tile, int elevation)
+        public int CreateObject(int pid, int tile, int elevation, int scriptIndex = -1)
         {
             Proto.ProtoInfo proto;
             try
@@ -924,6 +1080,15 @@ public sealed class ScriptHost(GameFileSystem vfs, ScriptList scripts, Hexwaste.
                 Pid = pid,
                 Sid = -1,
             };
+
+            // Script binding (engine scr_new + scriptSetScriptIndex): allocate
+            // a fresh sid so the new object's procs (use_skill_on disarm,
+            // examine) actually run.
+            if (scriptIndex >= 0)
+            {
+                int sid = _host.AllocateSid(_map, scriptIndex);
+                obj.Sid = sid;
+            }
 
             if (elevation is >= 0 and < MapFile.ElevationCount && _map.Elevations[elevation] is { } elev)
             {

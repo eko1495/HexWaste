@@ -187,6 +187,13 @@ public sealed class MapFile
     /// <summary>Script id → record from the scripts section (scripts.lst index + LVAR slice).</summary>
     public Dictionary<int, MapScriptRecord> ScriptsBySid { get; } = [];
 
+    /// <summary>Spatial trigger scripts (type-1 sids): trap corridors etc.</summary>
+    public List<SpatialScript> SpatialScripts { get; } = [];
+
+    /// <summary>A spatial script record: exact tile (radius 0) or a radius
+    /// circle on one elevation (built_tile decoded like MapDestination).</summary>
+    public sealed record SpatialScript(int Sid, int ScriptListIndex, int Tile, int Elevation, int Radius);
+
     /// <summary>Indexed by elevation; null when the map has no data for that elevation.</summary>
     public required MapElevation?[] Elevations { get; init; }
 
@@ -230,7 +237,7 @@ public sealed class MapFile
             Elevations = elevations,
         };
 
-        ReadScripts(reader, map.ScriptsBySid);
+        ReadScripts(reader, map.ScriptsBySid, map.SpatialScripts);
         ReadObjects(reader, elevations, protos, header.Version);
 
         return map;
@@ -269,7 +276,8 @@ public sealed class MapFile
     /// padding records beyond each extent's logical length carry garbage and are
     /// discarded.
     /// </summary>
-    private static void ReadScripts(BigEndianReader reader, Dictionary<int, MapScriptRecord> scriptsBySid)
+    private static void ReadScripts(BigEndianReader reader, Dictionary<int, MapScriptRecord> scriptsBySid,
+        List<SpatialScript> spatialScripts)
     {
         const int scriptTypeCount = 5;
         const int extentSize = 16;
@@ -292,10 +300,13 @@ public sealed class MapFile
                     reader.Skip(4); // field_4
 
                     // SID_TYPE is an arithmetic shift, matching C++ (value) >> 24.
+                    int builtTile = -1;
+                    int radius = 0;
                     switch (sid >> 24)
                     {
                         case typeSpatial:
-                            reader.Skip(8); // built_tile, radius
+                            builtTile = reader.ReadInt32();
+                            radius = reader.ReadInt32();
                             break;
                         case typeTimed:
                             reader.Skip(4); // time
@@ -311,7 +322,14 @@ public sealed class MapFile
 
                     bool isPadding = record >= Math.Min(remaining, extentSize);
                     if (!isPadding && sid != -1)
+                    {
                         scriptsBySid[sid] = new MapScriptRecord(scriptListIndex, localVarsOffset, localVarsCount);
+                        if (sid >> 24 == typeSpatial && builtTile != -1)
+                            spatialScripts.Add(new SpatialScript(sid, scriptListIndex,
+                                builtTile & 0x3FFFFFF,
+                                (builtTile & unchecked((int)0xE0000000)) >>> 29,
+                                radius));
+                    }
                 }
 
                 remaining -= extentSize;

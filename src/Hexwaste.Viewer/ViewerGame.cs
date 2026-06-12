@@ -116,6 +116,12 @@ public sealed class ViewerGame : Game
     private int _menuIndex;
     private List<(string Label, string VirtualPath)> _premadeGcds = [];
 
+    /// <summary>Movie caption card (play_gmovie): title + .sve subtitle lines.</summary>
+    private List<string>? _movieCard;
+
+    /// <summary>Armed "use item on object": the next click applies the item.</summary>
+    private MapObject? _pendingUseItem;
+
     /// <summary>Open trade session (gdialog_barter): merchant + price modifier.</summary>
     private MapObject? _barterNpc;
     private MapObject? _barterStock;
@@ -188,6 +194,7 @@ public sealed class ViewerGame : Game
         public sealed record Fight(int Hex) : StartupAction;
         public sealed record Give(int Pid, int Count) : StartupAction;
         public sealed record UseItemByPid(int Pid) : StartupAction;
+        public sealed record UseOn(int Pid, int Hex) : StartupAction;
         public sealed record Buy(int Pid) : StartupAction;
         public sealed record Sell(int Pid) : StartupAction;
         public sealed record EndBarter : StartupAction;
@@ -335,6 +342,8 @@ public sealed class ViewerGame : Game
                 AttackRequested = (attacker, target) => OnScriptAttack(attacker, target),
                 ExpAwarded = amount => AwardXp(amount),
                 MapStartOverridden = (tile, elevation, rotation) => OverrideDudeStart(tile, elevation, rotation),
+                MoviePlayed = movieId => ShowMovieCard(movieId),
+                CritterDamaged = (victim, amount, bypassArmor) => OnScriptDamage(victim, amount, bypassArmor),
                 AnimBusyResolver = obj => _animator.TryGetState(obj, out _)
                     || (_npcWalkers.TryGetValue(obj, out DudeController? walker) && walker.Moving),
                 DudeTraits = _dudeGcd?.Traits ?? [-1, -1],
@@ -605,6 +614,17 @@ public sealed class ViewerGame : Game
                         Console.Error.WriteLine($"use-item: pid 0x{usePid:X8} not in bag");
                     break;
                 }
+                case StartupAction.UseOn(var usePid2, var useHex2):
+                {
+                    MapObject? item = _dudeInventory.FirstOrDefault(i => i.Pid == usePid2);
+                    MapObject? target = _solidObjects[_elevation].FirstOrDefault(o => o.HexTile == useHex2)
+                        ?? _flatObjects[_elevation].FirstOrDefault(o => o.HexTile == useHex2);
+                    if (item is null || target is null)
+                        Console.Error.WriteLine($"use-on: item 0x{usePid2:X8} or target @{useHex2} missing");
+                    else
+                        UseItemOn(item, target);
+                    break;
+                }
                 case StartupAction.Buy(var buyPid):
                 {
                     int index = BarterStock().FindIndex(i => i.Pid == buyPid);
@@ -807,8 +827,10 @@ public sealed class ViewerGame : Game
                 .Where(e => e is not null)
                 .SelectMany(e => e!.Objects)
                 .Where(o => o.Sid != -1 && o != _dude?.Dude);
+            _scriptHost.SpatialsEnabled = false; // _scr_SpatialsEnabled gate (map.cc:973)
             _scriptHost.RunMapEnter(_map, scripted, _dude?.Dude,
                 firstRunOverride: delta is not null ? false : null);
+            _scriptHost.SpatialsEnabled = true;
         }
 
         foreach ((MapObject obj, int ordinal) in _objectOrdinals)
@@ -888,6 +910,17 @@ public sealed class ViewerGame : Game
             return;
         }
 
+        // Movie caption card: any key dismisses.
+        if (_movieCard is not null)
+        {
+            if (keyboard.GetPressedKeyCount() > 0 && _previousKeyboard.GetPressedKeyCount() == 0)
+                _movieCard = null;
+            _previousMouse = mouse;
+            _previousKeyboard = keyboard;
+            base.Update(gameTime);
+            return;
+        }
+
         // Barter mode: 1-9 buy, Shift+1-9 sell, Esc close (back to dialog).
         if (_barterNpc is not null)
         {
@@ -921,11 +954,27 @@ public sealed class ViewerGame : Game
                 if (IsKeyPressed(keyboard, Keys.D1 + i) || IsKeyPressed(keyboard, Keys.NumPad1 + i))
                 {
                     if (_lootContainer is not null)
+                    {
                         TakeFromContainer(i);
+                    }
                     else if (keyboard.IsKeyDown(Keys.LeftShift) || keyboard.IsKeyDown(Keys.RightShift))
+                    {
                         DropFromInventory(i);
+                    }
+                    else if (keyboard.IsKeyDown(Keys.U))
+                    {
+                        // U+number: arm "use this item on the next clicked object"
+                        if (i < _dudeInventory.Count)
+                        {
+                            _pendingUseItem = _dudeInventory[i];
+                            _inventoryOpen = false;
+                            Log($"Use the {ObjectName(_pendingUseItem)} on what?");
+                        }
+                    }
                     else
+                    {
                         UseInventoryItem(i);
+                    }
                     break;
                 }
             }
@@ -1143,7 +1192,9 @@ public sealed class ViewerGame : Game
         // open ground walks.
         if (mouse.LeftButton == ButtonState.Pressed && _previousMouse.LeftButton == ButtonState.Released)
         {
-            if (_hoveredObject is not null && _hoveredObject != _dude?.Dude)
+            if (_pendingUseItem is { } useItem && _hoveredObject is not null && _hoveredObject != _dude?.Dude)
+                UseItemOn(useItem, _hoveredObject);
+            else if (_hoveredObject is not null && _hoveredObject != _dude?.Dude)
                 InteractWith(_hoveredObject);
             else if (_dude is not null)
             {
@@ -1257,6 +1308,7 @@ public sealed class ViewerGame : Game
             if (++_stepCounter % 2 == 0)
                 _audio?.PlaySfx(_stepCounter % 4 == 0 ? "FOOTSTE1" : "FOOTSTEP");
 
+            _scriptHost?.RunSpatialsAt(_map, tile, _elevation, dude);
             CheckExitGridAt(tile);
         };
 
@@ -1457,6 +1509,7 @@ public sealed class ViewerGame : Game
             _blockedTiles.Remove(previousTile);
             _blockedTiles.Add(tile);
             previousTile = tile;
+            _scriptHost?.RunSpatialsAt(_map, tile, _elevation, npc);
             List<MapObject> solids = _solidObjects[_elevation];
             solids.Remove(npc);
             InsertSorted(solids, npc);
@@ -3695,6 +3748,22 @@ public sealed class ViewerGame : Game
             }
         }
 
+        if (_movieCard is { } card)
+        {
+            _panelPixel ??= CreatePixel();
+            _spriteBatch.Draw(_panelPixel,
+                new Rectangle(0, 0, GraphicsDevice.Viewport.Width, GraphicsDevice.Viewport.Height),
+                new Color(0, 0, 0, 235));
+            float cardY = GraphicsDevice.Viewport.Height / 2f - card.Count * _fontRenderer.LineHeight;
+            foreach (string line in card)
+            {
+                _fontRenderer.Draw(_spriteBatch, line,
+                    new Vector2(GraphicsDevice.Viewport.Width / 2f - _fontRenderer.MeasureWidth(line) / 2f, cardY),
+                    line == card[0] ? new Color(252, 252, 84) : new Color(0, 252, 0));
+                cardY += _fontRenderer.LineHeight * 1.5f;
+            }
+        }
+
         if (_menu != MenuState.None)
         {
             _panelPixel ??= CreatePixel();
@@ -4019,6 +4088,96 @@ public sealed class ViewerGame : Game
         RebuildBlockedTiles(_dude.Dude);
         _camera.SetCenter(tile);
         Console.WriteLine($"override_map_start: tile={tile} elevation={elevation} rotation={rotation}");
+    }
+
+    /// <summary>Script-inflicted damage (traps): armor applies unless the
+    /// script set the bypass flag; deaths reuse the combat path.</summary>
+    private void OnScriptDamage(MapObject victim, int amount, bool bypassArmor)
+    {
+        int damage = amount;
+        if (!bypassArmor && GetCritterState(victim) is { } stats)
+        {
+            damage = Math.Max(amount - stats.DamageThreshold, 0);
+            damage -= damage * Math.Clamp(stats.DamageResistance, 0, 100) / 100;
+        }
+        if (damage <= 0)
+            return;
+
+        victim.CurrentHp -= damage;
+        Log(victim == _dude?.Dude
+            ? $"You take {damage} damage!"
+            : $"The {ObjectName(victim)} takes {damage} damage!");
+        Console.WriteLine($"script-damage: {ObjectName(victim)} -{damage} (hp {victim.CurrentHp})");
+
+        if (victim.CurrentHp <= 0)
+        {
+            if (victim == _dude?.Dude)
+                GameOver();
+            else
+                KillCritter(victim);
+        }
+    }
+
+    /// <summary>play_gmovie as a caption card: the title plus the shipped
+    /// .sve subtitles (no .mve decoding — the honest poor man's cutscene).</summary>
+    private void ShowMovieCard(int movieId)
+    {
+        // game_movie.cc gMovieFileNames (the ids the opening hour can hit)
+        string[] names =
+        [
+            "iplogo", "intro", "elder", "vsuit", "afailed", "adestroy", "car", "cartucci",
+            "timeout", "tanker", "enclave", "derrick", "artimer1", "artimer2", "artimer3",
+            "artimer4", "credits",
+        ];
+        string name = movieId >= 0 && movieId < names.Length ? names[movieId] : $"movie{movieId}";
+        var lines = new List<string> { $"[ {name}.mve ]" };
+
+        string svePath = $@"text\english\cuts\{name}.sve";
+        if (_vfs.Exists(svePath))
+        {
+            try
+            {
+                using Stream stream = _vfs.OpenRead(svePath);
+                using var reader = new StreamReader(stream);
+                while (reader.ReadLine() is { } line && lines.Count < 12)
+                {
+                    // frame:text per line
+                    int colon = line.IndexOf(':');
+                    string text = colon >= 0 ? line[(colon + 1)..].Trim() : line.Trim();
+                    if (text.Length > 0)
+                        lines.Add(text);
+                }
+            }
+            catch (Exception ex) when (ex is IOException or InvalidDataException)
+            {
+            }
+        }
+
+        Console.WriteLine($"gmovie: {name}.mve ({lines.Count - 1} subtitle lines)");
+        foreach (string line in lines.Skip(1))
+            Console.WriteLine($"  sve: {line}");
+
+        if (StartInMenu) // caption card only in interactive sessions
+            _movieCard = lines;
+        else
+            foreach (string line in lines)
+                Log(line);
+    }
+
+    /// <summary>Use the armed inventory item on a clicked object (the
+    /// use_obj_on path: crowbar pry, key doors, Vic's radio).</summary>
+    private void UseItemOn(MapObject item, MapObject target)
+    {
+        _pendingUseItem = null;
+        var result = _scriptHost?.RunUseObjOn(item, target, _map, _dude?.Dude);
+        if (result is null)
+        {
+            Log($"Using the {ObjectName(item)} on the {ObjectName(target)} does nothing.");
+            return;
+        }
+        foreach (string line in result.Messages)
+            Log(line);
+        Console.WriteLine($"use-on: {ObjectName(item)} -> {ObjectName(target)} overridden={result.Overridden} lines={result.Messages.Count}");
     }
 
     private void StartNewGame()

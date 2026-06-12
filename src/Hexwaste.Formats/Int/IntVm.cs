@@ -151,6 +151,13 @@ public interface IVmExternals
     /// whole inventory from source to target.</summary>
     void MoveAllInventory(int sourceHandle, int targetHandle) { }
 
+    /// <summary>play_gmovie (opPlayGameMovie): the host shows a caption card.</summary>
+    void PlayMovie(int movieId) { }
+
+    /// <summary>critter_damage (opCritterDamage → actionDamage): flag 0x100 =
+    /// bypass armor, 0x200 = no animation; low bits = damage type.</summary>
+    void CritterDamage(int objectHandle, int amount, int damageTypeWithFlags) { }
+
     // ---- door/container state (phase-4 M2); handle 0 must no-op like the
     // engine's scriptPredefinedError paths.
 
@@ -168,8 +175,9 @@ public interface IVmExternals
 
     // ---- world mutation (phase-4 M3); handle 0 must no-op.
 
-    /// <summary>create_object_sid (sid binding skipped); returns the new handle or 0.</summary>
-    int CreateObject(int pid, int tile, int elevation) => 0;
+    /// <summary>create_object_sid; scriptIndex (scripts.lst, -1 none) binds a
+    /// fresh script to the object. Returns the new handle or 0.</summary>
+    int CreateObject(int pid, int tile, int elevation, int scriptIndex = -1) => 0;
 
     /// <summary>destroy_object.</summary>
     void DestroyObject(int objectHandle) { }
@@ -1096,6 +1104,16 @@ public sealed class IntVm
             case 0x814E: // gdialog_set_barter_mod
                 _externals.GdialogSetBarterMod(PopInt());
                 break;
+            case 0x8115: // play_gmovie
+                _externals.PlayMovie(PopInt());
+                break;
+            case 0x80EF: // critter_damage (pops typeWithFlags, amount, obj)
+            {
+                int damageTypeWithFlags = PopInt();
+                int damageAmount = PopInt();
+                _externals.CritterDamage(PopInt(), damageAmount, damageTypeWithFlags);
+                break;
+            }
             case 0x8147: // move_obj_inven_to_obj (pops dest, then source)
             {
                 int moveDest = PopInt();
@@ -1127,11 +1145,11 @@ public sealed class IntVm
             // ---- world mutation (pop orders from interpreter_extra.cc handlers)
             case 0x80B7: // create_object_sid (pops sid, elevation, tile, pid)
             {
-                Pop(); // sid — script binding not supported in the PoC
+                int scriptIndex = PopInt(); // scripts.lst index, -1 = unscripted
                 int elevation = PopInt();
                 int tile = PopInt();
                 int pid = PopInt();
-                PushInt(_externals.CreateObject(pid, tile, elevation));
+                PushInt(_externals.CreateObject(pid, tile, elevation, scriptIndex));
                 break;
             }
             case 0x80F4: // destroy_object
