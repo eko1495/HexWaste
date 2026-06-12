@@ -183,6 +183,7 @@ public sealed class ViewerGame : Game
     /// <summary>Load this save after startup (testing / resume).</summary>
     public bool LoadOnStart { get; set; }
     private Texture2D? _panelPixel;
+    private FloorRenderer? _floorRenderer;
     private readonly List<string> _messageLog = [];
 
     /// <summary>Open dialog with the object at this screen point on start (testing).</summary>
@@ -3285,7 +3286,14 @@ public sealed class ViewerGame : Game
 
         // Draw order ported from the fallout2-ce render loop (src/map.cc
         // isoWindowRefreshRectGame): floors -> flat objects -> non-flat
-        // objects -> roofs.
+        // objects -> roofs. Floors render as lit quads (BasicEffect) before
+        // the sprite batch opens.
+        if (!_worldmapOpen)
+        {
+            _dudeUnderRoof = DudeIsUnderRoof();
+            DrawFloors();
+        }
+
         _spriteBatch.Begin(samplerState: SamplerState.PointClamp);
         if (_worldmapOpen)
         {
@@ -3293,8 +3301,6 @@ public sealed class ViewerGame : Game
         }
         else
         {
-            _dudeUnderRoof = DudeIsUnderRoof();
-            DrawFloors();
             DrawObjects(_flatObjects[_elevation]);
             DrawObjects(_solidObjects[_elevation]);
             if (_roofsVisible)
@@ -3359,6 +3365,9 @@ public sealed class ViewerGame : Game
         if (elevation is null)
             return;
 
+        _floorRenderer ??= new FloorRenderer(GraphicsDevice);
+        _floorRenderer.Begin(GraphicsDevice.Viewport.Width, GraphicsDevice.Viewport.Height);
+
         Rectangle viewport = GraphicsDevice.Viewport.Bounds;
 
         // ported from fallout2-ce src/tile.cc tileRenderFloorsInRect(): skip
@@ -3379,8 +3388,19 @@ public sealed class ViewerGame : Game
                 continue;
 
             Texture2D texture = _frmCache.GetTexture(Fid.Build(ObjectType.Tile, tileId));
-            _spriteBatch.Draw(texture, new Vector2(x, y), LightTint(SquareToHex(square)));
+
+            // Corner light from the neighboring hexes (rotations: 5=NW 0=NE
+            // 3=SW 2=SE on screen); the GPU interpolates across the quad —
+            // the engine's 10-vertex span fan, minus the CPU.
+            int hex = SquareToHex(square);
+            _floorRenderer.Add(texture, x, y,
+                LightTint(Formats.Hex.HexGrid.TileInDirection(hex, 5)),
+                LightTint(Formats.Hex.HexGrid.TileInDirection(hex, 0)),
+                LightTint(Formats.Hex.HexGrid.TileInDirection(hex, 3)),
+                LightTint(Formats.Hex.HexGrid.TileInDirection(hex, 2)));
         }
+
+        _floorRenderer.End();
     }
 
     /// <summary>
