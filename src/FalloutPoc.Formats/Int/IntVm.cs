@@ -73,6 +73,36 @@ public interface IVmExternals
 
     /// <summary>Game clock in ticks (10/second; engine boots at 302400). Drives game_time* and month.</summary>
     int GameTime() => 302400;
+
+    // ---- dialog protocol (phase-4 M1). The VM resolves message ids to text
+    // before calling; option procs arrive as procedure indices.
+
+    /// <summary>gsay_start (_gdialogStart): clear the reply and option list.</summary>
+    void DialogStart() { }
+
+    /// <summary>gsay_reply / the reply part of gsay_message.</summary>
+    void DialogReply(string text) { }
+
+    /// <summary>gsay_option / giq_option (after the IQ filter): an option bound to a procedure index.</summary>
+    void DialogOption(string text, int procedureIndex, int reaction) { }
+
+    /// <summary>gsay_end (_gdialogGo): the collected reply+options are ready to present.</summary>
+    void DialogEnd() { }
+
+    /// <summary>start_gdialog — headId is -1 for head-less NPCs.</summary>
+    void DialogSessionStart(int headId, int backgroundId) { }
+
+    /// <summary>end_dialogue.</summary>
+    void DialogSessionEnd() { }
+
+    /// <summary>Player IQ (+ Smooth Talker) for the giq_option filter.</summary>
+    int DialogIntelligence() => 5;
+
+    /// <summary>float_msg — floating head-text over an object.</summary>
+    void FloatMessage(int objectHandle, string text, int type) { }
+
+    /// <summary>gdialog_barter / gdialog_set_barter_mod — out of scope, surface a notice.</summary>
+    void Barter(int modifier) { }
 }
 
 /// <summary>
@@ -140,6 +170,10 @@ public sealed class IntVm
     /// <summary>Deterministic RNG (scripts only use it for stock quantities and flavor).</summary>
     private readonly Random _random = new(20260612);
 
+    /// <summary>Dialog text: literal string, or a message-list lookup for int ids.</summary>
+    private string ResolveDialogText(int messageListId, Value msg) =>
+        msg.Tag == TypeInt ? _externals.GetMessage(messageListId, msg.Raw) : AsString(msg);
+
     /// <summary>Calendar month (1..12) for a day count since June 24, 2241 (non-leap years).</summary>
     private static int MonthFromEpochDay(int day)
     {
@@ -195,7 +229,16 @@ public sealed class IntVm
     public bool TryRunProcedure(string name)
     {
         int index = _program.FindProcedure(name);
-        if (index < 0)
+        return index >= 0 && TryRunProcedureByIndex(index);
+    }
+
+    /// <summary>
+    /// Runs a procedure by its table index — how the dialog system binds
+    /// options (game_dialog.cc _gdProcessChoice → _executeProcedure(proc)).
+    /// </summary>
+    public bool TryRunProcedureByIndex(int index)
+    {
+        if (index < 0 || index >= _program.Procedures.Count)
             return false;
 
         IntProcedure procedure = _program.Procedures[index];
@@ -749,6 +792,80 @@ public sealed class IntVm
                 PushInt(roll is RollCriticalFailure or RollCriticalSuccess ? 1 : 0);
                 break;
             }
+
+            // ---- dialog (handlers ported from interpreter_extra.cc
+            // _op_gsay_* / opStartGameDialog; text resolved here so the host
+            // only sees strings + procedure indices)
+            case 0x80DE: // start_gdialog (pops background, head, reaction, obj, msgList)
+            {
+                int backgroundId = PopInt();
+                int headId = PopInt();
+                Pop(); // reactionLevel
+                Pop(); // obj
+                Pop(); // msgListId — discarded by the engine too
+                _externals.DialogSessionStart(headId, backgroundId);
+                break;
+            }
+            case 0x80DF: // end_dialogue
+                _externals.DialogSessionEnd();
+                break;
+            case 0x811C: // gsay_start
+                _externals.DialogStart();
+                break;
+            case 0x811D: // gsay_end
+                _externals.DialogEnd();
+                break;
+            case 0x811E: // gsay_reply (pops msg-or-string, then msgList)
+            {
+                Value msg = Pop();
+                int listId = PopInt();
+                _externals.DialogReply(ResolveDialogText(listId, msg));
+                break;
+            }
+            case 0x811F: // gsay_option (pops reaction, proc, msg, msgList)
+            case 0x8121: // giq_option (additionally pops iq LAST — i.e. first pushed)
+            {
+                int reaction = PopInt();
+                Value proc = Pop();
+                Value msg = Pop();
+                int listId = PopInt();
+                if (opcode == 0x8121)
+                {
+                    int iq = PopInt();
+                    int intelligence = _externals.DialogIntelligence();
+                    // ported from _op_giq_option: negative iq = dumb-only max.
+                    if (iq < 0 ? -intelligence < iq : intelligence < iq)
+                        break;
+                }
+
+                int procedureIndex = proc.Tag == TypeInt
+                    ? proc.Raw
+                    : _program.FindProcedure(AsString(proc)); // name variant: resolve (engine drops it)
+                if (procedureIndex >= 0)
+                    _externals.DialogOption(ResolveDialogText(listId, msg), procedureIndex, reaction);
+                break;
+            }
+            case 0x8120: // gsay_message (pops reaction, msg, msgList): reply + auto-done + present
+            {
+                Pop(); // reaction
+                Value msg = Pop();
+                int listId = PopInt();
+                _externals.DialogReply(ResolveDialogText(listId, msg));
+                _externals.DialogEnd();
+                break;
+            }
+            case 0x810A: // float_msg (pops type, msg, obj)
+            {
+                int type = PopInt();
+                Value msg = Pop();
+                int objectHandle = PopInt();
+                _externals.FloatMessage(objectHandle, AsString(msg), type);
+                break;
+            }
+            case 0x8129: // gdialog_barter
+            case 0x814E: // gdialog_set_barter_mod
+                _externals.Barter(PopInt());
+                break;
 
             // ---- clock (ported from fallout2-ce scripts.cc gameTimeGetHour())
             case 0x80EA: // game_time (ticks)

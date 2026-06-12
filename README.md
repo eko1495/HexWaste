@@ -32,6 +32,7 @@ All six milestones are complete.
 | click open ground | dude walks there (A* on the hex grid, camera follows) |
 | click a door (adjacent) | opens/closes it — open doors stop blocking paths |
 | right-click an object | examine — name + description in the message log |
+| click a critter (nearby) | talk — real scripted dialog (keys 1–9 or click to choose) |
 | click stairs/ladder (adjacent) | travel to their destination (may load another map) |
 | walk onto an exit grid | map transition (e.g. Temple of Trials → Arroyo bridge) |
 | R | toggle roofs |
@@ -51,7 +52,8 @@ Extra CLI flags: `--screenshot out.png` (render one frame and exit),
 `--examine X,Y` (print/log name+description of the object at a screen point — for testing),
 `--ambient F` (ambient light fraction 0.25–1.0, e.g. 0.25 for night),
 `--worldmap` (open the worldmap on start), `--travel N` (travel to city.txt area N — for testing),
-`--no-audio` (mute), `--no-ambient` (freeze NPC fidget/wander — for deterministic screenshots).
+`--no-audio` (mute), `--no-ambient` (freeze NPC fidget/wander — for deterministic screenshots),
+`--talk X,Y` / `--talk-hex TILE` + `--choose 1,2,1` (scripted conversation transcript — for testing).
 
 ## Phase 3 — the world becomes real
 

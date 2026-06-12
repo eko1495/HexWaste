@@ -149,11 +149,104 @@ public sealed class ScriptHost(GameFileSystem vfs, ScriptList scripts)
     }
 
     /// <summary>
+    /// A running conversation: the same VM + context persist across option
+    /// picks (LVARs/program globals keep their state), exactly like
+    /// game_dialog.cc _gdProcess: show reply, pick option, run its bound
+    /// procedure (which repopulates reply+options), end when a procedure
+    /// leaves zero options.
+    /// </summary>
+    public sealed class DialogSession
+    {
+        private readonly IntVm _vm;
+        private readonly ScriptContext _context;
+
+        public string NpcName { get; }
+        public string Reply => _context.DialogReplyText;
+        public IReadOnlyList<string> Options => _context.DialogOptions.Select(o => o.Text).ToList();
+        public bool Active { get; private set; } = true;
+
+        internal DialogSession(IntVm vm, ScriptContext context, string npcName)
+        {
+            _vm = vm;
+            _context = context;
+            NpcName = npcName;
+        }
+
+        /// <summary>Picks an option (0-based). Returns false when the dialog has ended.</summary>
+        public bool Choose(int optionIndex)
+        {
+            if (!Active || optionIndex < 0 || optionIndex >= _context.DialogOptions.Count)
+                return Active;
+
+            int procedureIndex = _context.DialogOptions[optionIndex].ProcedureIndex;
+            _context.ResetDialogRound();
+
+            try
+            {
+                _vm.TryRunProcedureByIndex(procedureIndex);
+            }
+            catch (Exception ex) when (ex is InvalidDataException or NotSupportedException)
+            {
+                Console.Error.WriteLine($"dialog proc {procedureIndex}: {ex.Message}");
+                Active = false;
+                return false;
+            }
+
+            if (_context.DialogOptions.Count == 0 || _context.SessionEnded)
+                Active = false;
+            return Active;
+        }
+
+        /// <summary>Out-of-band lines produced this round (float_msg, display_msg, barter notice).</summary>
+        public IReadOnlyList<string> SideMessages => _context.Messages;
+    }
+
+    /// <summary>
+    /// Opens a conversation with a scripted object via its talk_p_proc.
+    /// Returns null when the object has no dialog (floater-only NPCs put
+    /// their lines in <paramref name="floaters"/>).
+    /// </summary>
+    public DialogSession? StartDialog(MapObject obj, MapFile map, MapObject? dude, out IReadOnlyList<string> floaters)
+    {
+        floaters = [];
+        if (obj.Sid == -1 || !map.ScriptsBySid.TryGetValue(obj.Sid, out MapScriptRecord? record))
+            return null;
+
+        string? path = scripts.GetScriptPath(record.ScriptListIndex);
+        if (path is null)
+            return null;
+
+        try
+        {
+            IntProgram? program = GetProgram(path);
+            if (program is null)
+                return null;
+
+            var context = new ScriptContext(this, map, obj.Sid, record, self: obj, source: dude, dude: dude);
+            var vm = new IntVm(program, context, OnStubbedExternal);
+            if (!vm.TryRunProcedure("talk_p_proc"))
+                return null;
+
+            floaters = context.Messages;
+            if (context.DialogOptions.Count == 0)
+                return null; // floater-only NPC — no dialog window
+
+            string npcName = NameResolver?.Invoke(obj) ?? "stranger";
+            return new DialogSession(vm, context, npcName);
+        }
+        catch (Exception ex) when (ex is InvalidDataException or FileNotFoundException or NotSupportedException)
+        {
+            Console.Error.WriteLine($"script {path}: {ex.Message}");
+            return null;
+        }
+    }
+
+    /// <summary>
     /// Per-invocation script context, mirroring scriptExecProc's setup
     /// (scripts.cc:1261-1342): source/target/dude, fixedParam,
     /// actionBeingUsed, and a per-run overrides flag.
     /// </summary>
-    private sealed class ScriptContext : IVmExternals
+    internal sealed class ScriptContext : IVmExternals
     {
         private readonly ScriptHost _host;
         private readonly MapFile _map;
@@ -238,5 +331,48 @@ public sealed class ScriptHost(GameFileSystem vfs, ScriptList scripts)
         // 22 IS_LOADGAME = 0; everything else 0.
         public int Metarule(int rule, int argument) =>
             rule == 14 ? ((_map.Header.Flags & 0x01) == 0 ? 1 : 0) : 0;
+
+        // ---- dialog state (one "round" = one reply + its options)
+
+        public string DialogReplyText { get; private set; } = "";
+        public List<(string Text, int ProcedureIndex, int Reaction)> DialogOptions { get; } = [];
+        public bool SessionEnded { get; private set; }
+
+        public void ResetDialogRound()
+        {
+            DialogReplyText = "";
+            DialogOptions.Clear();
+            Messages.Clear();
+        }
+
+        public void DialogStart()
+        {
+            DialogReplyText = "";
+            DialogOptions.Clear();
+        }
+
+        public void DialogReply(string text) => DialogReplyText = text;
+
+        public void DialogOption(string text, int procedureIndex, int reaction) =>
+            DialogOptions.Add((text, procedureIndex, reaction));
+
+        public void DialogEnd()
+        {
+            // _gdialogGo: reply with no options auto-gets a "[Done]" exit.
+            if (DialogReplyText.Length > 0 && DialogOptions.Count == 0)
+                DialogOptions.Add(("[Done]", -1, 50));
+        }
+
+        public void DialogSessionEnd() => SessionEnded = true;
+
+        public int DialogIntelligence() => 5;
+
+        public void FloatMessage(int objectHandle, string text, int type)
+        {
+            if (!string.IsNullOrWhiteSpace(text))
+                Messages.Add(text.Trim());
+        }
+
+        public void Barter(int modifier) => Messages.Add("[Barter is not part of this PoC.]");
     }
 }

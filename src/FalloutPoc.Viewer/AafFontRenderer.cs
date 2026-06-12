@@ -59,6 +59,30 @@ public sealed class AafFontRenderer : IDisposable
 
     public int MeasureWidth(string text) => _font.MeasureWidth(text);
 
+    /// <summary>Greedy word wrap to a pixel width.</summary>
+    public List<string> WrapText(string text, int maxWidth)
+    {
+        var lines = new List<string>();
+        var current = "";
+        foreach (string word in text.Split(' ', StringSplitOptions.RemoveEmptyEntries))
+        {
+            string candidate = current.Length == 0 ? word : $"{current} {word}";
+            if (current.Length > 0 && MeasureWidth(candidate) > maxWidth)
+            {
+                lines.Add(current);
+                current = word;
+            }
+            else
+            {
+                current = candidate;
+            }
+        }
+
+        if (current.Length > 0)
+            lines.Add(current);
+        return lines;
+    }
+
     public void Draw(SpriteBatch spriteBatch, string text, Vector2 position, Color color, bool shadow = true)
     {
         if (shadow)

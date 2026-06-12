@@ -9,6 +9,9 @@ int benchFrames = 0;
 bool walk = false;
 Microsoft.Xna.Framework.Point? pick = null;
 Microsoft.Xna.Framework.Point? examine = null;
+Microsoft.Xna.Framework.Point? talk = null;
+int[] choose = [];
+int? talkHex = null;
 int? gotoTile = null;
 int? doorTile = null;
 double ambient = 1.0;
@@ -66,6 +69,18 @@ for (int i = 0; i < args.Length; i++)
             examine = new Microsoft.Xna.Framework.Point(int.Parse(parts[0]), int.Parse(parts[1]));
             break;
         }
+        case "--talk" when i + 1 < args.Length:
+        {
+            string[] parts = args[++i].Split(',');
+            talk = new Microsoft.Xna.Framework.Point(int.Parse(parts[0]), int.Parse(parts[1]));
+            break;
+        }
+        case "--choose" when i + 1 < args.Length:
+            choose = args[++i].Split(',').Select(int.Parse).ToArray();
+            break;
+        case "--talk-hex" when i + 1 < args.Length:
+            talkHex = int.Parse(args[++i]);
+            break;
         case "--game-dir" when i + 1 < args.Length:
             gameDir = args[++i];
             break;
@@ -96,6 +111,9 @@ using var game = new ViewerGame(gameDir, mapName, screenshot, roofs)
     StartInWalkMode = walk,
     PickAt = pick,
     ExamineAt = examine,
+    TalkAt = talk,
+    TalkAtHex = talkHex,
+    AutoChoose = choose,
     WalkToTile = gotoTile,
     ToggleDoorAtTile = doorTile,
     InitialAmbient = ambient,

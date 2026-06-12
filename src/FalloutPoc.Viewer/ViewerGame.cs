@@ -81,7 +81,18 @@ public sealed class ViewerGame : Game
     public double InitialAmbient { get; set; } = 1.0;
     private ProtoMessages _protoMessages = null!;
     private Formats.Int.ScriptHost? _scriptHost;
+    private Formats.Int.ScriptHost.DialogSession? _dialog;
+    private Texture2D? _panelPixel;
     private readonly List<string> _messageLog = [];
+
+    /// <summary>Open dialog with the object at this screen point on start (testing).</summary>
+    public Point? TalkAt { get; set; }
+
+    /// <summary>Open dialog with the critter at this hex tile on start (testing).</summary>
+    public int? TalkAtHex { get; set; }
+
+    /// <summary>Auto-pick these option indices after --talk, printing a transcript (testing).</summary>
+    public int[] AutoChoose { get; set; } = [];
     private string _currentMapName = "";
 
     /// <summary>Screen point to examine before the first frame (screenshot testing).</summary>
@@ -192,6 +203,48 @@ public sealed class ViewerGame : Game
                 TravelTo(area);
             else
                 Console.Error.WriteLine($"no area {areaIndex} in city.txt");
+        }
+
+        if (TalkAtHex is { } talkHex)
+        {
+            MapObject? hexNpc = _solidObjects[_elevation]
+                .FirstOrDefault(o => o.HexTile == talkHex && Fid.Type(o.Fid) is ObjectType.Critter);
+            if (hexNpc is not null)
+            {
+                _camera.SetCenter(talkHex);
+                TalkTo(hexNpc);
+                foreach (int choice in AutoChoose)
+                {
+                    if (_dialog is null)
+                        break;
+                    Console.WriteLine($"CHOOSE: {choice}");
+                    ChooseDialogOption(choice - 1);
+                }
+            }
+            else
+            {
+                Console.Error.WriteLine($"no critter at hex {talkHex}");
+            }
+        }
+
+        if (TalkAt is { } talkPoint)
+        {
+            MapObject? npc = PickObject(talkPoint.X, talkPoint.Y);
+            if (npc is not null)
+            {
+                TalkTo(npc);
+                foreach (int choice in AutoChoose)
+                {
+                    if (_dialog is null)
+                        break;
+                    Console.WriteLine($"CHOOSE: {choice}");
+                    ChooseDialogOption(choice - 1); // 1-based on the CLI
+                }
+            }
+            else
+            {
+                Console.WriteLine($"talk@{talkPoint.X},{talkPoint.Y}: nothing");
+            }
         }
 
         if (ExamineAt is { } examinePoint)
@@ -313,6 +366,38 @@ public sealed class ViewerGame : Game
         _frameClock.Restart();
         KeyboardState keyboard = Keyboard.GetState();
         MouseState mouse = Mouse.GetState();
+
+        // Dialog mode swallows all input.
+        if (_dialog is not null)
+        {
+            for (int i = 0; i < 9; i++)
+            {
+                if (IsKeyPressed(keyboard, Keys.D1 + i) || IsKeyPressed(keyboard, Keys.NumPad1 + i))
+                {
+                    ChooseDialogOption(i);
+                    break;
+                }
+            }
+
+            if (_dialog is not null && mouse.LeftButton == ButtonState.Pressed
+                && _previousMouse.LeftButton == ButtonState.Released)
+            {
+                int hit = HitTestDialogOption(mouse.X, mouse.Y);
+                if (hit >= 0)
+                    ChooseDialogOption(hit);
+            }
+
+            if (_dialog is not null && IsKeyPressed(keyboard, Keys.Escape))
+            {
+                Log("[conversation ends]");
+                _dialog = null;
+            }
+
+            _previousMouse = mouse;
+            _previousKeyboard = keyboard;
+            base.Update(gameTime);
+            return;
+        }
 
         // Worldmap mode swallows map input.
         if (_worldmapOpen)
@@ -761,8 +846,73 @@ public sealed class ViewerGame : Game
     /// animation and unblock/block their hex; stairs and ladders travel to
     /// their stored destination.
     /// </summary>
+    /// <summary>Opens scripted conversation; floater-only NPCs just speak into the log.</summary>
+    private void TalkTo(MapObject npc)
+    {
+        if (_scriptHost is null)
+            return;
+
+        Formats.Int.ScriptHost.DialogSession? session =
+            _scriptHost.StartDialog(npc, _map, _dude?.Dude, out IReadOnlyList<string> floaters);
+
+        foreach (string line in floaters)
+            Log($"{ObjectName(npc)}: {line}");
+
+        if (session is not null)
+        {
+            _dialog = session;
+            PrintDialogRound();
+        }
+        else if (floaters.Count == 0)
+        {
+            Log($"{ObjectName(npc)} has nothing to say.");
+        }
+    }
+
+    private void PrintDialogRound()
+    {
+        if (_dialog is null)
+            return;
+        Console.WriteLine($"REPLY: {_dialog.Reply}");
+        for (int i = 0; i < _dialog.Options.Count; i++)
+            Console.WriteLine($"  OPTION {i + 1}: {_dialog.Options[i]}");
+    }
+
+    private void ChooseDialogOption(int index)
+    {
+        if (_dialog is null)
+            return;
+
+        _dialog.Choose(index);
+        foreach (string line in _dialog.SideMessages)
+            Log(line);
+
+        if (!_dialog.Active)
+        {
+            Log("[conversation ends]");
+            _dialog = null;
+        }
+        else
+        {
+            PrintDialogRound();
+        }
+    }
+
     private void InteractWith(MapObject obj)
     {
+        if (Fid.Type(obj.Fid) is ObjectType.Critter)
+        {
+            // Conversation range ~5 hexes (one hex step is 16..32 screen px).
+            if (_dude is not null
+                && Formats.Hex.HexGrid.ScreenDistance(_dude.Dude.HexTile, obj.HexTile) > 5 * 32)
+            {
+                Log("Too far away to talk.");
+                return;
+            }
+            TalkTo(obj);
+            return;
+        }
+
         if (IsDoor(obj))
         {
             if (!IsAdjacentToDude(obj))
@@ -972,6 +1122,7 @@ public sealed class ViewerGame : Game
             if (_roofsVisible)
                 DrawRoofs();
             DrawTextOverlay();
+            DrawDialogPanel();
         }
         _spriteBatch.End();
 
@@ -1239,6 +1390,87 @@ public sealed class ViewerGame : Game
             Texture2D texture = _frmCache.GetTexture(Fid.Build(ObjectType.Tile, tileId));
             _spriteBatch.Draw(texture, new Vector2(x, y), new Color(ambientLevel, ambientLevel, ambientLevel));
         }
+    }
+
+    private readonly List<Rectangle> _dialogOptionRects = [];
+
+    private int HitTestDialogOption(int x, int y)
+    {
+        for (int i = 0; i < _dialogOptionRects.Count; i++)
+            if (_dialogOptionRects[i].Contains(x, y))
+                return i;
+        return -1;
+    }
+
+    /// <summary>Text dialog panel: reply on top, numbered options below (keys 1-9 or click).</summary>
+    private void DrawDialogPanel()
+    {
+        if (_dialog is null || _fontRenderer is null)
+            return;
+
+        _panelPixel ??= CreatePixel();
+
+        Rectangle viewport = GraphicsDevice.Viewport.Bounds;
+        int panelWidth = Math.Min(720, viewport.Width - 40);
+        int textWidth = panelWidth - 32;
+        int lineHeight = _fontRenderer.LineHeight;
+
+        List<string> replyLines = _fontRenderer.WrapText(_dialog.Reply, textWidth);
+        var optionLines = new List<(int Option, string Line, bool First)>();
+        for (int i = 0; i < _dialog.Options.Count; i++)
+        {
+            List<string> wrapped = _fontRenderer.WrapText($"{i + 1}. {_dialog.Options[i]}", textWidth - 12);
+            for (int l = 0; l < wrapped.Count; l++)
+                optionLines.Add((i, wrapped[l], l == 0));
+        }
+
+        int panelHeight = (replyLines.Count + optionLines.Count + 3) * lineHeight + 24;
+        int panelX = (viewport.Width - panelWidth) / 2;
+        int panelY = viewport.Height - panelHeight - 16;
+
+        _spriteBatch.Draw(_panelPixel, new Rectangle(panelX, panelY, panelWidth, panelHeight),
+            new Color(8, 8, 8, 230));
+
+        var lightGreen = new Color(140, 252, 140);
+        var green = new Color(0, 252, 0);
+        int y = panelY + 12;
+
+        _fontRenderer.Draw(_spriteBatch, _dialog.NpcName, new Vector2(panelX + 16, y), Color.LightGray);
+        y += lineHeight + lineHeight / 2;
+
+        foreach (string line in replyLines)
+        {
+            _fontRenderer.Draw(_spriteBatch, line, new Vector2(panelX + 16, y), lightGreen);
+            y += lineHeight;
+        }
+
+        y += lineHeight / 2;
+        MouseState mouse = Mouse.GetState();
+        _dialogOptionRects.Clear();
+        Rectangle currentRect = Rectangle.Empty;
+        int currentOption = -1;
+        foreach ((int option, string line, bool first) in optionLines)
+        {
+            var lineRect = new Rectangle(panelX + 16, y, textWidth, lineHeight);
+            if (first && currentOption >= 0)
+                _dialogOptionRects.Add(currentRect);
+            currentRect = first ? lineRect : Rectangle.Union(currentRect, lineRect);
+            currentOption = option;
+
+            bool hovered = lineRect.Contains(mouse.X, mouse.Y);
+            _fontRenderer.Draw(_spriteBatch, line,
+                new Vector2(panelX + 16 + (first ? 0 : 12), y), hovered ? Color.Yellow : green);
+            y += lineHeight;
+        }
+        if (currentOption >= 0)
+            _dialogOptionRects.Add(currentRect);
+    }
+
+    private Texture2D CreatePixel()
+    {
+        var pixel = new Texture2D(GraphicsDevice, 1, 1);
+        pixel.SetData(new[] { Color.White });
+        return pixel;
     }
 
     /// <summary>Hover name near the cursor + the message log, bottom-left, in Fallout green.</summary>
