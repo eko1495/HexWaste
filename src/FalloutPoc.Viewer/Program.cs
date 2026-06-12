@@ -12,6 +12,7 @@ Microsoft.Xna.Framework.Point? examine = null;
 Microsoft.Xna.Framework.Point? talk = null;
 int[] choose = [];
 int? talkHex = null;
+int? rngSeed = null;
 List<ViewerGame.StartupAction> actions = [];
 int? gotoTile = null;
 int? doorTile = null;
@@ -104,6 +105,12 @@ for (int i = 0; i < args.Length; i++)
         case "--examine-critter" when i + 1 < args.Length:
             actions.Add(new ViewerGame.StartupAction.ExamineCritter(int.Parse(args[++i])));
             break;
+        case "--attack" when i + 1 < args.Length:
+            actions.Add(new ViewerGame.StartupAction.Attack(int.Parse(args[++i])));
+            break;
+        case "--rng-seed" when i + 1 < args.Length:
+            rngSeed = int.Parse(args[++i]);
+            break;
         case "--take-all":
             actions.Add(new ViewerGame.StartupAction.TakeAll());
             break;
@@ -155,6 +162,7 @@ using var game = new ViewerGame(gameDir, mapName, screenshot, roofs)
     TalkAt = talk,
     TalkAtHex = talkHex,
     StartupActions = actions,
+    RngSeed = rngSeed,
     AutoChoose = choose,
     WalkToTile = gotoTile,
     ToggleDoorAtTile = doorTile,

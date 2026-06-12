@@ -124,6 +124,14 @@ public sealed class ObjectAnimator(FrmCache frmCache)
     public void PlayFidget(MapObject obj) =>
         _states[obj] = new AnimationState { Mode = AnimationMode.OnceThenReset };
 
+    /// <summary>Plays substitute art once and reverts (punch, hit reaction).</summary>
+    public void PlayActionOnce(MapObject obj, int displayFid) =>
+        _states[obj] = new AnimationState { DisplayFid = displayFid, Mode = AnimationMode.OnceThenReset };
+
+    /// <summary>Plays substitute art once and holds the last frame (death fall).</summary>
+    public void PlayFall(MapObject obj, int displayFid) =>
+        _states[obj] = new AnimationState { DisplayFid = displayFid, Mode = AnimationMode.Once };
+
     public void Remove(MapObject obj) => _states.Remove(obj);
 
     public void Update(double elapsedMs)

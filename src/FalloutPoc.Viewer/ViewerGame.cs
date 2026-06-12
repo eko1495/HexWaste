@@ -55,6 +55,19 @@ public sealed class ViewerGame : Game
     // Ambient NPC life: fidget replays + short wander walks around home tiles.
     private readonly Dictionary<MapObject, DudeController> _npcWalkers = [];
     private readonly Dictionary<MapObject, int> _homeTiles = [];
+
+    /// <summary>Deterministic combat rolls for headless transcripts (--rng-seed).</summary>
+    public int? RngSeed { get; set; }
+    private Random _combatRng = new();
+
+    /// <summary>The rolled-but-not-applied attack: damage lands when the punch
+    /// animation completes (engine: _apply_damage in _combat_anim_finished).</summary>
+    private sealed record PendingAttack(MapObject Attacker, MapObject Target, int Chance, bool Hit, int Damage);
+    private PendingAttack? _pendingAttack;
+
+    /// <summary>Critters playing their death fall; value = death anim (20/21).</summary>
+    private readonly Dictionary<MapObject, int> _fallingCritters = [];
+    private int _dudeAp;
     private readonly Random _ambientRandom = new(20260612);
     private double _fidgetTimerMs;
     private double _wanderTimerMs;
@@ -115,6 +128,7 @@ public sealed class ViewerGame : Game
     {
         public sealed record UseHex(int Hex, bool Lockpick) : StartupAction;
         public sealed record ExamineCritter(int Hex) : StartupAction;
+        public sealed record Attack(int Hex) : StartupAction;
         public sealed record TakeAll : StartupAction;
         public sealed record Transit(string MapFile, int Tile, int Elevation) : StartupAction;
         public sealed record SaveNow : StartupAction;
@@ -207,6 +221,8 @@ public sealed class ViewerGame : Game
 
         _vfs = GameFileSystem.Open(_gameDir);
         _palette = Palette.Load(_vfs.ReadAllBytes("color.pal"));
+        if (RngSeed is { } seed)
+            _combatRng = new Random(seed);
 
         _protos = new ProtoDatabase(_vfs);
         _cycler = new PaletteCycler(_palette);
@@ -313,6 +329,32 @@ public sealed class ViewerGame : Game
                         + $" (proto {state.Proto.AiPacket}) results=0x{critter.CombatResults:X} dead={state.IsDead}");
                     Console.WriteLine($"  dt={state.DamageThreshold} dr={state.DamageResistance} exp={state.Proto.Experience}"
                         + $" killType={state.Proto.KillType} bodyType={state.Proto.BodyType} damageType={state.Proto.DamageType}");
+                    break;
+                }
+                case StartupAction.Attack(var attackHex):
+                {
+                    MapObject? target = _solidObjects[_elevation]
+                        .FirstOrDefault(o => o.HexTile == attackHex && Fid.Type(o.Fid) is ObjectType.Critter);
+                    if (target is null)
+                    {
+                        Console.Error.WriteLine($"no critter at hex {attackHex}");
+                        break;
+                    }
+
+                    _camera.SetCenter(attackHex);
+                    if (_dude is not null) // teleport adjacent (test plumbing, like use-hex)
+                        _dude.Dude.HexTile = Formats.Hex.HexGrid.TileInDirection(attackHex, 3);
+                    TryAttack(target);
+
+                    // Run the choreography to completion so transcripts and
+                    // follow-up actions see the resolved world.
+                    for (int guard = 0; guard < 3000 && (_pendingAttack is not null || _fallingCritters.Count > 0); guard++)
+                    {
+                        _animator.Update(10);
+                        ProcessCombatAnimations();
+                    }
+
+                    Console.WriteLine($"attack-result: hp={target.CurrentHp} dead={target.IsDead}");
                     break;
                 }
                 case StartupAction.TakeAll:
@@ -689,6 +731,10 @@ public sealed class ViewerGame : Game
         if (IsKeyPressed(keyboard, Keys.L) && _hoveredObject is { } lockTarget && IsDoor(lockTarget))
             TryLockpick(lockTarget);
 
+        // F: punch the hovered critter (A is take-all in loot mode).
+        if (IsKeyPressed(keyboard, Keys.F) && _hoveredObject is { } attackTarget)
+            TryAttack(attackTarget);
+
         // [ and ] adjust ambient light (day/night preview).
         if (IsKeyPressed(keyboard, Keys.OemOpenBrackets) || IsKeyPressed(keyboard, Keys.OemCloseBrackets))
         {
@@ -700,6 +746,7 @@ public sealed class ViewerGame : Game
         }
 
         _animator.Update(gameTime.ElapsedGameTime.TotalMilliseconds);
+        ProcessCombatAnimations();
         _dude?.Update(gameTime.ElapsedGameTime.TotalMilliseconds);
         UpdateAmbientLife(gameTime.ElapsedGameTime.TotalMilliseconds);
 
@@ -829,6 +876,13 @@ public sealed class ViewerGame : Game
             Flags = 0,
             Pid = 0x01000001,
         };
+
+        // Combat numbers come from the proto like any critter's.
+        if (GetCritterState(dude) is { } stats)
+        {
+            dude.CurrentHp = stats.MaxHp;
+            _dudeAp = stats.MaxActionPoints;
+        }
 
         RebuildBlockedTiles(dude);
         _dude = new DudeController(dude, _frmCache, tile => _blockedTiles.Contains(tile));
@@ -1240,10 +1294,174 @@ public sealed class ViewerGame : Game
         }
     }
 
+    /// <summary>
+    /// Punches an adjacent critter. The outcome is rolled HERE, before any
+    /// animation — damage waits for the punch to finish (ported from
+    /// fallout2-ce src/combat.cc _combat_attack() / combatAttemptAttack()).
+    /// </summary>
+    private void TryAttack(MapObject target)
+    {
+        if (_dude is null || _pendingAttack is not null || target == _dude.Dude)
+            return;
+        if (Fid.Type(target.Fid) is not ObjectType.Critter || target.IsDead)
+            return;
+        if (GetCritterState(_dude.Dude) is not { } attacker || GetCritterState(target) is not { } defender)
+            return;
+
+        int rotation = RotationToAdjacent(_dude.Dude.HexTile, target.HexTile);
+        if (rotation < 0)
+        {
+            Log("Too far away.");
+            return;
+        }
+
+        // The engine reg_anim_clear()s both parties before choreographing.
+        _animator.Remove(target);
+        if (_npcWalkers.TryGetValue(target, out DudeController? walker))
+        {
+            walker.Stop();
+            _npcWalkers.Remove(target);
+        }
+        _dude.Dude.Rotation = rotation;
+
+        // Out of combat mode AP recovers instantly; rounds arrive in M4.
+        if (_dudeAp < Formats.Combat.CombatMath.PunchApCost && GetCritterState(_dude.Dude) is { } stats)
+            _dudeAp = stats.MaxActionPoints;
+        _dudeAp -= Formats.Combat.CombatMath.PunchApCost;
+
+        int chance = Formats.Combat.CombatMath.ToHitChance(attacker, defender);
+        bool hit = Formats.Combat.CombatMath.RollHit(_combatRng, chance);
+        int damage = hit ? Formats.Combat.CombatMath.RollDamage(_combatRng, attacker, defender) : 0;
+        _pendingAttack = new PendingAttack(_dude.Dude, target, chance, hit, damage);
+        Console.WriteLine($"attack {ObjectName(target)}@{target.HexTile}: chance={chance}% hit={hit} damage={damage}");
+
+        const int animThrowPunch = 16;
+        int punchFid = Fid.Build(ObjectType.Critter, Fid.Index(_dude.Dude.Fid), animThrowPunch, 0);
+        if (_vfs.Exists(_artIndex.GetFrmPath(punchFid)))
+            _animator.PlayActionOnce(_dude.Dude, punchFid);
+    }
+
+    private static int RotationToAdjacent(int from, int to)
+    {
+        for (int rotation = 0; rotation < 6; rotation++)
+            if (Formats.Hex.HexGrid.TileInDirection(from, rotation) == to)
+                return rotation;
+        return -1;
+    }
+
+    /// <summary>Damage-on-completion + corpse conversion, polled every frame
+    /// (the engine's _combat_anim_finished callback chain).</summary>
+    private void ProcessCombatAnimations()
+    {
+        if (_pendingAttack is { } attack && !_animator.TryGetState(attack.Attacker, out _))
+        {
+            _pendingAttack = null;
+            ResolveAttack(attack);
+        }
+
+        if (_fallingCritters.Count > 0)
+        {
+            foreach ((MapObject critter, int deathAnim) in _fallingCritters.ToArray())
+            {
+                if (_animator.TryGetState(critter, out AnimationState state) && !state.Finished)
+                    continue;
+                _fallingCritters.Remove(critter);
+                FinishCorpse(critter, deathAnim);
+            }
+        }
+    }
+
+    private void ResolveAttack(PendingAttack attack)
+    {
+        string name = ObjectName(attack.Target);
+        if (!attack.Hit)
+        {
+            Log($"You missed the {name}.");
+            return;
+        }
+
+        attack.Target.CurrentHp -= attack.Damage;
+        Log($"You hit the {name} for {attack.Damage} damage.");
+        if (attack.Target.CurrentHp <= 0)
+        {
+            KillCritter(attack.Target);
+            return;
+        }
+
+        const int animHitFromFront = 14;
+        int hitFid = Fid.Build(ObjectType.Critter, Fid.Index(attack.Target.Fid), animHitFromFront,
+            Fid.WeaponCode(attack.Target.Fid));
+        if (_vfs.Exists(_artIndex.GetFrmPath(hitFid)))
+            _animator.PlayActionOnce(attack.Target, hitFid);
+    }
+
+    private void KillCritter(MapObject critter)
+    {
+        critter.CombatResults |= 0x80; // DAM_DEAD
+        _npcWalkers.Remove(critter);
+        _homeTiles.Remove(critter);
+        Log($"The {ObjectName(critter)} dies.");
+
+        // FALL_BACK first, FALL_FRONT when that art doesn't ship (the
+        // engine's behind-check flip is out of PoC scope).
+        const int animFallBack = 20;
+        const int animFallFront = 21;
+        int deathAnim = animFallBack;
+        int fallFid = Fid.Build(ObjectType.Critter, Fid.Index(critter.Fid), deathAnim, 0);
+        if (!_vfs.Exists(_artIndex.GetFrmPath(fallFid)))
+        {
+            deathAnim = animFallFront;
+            fallFid = Fid.Build(ObjectType.Critter, Fid.Index(critter.Fid), deathAnim, 0);
+        }
+
+        if (_vfs.Exists(_artIndex.GetFrmPath(fallFid)))
+        {
+            _animator.PlayFall(critter, fallFid);
+            _fallingCritters[critter] = deathAnim;
+        }
+        else
+        {
+            FinishCorpse(critter, deathAnim);
+        }
+    }
+
+    /// <summary>ported from fallout2-ce src/critter.cc critterKill(): the
+    /// corpse is the single-frame art at death anim + 28, NO_BLOCK, and drawn
+    /// flat — which also makes the existing loot panel reachable.</summary>
+    private void FinishCorpse(MapObject critter, int deathAnim)
+    {
+        _animator.Remove(critter);
+
+        int corpseFid = Fid.Build(ObjectType.Critter, Fid.Index(critter.Fid), deathAnim + 28, 0);
+        if (_vfs.Exists(_artIndex.GetFrmPath(corpseFid)))
+            critter.Fid = corpseFid;
+
+        critter.Flags |= 0x10; // OBJECT_NO_BLOCK
+        critter.Flags |= 0x08; // flat: corpses draw under standing critters
+
+        _solidObjects[_elevation].Remove(critter);
+        if (!_flatObjects[_elevation].Contains(critter))
+            InsertSorted(_flatObjects[_elevation], critter);
+        RebuildBlockedTiles(_dude?.Dude);
+    }
+
     private void InteractWith(MapObject obj)
     {
         if (Fid.Type(obj.Fid) is ObjectType.Critter)
         {
+            // Dead critters are containers (gate on DAM_DEAD).
+            if (obj.IsDead)
+            {
+                if (!IsAdjacentToDude(obj))
+                {
+                    Log("Too far away.");
+                    return;
+                }
+                _lootContainer = obj;
+                PrewarmItemTextures(obj.Inventory);
+                return;
+            }
+
             // Conversation range ~5 hexes (one hex step is 16..32 screen px).
             if (_dude is not null
                 && Formats.Hex.HexGrid.ScreenDistance(_dude.Dude.HexTile, obj.HexTile) > 5 * 32)
@@ -1743,10 +1961,15 @@ public sealed class ViewerGame : Game
         DudeController? walker = _dude is not null && obj == _dude.Dude ? _dude
             : _npcWalkers.TryGetValue(obj, out DudeController? npcWalker) ? npcWalker
             : null;
-        bool isDude = walker is not null;
+
+        // Animator states (combat punches/hits, fidgets) take over while the
+        // walker is standing; mid-walk the walk cycle wins.
         AnimationState? animation = null;
-        if (!isDude && _animator.TryGetState(obj, out AnimationState state))
+        if (_animator.TryGetState(obj, out AnimationState state) && walker is not { Moving: true })
+        {
             animation = state;
+            walker = null;
+        }
 
         int fid = walker?.CurrentFid
             ?? (animation is { DisplayFid: not 0 } ? animation.DisplayFid : obj.Fid);
@@ -2135,6 +2358,14 @@ public sealed class ViewerGame : Game
             MouseState mouse = Mouse.GetState();
             _fontRenderer.Draw(_spriteBatch, ObjectName(_hoveredObject),
                 new Vector2(mouse.X + 14, mouse.Y + 6), green);
+        }
+
+        // AP/HP text HUD above the message log.
+        if (_dude is not null && GetCritterState(_dude.Dude) is { } dudeStats)
+        {
+            string hud = $"HP {dudeStats.CurrentHp}/{dudeStats.MaxHp}  AP {_dudeAp}/{dudeStats.MaxActionPoints}";
+            int hudY = GraphicsDevice.Viewport.Height - 8 - (_messageLog.Count + 1) * _fontRenderer.LineHeight - 4;
+            _fontRenderer.Draw(_spriteBatch, hud, new Vector2(8, hudY), new Color(252, 252, 84));
         }
 
         int y = GraphicsDevice.Viewport.Height - 8 - _messageLog.Count * _fontRenderer.LineHeight;
