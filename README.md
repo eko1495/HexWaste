@@ -1,116 +1,95 @@
-# Fallout 2 Map Viewer PoC
+# Hexwaste
 
-A proof-of-concept map viewer for Fallout 2, written in C# / .NET + MonoGame (DesktopGL).
+A C# / .NET + MonoGame (DesktopGL) re-implementation of a slice of the
+Fallout 2 engine: it loads the original data files and gives you a living
+world — real maps, real scripts, dialog, looting, a persistent world across
+map travel, save/load, and turn-based unarmed combat where the wasteland
+fights back.
 
-> **Requires an original copy of Fallout 2 (GOG/Steam). No game assets are included
-> or distributed. Not affiliated with Bethesda Softworks.**
+> **Requires an original copy of Fallout 2 (GOG/Steam). No game assets are
+> included or distributed.** "Fallout" is a trademark of Bethesda Softworks;
+> this project is not affiliated with or endorsed by Bethesda and names the
+> game only to describe interoperability with your own legally obtained data.
 
-Point it at your game directory (the one containing `master.dat`, `critter.dat`,
-`patch000.dat`):
+## Quick start
 
 ```sh
-dotnet run --project src/FalloutPoc.Viewer -- --game-dir ./game-data --map artemple.map
+dotnet run --project src/Hexwaste.Viewer -- --game-dir "/path/to/Fallout 2"
 ```
 
-## Progress
+The game directory is the install folder containing `master.dat`,
+`critter.dat` and `patch000.dat`. Without `--game-dir`, Hexwaste probes the
+usual GOG/Steam install paths and a `game-data/` folder next to the
+executable.
 
-- [x] M1 — DAT2 archive reader (`master.dat` list/extract) + DatDump CLI
-- [x] M2 — PAL + FRM parsers + FrmDump (FRM → PNG)
-- [x] M3 — MAP parser (`artemple.map` summary)
-- [x] M4 — Static floor render + camera pan
-- [x] M5 — Objects + z-sorting + roof toggle
-- [x] M6 — Palette color cycling
+Prebuilt self-contained builds (Linux x64 / Windows x64) are produced by
+`scripts/release.sh` — see `docs/RELEASING.md`.
 
-All six milestones are complete.
+## What works
+
+- **World**: DAT2 archives, FRM sprites + palette cycling, AAF fonts, full
+  static lighting (light pools, day/night clock), roofs/egg transparency,
+  sound (a C# port of the Interplay ACM decoder — music, sfx, footsteps),
+  ambient NPC life (fidgets, wander, script-driven brahmin behavior).
+- **Scripts**: a micro INT-bytecode VM with a real script host — map-entry
+  scripts lock doors and stock containers, examine/dialog/lockpick/timer
+  procedures run for real, script timers fire (doors auto-close behind you).
+- **Dialog**: full `gsay` conversation trees with keyboard choices.
+- **Persistent world**: per-map deltas keyed to the pristine map files —
+  loot a footlocker in the Den, walk to the Temple and back, it stays
+  looted; F5/F9 saves the whole visited world as JSON.
+- **Combat**: turn-based unarmed fights with engine-accurate sequencing
+  (outcome rolled before the animation, damage applied when it completes),
+  AP budgets, death falls and lootable corpses, AI turns with AP-budgeted
+  approach, and scriptless same-team hostility — punch a Den peasant and
+  the whole block piles in. Lose, and F9 puts you back.
+- **Worldmap**: click-to-travel between areas (`maps.txt`/`city.txt`).
 
 ## Controls
 
 | Input | Action |
 | --- | --- |
 | mouse drag / arrow keys | pan (hold Shift for fast) |
-| hover / click | highlight object under cursor; click prints its PID/FID |
-| click open ground | dude walks there (A* on the hex grid, camera follows) |
-| click a door (adjacent) | opens/closes it — scripts may lock it (map_enter runs for real) |
-| L on a hovered locked door | lockpick |
-| click a container/item (adjacent) | loot (1–9 take, A take all) / pick up |
+| click open ground | walk there (A* on the hex grid) |
+| click door / container / item / stairs | use / loot (1–9 take, A take all) / pick up / travel |
+| click a critter | talk (real scripted dialog, 1–9 to choose) |
+| right-click | examine (critters show HP/AC) |
+| F | attack the hovered critter (starts combat) |
+| Space | end combat turn |
+| L | lockpick the hovered door |
 | I | inventory (1–9 drop) |
-| F5 / F9 | save / load (JSON snapshot; doors, position, clock, vars, bag) |
-| right-click an object | examine — name + description in the message log |
-| click a critter (nearby) | talk — real scripted dialog (keys 1–9 or click to choose) |
-| click stairs/ladder (adjacent) | travel to their destination (may load another map) |
-| walk onto an exit grid | map transition (e.g. Temple of Trials → Arroyo bridge) |
-| R | toggle roofs |
-| T | toggle critter walk cycle (in place) |
-| PgUp / PgDn | switch elevation |
-| [ / ] | ambient light down/up (night ↔ day) |
-| M | worldmap — click a location to travel there |
+| F5 / F9 | save / load |
+| R / T / PgUp / PgDn | roofs / walk-cycle / elevation |
+| [ / ] | ambient light (night ↔ day) |
+| M | worldmap |
 | Esc | quit |
 
-Extra CLI flags: `--screenshot out.png` (render one frame and exit),
-`--no-roofs`, `--advance-ms N` (pre-advance palette cycling — for testing),
-`--bench N` (measure N uncapped frames, print timing report, exit),
-`--walk` (start with critters walking — for testing),
-`--pick X,Y` (print the object at a screen point — for testing),
-`--goto TILE` (walk the dude to a hex tile after load — for testing),
-`--door TILE` (toggle the door at a hex tile after load — for testing),
-`--examine X,Y` (print/log name+description of the object at a screen point — for testing),
-`--ambient F` (ambient light fraction 0.25–1.0, e.g. 0.25 for night),
-`--worldmap` (open the worldmap on start), `--travel N` (travel to city.txt area N — for testing),
-`--no-audio` (mute), `--no-ambient` (freeze NPC fidget/wander — for deterministic screenshots),
-`--talk X,Y` / `--talk-hex TILE` + `--choose 1,2,1` (scripted conversation transcript — for testing).
+A large set of `--flags` exists for headless testing (screenshots, scripted
+dialog/combat transcripts, deterministic RNG); see `src/Hexwaste.Viewer/Program.cs`.
 
-## Phase 4 — the world responds
+## Building
 
-The micro-VM grew into a real script host: **map-entry scripts run on every
-map load** (doors get locked, containers stocked by their actual scripts),
-**text dialog** plays real `gsay` conversation trees (Joey's turf talk,
-Rebecca's bar), locked doors yield to **lockpicking** via
-`use_skill_on_p_proc`, containers open into a **loot panel** with authentic
-item icons, a **game clock** drives day/night ambient, and **F5/F9
-save/load** persists position, doors, vars, inventory and time as a JSON
-delta. Renderer polish: silhouette hover outlines, roofs fade (not vanish)
-indoors, egg-style wall transparency keeps the dude visible, and the camera
-clamps to the map.
-
-## Phase 3 — the world becomes real
-
-Native AAF font rendering with real game text (names + examine descriptions
-from `pro_*.msg`), the full static lighting engine (occluded light pools,
-day/night ambient), a click-to-travel worldmap, sound (a complete C# port of
-the Interplay ACM decoder — door sfx, footsteps, per-map music), ambient NPC
-life (engine-faithful fidget + faked wander), and a **micro INT-script VM**
-(39 core opcodes, arity-stubbed externals) that runs real `look_at`/
-`description` procedures — scripted examine text works, e.g. the Den's chem
-addicts describe themselves with their authentic script lines.
-
-## Phase 2 — walking simulator
-
-On top of the original viewer scope, the PoC now renders critters (composed
-FRM names, correct directions), plays FRM animations (looping fires, critter
-walk cycles), supports per-pixel mouse picking, moves a player stand-in with
-A* hex pathfinding, and handles doors/exit grids/stairs **without any script
-VM** — interactions are hardcoded, per the phase-2 research recommendation.
-Combat, dialogs, and the INT script engine remain explicitly out of scope.
-
-## Implementation notes
-
-- Palette cycling updates a 256-entry palette per the original `cycle.cc`
-  tables/periods and re-uploads **only** the textures whose FRMs contain
-  cycling indices (229–255). The palette-lookup-shader variant was skipped
-  because MonoGame's effect compiler needs Wine on Linux; the re-upload path
-  touches a handful of small textures per tick, which is ample for a PoC.
-- Critters/NPCs are not rendered (out of scope; their FRM names are composed
-  from animation codes).
+```sh
+dotnet build          # .NET 10 SDK
+dotnet test           # set FALLOUT2_DIR=/path/to/game for the data-backed tests
+```
 
 ## Layout
 
-- `src/FalloutPoc.Formats` — binary format parsers (DAT2/FRM/PAL/MAP/PRO), no MonoGame deps
-- `src/FalloutPoc.Viewer` — MonoGame DesktopGL viewer
-- `tools/` — CLI dump/debug tools
-- `tests/` — xUnit tests (tests needing real game data skip unless `FALLOUT2_DIR` is set)
+- `src/Hexwaste.Formats` — engine + format code (DAT2/FRM/PAL/MAP/PRO/INT VM,
+  script host, combat math, save model); no MonoGame dependencies, fully
+  testable headless
+- `src/Hexwaste.Viewer` — the MonoGame DesktopGL front end
+- `tools/` — CLI dump/debug tools (DatDump, FrmDump, MapDump)
+- `tests/` — xUnit suite
+- `docs/` — provenance: the research reports and prompts that drove each
+  phase, and `RELEASING.md`
 
-Binary formats are ported from [fallout2-ce](https://github.com/alexbatalov/fallout2-ce),
-the reverse-engineered reimplementation of the original engine.
+## License & attribution
 
-> **TODO before any public release:** rename project/package IDs to not contain
-> the word "Fallout" (currently internal-only `FalloutPoc` namespaces).
+Hexwaste is a modified derivative of
+[fallout2-ce](https://github.com/alexbatalov/fallout2-ce) (the
+reverse-engineered engine re-implementation); ported routines carry
+`// ported from fallout2-ce ...` comments. It is licensed under the
+**Sustainable Use License v1.0** (`LICENSE.md`, `NOTICE.md`): free of charge,
+non-commercial use and distribution only.

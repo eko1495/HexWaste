@@ -1,0 +1,14 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/Hexwaste.Formats/Hexwaste.Formats.csproj" />
+    <Project Path="src/Hexwaste.Viewer/Hexwaste.Viewer.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/Hexwaste.Formats.Tests/Hexwaste.Formats.Tests.csproj" />
+  </Folder>
+  <Folder Name="/tools/">
+    <Project Path="tools/DatDump/DatDump.csproj" />
+    <Project Path="tools/FrmDump/FrmDump.csproj" />
+    <Project Path="tools/MapDump/MapDump.csproj" />
+  </Folder>
+</Solution>

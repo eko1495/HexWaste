@@ -1,6 +1,6 @@
-using FalloutPoc.Formats;
-using FalloutPoc.Formats.Map;
-using FalloutPoc.Formats.Proto;
+using Hexwaste.Formats;
+using Hexwaste.Formats.Map;
+using Hexwaste.Formats.Proto;
 
 // MapDump — parses a MAP file and prints a summary.
 // usage: MapDump --game-dir <dir> [--map artemple.map]

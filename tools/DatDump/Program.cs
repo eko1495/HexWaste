@@ -1,5 +1,5 @@
-using FalloutPoc.Formats;
-using FalloutPoc.Formats.Dat2;
+using Hexwaste.Formats;
+using Hexwaste.Formats.Dat2;
 
 if (args.Length == 0)
 {

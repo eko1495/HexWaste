@@ -24,10 +24,10 @@ If a format detail can't be confirmed from fallout2-ce sources, **stop and ask**
 
 ## Layout
 
-- `src/FalloutPoc.Formats` — pure .NET class library, zero MonoGame deps, unit-testable.
-- `src/FalloutPoc.Viewer` — MonoGame DesktopGL app.
+- `src/Hexwaste.Formats` — pure .NET class library, zero MonoGame deps, unit-testable.
+- `src/Hexwaste.Viewer` — MonoGame DesktopGL app.
 - `tools/DatDump`, `tools/FrmDump` — CLI demo/debug tools.
-- `tests/FalloutPoc.Formats.Tests` — xUnit; tests needing real game files are guarded by env var `FALLOUT2_DIR` (skip when unset) so CI passes without assets.
+- `tests/Hexwaste.Formats.Tests` — xUnit; tests needing real game files are guarded by env var `FALLOUT2_DIR` (skip when unset) so CI passes without assets.
 - `game-data/` — extracted GOG game data (gitignored). `master.dat`, `critter.dat`, `patch000.dat`, `data/` live at its root.
 
 ## Milestones (commit after each)
@@ -55,7 +55,7 @@ Phase 2 — "walking simulator" (per research report
 5. **P2-M5** — hardcoded interactions, no VM: doors (open/close animation),
    exit grids (map/elevation transition), stairs/ladders.
 
-Phase 3 (DONE, per phase3-research-report.md): M0 AAF fonts + MSG + examine,
+Phase 3 (DONE, per docs/phase3-research-report.md): M0 AAF fonts + MSG + examine,
 M1 static lighting (LightGrid port incl. the 36-case occlusion switch;
 CPU tints — per-object exact, per-square floor approximation), M2 worldmap
 travel (city.txt/maps.txt lookup names), M3 sound (full ACM decoder port,
@@ -65,7 +65,7 @@ is a documented fake), M5 micro INT VM (39 core ops + 181 arity-mapped
 externals; examine override path only — use_p_proc/map_enter NOT wired).
 Scripts.lst is 0-based; message_str list ids are scripts.lst index + 1.
 
-Phase 4 (DONE, per phase4-research-report.md): M0 VM foundations (real
+Phase 4 (DONE, per docs/phase4-research-report.md): M0 VM foundations (real
 rolls — stub-0 = critical-failure trap; script context; LVARs are LAZY
 slices, pristine maps store offset -1), M1 text dialog (gsay loop, options
 bind by procedure index), M2 locked doors + lockpick + RunMapEnter (map
@@ -76,8 +76,22 @@ ours is custom) + JSON delta save/load (containers restock by design),
 M5 polish (outlines, roof fade, egg-fade approximation, scroll clamp).
 GOTCHA: GPU backbuffer readback races — screenshots must render via a
 RenderTarget2D (ViewerGame._screenshotTarget). Per-vertex floor lighting
-(BasicEffect quads) remains the known deferred upgrade; combat measured M
-and queued as phase 5.
+(BasicEffect quads) remains the known deferred upgrade.
+
+Phase 5 (DONE, per docs/phase5-research-report.md): M0 foundations (real
+caps/timer/tile externals — pay-caps stub gave goods away; timers are
+dialog-gated, cleared on map exit, 1:1 tick source), M1 multi-map
+persistence (per-map deltas keyed by LOAD-ORDER ORDINALS — MAP object Ids
+collide; LVAR slices keyed by map NAME import before map_enter on revisits,
+firstRun=0; container snapshots overwrite restock; fixes the ~590 KB/
+transition ScriptHost leak), M2 critter stats (proto stat block + the 11
+MAP combat ints; CritterState = base+bonus), M3 player combat (roll before
+animate, damage on completion; corpse = anim+28, NO_BLOCK + flat → loot
+panel works unchanged), M4 AI turns (AP-budgeted approach, same-team
+joiners within 20 hexes, game over → F9), M5 ship-prep (renamed
+FalloutPoc→Hexwaste, SUL license + NOTICE, docs/ provenance,
+scripts/release.sh, game-dir probing). Barter is the designated phase-6
+spillover (externals half-done).
 
 After each milestone: run tests, run the app if possible, update README progress checklist, conventional commit.
 
@@ -96,7 +110,7 @@ After each milestone: run tests, run the app if possible, update README progress
 
 - `.gitignore` excludes `*.dat`, `*.map`, `*.frm`, `*.pal`, `game-data/` — keep it that way.
 - README must state: requires original Fallout 2 copy, no assets included, not affiliated with Bethesda Softworks.
-- No "Fallout" in any distributable/package ID (internal `FalloutPoc` namespace OK for private PoC; README has TODO to rename before public release).
+- No "Fallout" in any distributable/package ID — DONE: the project is `Hexwaste` everywhere; LICENSE.md (SUL v1.0) + NOTICE.md ship with every artifact (see docs/RELEASING.md).
 
 ## Working style
 

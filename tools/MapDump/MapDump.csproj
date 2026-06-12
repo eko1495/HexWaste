@@ -1,7 +1,7 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
 
   <ItemGroup>
-    <ProjectReference Include="..\..\src\FalloutPoc.Formats\FalloutPoc.Formats.csproj" />
+    <ProjectReference Include="..\..\src\Hexwaste.Formats\Hexwaste.Formats.csproj" />
   </ItemGroup>
 
   <PropertyGroup>

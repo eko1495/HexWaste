@@ -1,6 +1,6 @@
-using FalloutPoc.Formats;
-using FalloutPoc.Formats.Frm;
-using FalloutPoc.Formats.Pal;
+using Hexwaste.Formats;
+using Hexwaste.Formats.Frm;
+using Hexwaste.Formats.Pal;
 using SixLabors.ImageSharp;
 using SixLabors.ImageSharp.PixelFormats;
 
