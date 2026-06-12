@@ -236,7 +236,8 @@ public sealed class ViewerGame : Game
 
         foreach ((int hex, bool lockpick) in UseAtHexes)
         {
-            MapObject? target = _solidObjects[_elevation].FirstOrDefault(o => o.HexTile == hex);
+            MapObject? target = _solidObjects[_elevation].FirstOrDefault(o => o.HexTile == hex)
+                ?? _flatObjects[_elevation].FirstOrDefault(o => o.HexTile == hex);
             if (target is null)
             {
                 Console.Error.WriteLine($"nothing at hex {hex}");
@@ -634,7 +635,7 @@ public sealed class ViewerGame : Game
             {
                 int target = _camera.ScreenToHex(mouse.X, mouse.Y);
                 if (target >= 0 && !_dude.WalkTo(target))
-                    Console.WriteLine($"no path to hex {target}");
+                    Log("You cannot get there from here. (Try clicking closer.)");
             }
         }
 

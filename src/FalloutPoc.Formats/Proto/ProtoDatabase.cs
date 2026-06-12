@@ -37,7 +37,18 @@ public sealed class ProtoDatabase(GameFileSystem vfs)
         if (_cache.TryGetValue(pid, out ProtoInfo? cached))
             return cached;
 
-        ProtoInfo info = Load(pid);
+        ProtoInfo info;
+        try
+        {
+            info = Load(pid);
+        }
+        catch (EndOfStreamException ex)
+        {
+            // Truncated/short .pro — surface as the exception type every
+            // caller already soft-handles.
+            throw new InvalidDataException($"PID 0x{pid:X8}: proto file too short.", ex);
+        }
+
         _cache[pid] = info;
         return info;
     }
@@ -69,11 +80,19 @@ public sealed class ProtoDatabase(GameFileSystem vfs)
         int inventoryFid = -1;
         switch ((ObjectType)type)
         {
+            // ported from fallout2-ce src/proto.cc protoRead(): misc protos
+            // end after extendedFlags — they have NO sid field (exit grids'
+            // .pro files are exactly that short).
+            case ObjectType.Misc:
+                reader.Skip(8); // lightDistance, lightIntensity
+                flags = reader.ReadInt32();
+                extendedFlags = reader.ReadInt32();
+                break;
+
             case ObjectType.Item:
             case ObjectType.Critter:
             case ObjectType.Scenery:
             case ObjectType.Wall:
-            case ObjectType.Misc:
                 reader.Skip(8); // lightDistance, lightIntensity
                 flags = reader.ReadInt32();
                 extendedFlags = reader.ReadInt32();

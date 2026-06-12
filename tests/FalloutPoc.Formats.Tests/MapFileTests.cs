@@ -32,6 +32,21 @@ public class MapRealGameDataTests
     }
 
     [GameDataFact]
+    public void ExitGridProtosLoadWithoutOverread()
+    {
+        using var vfs = GameFileSystem.Open(GameData.RequiredDir);
+        var protos = new FalloutPoc.Formats.Proto.ProtoDatabase(vfs);
+
+        // Misc protos have no sid field; exit-grid .pro files are short
+        // enough that an extra skip read past EOF (the arvillag hover crash).
+        for (int pid = Fid.FirstExitGridPid; pid <= Fid.LastExitGridPid; pid++)
+        {
+            var info = protos.Get(pid);
+            Assert.True(info.MessageId >= 0);
+        }
+    }
+
+    [GameDataFact]
     public void ParsesEveryMapInTheGame()
     {
         using var vfs = GameFileSystem.Open(GameData.RequiredDir);
