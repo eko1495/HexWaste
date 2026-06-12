@@ -49,6 +49,10 @@ public sealed class MapObject
     public required int Fid { get; set; }
     public required int Flags { get; init; }
     public required int Pid { get; init; }
+
+    /// <summary>Light emission: radius in hexes (max 8) and intensity (0..65536).</summary>
+    public int LightDistance { get; init; }
+    public int LightIntensity { get; init; }
     public List<MapObject> Inventory { get; } = [];
 
     // ported from fallout2-ce src/obj_types.h
@@ -244,7 +248,10 @@ public sealed class MapFile
         int flags = reader.ReadInt32();
         reader.Skip(4); // elevation — implied by the section being read
         int pid = reader.ReadInt32();
-        reader.Skip(6 * 4); // cid, lightDistance, lightIntensity, field_74, sid, scriptIndex
+        reader.Skip(4); // cid
+        int lightDistance = reader.ReadInt32();
+        int lightIntensity = reader.ReadInt32();
+        reader.Skip(3 * 4); // field_74, sid, scriptIndex
 
         var obj = new MapObject
         {
@@ -257,6 +264,8 @@ public sealed class MapFile
             Fid = fid,
             Flags = flags,
             Pid = pid,
+            LightDistance = lightDistance,
+            LightIntensity = lightIntensity,
         };
 
         int inventoryLength = ReadObjectData(reader, obj, protos, mapVersion);

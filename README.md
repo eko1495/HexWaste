@@ -37,6 +37,7 @@ All six milestones are complete.
 | R | toggle roofs |
 | T | toggle critter walk cycle (in place) |
 | PgUp / PgDn | switch elevation |
+| [ / ] | ambient light down/up (night ↔ day) |
 | Esc | quit |
 
 Extra CLI flags: `--screenshot out.png` (render one frame and exit),
@@ -46,7 +47,8 @@ Extra CLI flags: `--screenshot out.png` (render one frame and exit),
 `--pick X,Y` (print the object at a screen point — for testing),
 `--goto TILE` (walk the dude to a hex tile after load — for testing),
 `--door TILE` (toggle the door at a hex tile after load — for testing),
-`--examine X,Y` (print/log name+description of the object at a screen point — for testing).
+`--examine X,Y` (print/log name+description of the object at a screen point — for testing),
+`--ambient F` (ambient light fraction 0.25–1.0, e.g. 0.25 for night).
 
 ## Phase 2 — walking simulator
 

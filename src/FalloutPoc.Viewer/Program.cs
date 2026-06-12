@@ -11,6 +11,7 @@ Microsoft.Xna.Framework.Point? pick = null;
 Microsoft.Xna.Framework.Point? examine = null;
 int? gotoTile = null;
 int? doorTile = null;
+double ambient = 1.0;
 
 for (int i = 0; i < args.Length; i++)
 {
@@ -33,6 +34,9 @@ for (int i = 0; i < args.Length; i++)
             break;
         case "--door" when i + 1 < args.Length:
             doorTile = int.Parse(args[++i]);
+            break;
+        case "--ambient" when i + 1 < args.Length:
+            ambient = double.Parse(args[++i], System.Globalization.CultureInfo.InvariantCulture);
             break;
         case "--pick" when i + 1 < args.Length:
         {
@@ -78,6 +82,7 @@ using var game = new ViewerGame(gameDir, mapName, screenshot, roofs)
     ExamineAt = examine,
     WalkToTile = gotoTile,
     ToggleDoorAtTile = doorTile,
+    InitialAmbient = ambient,
 };
 game.Run();
 return 0;

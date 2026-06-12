@@ -52,7 +52,11 @@ public sealed class ViewerGame : Game
     private DudeController? _dude;
     private HashSet<int> _blockedTiles = [];
     private MapList _mapList = null!;
+    private Formats.Light.LightGrid _lightGrid = new();
     private AafFontRenderer? _fontRenderer;
+
+    /// <summary>Ambient light as a fraction of full brightness (CLI --ambient).</summary>
+    public double InitialAmbient { get; set; } = 1.0;
     private ProtoMessages _protoMessages = null!;
     private readonly List<string> _messageLog = [];
     private string _currentMapName = "";
@@ -229,6 +233,7 @@ public sealed class ViewerGame : Game
 
         StartLoopingAnimations();
         SpawnDude(spawnTile, spawnRotation);
+        RebuildLighting();
 
         _camera.SetWindowSize(Window.ClientBounds.Width, Window.ClientBounds.Height);
         _camera.SetCenter(_dude?.Dude.HexTile ?? _map.Header.EnteringTile);
@@ -275,6 +280,15 @@ public sealed class ViewerGame : Game
 
         if (IsKeyPressed(keyboard, Keys.T))
             ToggleWalkMode();
+
+        // [ and ] adjust ambient light (day/night preview).
+        if (IsKeyPressed(keyboard, Keys.OemOpenBrackets) || IsKeyPressed(keyboard, Keys.OemCloseBrackets))
+        {
+            double step = IsKeyPressed(keyboard, Keys.OemOpenBrackets) ? -0.1 : 0.1;
+            InitialAmbient = Math.Clamp(InitialAmbient + step, 0.25, 1.0);
+            _lightGrid.Ambient = (int)(InitialAmbient * Formats.Light.LightGrid.IntensityMax);
+            Log($"ambient light {InitialAmbient:P0}");
+        }
 
         _animator.Update(gameTime.ElapsedGameTime.TotalMilliseconds);
         _dude?.Update(gameTime.ElapsedGameTime.TotalMilliseconds);
@@ -451,6 +465,65 @@ public sealed class ViewerGame : Game
 
         foreach (MapObject door in _openDoors)
             _blockedTiles.Remove(door.HexTile);
+    }
+
+    /// <summary>
+    /// Computes static per-hex light for the current elevation: every visible
+    /// OBJECT_LIGHTING emitter spreads via the ported _obj_adjust_light()
+    /// falloff/occlusion. Recomputed on map load and elevation switch (the
+    /// scene is static; only the dude moves and he emits no light).
+    /// </summary>
+    private void RebuildLighting()
+    {
+        const int objectLighting = 0x20;
+
+        _lightGrid.Reset();
+        _lightGrid.Ambient = (int)Math.Clamp(InitialAmbient * Formats.Light.LightGrid.IntensityMax,
+            Formats.Light.LightGrid.IntensityMin, Formats.Light.LightGrid.IntensityMax);
+
+        List<MapObject> all = [.. _flatObjects[_elevation], .. _solidObjects[_elevation]];
+        var byTile = all.GroupBy(o => o.HexTile).ToDictionary(g => g.Key, g => g.ToList());
+
+        IEnumerable<Formats.Light.LightBlocker> BlockersAt(int tile)
+        {
+            if (!byTile.TryGetValue(tile, out List<MapObject>? objects))
+                yield break;
+            foreach (MapObject obj in objects)
+            {
+                bool isWall = Fid.Type(obj.Fid) is ObjectType.Wall;
+                int wallExtendedFlags = 0;
+                if (isWall)
+                {
+                    try
+                    {
+                        wallExtendedFlags = _protos.Get(obj.Pid).ExtendedFlags;
+                    }
+                    catch (Exception ex) when (ex is FileNotFoundException or InvalidDataException)
+                    {
+                    }
+                }
+
+                yield return new Formats.Light.LightBlocker(
+                    (obj.Flags & 0x20000000) != 0, // OBJECT_LIGHT_THRU
+                    isWall,
+                    obj.IsFlat,
+                    wallExtendedFlags);
+            }
+        }
+
+        foreach (MapObject emitter in all)
+        {
+            if ((emitter.Flags & objectLighting) != 0 && emitter.LightIntensity > 0)
+                _lightGrid.AddObjectLight(emitter.HexTile, emitter.LightDistance, emitter.LightIntensity, BlockersAt);
+        }
+    }
+
+    /// <summary>Brightness multiplier for a hex (the original's per-object uniform intensity).</summary>
+    private Color LightTint(int hexTile)
+    {
+        float factor = _lightGrid.GetTileIntensity(hexTile) / (float)Formats.Light.LightGrid.IntensityMax;
+        byte level = (byte)Math.Clamp((int)(factor * 255), 0, 255);
+        return new Color(level, level, level);
     }
 
     private bool IsAdjacentToDude(MapObject obj)
@@ -719,8 +792,21 @@ public sealed class ViewerGame : Game
                 continue;
 
             Texture2D texture = _frmCache.GetTexture(Fid.Build(ObjectType.Tile, tileId));
-            _spriteBatch.Draw(texture, new Vector2(x, y), Color.White);
+            _spriteBatch.Draw(texture, new Vector2(x, y), LightTint(SquareToHex(square)));
         }
+    }
+
+    /// <summary>
+    /// A square maps to the 2x2 hex block starting at hex (2*sx+1, 2*sy) —
+    /// derived from the tile.cc square/hex screen formulas. One sample per
+    /// tile approximates the original's per-pixel floor gradient (see
+    /// phase3-research-report.md M1 pivot threshold).
+    /// </summary>
+    private static int SquareToHex(int square)
+    {
+        int sx = square % MapElevation.SquareGridWidth;
+        int sy = square / MapElevation.SquareGridWidth;
+        return 2 * sy * Camera.HexGridWidth + 2 * sx + 1;
     }
 
     private sealed record SpriteInfo(int Fid, int FrameIndex, int Rotation,
@@ -794,7 +880,9 @@ public sealed class ViewerGame : Game
                 continue;
 
             Texture2D texture = _frmCache.GetTexture(sprite.Fid, sprite.FrameIndex, sprite.Rotation);
-            Color tint = obj == _hoveredObject ? Color.Yellow : Color.White;
+            // ported from fallout2-ce src/object.cc _obj_render_object(): one
+            // uniform intensity per object, max(ambient, tile light).
+            Color tint = obj == _hoveredObject ? Color.Yellow : LightTint(obj.HexTile);
             _spriteBatch.Draw(texture, new Vector2(sprite.Left, sprite.Top), tint);
         }
     }
@@ -883,8 +971,12 @@ public sealed class ViewerGame : Game
             if (x < viewport.Left - 80 || x > viewport.Right || y < viewport.Top - 36 || y > viewport.Bottom)
                 continue;
 
+            // Roofs are lit by ambient only (tileRenderRoofsInRect passes
+            // lightGetAmbientIntensity, not tile light).
+            byte ambientLevel = (byte)Math.Clamp(
+                _lightGrid.Ambient * 255 / Formats.Light.LightGrid.IntensityMax, 0, 255);
             Texture2D texture = _frmCache.GetTexture(Fid.Build(ObjectType.Tile, tileId));
-            _spriteBatch.Draw(texture, new Vector2(x, y), Color.White);
+            _spriteBatch.Draw(texture, new Vector2(x, y), new Color(ambientLevel, ambientLevel, ambientLevel));
         }
     }
 
