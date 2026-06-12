@@ -106,6 +106,16 @@ public sealed class ViewerGame : Game
     /// engine's _combat_exps → _combat_give_exps (combat.cc:2816).</summary>
     private int _combatXpPending;
 
+    /// <summary>Main-menu front door (v0.6): Title → character pick → play.
+    /// Headless/test flags skip it entirely.</summary>
+    public bool StartInMenu { get; set; }
+
+    private enum MenuState { None, Title, CharacterPick }
+
+    private MenuState _menu = MenuState.None;
+    private int _menuIndex;
+    private List<(string Label, string VirtualPath)> _premadeGcds = [];
+
     /// <summary>Open trade session (gdialog_barter): merchant + price modifier.</summary>
     private MapObject? _barterNpc;
     private MapObject? _barterStock;
@@ -350,6 +360,24 @@ public sealed class ViewerGame : Game
         LoadMap(_mapName, spawnAt: null);
 
         _worldmapScreen = new WorldmapScreen(GraphicsDevice, _vfs, _palette, _cities, _fontRenderer);
+        if (StartInMenu)
+        {
+            _menu = MenuState.Title;
+            _premadeGcds = [.. new[] { "combat", "diplomat", "stealth", "blank" }
+                .Select(name => ($@"premade\{name}.gcd", name))
+                .Where(t => _vfs.Exists(t.Item1))
+                .Select(t =>
+                {
+                    using Stream stream = _vfs.OpenRead(t.Item1);
+                    var gcd = Formats.Combat.GcdFile.Load(stream);
+                    string label = string.IsNullOrWhiteSpace(gcd.Name) || gcd.Name == "None"
+                        ? char.ToUpper(t.Item2[0]) + t.Item2[1..]
+                        : gcd.Name;
+                    return ($"{label}  (S{gcd.Stats.BaseStats[0]} P{gcd.Stats.BaseStats[1]} E{gcd.Stats.BaseStats[2]}"
+                        + $" C{gcd.Stats.BaseStats[3]} I{gcd.Stats.BaseStats[4]} A{gcd.Stats.BaseStats[5]} L{gcd.Stats.BaseStats[6]})",
+                        t.Item1);
+                })];
+        }
         if (StartOnWorldmap)
             _worldmapOpen = true;
         if (TravelToArea is { } areaIndex)
@@ -803,11 +831,48 @@ public sealed class ViewerGame : Game
         KeyboardState keyboard = Keyboard.GetState();
         MouseState mouse = Mouse.GetState();
 
-        // Game over: the world freezes; only loading a save (or quitting) works.
+        // Main menu: arrows/enter (or 1-9); the world idles underneath.
+        if (_menu != MenuState.None)
+        {
+            int itemCount = _menu == MenuState.Title ? 2 : _premadeGcds.Count;
+            if (IsKeyPressed(keyboard, Keys.Up))
+                _menuIndex = (_menuIndex + itemCount - 1) % itemCount;
+            if (IsKeyPressed(keyboard, Keys.Down))
+                _menuIndex = (_menuIndex + 1) % itemCount;
+            for (int i = 0; i < itemCount && i < 9; i++)
+                if (IsKeyPressed(keyboard, Keys.D1 + i))
+                {
+                    _menuIndex = i;
+                    ActivateMenuItem();
+                }
+            if (IsKeyPressed(keyboard, Keys.Enter))
+                ActivateMenuItem();
+            if (IsKeyPressed(keyboard, Keys.Escape))
+            {
+                if (_menu == MenuState.CharacterPick)
+                {
+                    _menu = MenuState.Title;
+                    _menuIndex = 0;
+                }
+                else
+                {
+                    Exit();
+                }
+            }
+
+            _previousMouse = mouse;
+            _previousKeyboard = keyboard;
+            base.Update(gameTime);
+            return;
+        }
+
+        // Game over: the world freezes; load, restart or quit.
         if (_gameOver)
         {
             if (IsKeyPressed(keyboard, Keys.F9))
                 LoadGame();
+            if (IsKeyPressed(keyboard, Keys.N))
+                StartNewGame();
             if (keyboard.IsKeyDown(Keys.Escape))
                 Exit();
             _previousMouse = mouse;
@@ -3381,13 +3446,66 @@ public sealed class ViewerGame : Game
 
         if (_gameOver)
         {
-            const string banner = "YOU HAVE DIED";
-            const string hint = "Press F9 to load the last save, Esc to quit.";
+            _panelPixel ??= CreatePixel();
+            _spriteBatch.Draw(_panelPixel,
+                new Rectangle(0, 0, GraphicsDevice.Viewport.Width, GraphicsDevice.Viewport.Height),
+                new Color(0, 0, 0, 170));
             var center = new Vector2(GraphicsDevice.Viewport.Width / 2f, GraphicsDevice.Viewport.Height / 2f);
-            _fontRenderer.Draw(_spriteBatch, banner,
-                center + new Vector2(-_fontRenderer.MeasureWidth(banner) / 2f, -_fontRenderer.LineHeight), new Color(252, 0, 0));
+            string[] lines =
+            [
+                "YOU HAVE DIED",
+                $"Level {_dudeLevel}  -  {_dudeXp} XP  -  Day {_clock.Day}",
+                "",
+                "F9  Load last save",
+                "N   New game",
+                "Esc Quit",
+            ];
+            float lineY = center.Y - lines.Length * _fontRenderer.LineHeight;
+            foreach (string line in lines)
+            {
+                Color color = line == lines[0] ? new Color(252, 0, 0) : new Color(252, 252, 84);
+                _fontRenderer.Draw(_spriteBatch, line,
+                    new Vector2(center.X - _fontRenderer.MeasureWidth(line) / 2f, lineY), color);
+                lineY += _fontRenderer.LineHeight * 1.6f;
+            }
+        }
+
+        if (_menu != MenuState.None)
+        {
+            _panelPixel ??= CreatePixel();
+            _spriteBatch.Draw(_panelPixel,
+                new Rectangle(0, 0, GraphicsDevice.Viewport.Width, GraphicsDevice.Viewport.Height),
+                new Color(0, 0, 0, 200));
+            var center = new Vector2(GraphicsDevice.Viewport.Width / 2f, GraphicsDevice.Viewport.Height / 2f);
+            var gold = new Color(252, 252, 84);
+            var menuGreen = new Color(0, 252, 0);
+            var gray = new Color(140, 140, 140);
+
+            const string title = "H E X W A S T E";
+            _fontRenderer.Draw(_spriteBatch, title,
+                new Vector2(center.X - _fontRenderer.MeasureWidth(title) / 2f, center.Y - 120), gold);
+            const string subtitle = "a Fallout 2 engine slice - needs your own game data";
+            _fontRenderer.Draw(_spriteBatch, subtitle,
+                new Vector2(center.X - _fontRenderer.MeasureWidth(subtitle) / 2f, center.Y - 120 + _fontRenderer.LineHeight * 1.4f), gray);
+
+            string[] items = _menu == MenuState.Title
+                ? ["New game", "Quit"]
+                : [.. _premadeGcds.Select(g => g.Label)];
+            float itemY = center.Y - 20;
+            for (int i = 0; i < items.Length; i++)
+            {
+                string line = (i == _menuIndex ? "> " : "  ") + items[i];
+                _fontRenderer.Draw(_spriteBatch, line,
+                    new Vector2(center.X - _fontRenderer.MeasureWidth(line) / 2f, itemY),
+                    i == _menuIndex ? menuGreen : gray);
+                itemY += _fontRenderer.LineHeight * 1.6f;
+            }
+
+            string hint = _menu == MenuState.Title
+                ? "arrows + Enter; Esc quits"
+                : "pick a premade character - arrows + Enter; Esc back";
             _fontRenderer.Draw(_spriteBatch, hint,
-                center + new Vector2(-_fontRenderer.MeasureWidth(hint) / 2f, _fontRenderer.LineHeight), new Color(252, 252, 84));
+                new Vector2(center.X - _fontRenderer.MeasureWidth(hint) / 2f, itemY + _fontRenderer.LineHeight), gray);
         }
 
         int y = GraphicsDevice.Viewport.Height - 8 - _messageLog.Count * _fontRenderer.LineHeight;
@@ -3581,6 +3699,58 @@ public sealed class ViewerGame : Game
             Console.Error.WriteLine($"load: dropping unknown pid 0x{pid:X8}: {ex.Message}");
             return null;
         }
+    }
+
+    private void ActivateMenuItem()
+    {
+        if (_menu == MenuState.Title)
+        {
+            if (_menuIndex == 0)
+            {
+                if (_premadeGcds.Count > 0)
+                {
+                    _menu = MenuState.CharacterPick;
+                    _menuIndex = 0;
+                }
+                else
+                {
+                    _menu = MenuState.None; // no premades — play the default sheet
+                }
+            }
+            else
+            {
+                Exit();
+            }
+        }
+        else if (_menu == MenuState.CharacterPick && _menuIndex < _premadeGcds.Count)
+        {
+            using (Stream stream = _vfs.OpenRead(_premadeGcds[_menuIndex].VirtualPath))
+                _dudeGcd = Formats.Combat.GcdFile.Load(stream);
+            StartNewGame();
+            _menu = MenuState.None;
+        }
+    }
+
+    /// <summary>Fresh start: wipe session state and reload the first map with
+    /// the current character sheet.</summary>
+    private void StartNewGame()
+    {
+        _dudeLevel = 1;
+        _dudeXp = 0;
+        _dudeInventory = [];
+        _visitedMaps.Clear();
+        _gameOver = false;
+        _clock.Ticks = 302400; // engine boot time
+        _lastAmbientHour = -1;
+        if (_scriptHost is not null)
+        {
+            _scriptHost.GlobalVars.Clear();
+            _scriptHost.ClearAllLocalVars();
+            _scriptHost.ExternalVars.Clear();
+        }
+
+        LoadMap(_mapName, spawnAt: null, captureOutgoing: false);
+        Log($"Welcome to the wasteland{(_dudeGcd is { Name.Length: > 0 } g && g.Name != "None" ? $", {g.Name}" : "")}.");
     }
 
     private void SaveGame()

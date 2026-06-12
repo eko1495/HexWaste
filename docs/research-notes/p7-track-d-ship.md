@@ -1,7 +1,7 @@
 # Phase-7 Track D — Ship-First Case + "What We're Not Seeing"
 
 Date: 2026-06-12. Method: read-only repo audit (release.sh dry-run executed and cleaned up),
-web research current to mid-June 2026. Repo: /home/eko/dev/FPOC (untagged, main, clean tree).
+web research current to mid-June 2026. Repo: ~/dev/FPOC (untagged, main, clean tree).
 
 ## 1. Publication dry-run audit (vs docs/RELEASING.md)
 
@@ -9,9 +9,9 @@ web research current to mid-June 2026. Repo: /home/eko/dev/FPOC (untagged, main,
 
 | Severity | Item | Detail |
 |---|---|---|
-| MUST FIX | `tools/__pycache__/int_analyze.cpython-314.pyc` is **tracked** | A compiled Python binary in git. `.gitignore` has no `__pycache__/` entry (verified with `git check-ignore`, exit 1). It also embeds the `/home/eko/...` path. Remove + ignore. |
-| SHOULD FIX | `tools/int_analyze.py:36` | `SRC = "/home/eko/dev/FPOC/reference/fallout2-ce/src"` hardcoded. Parameterize via env/arg before shipping a "tool". |
-| COSMETIC | `/home/eko/dev/FPOC/...` paths in docs/research-notes/p6-track-{a,b,c,d}.md headers (+ `/tmp/p6*` probe paths) | Provenance notes; leaks a username + machine layout but nothing sensitive. RELEASING.md:39 already says to audit docs for machine-local paths — this is exactly that. Either scrub the 6 header lines or accept (low risk). |
+| MUST FIX | `tools/__pycache__/int_analyze.cpython-314.pyc` is **tracked** | A compiled Python binary in git. `.gitignore` has no `__pycache__/` entry (verified with `git check-ignore`, exit 1). It also embeds the `~/...` path. Remove + ignore. |
+| SHOULD FIX | `tools/int_analyze.py:36` | `SRC = "<repo>/reference/fallout2-ce/src"` hardcoded. Parameterize via env/arg before shipping a "tool". |
+| COSMETIC | `<repo>/...` paths in docs/research-notes/p6-track-{a,b,c,d}.md headers (+ `/tmp/p6*` probe paths) | Provenance notes; leaks a username + machine layout but nothing sensitive. RELEASING.md:39 already says to audit docs for machine-local paths — this is exactly that. Either scrub the 6 header lines or accept (low risk). |
 | OK | user email | NOT in any tracked file content (`git grep` clean). It IS the author/committer identity on every commit — moot under the fresh-history plan (RELEASING.md:20-37), but the new initial commit will carry whatever `user.email` is set at publish time. Decide deliberately. |
 | OK | game-derived text | No bulk extracted game text in tracked files; research notes contain only short paraphrases of engine messages ("you gain X exp"). The .gitignore (city.txt/worldmap.txt/maps.txt/*.msg/*.lst/*.gam + binaries) holds. Fresh-history plan covers the early-history leak. |
 | NOTE | CLAUDE.md ships | Contains internal working-style/milestone notes (incl. the research-report filename `compass_artifact_…`). Nothing legally sensitive, but it reads as an internal doc; consider whether it belongs in the public repo or only in the dev repo. |
@@ -49,7 +49,7 @@ Ran `scripts/release.sh 0.0.0-audit`, then verified and `rm -rf`'d artifacts/v0.
 
 **Max first-impression value per day, pre-publication:**
 1. README screenshots + 10 s GIF (≤0.5 day — `--screenshot` infra already exists).
-2. Repo hygiene batch: drop .pyc, ignore `__pycache__/`, fix int_analyze.py path, scrub /home/eko from notes, CHANGELOG.md, decide tag scheme (≤0.5 day).
+2. Repo hygiene batch: drop .pyc, ignore `__pycache__/`, fix int_analyze.py path, scrub ~ from notes, CHANGELOG.md, decide tag scheme (≤0.5 day).
 3. Minimal front door: main-menu (New Game / Load / Quit over art/intrface FRM) + a real death screen instead of "game over → F9" (1-2 days). This is the one *feature* that changes a stranger's first 60 seconds.
 
 ## 3. Web checks (mid-2026, sourced)
@@ -70,7 +70,7 @@ Ran `scripts/release.sh 0.0.0-audit`, then verified and `rm -rf`'d artifacts/v0.
 
 ## 5. Verdict
 
-**Ship v0.6 first.** Pre-publication items (≈2-3 days total): (1) README screenshots + demo GIF, (2) the hygiene batch (.pyc/__pycache__, int_analyze.py path, /home/eko scrub, CHANGELOG, v0.6.0 tag), (3) main menu + death screen. Land phase 7 (ranged combat, char creation) as v0.7 against real user feedback.
+**Ship v0.6 first.** Pre-publication items (≈2-3 days total): (1) README screenshots + demo GIF, (2) the hygiene batch (.pyc/__pycache__, int_analyze.py path, ~ scrub, CHANGELOG, v0.6.0 tag), (3) main menu + death screen. Land phase 7 (ranged combat, char creation) as v0.7 against real user feedback.
 
 Three strongest facts:
 1. **Ship-readiness is verified, not aspirational**: release.sh ran end-to-end today (both archives, licenses in, exec bit, zero game assets), the README quick-start works verbatim, controls table matches the code, 114/114 tests green. The remaining blockers are one tracked .pyc and missing screenshots — days, not weeks.

@@ -19,7 +19,8 @@ for RID in linux-x64 win-x64; do
     dotnet publish "$PROJECT" -c Release -r "$RID" --self-contained \
         -p:PublishSingleFile=false -p:PublishTrimmed=false \
         -o "$OUT/hexwaste-$VERSION-$RID"
-    cp LICENSE.md NOTICE.md README.md "$OUT/hexwaste-$VERSION-$RID/"
+    cp LICENSE.md NOTICE.md README.md CHANGELOG.md "$OUT/hexwaste-$VERSION-$RID/"
+    rm -f "$OUT/hexwaste-$VERSION-$RID"/*.pdb
 done
 
 echo "== archiving =="

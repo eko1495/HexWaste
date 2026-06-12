@@ -1,7 +1,7 @@
 # Phase-6 Track D — Playability Vertical Slice audit (opening hour: Arroyo → Temple → Klamath/Den)
 
 Date: 2026-06-12. Method: empirical, headless `Hexwaste.Viewer` runs against real GOG data
-(`/home/eko/dev/FPOC/game-data`), script disassembly via `tools/int_analyze.py`, stub histograms via a
+(`<repo>/game-data`), script disassembly via `tools/int_analyze.py`, stub histograms via a
 C# probe (`/tmp/p6d-probe`) on `ScriptHost.OnStubbedExternal`. Engine claims cite
 `reference/fallout2-ce/src`. Artifacts: `/tmp/p6d/` (screenshots, logs, disassemblies, histograms).
 

@@ -1,6 +1,6 @@
 # Phase 6 Track A — Barter, implementation-grade research
 
-All engine citations are from `/home/eko/dev/FPOC/reference/fallout2-ce/src` (file:line of the
+All engine citations are from `<repo>/reference/fallout2-ce/src` (file:line of the
 checked-out tree). All game-content values were parsed from real files extracted out of
 `master.dat` via DatDump; parse scripts and outputs live in `/tmp/p6a` and `/tmp/p6a-probe`.
 

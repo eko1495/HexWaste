@@ -1,8 +1,8 @@
 # Phase-6 Track B research — combat depth: weapons, armor, XP, corpse persistence
 
-Reference tree: `/home/eko/dev/FPOC/reference/fallout2-ce/src` (all file:line cites below are into it).
-Project tree: `/home/eko/dev/FPOC`. Empirical values parsed from the real GOG game data at
-`/home/eko/dev/FPOC/game-data` with a throwaway probe (`/tmp/p6b-probe`) built on
+Reference tree: `<repo>/reference/fallout2-ce/src` (all file:line cites below are into it).
+Project tree: `~/dev/FPOC`. Empirical values parsed from the real GOG game data at
+`<repo>/game-data` with a throwaway probe (`/tmp/p6b-probe`) built on
 `Hexwaste.Formats` (GameFileSystem + BigEndianReader). Repo untouched.
 
 ---

@@ -1,6 +1,6 @@
 # Phase 6 Track C — Critter scripts in combat: critter_p_proc / destroy_p_proc / damage_p_proc + spatial/timed map scripts
 
-Reference tree: `/home/eko/dev/FPOC/reference/fallout2-ce/src` (cited as `file:line`).
+Reference tree: `<repo>/reference/fallout2-ce/src` (cited as `file:line`).
 Disassembly: real `.int` files extracted from the user's game data into `/tmp/ints/*.int`,
 listed with `/tmp/int_disasm.py` (extends `tools/int_analyze.py`; push operands resolved).
 Map script sections dumped with `/tmp/mapscan` (standalone C# tool referencing the built

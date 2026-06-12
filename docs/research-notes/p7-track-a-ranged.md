@@ -1,6 +1,6 @@
 # P7 Track A — Ranged Combat + Ammo (implementation-grade research)
 
-All line refs against /home/eko/dev/FPOC/reference/fallout2-ce/src.
+All line refs against <repo>/reference/fallout2-ce/src.
 
 ## Q1. determineToHit (combat.cc `attackDetermineToHit`, combat.cc:4314–4498, engine 0x4243A8)
 

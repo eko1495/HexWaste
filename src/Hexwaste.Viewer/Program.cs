@@ -25,6 +25,7 @@ bool worldmap = false;
 int? travelArea = null;
 bool noAudio = false;
 bool noAmbient = false;
+bool forceMenu = false;
 
 for (int i = 0; i < args.Length; i++)
 {
@@ -56,6 +57,9 @@ for (int i = 0; i < args.Length; i++)
             break;
         case "--worldmap":
             worldmap = true;
+            break;
+        case "--menu": // force the front door (menu screenshots/testing)
+            forceMenu = true;
             break;
         case "--travel" when i + 1 < args.Length:
             travelArea = int.Parse(args[++i]);
@@ -210,8 +214,16 @@ if (!LooksLikeGameDir(gameDir))
     return 1;
 }
 
+// The main-menu front door appears only for a plain interactive launch;
+// any test/headless flag boots straight into the world like before.
+bool interactiveLaunch = screenshot is null && actions.Count == 0 && talkHex is null
+    && talk is null && pick is null && examine is null && benchFrames == 0
+    && !loadOnStart && !worldmap && travelArea is null && gotoTile is null
+    && doorTile is null && advanceMs == 0 && !walk;
+
 using var game = new ViewerGame(gameDir!, mapName, screenshot, roofs)
 {
+    StartInMenu = interactiveLaunch || forceMenu,
     AdvanceCyclingMs = advanceMs,
     BenchFrames = benchFrames,
     StartInWalkMode = walk,
