@@ -59,6 +59,12 @@ public sealed class ViewerGame : Game
     /// <summary>Stub-hit histogram for the current map (dumped on map exit).</summary>
     private readonly Dictionary<string, int> _stubbedExternals = [];
 
+    /// <summary>The dude's character sheet (premade\player.gcd); null falls
+    /// back to the art proto's stats like phase 5.</summary>
+    private Formats.Combat.GcdFile? _dudeGcd;
+    private int _dudeLevel = 1;
+    private int _dudeXp;
+
     /// <summary>Deterministic combat rolls for headless transcripts (--rng-seed).</summary>
     public int? RngSeed { get; set; }
     private Random _combatRng = new();
@@ -255,6 +261,19 @@ public sealed class ViewerGame : Game
         if (!DisableAudio)
             _audio = new AudioManager(_vfs, _gameDir);
         _protoMessages = new ProtoMessages(_vfs, _protos);
+
+        if (_vfs.Exists(@"premade\player.gcd"))
+        {
+            using Stream gcdStream = _vfs.OpenRead(@"premade\player.gcd");
+            _dudeGcd = Formats.Combat.GcdFile.Load(gcdStream);
+            Console.WriteLine($"dude sheet: {_dudeGcd.Name},"
+                + $" SPECIAL {string.Join("/", Enumerable.Range(0, 7).Select(s => _dudeGcd.Stats.BaseStats[s] + _dudeGcd.Stats.BonusStats[s]))}");
+        }
+        else
+        {
+            Console.Error.WriteLine("premade\\player.gcd not found — dude uses art-proto stats");
+        }
+
         try
         {
             _scriptHost = new Formats.Int.ScriptHost(_vfs, Formats.Int.ScriptList.Load(_vfs), _protos)
@@ -277,7 +296,17 @@ public sealed class ViewerGame : Game
                     else
                         Console.Error.WriteLine(name);
                 },
+                StatsResolver = obj => obj == _dude?.Dude ? _dudeGcd?.Stats : null,
+                DudeTraits = _dudeGcd?.Traits ?? [-1, -1],
+                PcStatProvider = stat => stat switch
+                {
+                    1 => _dudeLevel,  // PC_STAT_LEVEL
+                    2 => _dudeXp,     // PC_STAT_EXPERIENCE
+                    _ => 0,
+                },
             };
+            if (RngSeed is { } scriptSeed)
+                _scriptHost.Rng = new Random(scriptSeed);
         }
         catch (Exception ex) when (ex is FileNotFoundException or InvalidDataException)
         {
@@ -2443,9 +2472,11 @@ public sealed class ViewerGame : Game
     }
 
     /// <summary>Effective combat stats for critters with parsed protos; null
-    /// for non-critters and broken pids.</summary>
+    /// for non-critters and broken pids. The dude uses his gcd sheet.</summary>
     private Formats.Combat.CritterState? GetCritterState(MapObject obj)
     {
+        if (obj == _dude?.Dude && _dudeGcd is not null)
+            return new Formats.Combat.CritterState(obj, _dudeGcd.Stats);
         if (Fid.PidType(obj.Pid) != (int)ObjectType.Critter)
             return null;
         try

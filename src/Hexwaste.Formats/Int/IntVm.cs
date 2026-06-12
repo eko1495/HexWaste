@@ -55,6 +55,27 @@ public interface IVmExternals
     /// <summary>obj_being_used_with (opGetObjectBeingUsedWith).</summary>
     int ObjectBeingUsedWithId() => 0;
 
+    /// <summary>get_critter_stat (opGetCritterStat → stat.cc critterGetStat):
+    /// effective stat (base+bonus; 35=current HP, 36=poison, 37=rad); -1 unknown.</summary>
+    int GetCritterStat(int objectHandle, int stat) => 0;
+
+    /// <summary>set_critter_stat (opSetCritterStat): despite the name it
+    /// ADJUSTS the dude's base stat by amount; 0 ok, -1 non-dude.</summary>
+    int AdjustCritterBaseStat(int objectHandle, int stat, int amount) => -1;
+
+    /// <summary>has_trait (opHasTrait): type 0=perk rank, 1=object trait
+    /// (5=aiPacket, 6=team, 10=rotation, 666=visible, 669=inv weight),
+    /// 2=selected character trait.</summary>
+    int HasTrait(int type, int objectHandle, int param) => 0;
+
+    /// <summary>do_check (opDoCheck → stat.cc statRoll): d10 vs SPECIAL+mod →
+    /// ROLL_SUCCESS(2)/ROLL_FAILURE(1).</summary>
+    int DoCheck(int objectHandle, int stat, int modifier) => 2;
+
+    /// <summary>get_pc_stat (opGetPcStat): 0=unspent skill pts, 1=level,
+    /// 2=experience, 3=reputation, 4=karma.</summary>
+    int GetPcStat(int stat) => 0;
+
     /// <summary>fixed_param (opGetFixedParam) — map_enter: first-run flag; timed: timer param.</summary>
     int FixedParam() => 0;
 
@@ -849,6 +870,36 @@ public sealed class IntVm
                 Pop();
                 Pop();
                 PushInt(RollSuccess);
+                break;
+            case 0x80AE: // do_check (opDoCheck pops modifier, stat, obj)
+            {
+                int modifier = PopInt();
+                int stat = PopInt();
+                PushInt(_externals.DoCheck(PopInt(), stat, modifier));
+                break;
+            }
+            case 0x80CA: // get_critter_stat (pops stat, obj)
+            {
+                int stat = PopInt();
+                PushInt(_externals.GetCritterStat(PopInt(), stat));
+                break;
+            }
+            case 0x80CB: // set_critter_stat — ADJUSTS base stat (pops amount, stat, obj)
+            {
+                int amount = PopInt();
+                int stat = PopInt();
+                PushInt(_externals.AdjustCritterBaseStat(PopInt(), stat, amount));
+                break;
+            }
+            case 0x80F3: // has_trait (pops param, obj, type)
+            {
+                int traitParam = PopInt();
+                int traitObj = PopInt();
+                PushInt(_externals.HasTrait(PopInt(), traitObj, traitParam));
+                break;
+            }
+            case 0x80A6: // get_pc_stat
+                PushInt(_externals.GetPcStat(PopInt()));
                 break;
             case 0x80AF: // success: ROLL_SUCCESS or ROLL_CRITICAL_SUCCESS
             {

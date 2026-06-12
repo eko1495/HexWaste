@@ -76,6 +76,56 @@ public sealed class ScriptHost(GameFileSystem vfs, ScriptList scripts, Hexwaste.
     /// <summary>A script requested a walk animation (animate_move_obj_to_tile).</summary>
     public Action<MapObject, int>? MoveRequested { get; set; }
 
+    /// <summary>Stat-block override (the dude's gcd sheet); null falls back to
+    /// the critter's prototype.</summary>
+    public Func<MapObject, Proto.CritterProtoStats?>? StatsResolver { get; set; }
+
+    /// <summary>The dude's two selected traits (gcd), -1 = none.</summary>
+    public int[] DudeTraits { get; set; } = [-1, -1];
+
+    /// <summary>get_pc_stat values (1=level, 2=experience); host-provided.</summary>
+    public Func<int, int>? PcStatProvider { get; set; }
+
+    /// <summary>Rolls for do_check/statRoll (seedable by the host).</summary>
+    public Random Rng { get; set; } = new();
+
+    /// <summary>Effective stat, ported from fallout2-ce src/stat.cc
+    /// critterGetStat(): base + bonus; pseudostats 35/36/37 read the instance.</summary>
+    public int CritterStatValue(MapObject obj, int stat)
+    {
+        switch (stat)
+        {
+            case 35: // STAT_CURRENT_HIT_POINTS
+                return obj.CurrentHp;
+            case 36: // STAT_CURRENT_POISON_LEVEL
+                return obj.Poison;
+            case 37: // STAT_CURRENT_RADIATION_LEVEL
+                return obj.Radiation;
+        }
+
+        if (stat is < 0 or > 34)
+            return -1;
+
+        Proto.CritterProtoStats? stats = StatsOf(obj);
+        return stats is null ? -1 : stats.BaseStats[stat] + stats.BonusStats[stat];
+    }
+
+    internal Proto.CritterProtoStats? StatsOf(MapObject obj)
+    {
+        if (StatsResolver?.Invoke(obj) is { } overridden)
+            return overridden;
+        if (Fid.PidType(obj.Pid) != 1)
+            return null;
+        try
+        {
+            return protos.Get(obj.Pid).Critter;
+        }
+        catch (Exception ex) when (ex is FileNotFoundException or InvalidDataException)
+        {
+            return null;
+        }
+    }
+
     // ---- script timer queue, ported from fallout2-ce queue.cc/scripts.cc:
     // absolute due time, sorted, stable FIFO for equal times. Delays are game
     // ticks at the ENGINE rate (10/s real time, 100 ms per tick) — independent
@@ -615,6 +665,57 @@ public sealed class ScriptHost(GameFileSystem vfs, ScriptList scripts, Hexwaste.
             if (_host.ObjectOf(objectHandle) is { } obj && Hex.HexGrid.IsValid(tile))
                 _host.MoveRequested?.Invoke(obj, tile);
         }
+
+        public int GetCritterStat(int objectHandle, int stat) =>
+            _host.ObjectOf(objectHandle) is { } obj ? _host.CritterStatValue(obj, stat) : -1;
+
+        // ported from fallout2-ce interpreter_extra.cc opSetCritterStat():
+        // ADJUSTS the base stat; only the dude is modifiable.
+        public int AdjustCritterBaseStat(int objectHandle, int stat, int amount)
+        {
+            if (_host.ObjectOf(objectHandle) is not { } obj)
+                return -1;
+            if (obj != _dude || stat is < 0 or > 34)
+                return -1;
+            if (_host.StatsOf(obj) is not { } stats)
+                return -1;
+            stats.BaseStats[stat] += amount;
+            return 0;
+        }
+
+        // ported from fallout2-ce interpreter_extra.cc opHasTrait()
+        public int HasTrait(int type, int objectHandle, int param)
+        {
+            if (_host.ObjectOf(objectHandle) is not { } obj)
+                return 0;
+            return type switch
+            {
+                0 => 0, // CRITTER_TRAIT_PERK — no perk system in the PoC
+                1 => param switch // CRITTER_TRAIT_OBJECT
+                {
+                    5 => obj.AiPacket,
+                    6 => obj.Team,
+                    10 => obj.Rotation,
+                    666 => obj.IsHidden ? 0 : 1,
+                    669 => 0, // inventory weight — unweighted PoC
+                    _ => 0,
+                },
+                2 => _host.DudeTraits.Contains(param) ? 1 : 0, // CRITTER_TRAIT_TRAIT
+                _ => 0,
+            };
+        }
+
+        // ported from fallout2-ce src/stat.cc statRoll(): d10 vs SPECIAL+mod
+        // (opDoCheck restricts to the seven primary stats).
+        public int DoCheck(int objectHandle, int stat, int modifier)
+        {
+            if (_host.ObjectOf(objectHandle) is not { } obj || stat is < 0 or > 6)
+                return 1; // ROLL_FAILURE
+            int value = _host.CritterStatValue(obj, stat) + modifier;
+            return _host.Rng.Next(1, 11) <= value ? 2 : 1; // ROLL_SUCCESS : ROLL_FAILURE
+        }
+
+        public int GetPcStat(int stat) => _host.PcStatProvider?.Invoke(stat) ?? 0;
 
         // ---- dialog state (one "round" = one reply + its options)
 
