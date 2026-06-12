@@ -89,6 +89,7 @@ public sealed class ViewerGame : Game
     private bool _inventoryOpen;
     private readonly List<MapObject> _dudeInventory = [];
     private readonly GameClock _clock = new();
+    private bool _dudeUnderRoof;
     private int _lastAmbientHour = -1;
 
     /// <summary>Path for F5/F9 saves and the --save-to/--load-from flags.</summary>
@@ -529,6 +530,8 @@ public sealed class ViewerGame : Game
         if (keyboard.IsKeyDown(Keys.Escape))
             Exit();
 
+        int panBeforeX = _camera.PanX;
+        int panBeforeY = _camera.PanY;
         int panSpeed = keyboard.IsKeyDown(Keys.LeftShift) || keyboard.IsKeyDown(Keys.RightShift) ? 32 : 8;
         if (keyboard.IsKeyDown(Keys.Left))
             _camera.PanX += panSpeed;
@@ -543,6 +546,15 @@ public sealed class ViewerGame : Game
         {
             _camera.PanX += mouse.X - _previousMouse.X;
             _camera.PanY += mouse.Y - _previousMouse.Y;
+        }
+
+        // Scroll clamp (the engine's border check in tileSetCenter): revert
+        // pans that push the view center off the hex grid.
+        if ((_camera.PanX != panBeforeX || _camera.PanY != panBeforeY)
+            && _camera.ScreenToHex(GraphicsDevice.Viewport.Width / 2, GraphicsDevice.Viewport.Height / 2) < 0)
+        {
+            _camera.PanX = panBeforeX;
+            _camera.PanY = panBeforeY;
         }
 
         // PgUp/PgDn cycle through present elevations.
@@ -1418,6 +1430,7 @@ public sealed class ViewerGame : Game
         }
         else
         {
+            _dudeUnderRoof = DudeIsUnderRoof();
             DrawFloors();
             DrawObjects(_flatObjects[_elevation]);
             DrawObjects(_solidObjects[_elevation]);
@@ -1508,6 +1521,40 @@ public sealed class ViewerGame : Game
     }
 
     /// <summary>
+    /// Walls/scenery drawn AFTER the dude (higher hex = in front) whose sprite
+    /// covers the dude's upper body fade so he stays visible — the PoC's
+    /// approximation of the engine's egg-masked translucency.
+    /// </summary>
+    private bool FadesOverDude(MapObject obj, SpriteInfo sprite)
+    {
+        if (_dude is null || obj == _dude.Dude)
+            return false;
+        if (Fid.Type(obj.Fid) is not (ObjectType.Wall or ObjectType.Scenery))
+            return false;
+        if (obj.HexTile <= _dude.Dude.HexTile)
+            return false; // drawn before the dude -> he's on top anyway
+
+        (int dudeX, int dudeY) = _camera.HexToScreen(_dude.Dude.HexTile);
+        // Egg region: an ellipse-ish box around the dude's torso/head.
+        var eggRect = new Rectangle(dudeX + 16 - 45, dudeY + 8 - 70, 90, 75);
+        var spriteRect = new Rectangle(sprite.Left, sprite.Top, sprite.Frame.Width, sprite.Frame.Height);
+        return eggRect.Intersects(spriteRect);
+    }
+
+    /// <summary>True when the dude's square has a roof tile (he is indoors).</summary>
+    private bool DudeIsUnderRoof()
+    {
+        if (_dude is null || _map.Elevations[_elevation] is not { } elevation)
+            return false;
+        int hex = _dude.Dude.HexTile;
+        int sx = (hex % Camera.HexGridWidth - 1) / 2;
+        int sy = hex / Camera.HexGridWidth / 2;
+        if (sx < 0 || sx >= MapElevation.SquareGridWidth || sy < 0 || sy >= MapElevation.SquareGridHeight)
+            return false;
+        return elevation.RoofTileId(sy * MapElevation.SquareGridWidth + sx) != 1;
+    }
+
+    /// <summary>
     /// A square maps to the 2x2 hex block starting at hex (2*sx+1, 2*sy) —
     /// derived from the tile.cc square/hex screen formulas. One sample per
     /// tile approximates the original's per-pixel floor gradient (see
@@ -1595,8 +1642,21 @@ public sealed class ViewerGame : Game
             Texture2D texture = _frmCache.GetTexture(sprite.Fid, sprite.FrameIndex, sprite.Rotation);
             // ported from fallout2-ce src/object.cc _obj_render_object(): one
             // uniform intensity per object, max(ambient, tile light).
-            Color tint = obj == _hoveredObject ? Color.Yellow : LightTint(obj.HexTile);
+            Color tint = LightTint(obj.HexTile);
+
+            // Egg-style transparency (approximation of the engine's masked
+            // blend): solids drawn in front of the dude that cover him fade,
+            // keeping him visible behind walls.
+            if (FadesOverDude(obj, sprite))
+                tint *= 0.45f;
+
             _spriteBatch.Draw(texture, new Vector2(sprite.Left, sprite.Top), tint);
+
+            if (obj == _hoveredObject)
+            {
+                Texture2D outline = _frmCache.GetOutlineTexture(sprite.Fid, sprite.FrameIndex, sprite.Rotation);
+                _spriteBatch.Draw(outline, new Vector2(sprite.Left, sprite.Top), new Color(0, 252, 0));
+            }
         }
     }
 
@@ -1698,11 +1758,15 @@ public sealed class ViewerGame : Game
                 continue;
 
             // Roofs are lit by ambient only (tileRenderRoofsInRect passes
-            // lightGetAmbientIntensity, not tile light).
+            // lightGetAmbientIntensity, not tile light); they fade instead of
+            // vanishing when the dude is indoors.
             byte ambientLevel = (byte)Math.Clamp(
                 _lightGrid.Ambient * 255 / Formats.Light.LightGrid.IntensityMax, 0, 255);
+            var roofTint = new Color(ambientLevel, ambientLevel, ambientLevel);
+            if (_dudeUnderRoof)
+                roofTint *= 0.35f;
             Texture2D texture = _frmCache.GetTexture(Fid.Build(ObjectType.Tile, tileId));
-            _spriteBatch.Draw(texture, new Vector2(x, y), new Color(ambientLevel, ambientLevel, ambientLevel));
+            _spriteBatch.Draw(texture, new Vector2(x, y), roofTint);
         }
     }
 

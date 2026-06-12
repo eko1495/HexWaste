@@ -36,6 +36,48 @@ public sealed class FrmCache(GameFileSystem vfs, ArtIndex artIndex, GraphicsDevi
     /// <summary>Number of loaded FRMs containing animated palette indices.</summary>
     public int CyclingEntryCount => _entries.Values.Count(e => e.HasCyclingColors);
 
+    private readonly Dictionary<(int Fid, int Frame, int Rotation), Texture2D> _outlines = [];
+
+    /// <summary>
+    /// 1px silhouette texture for hover/selection outlines (the original's
+    /// objectDrawOutline traces index!=0 edge pixels): white edge pixels on
+    /// transparent, tinted by the caller.
+    /// </summary>
+    public Texture2D GetOutlineTexture(int fid, int frame = 0, int rotation = 0)
+    {
+        var key = (fid, frame, rotation);
+        if (_outlines.TryGetValue(key, out Texture2D? cached))
+            return cached;
+
+        FrmFrame frmFrame = GetFrm(fid).GetFrame(frame, rotation);
+        int width = frmFrame.Width;
+        int height = frmFrame.Height;
+        byte[] pixels = frmFrame.Pixels;
+        byte[] rgba = new byte[width * height * 4];
+
+        bool Solid(int x, int y) =>
+            x >= 0 && x < width && y >= 0 && y < height && pixels[y * width + x] != 0;
+
+        for (int y = 0; y < height; y++)
+        {
+            for (int x = 0; x < width; x++)
+            {
+                if (!Solid(x, y))
+                    continue;
+                bool edge = !Solid(x - 1, y) || !Solid(x + 1, y) || !Solid(x, y - 1) || !Solid(x, y + 1);
+                if (!edge)
+                    continue;
+                int p = (y * width + x) * 4;
+                rgba[p] = rgba[p + 1] = rgba[p + 2] = rgba[p + 3] = 255;
+            }
+        }
+
+        var texture = new Texture2D(graphicsDevice, width, height, false, SurfaceFormat.Color);
+        texture.SetData(rgba);
+        _outlines[key] = texture;
+        return texture;
+    }
+
     public Texture2D GetTexture(int fid, int frame = 0, int rotation = 0)
     {
         Entry entry = GetEntry(fid);
@@ -139,6 +181,9 @@ public sealed class FrmCache(GameFileSystem vfs, ArtIndex artIndex, GraphicsDevi
     {
         foreach (Entry entry in _entries.Values)
             DisposeTextures(entry);
+        foreach (Texture2D outline in _outlines.Values)
+            outline.Dispose();
+        _outlines.Clear();
         _entries.Clear();
         _lru.Clear();
     }

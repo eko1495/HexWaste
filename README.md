@@ -59,6 +59,19 @@ Extra CLI flags: `--screenshot out.png` (render one frame and exit),
 `--no-audio` (mute), `--no-ambient` (freeze NPC fidget/wander — for deterministic screenshots),
 `--talk X,Y` / `--talk-hex TILE` + `--choose 1,2,1` (scripted conversation transcript — for testing).
 
+## Phase 4 — the world responds
+
+The micro-VM grew into a real script host: **map-entry scripts run on every
+map load** (doors get locked, containers stocked by their actual scripts),
+**text dialog** plays real `gsay` conversation trees (Joey's turf talk,
+Rebecca's bar), locked doors yield to **lockpicking** via
+`use_skill_on_p_proc`, containers open into a **loot panel** with authentic
+item icons, a **game clock** drives day/night ambient, and **F5/F9
+save/load** persists position, doors, vars, inventory and time as a JSON
+delta. Renderer polish: silhouette hover outlines, roofs fade (not vanish)
+indoors, egg-style wall transparency keeps the dude visible, and the camera
+clamps to the map.
+
 ## Phase 3 — the world becomes real
 
 Native AAF font rendering with real game text (names + examine descriptions

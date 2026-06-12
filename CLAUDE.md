@@ -65,6 +65,20 @@ is a documented fake), M5 micro INT VM (39 core ops + 181 arity-mapped
 externals; examine override path only — use_p_proc/map_enter NOT wired).
 Scripts.lst is 0-based; message_str list ids are scripts.lst index + 1.
 
+Phase 4 (DONE, per phase4-research-report.md): M0 VM foundations (real
+rolls — stub-0 = critical-failure trap; script context; LVARs are LAZY
+slices, pristine maps store offset -1), M1 text dialog (gsay loop, options
+bind by procedure index), M2 locked doors + lockpick + RunMapEnter (map
+script = header.ScriptIndex-1), M3 world-mutation externals + loot/
+inventory panels (inventoryFid icons; RunMapEnter snapshots its list — 
+stocking scripts mutate it), M4 GameClock (engine has NO day/night curve;
+ours is custom) + JSON delta save/load (containers restock by design),
+M5 polish (outlines, roof fade, egg-fade approximation, scroll clamp).
+GOTCHA: GPU backbuffer readback races — screenshots must render via a
+RenderTarget2D (ViewerGame._screenshotTarget). Per-vertex floor lighting
+(BasicEffect quads) remains the known deferred upgrade; combat measured M
+and queued as phase 5.
+
 After each milestone: run tests, run the app if possible, update README progress checklist, conventional commit.
 
 ## Critical gotchas
