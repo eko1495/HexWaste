@@ -74,3 +74,20 @@ public class GcdAndStatsTests
         Assert.Equal(proto.BaseStats[7] + proto.BonusStats[7], host.CritterStatValue(peasant, 7));
     }
 }
+
+public class RotationToTests
+{
+    [Fact]
+    public void RotationToMatchesStepDirections()
+    {
+        // Walking one hex in rotation r, the rotation back to start is (r+3)%6
+        // and toward the destination is r — tileGetRotationTo round-trip.
+        int start = 100 * Hexwaste.Formats.Hex.HexGrid.Width + 100;
+        for (int rotation = 0; rotation < 6; rotation++)
+        {
+            int next = Hexwaste.Formats.Hex.HexGrid.TileInDirection(start, rotation);
+            Assert.Equal(rotation, Hexwaste.Formats.Hex.HexGrid.RotationTo(start, next));
+            Assert.Equal((rotation + 3) % 6, Hexwaste.Formats.Hex.HexGrid.RotationTo(next, start));
+        }
+    }
+}

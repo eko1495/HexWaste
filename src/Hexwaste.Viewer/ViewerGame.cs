@@ -63,7 +63,7 @@ public sealed class ViewerGame : Game
     /// back to the art proto's stats like phase 5.</summary>
     private Formats.Combat.GcdFile? _dudeGcd;
     private int _dudeLevel = 1;
-    private int _dudeXp;
+    private int _dudeXp = 0; // accrues in P6-M3 (kill XP at combat end)
 
     /// <summary>Deterministic combat rolls for headless transcripts (--rng-seed).</summary>
     public int? RngSeed { get; set; }
@@ -95,6 +95,12 @@ public sealed class ViewerGame : Game
     private int _actingEnemyAp;
     private int _combatRound;
     private bool _gameOver;
+
+    /// <summary>critter_p_proc round-robin (the engine's _script_chk_critters
+    /// ticker runs ONE critter script per frame; we pump at the 10 Hz game
+    /// tick instead of our 60 Hz frame rate).</summary>
+    private double _critterProcTimerMs;
+    private int _critterProcIndex;
     private readonly Random _ambientRandom = new(20260612);
     private double _fidgetTimerMs;
     private double _wanderTimerMs;
@@ -297,6 +303,9 @@ public sealed class ViewerGame : Game
                         Console.Error.WriteLine(name);
                 },
                 StatsResolver = obj => obj == _dude?.Dude ? _dudeGcd?.Stats : null,
+                AttackRequested = (attacker, target) => OnScriptAttack(attacker, target),
+                AnimBusyResolver = obj => _animator.TryGetState(obj, out _)
+                    || (_npcWalkers.TryGetValue(obj, out DudeController? walker) && walker.Moving),
                 DudeTraits = _dudeGcd?.Traits ?? [-1, -1],
                 PcStatProvider = stat => stat switch
                 {
@@ -569,10 +578,13 @@ public sealed class ViewerGame : Game
         {
             _cycler.Update(10);
             _animator.Update(10);
+            ProcessCombatAnimations();
+            UpdateCombat();
             _dude?.Update(10);
             UpdateAmbientLife(10);
             UpdateClock(10);
             _scriptHost?.PumpTimers(10, _dude?.Dude);
+            PumpCritterProcs(10);
             if (_pendingTransition is { } transition)
             {
                 _pendingTransition = null;
@@ -896,6 +908,7 @@ public sealed class ViewerGame : Game
         // Script timers: pumped only here — dialog/loot/worldmap modes return
         // earlier in Update, matching the engine's _gdialogActive() gate.
         _scriptHost?.PumpTimers(gameTime.ElapsedGameTime.TotalMilliseconds, _dude?.Dude);
+        PumpCritterProcs(gameTime.ElapsedGameTime.TotalMilliseconds);
 
         // Map transitions are queued by exit grids/stairs and applied here,
         // never while DudeController.Update is still on the stack.
@@ -1659,11 +1672,76 @@ public sealed class ViewerGame : Game
             return;
 
         _combatPhase = CombatPhase.EnemyTurn;
+        BuildEnemyQueue();
+    }
+
+    private void BuildEnemyQueue()
+    {
         _enemyQueue.Clear();
         _actingEnemy = null;
         foreach (MapObject hostile in _hostiles.Where(h => !h.IsDead)
             .OrderByDescending(h => GetCritterState(h)?.Sequence ?? 0))
             _enemyQueue.Enqueue(hostile);
+    }
+
+    /// <summary>One critter_p_proc per game tick, round-robin — the flattened
+    /// _script_chk_critters ticker (scripts.cc:705), gated like the engine's
+    /// !dialog && !combat && !movie check.</summary>
+    private void PumpCritterProcs(double elapsedMs)
+    {
+        if (_scriptHost is null || _combatPhase != CombatPhase.Idle || _gameOver
+            || _dialog is not null || _lootContainer is not null || _worldmapOpen)
+            return;
+
+        _critterProcTimerMs += elapsedMs;
+        if (_critterProcTimerMs < 100)
+            return;
+        _critterProcTimerMs = 0;
+
+        List<MapObject> scripted = [.. _solidObjects[_elevation].Where(o =>
+            Fid.Type(o.Fid) is ObjectType.Critter && o != _dude?.Dude
+            && !o.IsDead && o.Sid != -1)];
+        if (scripted.Count == 0)
+            return;
+
+        _critterProcIndex %= scripted.Count;
+        MapObject critter = scripted[_critterProcIndex++];
+        var result = _scriptHost.RunObjectProc(critter, _map, _dude?.Dude, "critter_p_proc");
+        if (result is not null)
+            foreach (string line in result.Messages)
+                Log($"{ObjectName(critter)}: {line}");
+    }
+
+    /// <summary>A script's attack external fired (scripted aggro). The
+    /// aggressor gets the opening turn, like scriptsRequestCombat starting
+    /// combat with the script's self as attacker.</summary>
+    private void OnScriptAttack(MapObject attacker, MapObject target)
+    {
+        if (_dude is null || _gameOver)
+            return;
+        if (target != _dude.Dude || attacker == _dude.Dude)
+            return; // NPC-vs-NPC fights are out of PoC scope
+
+        if (_combatPhase == CombatPhase.Idle)
+        {
+            _dude.Stop(); // ambush interrupts the walk
+            _combatRound = 1;
+            _hostiles.Clear();
+            _hostiles.Add(attacker);
+            attacker.WhoHitMeCid = -1;
+            AddJoiners();
+            if (GetCritterState(_dude.Dude) is { } stats)
+                _dudeAp = stats.MaxActionPoints;
+            _combatPhase = CombatPhase.EnemyTurn;
+            BuildEnemyQueue();
+            Log($"The {ObjectName(attacker)} attacks you!");
+            Console.WriteLine($"scripted-aggro: {ObjectName(attacker)}@{attacker.HexTile} starts combat");
+        }
+        else if (_hostiles.Add(attacker))
+        {
+            attacker.WhoHitMeCid = -1;
+            Log($"The {ObjectName(attacker)} joins the fight!");
+        }
     }
 
     /// <summary>ported from fallout2-ce src/combat.cc _combat_should_end():

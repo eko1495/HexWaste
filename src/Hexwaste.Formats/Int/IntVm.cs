@@ -76,6 +76,17 @@ public interface IVmExternals
     /// 2=experience, 3=reputation, 4=karma.</summary>
     int GetPcStat(int stat) => 0;
 
+    /// <summary>critter_add_trait (opCritterAddTrait): kind 1 sets object
+    /// traits (5=aiPacket, 6=team); perks (kind 0) are out of PoC scope.</summary>
+    void CritterAddTrait(int objectHandle, int kind, int param, int value) { }
+
+    /// <summary>attack/attack_complex (opAttackComplex): self attacks the
+    /// target — starts combat outside it, retargets inside it.</summary>
+    void AttackComplex(int targetHandle) { }
+
+    /// <summary>anim_busy (opAnimBusy): is the object mid-animation?</summary>
+    bool AnimBusy(int objectHandle) => false;
+
     /// <summary>fixed_param (opGetFixedParam) — map_enter: first-run flag; timed: timer param.</summary>
     int FixedParam() => 0;
 
@@ -901,6 +912,32 @@ public sealed class IntVm
             case 0x80A6: // get_pc_stat
                 PushInt(_externals.GetPcStat(PopInt()));
                 break;
+            case 0x8102: // critter_add_trait (pops value, param, kind, obj; pushes -1)
+            {
+                int traitValue = PopInt();
+                int traitParam = PopInt();
+                int traitKind = PopInt();
+                _externals.CritterAddTrait(PopInt(), traitKind, traitParam, traitValue);
+                PushInt(-1);
+                break;
+            }
+            case 0x80D0: // attack (opAttackComplex pops 7 args, then target)
+            case 0x80DD: // attack_complex — same engine handler
+            {
+                for (int i = 0; i < 7; i++)
+                    Pop();
+                _externals.AttackComplex(PopInt());
+                break;
+            }
+            case 0x80E7: // anim_busy
+                PushInt(_externals.AnimBusy(PopInt()) ? 1 : 0);
+                break;
+            case 0x814C: // rotation_to_tile (pops destTile, srcTile)
+            {
+                int destTile = PopInt();
+                PushInt(Hex.HexGrid.RotationTo(PopInt(), destTile));
+                break;
+            }
             case 0x80AF: // success: ROLL_SUCCESS or ROLL_CRITICAL_SUCCESS
             {
                 int roll = PopInt();

@@ -80,6 +80,13 @@ public sealed class ScriptHost(GameFileSystem vfs, ScriptList scripts, Hexwaste.
     /// the critter's prototype.</summary>
     public Func<MapObject, Proto.CritterProtoStats?>? StatsResolver { get; set; }
 
+    /// <summary>A script attacked: (attacker = the script's self, target).
+    /// The host starts/joins combat (opAttackComplex → scriptsRequestCombat).</summary>
+    public Action<MapObject, MapObject>? AttackRequested { get; set; }
+
+    /// <summary>anim_busy: is this object mid-animation (host animator)?</summary>
+    public Func<MapObject, bool>? AnimBusyResolver { get; set; }
+
     /// <summary>The dude's two selected traits (gcd), -1 = none.</summary>
     public int[] DudeTraits { get; set; } = [-1, -1];
 
@@ -716,6 +723,39 @@ public sealed class ScriptHost(GameFileSystem vfs, ScriptList scripts, Hexwaste.
         }
 
         public int GetPcStat(int stat) => _host.PcStatProvider?.Invoke(stat) ?? 0;
+
+        // ported from fallout2-ce interpreter_extra.cc opCritterAddTrait():
+        // kind 1 = object traits; perks (kind 0) are out of PoC scope.
+        public void CritterAddTrait(int objectHandle, int kind, int param, int value)
+        {
+            if (_host.ObjectOf(objectHandle) is not { } obj || Fid.PidType(obj.Pid) != 1)
+                return;
+            if (kind != 1)
+                return;
+            switch (param)
+            {
+                case 5: // CRITTER_TRAIT_OBJECT_AI_PACKET
+                    obj.AiPacket = value;
+                    break;
+                case 6: // CRITTER_TRAIT_OBJECT_TEAM
+                    obj.Team = value;
+                    break;
+            }
+        }
+
+        // ported from fallout2-ce interpreter_extra.cc opAttackComplex():
+        // inactive/hidden parties and fleeing targets are ignored.
+        public void AttackComplex(int targetHandle)
+        {
+            if (_host.ObjectOf(targetHandle) is not { } target)
+                return;
+            if (_self.IsDead || _self.IsHidden || target.IsDead || target.IsHidden)
+                return;
+            _host.AttackRequested?.Invoke(_self, target);
+        }
+
+        public bool AnimBusy(int objectHandle) =>
+            _host.ObjectOf(objectHandle) is { } obj && (_host.AnimBusyResolver?.Invoke(obj) ?? false);
 
         // ---- dialog state (one "round" = one reply + its options)
 

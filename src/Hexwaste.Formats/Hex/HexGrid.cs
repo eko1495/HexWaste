@@ -78,6 +78,26 @@ public static class HexGrid
         return (screenX, screenY);
     }
 
+    /// <summary>ported from fallout2-ce src/tile.cc tileGetRotationTo():
+    /// the facing rotation from one hex toward another (screen-space angle).</summary>
+    public static int RotationTo(int tile1, int tile2)
+    {
+        (int x1, int y1) = ScreenEmbedding(tile1);
+        (int x2, int y2) = ScreenEmbedding(tile2);
+        int dx = x2 - x1;
+        int dy = y2 - y1;
+
+        if (dx == 0)
+            return dy < 0 ? 0 : 2;
+
+        int angle = (int)Math.Truncate(Math.Atan2(-dy, dx) * 180.0 * 0.3183098862851122);
+        int rotation = 360 - (angle + 180) - 90;
+        if (rotation < 0)
+            rotation += 360;
+        rotation /= 60;
+        return rotation >= RotationCount ? 5 : rotation;
+    }
+
     /// <summary>
     /// Hex distance, ported from fallout2-ce src/tile.cc tileDistanceBetween():
     /// greedily steps toward the target (rotation from the screen-space angle)
@@ -88,35 +108,13 @@ public static class HexGrid
         if (tile1 == -1 || tile2 == -1)
             return 9999;
 
-        (int targetX, int targetY) = ScreenEmbedding(tile2);
-
         int current = tile1;
         for (int steps = 0; steps < Size; steps++)
         {
             if (current == tile2)
                 return steps;
 
-            (int x, int y) = ScreenEmbedding(current);
-            int dx = targetX - x;
-            int dy = targetY - y;
-
-            int rotation;
-            if (dx == 0)
-            {
-                rotation = dy < 0 ? 0 : 2;
-            }
-            else
-            {
-                int angle = (int)Math.Truncate(Math.Atan2(-dy, dx) * 180.0 * 0.3183098862851122);
-                rotation = 360 - (angle + 180) - 90;
-                if (rotation < 0)
-                    rotation += 360;
-                rotation /= 60;
-                if (rotation >= 6)
-                    rotation = 5;
-            }
-
-            int next = TileInDirection(current, rotation);
+            int next = TileInDirection(current, RotationTo(current, tile2));
             if (next == current)
                 return steps; // hit the map edge
             current = next;
