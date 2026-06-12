@@ -24,7 +24,8 @@ public sealed record ProtoInfo(
     int Cost = 0,
     WeaponProtoStats? Weapon = null,
     ArmorProtoStats? Armor = null,
-    DrugProtoStats? Drug = null);
+    DrugProtoStats? Drug = null,
+    AmmoProtoStats? Ammo = null);
 
 /// <summary>Weapon payload, ported from fallout2-ce src/proto.cc
 /// protoItemDataRead() ITEM_TYPE_WEAPON. The attack animation comes from
@@ -36,7 +37,31 @@ public sealed record WeaponProtoStats(
     int DamageType,
     int MaxRange1,
     int MaxRange2,
-    int ApCost);
+    int ProjectilePid,
+    int MinStrength,
+    int ApCost,
+    int ApCost2,
+    int Rounds,
+    int Caliber,
+    int AmmoTypePid,
+    int AmmoCapacity,
+    byte SoundCode)
+{
+    /// <summary>Guns have a fire attack anim (item.cc _attack_anim index ≥ 6).
+    /// Throwers (index 5) stay on the melee path until rung (a) lands —
+    /// their reach is capped to melee range by the host.</summary>
+    public bool IsGun(int extendedFlags) => (extendedFlags & 0xF) >= 6;
+}
+
+/// <summary>Ammo payload (protoItemDataRead ITEM_TYPE_AMMO): box size and the
+/// combat modifiers — AC mod lands on TO-HIT, DR mod + mult/div on damage.</summary>
+public sealed record AmmoProtoStats(
+    int Caliber,
+    int Quantity,
+    int AcModifier,
+    int DrModifier,
+    int DamageMultiplier,
+    int DamageDivisor);
 
 /// <summary>Armor payload (protoItemDataRead ITEM_TYPE_ARMOR): AC then
 /// DR[7] then DT[7], by damage type (0 = normal).</summary>
@@ -131,6 +156,7 @@ public sealed class ProtoDatabase(GameFileSystem vfs)
         WeaponProtoStats? weapon = null;
         ArmorProtoStats? armor = null;
         DrugProtoStats? drug = null;
+        AmmoProtoStats? ammo = null;
         switch ((ObjectType)type)
         {
             // ported from fallout2-ce src/proto.cc protoRead(): misc protos
@@ -178,7 +204,7 @@ public sealed class ProtoDatabase(GameFileSystem vfs)
                         case 2: // ITEM_TYPE_DRUG: stat[3], amount[3]
                             drug = new DrugProtoStats(reader.ReadInt32Array(3), reader.ReadInt32Array(3));
                             break;
-                        case 3: // ITEM_TYPE_WEAPON
+                        case 3: // ITEM_TYPE_WEAPON (full payload, proto.cc:1585-1601)
                         {
                             int animationCode = reader.ReadInt32();
                             int minDamage = reader.ReadInt32();
@@ -186,12 +212,25 @@ public sealed class ProtoDatabase(GameFileSystem vfs)
                             int damageType = reader.ReadInt32();
                             int maxRange1 = reader.ReadInt32();
                             int maxRange2 = reader.ReadInt32();
-                            reader.Skip(2 * 4); // projectilePid, minStrength
-                            int apCost = reader.ReadInt32(); // actionPointCost1
+                            int projectilePid = reader.ReadInt32();
+                            int minStrength = reader.ReadInt32();
+                            int apCost = reader.ReadInt32();
+                            int apCost2 = reader.ReadInt32();
+                            reader.Skip(2 * 4); // criticalFailureType, perk
+                            int rounds = reader.ReadInt32();
+                            int caliber = reader.ReadInt32();
+                            int ammoTypePid = reader.ReadInt32();
+                            int ammoCapacity = reader.ReadInt32();
+                            byte weaponSound = reader.ReadByte(); // single byte, not int
                             weapon = new WeaponProtoStats(animationCode, minDamage, maxDamage,
-                                damageType, maxRange1, maxRange2, apCost);
+                                damageType, maxRange1, maxRange2, projectilePid, minStrength,
+                                apCost, apCost2, rounds, caliber, ammoTypePid, ammoCapacity, weaponSound);
                             break;
                         }
+                        case 4: // ITEM_TYPE_AMMO (proto.cc:1604-1611)
+                            ammo = new AmmoProtoStats(reader.ReadInt32(), reader.ReadInt32(),
+                                reader.ReadInt32(), reader.ReadInt32(), reader.ReadInt32(), reader.ReadInt32());
+                            break;
                     }
                 }
                 else if ((ObjectType)type is ObjectType.Critter)
@@ -234,7 +273,7 @@ public sealed class ProtoDatabase(GameFileSystem vfs)
                 throw new InvalidDataException($"PID 0x{pid:X8}: unexpected type {type}.");
         }
 
-        return new ProtoInfo(filePid, messageId, fid, flags, extendedFlags, subType, soundId, inventoryFid, critter, cost, weapon, armor, drug);
+        return new ProtoInfo(filePid, messageId, fid, flags, extendedFlags, subType, soundId, inventoryFid, critter, cost, weapon, armor, drug, ammo);
     }
 
     private string[] GetList(int type)

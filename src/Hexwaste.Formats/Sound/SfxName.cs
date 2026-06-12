@@ -36,4 +36,18 @@ public static class SfxName
 
     /// <summary>Virtual VFS path for an sfx name.</summary>
     public static string Path(string name) => $@"sound\sfx\{name}.acm";
+
+    /// <summary>ported from fallout2-ce src/game_sound.cc sfxBuildWeaponName():
+    /// W{R|A|O|F|H}{soundCode}{variant}{material}XX1. Attack uses material X.</summary>
+    public static string WeaponAttack(byte soundCode) =>
+        $"WA{(char)soundCode}1XXX1";
+
+    /// <summary>Weapon hit on flesh (material F).</summary>
+    public static string WeaponHit(byte soundCode) =>
+        $"WH{(char)soundCode}1FXX1";
+
+    /// <summary>Human death scream (game_sound.cc:1117 alias path):
+    /// H{M|F}XXXX + the death-anim art code (20 → BA, 21 → BB).</summary>
+    public static string HumanDeath(bool female, int deathAnim) =>
+        $"H{(female ? 'F' : 'M')}XXXXB{(char)('A' + Math.Clamp(deathAnim - 20, 0, 25))}";
 }

@@ -48,3 +48,59 @@ public class ItemProtoTests
         Assert.Equal(175, stimpak.Cost);
     }
 }
+
+public class RangedProtoAndMathTests
+{
+    [GameDataFact]
+    public void TenMmPistolAndAmmoMatchEmpiricalValues()
+    {
+        using var vfs = GameFileSystem.Open(GameData.RequiredDir);
+        var protos = new ProtoDatabase(vfs);
+
+        // 10mm Pistol pid 8 (track-A parse: hitscan, mag 12, sound 'A').
+        ProtoInfo pistol = protos.Get(8);
+        Assert.NotNull(pistol.Weapon);
+        Assert.Equal(5, pistol.Weapon.AnimationCode);
+        Assert.Equal(5, pistol.Weapon.MinDamage);
+        Assert.Equal(12, pistol.Weapon.MaxDamage);
+        Assert.Equal(25, pistol.Weapon.MaxRange1);
+        Assert.Equal(-1, pistol.Weapon.ProjectilePid); // hitscan
+        Assert.Equal(3, pistol.Weapon.MinStrength);
+        Assert.Equal(5, pistol.Weapon.ApCost);
+        Assert.Equal(12, pistol.Weapon.AmmoCapacity);
+        Assert.Equal(29, pistol.Weapon.AmmoTypePid); // 10mm JHP
+        Assert.Equal((byte)'A', pistol.Weapon.SoundCode);
+        Assert.True(pistol.Weapon.IsGun(pistol.ExtendedFlags));
+
+        // Spear stays melee.
+        ProtoInfo spear = protos.Get(7);
+        Assert.False(spear.Weapon!.IsGun(spear.ExtendedFlags));
+
+        // 10mm JHP ammo pid 29: box of rounds with damage mods.
+        ProtoInfo jhp = protos.Get(29);
+        Assert.NotNull(jhp.Ammo);
+        Assert.Equal(pistol.Weapon.Caliber, jhp.Ammo.Caliber);
+        Assert.True(jhp.Ammo.Quantity > 0);
+    }
+
+    [Fact]
+    public void RangedToHitTermsBehaveLikeTheEngine()
+    {
+        // skill 60, PE 5 dude: free range = 2×(PE−2) = 6 hexes.
+        int atSix = Hexwaste.Formats.Combat.RangedMath.ToHitChance(60, 6, 5, true, 0, 0, 0, 5, 0);
+        int atTen = Hexwaste.Formats.Combat.RangedMath.ToHitChance(60, 10, 5, true, 0, 0, 0, 5, 0);
+        Assert.Equal(60, atSix);
+        Assert.Equal(60 - 16, atTen); // −4 per hex past free range
+
+        // Close range bonus is capped at +8×PE via the −2·PE clamp.
+        int pointBlank = Hexwaste.Formats.Combat.RangedMath.ToHitChance(60, 0, 10, true, 0, 0, 0, 5, 0);
+        Assert.Equal(Math.Min(60 + 4 * 16, 95), pointBlank);
+
+        // Crowd penalty, min-ST, ammo AC mod.
+        Assert.Equal(atSix - 20, Hexwaste.Formats.Combat.RangedMath.ToHitChance(60, 6, 5, true, 0, 0, 0, 5, 2));
+        Assert.Equal(atSix - 40, Hexwaste.Formats.Combat.RangedMath.ToHitChance(60, 6, 5, true, 0, 0, 7, 5, 0));
+        Assert.Equal(atSix - 10, Hexwaste.Formats.Combat.RangedMath.ToHitChance(60, 6, 5, true, 5, 5, 0, 5, 0));
+        // Negative AC+ammo clamps to zero, never a bonus.
+        Assert.Equal(atSix, Hexwaste.Formats.Combat.RangedMath.ToHitChance(60, 6, 5, true, 0, -30, 0, 5, 0));
+    }
+}

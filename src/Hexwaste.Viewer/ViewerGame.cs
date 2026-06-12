@@ -562,7 +562,9 @@ public sealed class ViewerGame : Game
                                     ? _dudeInventory.FindIndex(i => i.Pid == 40)
                                     : -1;
                                 (ProtoInfo? fightWeapon, _) = EquippedWeapon(_dude!.Dude);
-                                int reach = fightWeapon?.Weapon?.MaxRange1 ?? 1;
+                                bool fightGun = fightWeapon?.Weapon is { } fw && fw.IsGun(fightWeapon.ExtendedFlags);
+                                int reach = fightGun ? fightWeapon!.Weapon!.MaxRange1
+                                    : Math.Min(fightWeapon?.Weapon?.MaxRange1 ?? 1, 2);
                                 int swingCost = fightWeapon?.Weapon?.ApCost ?? Formats.Combat.CombatMath.PunchApCost;
                                 MapObject? victim = _hostiles.FirstOrDefault(h => !h.IsDead
                                     && Formats.Hex.HexGrid.Distance(_dude!.Dude.HexTile, h.HexTile) <= reach);
@@ -1043,7 +1045,7 @@ public sealed class ViewerGame : Game
         if (IsKeyPressed(keyboard, Keys.PageDown))
             SwitchElevation(-1);
 
-        if (IsKeyPressed(keyboard, Keys.R))
+        if (IsKeyPressed(keyboard, Keys.F4))
             _roofsVisible = !_roofsVisible;
 
         if (IsKeyPressed(keyboard, Keys.T))
@@ -1060,6 +1062,24 @@ public sealed class ViewerGame : Game
         // Space ends the player's combat turn.
         if (IsKeyPressed(keyboard, Keys.Space))
             EndPlayerTurn();
+
+        // R reloads the equipped gun (2 AP during your combat turn);
+        // roofs moved to F4.
+        if (IsKeyPressed(keyboard, Keys.R)
+            && _dude is not null && EquippedWeapon(_dude.Dude) is (not null, not null) equipped
+            && equipped.Proto!.Weapon is { AmmoCapacity: > 0 })
+        {
+            if (_combatPhase == CombatPhase.PlayerTurn)
+            {
+                if (_dudeAp >= Formats.Combat.RangedMath.ReloadApCost
+                    && TryReload(_dude.Dude, equipped.Proto, equipped.Item!))
+                    _dudeAp -= Formats.Combat.RangedMath.ReloadApCost;
+            }
+            else if (_combatPhase == CombatPhase.Idle)
+            {
+                TryReload(_dude.Dude, equipped.Proto, equipped.Item!);
+            }
+        }
 
         // [ and ] adjust ambient light (day/night preview).
         if (IsKeyPressed(keyboard, Keys.OemOpenBrackets) || IsKeyPressed(keyboard, Keys.OemCloseBrackets))
@@ -1185,10 +1205,12 @@ public sealed class ViewerGame : Game
     /// </summary>
     private void SpawnDude(int tile, int rotation)
     {
-        int critterIndex = _artIndex.FindCritterIndex("hmwarr");
+        // hmjmps (the engine's vault-suit default) ships every weapon anim
+        // set; hmwarr only had unarmed+spear (phase-7 track A).
+        int critterIndex = _artIndex.FindCritterIndex("hmjmps");
         if (critterIndex < 0)
         {
-            Console.Error.WriteLine("hmwarr not found in critters.lst — no dude");
+            Console.Error.WriteLine("hmjmps not found in critters.lst — no dude");
             return;
         }
 
@@ -1969,13 +1991,44 @@ public sealed class ViewerGame : Game
         if (GetCritterState(_dude.Dude) is not { } attacker || GetCritterState(target) is not { } defender)
             return;
 
-        (ProtoInfo? weaponProto, _) = EquippedWeapon(_dude.Dude);
-        int range = weaponProto?.Weapon?.MaxRange1 ?? 1;
+        (ProtoInfo? weaponProto, MapObject? weaponItem) = EquippedWeapon(_dude.Dude);
+        bool isGun = weaponProto?.Weapon is { } wstats && wstats.IsGun(weaponProto.ExtendedFlags);
+        int range = isGun ? weaponProto!.Weapon!.MaxRange1
+            : Math.Min(weaponProto?.Weapon?.MaxRange1 ?? 1, 2); // throwers melee-capped until rung (a)
         int apCost = weaponProto?.Weapon?.ApCost ?? Formats.Combat.CombatMath.PunchApCost;
-        if (Formats.Hex.HexGrid.Distance(_dude.Dude.HexTile, target.HexTile) > range)
+        int distance = Formats.Hex.HexGrid.Distance(_dude.Dude.HexTile, target.HexTile);
+        if (distance > range)
         {
             Log("Too far away.");
             return;
+        }
+
+        int crittersInPath = 0;
+        if (isGun)
+        {
+            // _combat_check_bad_shot gates: empty mag, then line of fire.
+            if (WeaponAmmo(weaponProto!, weaponItem!) <= 0)
+            {
+                if (_combatPhase == CombatPhase.PlayerTurn
+                    && _dudeAp >= Formats.Combat.RangedMath.ReloadApCost
+                    && TryReload(_dude.Dude, weaponProto!, weaponItem!))
+                {
+                    _dudeAp -= Formats.Combat.RangedMath.ReloadApCost;
+                    return; // reloading is its own action
+                }
+                if (_combatPhase != CombatPhase.PlayerTurn && TryReload(_dude.Dude, weaponProto!, weaponItem!))
+                    return;
+                Log("Out of ammo.");
+                return;
+            }
+
+            (MapObject? blocker, crittersInPath) = Formats.Combat.LineOfFire.Trace(
+                _dude.Dude.HexTile, target.HexTile, tile => ShootBlockerAt(tile, _dude.Dude, target));
+            if (blocker is not null)
+            {
+                Log($"Your shot is blocked by the {ObjectName(blocker)}.");
+                return;
+            }
         }
 
         // AP: in combat the round budget rules; the first swing opens combat
@@ -2002,32 +2055,65 @@ public sealed class ViewerGame : Game
         }
         _dude.Dude.Rotation = Formats.Hex.HexGrid.RotationTo(_dude.Dude.HexTile, target.HexTile);
 
-        (int chance, bool hit, int damage) = RollAttack(attacker, defender, weaponProto);
+        (int chance, bool hit, int damage) = RollAttack(attacker, defender, weaponProto, weaponItem,
+            distance, crittersInPath, attackerIsDude: true);
+        if (isGun)
+            weaponItem!.AmmoQuantity = WeaponAmmo(weaponProto!, weaponItem) - 1;
         _pendingAttack = new PendingAttack(_dude.Dude, target, chance, hit, damage);
         Console.WriteLine($"attack {ObjectName(target)}@{target.HexTile}"
-            + $"{(weaponProto is null ? "" : $" [{ObjectNameByPid(weaponProto.Pid)}]")}: chance={chance}% hit={hit} damage={damage}");
+            + $"{(weaponProto is null ? "" : $" [{ObjectNameByPid(weaponProto.Pid)}{(isGun ? $" {weaponItem!.AmmoQuantity}rnd d{distance}" : "")}]")}: chance={chance}% hit={hit} damage={damage}");
 
+        PlayWeaponSfx(weaponProto);
         StartAttackAnimation(_dude.Dude, weaponProto);
 
         if (_combatPhase == CombatPhase.Idle)
             BeginCombat(target);
     }
 
-    /// <summary>Roll an attack with the equipped weapon (or fists): melee
-    /// skill vs unarmed skill, weapon min/max + melee bonus vs the punch die.</summary>
+    /// <summary>Roll an attack with the equipped weapon (or fists). Guns use
+    /// the ranged to-hit (distance/PE, ammo AC mod, min-ST, crowd) and ammo
+    /// damage mods; melee keeps the phase-6 path.</summary>
     private (int Chance, bool Hit, int Damage) RollAttack(
-        Formats.Combat.CritterState attacker, Formats.Combat.CritterState defender, ProtoInfo? weaponProto)
+        Formats.Combat.CritterState attacker, Formats.Combat.CritterState defender,
+        ProtoInfo? weaponProto, MapObject? weaponItem, int distance, int crittersInPath,
+        bool attackerIsDude)
     {
-        int skill = weaponProto is null ? attacker.UnarmedSkill : attacker.MeleeWeaponsSkill;
-        int chance = Formats.Combat.CombatMath.ToHitChance(skill, defender);
+        int chance;
+        bool isGun = weaponProto?.Weapon is { } w && w.IsGun(weaponProto.ExtendedFlags);
+        if (isGun)
+        {
+            AmmoProtoStats? ammo = weaponItem is null ? null : LoadedAmmo(weaponProto!, weaponItem);
+            chance = Formats.Combat.RangedMath.ToHitChance(
+                attacker.SmallGunsSkill, distance,
+                attacker.Stat(Formats.Combat.CritterStat.Perception), attackerIsDude,
+                defender.ArmorClass, ammo?.AcModifier ?? 0,
+                weaponProto!.Weapon!.MinStrength, attacker.Stat(Formats.Combat.CritterStat.Strength),
+                crittersInPath);
+        }
+        else
+        {
+            int skill = weaponProto is null ? attacker.UnarmedSkill : attacker.MeleeWeaponsSkill;
+            chance = Formats.Combat.CombatMath.ToHitChance(skill, defender);
+        }
+
         bool hit = Formats.Combat.CombatMath.RollHit(_combatRng, chance);
         int damage = 0;
         if (hit)
         {
-            damage = weaponProto?.Weapon is { } weapon
-                ? Formats.Combat.CombatMath.RollWeaponDamage(_combatRng, attacker, defender,
-                    weapon.MinDamage, weapon.MaxDamage)
-                : Formats.Combat.CombatMath.RollDamage(_combatRng, attacker, defender);
+            if (isGun)
+            {
+                AmmoProtoStats? ammo = weaponItem is null ? null : LoadedAmmo(weaponProto!, weaponItem);
+                damage = Formats.Combat.RangedMath.RollDamage(_combatRng,
+                    weaponProto!.Weapon!.MinDamage, weaponProto.Weapon.MaxDamage, defender,
+                    ammo?.DrModifier ?? 0, ammo?.DamageMultiplier ?? 1, ammo?.DamageDivisor ?? 1);
+            }
+            else
+            {
+                damage = weaponProto?.Weapon is { } weapon
+                    ? Formats.Combat.CombatMath.RollWeaponDamage(_combatRng, attacker, defender,
+                        weapon.MinDamage, weapon.MaxDamage)
+                    : Formats.Combat.CombatMath.RollDamage(_combatRng, attacker, defender);
+            }
         }
 
         return (chance, hit, damage);
@@ -2052,6 +2138,99 @@ public sealed class ViewerGame : Game
         }
 
         return (null, null);
+    }
+
+    /// <summary>Loaded rounds; -1 sentinel hydrates from the proto capacity
+    /// (fresh items, protoItemDataDefaults).</summary>
+    private static int WeaponAmmo(ProtoInfo weaponProto, MapObject item)
+    {
+        if (item.AmmoQuantity == -1)
+            item.AmmoQuantity = weaponProto.Weapon?.AmmoCapacity ?? 0;
+        return item.AmmoQuantity;
+    }
+
+    private AmmoProtoStats? LoadedAmmo(ProtoInfo weaponProto, MapObject item)
+    {
+        int pid = item.AmmoTypePid != -1 ? item.AmmoTypePid : weaponProto.Weapon?.AmmoTypePid ?? -1;
+        if (pid <= 0)
+            return null;
+        try
+        {
+            return _protos.Get(pid).Ammo;
+        }
+        catch (Exception ex) when (ex is FileNotFoundException or InvalidDataException)
+        {
+            return null;
+        }
+    }
+
+    /// <summary>_obj_shoot_blocking_at subset: walls/scenery/living critters on
+    /// the tile, skipping hidden, NO_BLOCK (open doors) and SHOOT_THRU.</summary>
+    private MapObject? ShootBlockerAt(int tile, MapObject shooter, MapObject target)
+    {
+        const int noBlock = 0x10;
+        const uint shootThru = 0x80000000;
+        return _solidObjects[_elevation].FirstOrDefault(o =>
+            o.HexTile == tile && o != shooter && o != target && !o.IsHidden
+            && (o.Flags & noBlock) == 0 && ((uint)o.Flags & shootThru) == 0
+            && (Fid.Type(o.Fid) is ObjectType.Wall or ObjectType.Scenery
+                || (Fid.Type(o.Fid) is ObjectType.Critter && !o.IsDead)));
+    }
+
+    /// <summary>Reload from a matching-caliber ammo item: partial fills, no
+    /// mixed mags (item.cc weaponCanBeReloadedWith/weaponReload).</summary>
+    private bool TryReload(MapObject holder, ProtoInfo weaponProto, MapObject weaponItem)
+    {
+        if (weaponProto.Weapon is not { } weapon || weapon.AmmoCapacity <= 0)
+            return false;
+        int current = WeaponAmmo(weaponProto, weaponItem);
+        if (current >= weapon.AmmoCapacity)
+            return false;
+
+        List<MapObject> bag = holder == _dude?.Dude ? _dudeInventory : holder.Inventory;
+        foreach (MapObject box in bag)
+        {
+            ProtoInfo boxProto;
+            try
+            {
+                boxProto = _protos.Get(box.Pid);
+            }
+            catch (Exception ex) when (ex is FileNotFoundException or InvalidDataException)
+            {
+                continue;
+            }
+
+            if (boxProto.Ammo is not { } ammo || ammo.Caliber != weapon.Caliber)
+                continue;
+            if (current > 0 && weaponItem.AmmoTypePid != -1 && weaponItem.AmmoTypePid != box.Pid)
+                continue; // no mixed mags
+
+            if (box.AmmoQuantity == -1)
+                box.AmmoQuantity = ammo.Quantity;
+            int moved = Math.Min(weapon.AmmoCapacity - current, box.AmmoQuantity);
+            if (moved <= 0)
+                continue;
+
+            weaponItem.AmmoQuantity = current + moved;
+            weaponItem.AmmoTypePid = box.Pid;
+            box.AmmoQuantity -= moved;
+            if (box.AmmoQuantity <= 0)
+            {
+                box.StackCount--;
+                if (box.StackCount <= 0)
+                    bag.Remove(box);
+                else
+                    box.AmmoQuantity = ammo.Quantity; // next box in the stack
+            }
+
+            Log(holder == _dude?.Dude
+                ? $"You reload the {ObjectNameByPid(weaponProto.Pid)} ({weaponItem.AmmoQuantity}/{weapon.AmmoCapacity})."
+                : $"The {ObjectName(holder)} reloads.");
+            Console.WriteLine($"reload: {ObjectNameByPid(weaponProto.Pid)} -> {weaponItem.AmmoQuantity}/{weapon.AmmoCapacity}");
+            return true;
+        }
+
+        return false;
     }
 
     /// <summary>Attack art: the weapon's animation code goes into FID bits
@@ -2183,6 +2362,7 @@ public sealed class ViewerGame : Game
         Log($"The {ObjectName(critter)} dies.");
 
         int deathAnim = PickDeathAnim(critter);
+        _audio?.PlaySfx(Formats.Sound.SfxName.HumanDeath(female: false, deathAnim));
         int fallFid = Fid.Build(ObjectType.Critter, Fid.Index(critter.Fid), deathAnim, 0);
         if (_vfs.Exists(_artIndex.GetFrmPath(fallFid)))
         {
@@ -2457,15 +2637,43 @@ public sealed class ViewerGame : Game
             return false;
 
         int dudeTile = _dude.Dude.HexTile;
-        (ProtoInfo? enemyWeapon, _) = EquippedWeapon(enemy);
-        int attackRange = enemyWeapon?.Weapon?.MaxRange1 ?? 1;
+        (ProtoInfo? enemyWeapon, MapObject? enemyWeaponItem) = EquippedWeapon(enemy);
+        bool enemyGun = enemyWeapon?.Weapon is { } ew && ew.IsGun(enemyWeapon.ExtendedFlags);
+        int enemyDistance = Formats.Hex.HexGrid.Distance(enemy.HexTile, dudeTile);
+
+        // _ai_try_attack shape: reload-if-empty, approach if blocked/far,
+        // else stand and shoot; melee fallback when dry.
+        if (enemyGun && WeaponAmmo(enemyWeapon!, enemyWeaponItem!) <= 0)
+        {
+            if (_actingEnemyAp >= Formats.Combat.RangedMath.ReloadApCost
+                && TryReload(enemy, enemyWeapon!, enemyWeaponItem!))
+            {
+                _actingEnemyAp -= Formats.Combat.RangedMath.ReloadApCost;
+                return true;
+            }
+            enemyWeapon = null; // dry and no ammo: fists
+            enemyWeaponItem = null;
+            enemyGun = false;
+        }
+
+        int attackRange = enemyGun ? enemyWeapon!.Weapon!.MaxRange1
+            : Math.Min(enemyWeapon?.Weapon?.MaxRange1 ?? 1, 2);
         int attackCost = enemyWeapon?.Weapon?.ApCost ?? Formats.Combat.CombatMath.PunchApCost;
-        if (Formats.Hex.HexGrid.Distance(enemy.HexTile, dudeTile) <= attackRange)
+        int enemyCritters = 0;
+        bool shotBlocked = false;
+        if (enemyGun && enemyDistance <= attackRange)
+        {
+            (MapObject? blocker, enemyCritters) = Formats.Combat.LineOfFire.Trace(
+                enemy.HexTile, dudeTile, tile => ShootBlockerAt(tile, enemy, _dude.Dude));
+            shotBlocked = blocker is not null;
+        }
+
+        if (enemyDistance <= attackRange && !shotBlocked)
         {
             if (_actingEnemyAp < attackCost)
                 return false;
             _actingEnemyAp -= attackCost;
-            EnemyAttack(enemy, enemyWeapon);
+            EnemyAttack(enemy, enemyWeapon, enemyWeaponItem, enemyDistance, enemyCritters);
             return true;
         }
 
@@ -2484,7 +2692,8 @@ public sealed class ViewerGame : Game
         return StartNpcWalk(enemy, targetTile);
     }
 
-    private void EnemyAttack(MapObject enemy, ProtoInfo? weaponProto)
+    private void EnemyAttack(MapObject enemy, ProtoInfo? weaponProto, MapObject? weaponItem,
+        int distance, int crittersInPath)
     {
         if (_dude is null || GetCritterState(enemy) is not { } attacker
             || GetCritterState(_dude.Dude) is not { } defender)
@@ -2492,12 +2701,23 @@ public sealed class ViewerGame : Game
 
         enemy.Rotation = Formats.Hex.HexGrid.RotationTo(enemy.HexTile, _dude.Dude.HexTile);
 
-        (int chance, bool hit, int damage) = RollAttack(attacker, defender, weaponProto);
+        bool isGun = weaponProto?.Weapon is { } w && w.IsGun(weaponProto.ExtendedFlags);
+        (int chance, bool hit, int damage) = RollAttack(attacker, defender, weaponProto, weaponItem,
+            distance, crittersInPath, attackerIsDude: false);
+        if (isGun && weaponItem is not null)
+            weaponItem.AmmoQuantity = WeaponAmmo(weaponProto!, weaponItem) - 1;
         _pendingAttack = new PendingAttack(enemy, _dude.Dude, chance, hit, damage);
         Console.WriteLine($"enemy-attack {ObjectName(enemy)}@{enemy.HexTile}"
-            + $"{(weaponProto is null ? "" : $" [{ObjectNameByPid(weaponProto.Pid)}]")}: chance={chance}% hit={hit} damage={damage}");
+            + $"{(weaponProto is null ? "" : $" [{ObjectNameByPid(weaponProto.Pid)}{(isGun ? $" d{distance}" : "")}]")}: chance={chance}% hit={hit} damage={damage}");
 
+        PlayWeaponSfx(weaponProto);
         StartAttackAnimation(enemy, weaponProto);
+    }
+
+    private void PlayWeaponSfx(ProtoInfo? weaponProto)
+    {
+        if (weaponProto?.Weapon is { SoundCode: > 0 } weapon)
+            _audio?.PlaySfx(Formats.Sound.SfxName.WeaponAttack(weapon.SoundCode));
     }
 
     private void ResetCombatState()
@@ -3599,7 +3819,7 @@ public sealed class ViewerGame : Game
                 || (obj.IsDead && Fid.PidType(obj.Pid) == (int)ObjectType.Critter))
                 delta.ContainerInventories[ordinal] =
                     [.. obj.Inventory.Select(i => new SaveState.SavedItem(i.Pid, Math.Max(i.StackCount, 1),
-                        i.Flags & (MapObject.FlagInLeftHand | MapObject.FlagInRightHand | MapObject.FlagWorn)))];
+                        i.Flags & (MapObject.FlagInLeftHand | MapObject.FlagInRightHand | MapObject.FlagWorn), i.AmmoQuantity, i.AmmoTypePid))];
         }
 
         _visitedMaps[_map.Header.Name] = delta;
@@ -3707,6 +3927,8 @@ public sealed class ViewerGame : Game
                 if (RebuildObject(item.Pid, item.Count) is { } obj)
                 {
                     obj.Flags |= item.Flags;
+                    obj.AmmoQuantity = item.AmmoQuantity;
+                    obj.AmmoTypePid = item.AmmoTypePid;
                     container.Inventory.Add(obj);
                 }
             }
@@ -3834,7 +4056,7 @@ public sealed class ViewerGame : Game
             Elevation = _elevation,
             ClockTicks = _clock.Ticks,
             GlobalVars = new Dictionary<int, int>(_scriptHost?.GlobalVars ?? []),
-            DudeInventory = [.. _dudeInventory.Select(i => new SaveState.SavedItem(i.Pid, i.StackCount, i.Flags & (MapObject.FlagInLeftHand | MapObject.FlagInRightHand | MapObject.FlagWorn)))],
+            DudeInventory = [.. _dudeInventory.Select(i => new SaveState.SavedItem(i.Pid, i.StackCount, i.Flags & (MapObject.FlagInLeftHand | MapObject.FlagInRightHand | MapObject.FlagWorn), i.AmmoQuantity, i.AmmoTypePid))],
             VisitedMaps = new Dictionary<string, SaveState.MapDelta>(_visitedMaps),
             LocalVars = _scriptHost?.ExportAllLocalVars() ?? [],
         };
@@ -3913,6 +4135,8 @@ public sealed class ViewerGame : Game
             if (RebuildObject(item.Pid, item.Count) is { } obj)
             {
                 obj.Flags |= item.Flags;
+                obj.AmmoQuantity = item.AmmoQuantity;
+                obj.AmmoTypePid = item.AmmoTypePid;
                 _dudeInventory.Add(obj);
                 if (obj.IsWorn)
                 {

@@ -113,6 +113,13 @@ public sealed class MapObject
     /// <summary>ported from fallout2-ce src/critter.cc critterIsDead(): DAM_DEAD.</summary>
     public bool IsDead => (CombatResults & 0x80) != 0;
 
+    /// <summary>Loaded rounds (weapons) or rounds in the box (ammo items);
+    /// -1 = derive from the prototype (fresh item / pre-V2 save).</summary>
+    public int AmmoQuantity { get; set; } = -1;
+
+    /// <summary>Pid of the loaded ammo (weapons); -1 = proto default.</summary>
+    public int AmmoTypePid { get; set; } = -1;
+
     // ported from fallout2-ce src/obj_types.h
     public bool IsHidden => (Flags & 0x01) != 0;
     public bool IsFlat => (Flags & 0x08) != 0;
@@ -421,13 +428,19 @@ public sealed class MapFile
         switch ((ObjectType)pidType)
         {
             case ObjectType.Item:
-                int itemType = protos.Get(obj.Pid).SubType;
-                reader.Skip(itemType switch
+                switch (protos.Get(obj.Pid).SubType)
                 {
-                    3 => 8, // ITEM_TYPE_WEAPON: ammoQuantity, ammoTypePid
-                    4 or 5 or 6 => 4, // AMMO quantity / MISC charges / KEY keyCode
-                    _ => 0,
-                });
+                    case 3: // ITEM_TYPE_WEAPON: loaded rounds + loaded ammo pid
+                        obj.AmmoQuantity = reader.ReadInt32();
+                        obj.AmmoTypePid = reader.ReadInt32();
+                        break;
+                    case 4: // ITEM_TYPE_AMMO: rounds in the box
+                        obj.AmmoQuantity = reader.ReadInt32();
+                        break;
+                    case 5 or 6: // MISC charges / KEY keyCode
+                        reader.Skip(4);
+                        break;
+                }
                 break;
 
             case ObjectType.Scenery:
