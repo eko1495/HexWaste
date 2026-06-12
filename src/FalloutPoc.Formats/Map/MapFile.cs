@@ -93,6 +93,26 @@ public sealed class MapObject
     /// <summary>Stack size when this object sits in an inventory (MAP quantity field).</summary>
     public int StackCount { get; set; } = 1;
 
+    // Critter instance data (obj_pud), meaningful only for critter pids.
+    // ported from fallout2-ce src/obj_types.h CritterObjectData/CritterCombatData
+    public int DamageLastTurn { get; set; }
+    public int Maneuver { get; set; }
+    public int ActionPoints { get; set; }
+
+    /// <summary>DAM_* result flags; DAM_DEAD = 0x80.</summary>
+    public int CombatResults { get; set; }
+    public int AiPacket { get; set; }
+    public int Team { get; set; }
+    public int WhoHitMeCid { get; set; }
+
+    /// <summary>Per-instance current HP (denbus1 critters carry individual values).</summary>
+    public int CurrentHp { get; set; }
+    public int Radiation { get; set; }
+    public int Poison { get; set; }
+
+    /// <summary>ported from fallout2-ce src/critter.cc critterIsDead(): DAM_DEAD.</summary>
+    public bool IsDead => (CombatResults & 0x80) != 0;
+
     // ported from fallout2-ce src/obj_types.h
     public bool IsHidden => (Flags & 0x01) != 0;
     public bool IsFlat => (Flags & 0x08) != 0;
@@ -368,7 +388,19 @@ public sealed class MapFile
         int pidType = Fid.PidType(obj.Pid);
         if (pidType == (int)ObjectType.Critter)
         {
-            reader.Skip(11 * 4); // field_0, combat data (7), hp, radiation, poison
+            // ported from fallout2-ce src/proto.cc objectDataRead() +
+            // objectCritterCombatDataRead()
+            reader.Skip(4); // field_0 (reaction_to_pc)
+            obj.DamageLastTurn = reader.ReadInt32();
+            obj.Maneuver = reader.ReadInt32();
+            obj.ActionPoints = reader.ReadInt32();
+            obj.CombatResults = reader.ReadInt32();
+            obj.AiPacket = reader.ReadInt32();
+            obj.Team = reader.ReadInt32();
+            obj.WhoHitMeCid = reader.ReadInt32();
+            obj.CurrentHp = reader.ReadInt32();
+            obj.Radiation = reader.ReadInt32();
+            obj.Poison = reader.ReadInt32();
             return inventoryLength;
         }
 

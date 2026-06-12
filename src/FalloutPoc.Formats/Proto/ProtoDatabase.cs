@@ -17,7 +17,28 @@ public sealed record ProtoInfo(
     /// <summary>Sound id char for sfx names (scenery field_34 / item field_80); 0 when absent.</summary>
     byte SoundId = 0,
     /// <summary>Inventory-list icon FID (items only); -1 otherwise.</summary>
-    int InventoryFid = -1);
+    int InventoryFid = -1,
+    /// <summary>The critter stat block; null for non-critter protos.</summary>
+    CritterProtoStats? Critter = null);
+
+/// <summary>
+/// Critter prototype combat data, ported from fallout2-ce src/proto.cc
+/// protoRead() (headFid/aiPacket/team after sid) + src/critter.cc
+/// protoCritterDataRead(). Stat indices follow src/stat_defs.h (see
+/// <see cref="CritterStat"/>); skills follow src/skill_defs.h (unarmed = 3).
+/// </summary>
+public sealed record CritterProtoStats(
+    int AiPacket,
+    int Team,
+    int CritterFlags,
+    int[] BaseStats,
+    int[] BonusStats,
+    int[] Skills,
+    int BodyType,
+    int Experience,
+    int KillType,
+    /// <summary>Natural unarmed damage type; absent in two 412-byte protos → 0 (normal).</summary>
+    int DamageType);
 
 /// <summary>
 /// Lazily loads .pro prototypes via the VFS, following fallout2-ce
@@ -78,6 +99,7 @@ public sealed class ProtoDatabase(GameFileSystem vfs)
         int subType = -1;
         byte soundId = 0;
         int inventoryFid = -1;
+        CritterProtoStats? critter = null;
         switch ((ObjectType)type)
         {
             // ported from fallout2-ce src/proto.cc protoRead(): misc protos
@@ -114,6 +136,35 @@ public sealed class ProtoDatabase(GameFileSystem vfs)
                     inventoryFid = reader.ReadInt32();
                     soundId = reader.ReadByte();
                 }
+                else if ((ObjectType)type is ObjectType.Critter)
+                {
+                    // ported from fallout2-ce src/proto.cc protoRead() (critter
+                    // case) + src/critter.cc protoCritterDataRead()
+                    reader.Skip(4); // headFid
+                    int aiPacket = reader.ReadInt32();
+                    int team = reader.ReadInt32();
+                    int critterFlags = reader.ReadInt32();
+                    int[] baseStats = reader.ReadInt32Array(35);
+                    int[] bonusStats = reader.ReadInt32Array(35);
+                    int[] skills = reader.ReadInt32Array(18);
+                    int bodyType = reader.ReadInt32();
+                    int experience = reader.ReadInt32();
+                    int killType = reader.ReadInt32();
+
+                    // Two 412-byte protos (Sentry Bot, Weak Brahmin) end here;
+                    // the engine defaults their damage type to normal.
+                    int damageType = 0;
+                    try
+                    {
+                        damageType = reader.ReadInt32();
+                    }
+                    catch (EndOfStreamException)
+                    {
+                    }
+
+                    critter = new CritterProtoStats(aiPacket, team, critterFlags,
+                        baseStats, bonusStats, skills, bodyType, experience, killType, damageType);
+                }
                 break;
 
             case ObjectType.Tile:
@@ -125,7 +176,7 @@ public sealed class ProtoDatabase(GameFileSystem vfs)
                 throw new InvalidDataException($"PID 0x{pid:X8}: unexpected type {type}.");
         }
 
-        return new ProtoInfo(filePid, messageId, fid, flags, extendedFlags, subType, soundId, inventoryFid);
+        return new ProtoInfo(filePid, messageId, fid, flags, extendedFlags, subType, soundId, inventoryFid, critter);
     }
 
     private string[] GetList(int type)

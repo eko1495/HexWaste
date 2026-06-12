@@ -101,6 +101,9 @@ for (int i = 0; i < args.Length; i++)
         case "--lockpick-hex" when i + 1 < args.Length:
             actions.Add(new ViewerGame.StartupAction.UseHex(int.Parse(args[++i]), Lockpick: true));
             break;
+        case "--examine-critter" when i + 1 < args.Length:
+            actions.Add(new ViewerGame.StartupAction.ExamineCritter(int.Parse(args[++i])));
+            break;
         case "--take-all":
             actions.Add(new ViewerGame.StartupAction.TakeAll());
             break;

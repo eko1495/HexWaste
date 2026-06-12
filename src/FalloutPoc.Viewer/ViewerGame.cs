@@ -114,6 +114,7 @@ public sealed class ViewerGame : Game
     public abstract record StartupAction
     {
         public sealed record UseHex(int Hex, bool Lockpick) : StartupAction;
+        public sealed record ExamineCritter(int Hex) : StartupAction;
         public sealed record TakeAll : StartupAction;
         public sealed record Transit(string MapFile, int Tile, int Elevation) : StartupAction;
         public sealed record SaveNow : StartupAction;
@@ -288,6 +289,30 @@ public sealed class ViewerGame : Game
                             Console.WriteLine($"  ITEM: {ObjectName(item)} x{item.StackCount}");
                     }
 
+                    break;
+                }
+                case StartupAction.ExamineCritter(var critterHex):
+                {
+                    MapObject? critter = _solidObjects[_elevation]
+                        .FirstOrDefault(o => o.HexTile == critterHex && Fid.Type(o.Fid) is ObjectType.Critter);
+                    if (critter is null)
+                    {
+                        Console.Error.WriteLine($"no critter at hex {critterHex}");
+                        break;
+                    }
+                    if (GetCritterState(critter) is not { } state)
+                    {
+                        Console.Error.WriteLine($"no critter proto stats for pid 0x{critter.Pid:X8}");
+                        break;
+                    }
+
+                    Console.WriteLine($"CRITTER {ObjectName(critter)} @{critterHex} pid=0x{critter.Pid:X8}");
+                    Console.WriteLine($"  hp={state.CurrentHp}/{state.MaxHp} ac={state.ArmorClass} ap={state.MaxActionPoints}"
+                        + $" meleeDmg={state.MeleeDamage} sequence={state.Sequence} unarmedSkill={state.UnarmedSkill}");
+                    Console.WriteLine($"  team={critter.Team} (proto {state.Proto.Team}) aiPacket={critter.AiPacket}"
+                        + $" (proto {state.Proto.AiPacket}) results=0x{critter.CombatResults:X} dead={state.IsDead}");
+                    Console.WriteLine($"  dt={state.DamageThreshold} dr={state.DamageResistance} exp={state.Proto.Experience}"
+                        + $" killType={state.Proto.KillType} bodyType={state.Proto.BodyType} damageType={state.Proto.DamageType}");
                     break;
                 }
                 case StartupAction.TakeAll:
@@ -1848,10 +1873,32 @@ public sealed class ViewerGame : Game
             Log($"{ObjectName(obj)}:");
             foreach (string line in scripted)
                 Log(line);
-            return;
+        }
+        else
+        {
+            Log($"{ObjectName(obj)}: {ObjectDescription(obj)}");
         }
 
-        Log($"{ObjectName(obj)}: {ObjectDescription(obj)}");
+        if (obj != _dude?.Dude && GetCritterState(obj) is { } state)
+            Log($"HP: {state.CurrentHp}/{state.MaxHp}, AC: {state.ArmorClass}");
+    }
+
+    /// <summary>Effective combat stats for critters with parsed protos; null
+    /// for non-critters and broken pids.</summary>
+    private Formats.Combat.CritterState? GetCritterState(MapObject obj)
+    {
+        if (Fid.PidType(obj.Pid) != (int)ObjectType.Critter)
+            return null;
+        try
+        {
+            return _protos.Get(obj.Pid).Critter is { } stats
+                ? new Formats.Combat.CritterState(obj, stats)
+                : null;
+        }
+        catch (Exception ex) when (ex is FileNotFoundException or InvalidDataException)
+        {
+            return null;
+        }
     }
 
     private string DescribeObject(MapObject obj)
