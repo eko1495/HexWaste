@@ -13,7 +13,9 @@ public sealed record ProtoInfo(
     int Flags,
     int ExtendedFlags,
     /// <summary>Item type or scenery type; -1 for other object types.</summary>
-    int SubType);
+    int SubType,
+    /// <summary>Sound id char for sfx names (scenery field_34 / item field_80); 0 when absent.</summary>
+    byte SoundId = 0);
 
 /// <summary>
 /// Lazily loads .pro prototypes via the VFS, following fallout2-ce
@@ -61,6 +63,7 @@ public sealed class ProtoDatabase(GameFileSystem vfs)
         int flags;
         int extendedFlags;
         int subType = -1;
+        byte soundId = 0;
         switch ((ObjectType)type)
         {
             case ObjectType.Item:
@@ -74,6 +77,20 @@ public sealed class ProtoDatabase(GameFileSystem vfs)
                 reader.Skip(4); // sid
                 if ((ObjectType)type is ObjectType.Item or ObjectType.Scenery)
                     subType = reader.ReadInt32();
+
+                // ported from fallout2-ce src/proto.cc protoRead(): scenery's
+                // sound char is field_34 (after field_2C); items' is field_80
+                // (after material/size/weight/cost/inventoryFid).
+                if ((ObjectType)type is ObjectType.Scenery)
+                {
+                    reader.Skip(4); // field_2C
+                    soundId = reader.ReadByte();
+                }
+                else if ((ObjectType)type is ObjectType.Item)
+                {
+                    reader.Skip(5 * 4); // material, size, weight, cost, inventoryFid
+                    soundId = reader.ReadByte();
+                }
                 break;
 
             case ObjectType.Tile:
@@ -85,7 +102,7 @@ public sealed class ProtoDatabase(GameFileSystem vfs)
                 throw new InvalidDataException($"PID 0x{pid:X8}: unexpected type {type}.");
         }
 
-        return new ProtoInfo(filePid, messageId, fid, flags, extendedFlags, subType);
+        return new ProtoInfo(filePid, messageId, fid, flags, extendedFlags, subType, soundId);
     }
 
     private string[] GetList(int type)

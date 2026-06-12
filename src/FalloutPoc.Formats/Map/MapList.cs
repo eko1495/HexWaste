@@ -9,6 +9,8 @@ public sealed class MapList
 {
     private readonly Dictionary<int, string> _names = [];
     private readonly Dictionary<string, int> _byLookupName = new(StringComparer.OrdinalIgnoreCase);
+    private readonly Dictionary<int, string> _musicByIndex = [];
+    private readonly Dictionary<string, int> _indexByMapName = new(StringComparer.OrdinalIgnoreCase);
 
     public static MapList Load(GameFileSystem vfs)
     {
@@ -29,12 +31,18 @@ public sealed class MapList
             }
             else if (currentIndex >= 0 && line.StartsWith("map_name=", StringComparison.OrdinalIgnoreCase))
             {
-                list._names[currentIndex] = line["map_name=".Length..].Trim();
+                string mapName = line["map_name=".Length..].Trim();
+                list._names[currentIndex] = mapName;
+                list._indexByMapName.TryAdd(mapName, currentIndex);
             }
             else if (currentIndex >= 0 && line.StartsWith("lookup_name=", StringComparison.OrdinalIgnoreCase))
             {
                 string lookup = line["lookup_name=".Length..].Split(';')[0].Trim();
                 list._byLookupName.TryAdd(lookup, currentIndex);
+            }
+            else if (currentIndex >= 0 && line.StartsWith("music=", StringComparison.OrdinalIgnoreCase))
+            {
+                list._musicByIndex[currentIndex] = line["music=".Length..].Split(';')[0].Trim();
             }
         }
 
@@ -48,4 +56,13 @@ public sealed class MapList
     /// <summary>Resolves a maps.txt lookup_name (used by city.txt entrances) to a map index, or -1.</summary>
     public int FindByLookupName(string lookupName) =>
         _byLookupName.TryGetValue(lookupName.Trim(), out int index) ? index : -1;
+
+    /// <summary>Music track name for a map (maps.txt music= key), e.g. "07desert"; null if none.</summary>
+    public string? GetMusic(string mapFileName)
+    {
+        string name = System.IO.Path.GetFileNameWithoutExtension(mapFileName);
+        return _indexByMapName.TryGetValue(name, out int index)
+            && _musicByIndex.TryGetValue(index, out string? music)
+            && music.Length > 0 ? music : null;
+    }
 }

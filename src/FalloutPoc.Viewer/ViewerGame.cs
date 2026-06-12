@@ -53,6 +53,8 @@ public sealed class ViewerGame : Game
     private HashSet<int> _blockedTiles = [];
     private MapList _mapList = null!;
     private CityList _cities = null!;
+    private AudioManager? _audio;
+    private int _stepCounter;
     private WorldmapScreen? _worldmapScreen;
     private bool _worldmapOpen;
     private WorldArea? _hoveredArea;
@@ -73,6 +75,9 @@ public sealed class ViewerGame : Game
 
     /// <summary>Screen point to examine before the first frame (screenshot testing).</summary>
     public Point? ExamineAt { get; set; }
+
+    /// <summary>Disables all audio (headless/CI runs).</summary>
+    public bool DisableAudio { get; set; }
     private readonly HashSet<MapObject> _openDoors = [];
     private MapDestination? _pendingTransition;
 
@@ -143,6 +148,8 @@ public sealed class ViewerGame : Game
         _frmCache = new FrmCache(_vfs, _artIndex, GraphicsDevice, _palette);
         _mapList = MapList.Load(_vfs);
         _cities = CityList.Load(_vfs);
+        if (!DisableAudio)
+            _audio = new AudioManager(_vfs, _gameDir);
         _protoMessages = new ProtoMessages(_vfs, _protos);
 
         // font1.aaf is the standard readable interface font.
@@ -267,6 +274,8 @@ public sealed class ViewerGame : Game
 
         _baseTitle = $"FalloutPoc viewer — {_map.Header.Name} (elevation {_elevation})";
         Window.Title = _baseTitle;
+
+        _audio?.PlayMusic(_mapList.GetMusic(mapName));
     }
 
     protected override void Update(GameTime gameTime)
@@ -470,6 +479,12 @@ public sealed class ViewerGame : Game
             _camera.SetCenter(tile);
             _camera.PanX = 0;
             _camera.PanY = 0;
+
+            // Approximation: the original ties steps to walk-FRM action
+            // frames; we alternate the two shipped footstep sfx per hex.
+            if (++_stepCounter % 2 == 0)
+                _audio?.PlaySfx(_stepCounter % 4 == 0 ? "FOOTSTE1" : "FOOTSTEP");
+
             CheckExitGridAt(tile);
         };
 
@@ -639,12 +654,22 @@ public sealed class ViewerGame : Game
             return;
         }
 
+        byte soundId = 0;
+        try
+        {
+            soundId = _protos.Get(door.Pid).SoundId;
+        }
+        catch (Exception ex) when (ex is FileNotFoundException or InvalidDataException)
+        {
+        }
+
         if (_openDoors.Remove(door))
         {
             _animator.PlayOnceReverse(door, frameCount - 1);
             _blockedTiles.Add(door.HexTile);
             Console.WriteLine("door closes");
             Log($"The {ObjectName(door)} closes.");
+            _audio?.PlaySfx(Formats.Sound.SfxName.Door(Formats.Sound.SfxName.SceneryAction.Close, soundId));
         }
         else
         {
@@ -653,6 +678,7 @@ public sealed class ViewerGame : Game
             _blockedTiles.Remove(door.HexTile);
             Console.WriteLine("door opens");
             Log($"The {ObjectName(door)} opens.");
+            _audio?.PlaySfx(Formats.Sound.SfxName.Door(Formats.Sound.SfxName.SceneryAction.Open, soundId));
         }
     }
 
@@ -1098,6 +1124,9 @@ public sealed class ViewerGame : Game
 
     protected override void UnloadContent()
     {
+        _audio?.Dispose();
+        _worldmapScreen?.Dispose();
+        _fontRenderer?.Dispose();
         _frmCache.Dispose();
         _vfs.Dispose();
         base.UnloadContent();
