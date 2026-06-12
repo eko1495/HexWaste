@@ -87,6 +87,9 @@ public sealed class ScriptHost(GameFileSystem vfs, ScriptList scripts, Hexwaste.
     /// <summary>anim_busy: is this object mid-animation (host animator)?</summary>
     public Func<MapObject, bool>? AnimBusyResolver { get; set; }
 
+    /// <summary>give_exp_points: the host adds XP immediately (pcAddExperience).</summary>
+    public Action<int>? ExpAwarded { get; set; }
+
     /// <summary>The dude's two selected traits (gcd), -1 = none.</summary>
     public int[] DudeTraits { get; set; } = [-1, -1];
 
@@ -756,6 +759,8 @@ public sealed class ScriptHost(GameFileSystem vfs, ScriptList scripts, Hexwaste.
 
         public bool AnimBusy(int objectHandle) =>
             _host.ObjectOf(objectHandle) is { } obj && (_host.AnimBusyResolver?.Invoke(obj) ?? false);
+
+        public void GiveExpPoints(int amount) => _host.ExpAwarded?.Invoke(amount);
 
         // ---- dialog state (one "round" = one reply + its options)
 

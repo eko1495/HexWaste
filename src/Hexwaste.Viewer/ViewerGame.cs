@@ -101,6 +101,10 @@ public sealed class ViewerGame : Game
     /// tick instead of our 60 Hz frame rate).</summary>
     private double _critterProcTimerMs;
     private int _critterProcIndex;
+
+    /// <summary>Kill XP accrued this combat, paid at combat end like the
+    /// engine's _combat_exps → _combat_give_exps (combat.cc:2816).</summary>
+    private int _combatXpPending;
     private readonly Random _ambientRandom = new(20260612);
     private double _fidgetTimerMs;
     private double _wanderTimerMs;
@@ -304,6 +308,7 @@ public sealed class ViewerGame : Game
                 },
                 StatsResolver = obj => obj == _dude?.Dude ? _dudeGcd?.Stats : null,
                 AttackRequested = (attacker, target) => OnScriptAttack(attacker, target),
+                ExpAwarded = amount => AwardXp(amount),
                 AnimBusyResolver = obj => _animator.TryGetState(obj, out _)
                     || (_npcWalkers.TryGetValue(obj, out DudeController? walker) && walker.Moving),
                 DudeTraits = _dudeGcd?.Traits ?? [-1, -1],
@@ -1566,12 +1571,23 @@ public sealed class ViewerGame : Game
             ? $"You hit the {targetName} for {attack.Damage} damage."
             : $"The {attackerName} hits you for {attack.Damage} damage.");
 
+        // damage_p_proc runs as damage applies, fixedParam = amount, source =
+        // attacker (combat.cc:4850-4851; party-on-party skip is moot here).
+        if (attack.Target != _dude?.Dude && attack.Target.Sid != -1)
+        {
+            var scripted = _scriptHost?.RunObjectProc(attack.Target, _map, attack.Attacker,
+                fixedParam: attack.Damage, actionBeingUsed: -1, "damage_p_proc");
+            if (scripted is not null)
+                foreach (string line in scripted.Messages)
+                    Log(line);
+        }
+
         if (attack.Target.CurrentHp <= 0)
         {
             if (attack.Target == _dude?.Dude)
                 GameOver();
             else
-                KillCritter(attack.Target);
+                KillCritter(attack.Target, attack.Attacker);
             return;
         }
 
@@ -1582,8 +1598,26 @@ public sealed class ViewerGame : Game
             _animator.PlayActionOnce(attack.Target, hitFid);
     }
 
-    private void KillCritter(MapObject critter)
+    private void KillCritter(MapObject critter, MapObject? killer = null)
     {
+        // Engine death order (combat.cc:4850-4876): destroy_p_proc with
+        // source = killer, then proto XP accrues for the dude's kills unless
+        // the script called script_overrides, then the script is removed.
+        bool xpOverridden = false;
+        if (critter.Sid != -1)
+        {
+            var scripted = _scriptHost?.RunObjectProc(critter, _map, killer ?? _dude?.Dude, "destroy_p_proc");
+            if (scripted is not null)
+            {
+                foreach (string line in scripted.Messages)
+                    Log(line);
+                xpOverridden = scripted.Overridden;
+            }
+        }
+
+        if (!xpOverridden && killer == _dude?.Dude && GetCritterState(critter) is { } stats)
+            _combatXpPending += stats.Proto.Experience;
+
         critter.CombatResults |= 0x80; // DAM_DEAD
         critter.Sid = -1; // the engine removes the script on death (combat.cc:4876)
         _npcWalkers.Remove(critter);
@@ -1655,9 +1689,8 @@ public sealed class ViewerGame : Game
             return;
         foreach (MapObject critter in _solidObjects[_elevation].Where(o =>
             Fid.Type(o.Fid) is ObjectType.Critter
-            && o != _dude.Dude && !o.IsDead && !_hostiles.Contains(o)
-            && _hostiles.Any(h => h.Team == o.Team)
-            && Formats.Hex.HexGrid.Distance(o.HexTile, _dude.Dude.HexTile) <= 20).ToList())
+            && o != _dude.Dude && !_hostiles.Contains(o)
+            && Formats.Combat.CombatRules.ShouldJoin(o, _hostiles, _dude.Dude.HexTile)).ToList())
         {
             _hostiles.Add(critter);
             critter.WhoHitMeCid = -1; // marks the dude as the aggressor
@@ -1757,6 +1790,38 @@ public sealed class ViewerGame : Game
         if (_dude is not null && GetCritterState(_dude.Dude) is { } stats)
             _dudeAp = stats.MaxActionPoints;
         Log("Combat ends.");
+
+        if (_combatXpPending > 0)
+        {
+            AwardXp(_combatXpPending);
+            _combatXpPending = 0;
+        }
+    }
+
+    /// <summary>pcAddExperience: add XP, level up while thresholds pass —
+    /// each level adds EN/2+2 bonus max HP and heals the gain (stat.cc:771).</summary>
+    private void AwardXp(int amount)
+    {
+        if (amount <= 0)
+            return;
+        _dudeXp += amount;
+        Log($"You earn {amount} experience points.");
+        Console.WriteLine($"xp: +{amount} (total {_dudeXp}, level {_dudeLevel})");
+
+        while (_dudeLevel + 1 < Formats.Combat.Progression.MaxLevel
+            && _dudeXp >= Formats.Combat.Progression.XpForLevel(_dudeLevel + 1))
+        {
+            _dudeLevel++;
+            if (_dudeGcd is not null && _dude is not null)
+            {
+                int endurance = _dudeGcd.Stats.BaseStats[Formats.Combat.CritterStat.Endurance];
+                int gain = Formats.Combat.Progression.HpPerLevel(endurance);
+                _dudeGcd.Stats.BonusStats[Formats.Combat.CritterStat.MaximumHitPoints] += gain;
+                _dude.Dude.CurrentHp += gain; // the engine heals the delta
+            }
+            Log($"You have reached level {_dudeLevel}!");
+            Console.WriteLine($"level-up: now level {_dudeLevel}");
+        }
     }
 
     private void GameOver()
@@ -2808,7 +2873,8 @@ public sealed class ViewerGame : Game
         // AP/HP text HUD above the message log.
         if (_dude is not null && GetCritterState(_dude.Dude) is { } dudeStats)
         {
-            string hud = $"HP {dudeStats.CurrentHp}/{dudeStats.MaxHp}  AP {_dudeAp}/{dudeStats.MaxActionPoints}";
+            string hud = $"HP {dudeStats.CurrentHp}/{dudeStats.MaxHp}  AP {_dudeAp}/{dudeStats.MaxActionPoints}"
+                + $"  L{_dudeLevel} XP {_dudeXp}";
             if (_combatPhase != CombatPhase.Idle)
                 hud += $"  |  round {_combatRound}: "
                     + (_combatPhase == CombatPhase.PlayerTurn ? "your turn (F attack, Space end turn)" : "enemy turn");
@@ -3025,6 +3091,9 @@ public sealed class ViewerGame : Game
             Map = _currentMapName,
             DudeTile = _dude?.Dude.HexTile ?? _map.Header.EnteringTile,
             DudeRotation = _dude?.Dude.Rotation ?? 0,
+            DudeLevel = _dudeLevel,
+            DudeXp = _dudeXp,
+            DudeHp = _dude?.Dude.CurrentHp ?? -1,
             Elevation = _elevation,
             ClockTicks = _clock.Ticks,
             GlobalVars = new Dictionary<int, int>(_scriptHost?.GlobalVars ?? []),
@@ -3034,7 +3103,7 @@ public sealed class ViewerGame : Game
         };
         state.Save(SavePath);
         Log($"Game saved ({Path.GetFileName(SavePath)}).");
-        Console.WriteLine($"saved: map={state.Map} tile={state.DudeTile} clock={state.ClockTicks} items={state.DudeInventory.Count} maps={state.VisitedMaps.Count}");
+        Console.WriteLine($"saved: map={state.Map} tile={state.DudeTile} clock={state.ClockTicks} items={state.DudeInventory.Count} maps={state.VisitedMaps.Count} L{state.DudeLevel} xp={state.DudeXp} hp={state.DudeHp}");
     }
 
     private void LoadGame()
@@ -3079,6 +3148,26 @@ public sealed class ViewerGame : Game
         LoadMap(state.Map, new MapDestination(0, state.DudeTile, state.Elevation, state.DudeRotation),
             captureOutgoing: false);
 
+        // Progression: reload the pristine sheet and replay level-up HP gains
+        // (level-ups mutate the in-memory gcd bonus stats).
+        if (_dudeGcd is not null && _vfs.Exists(@"premade\player.gcd"))
+        {
+            using Stream gcdStream = _vfs.OpenRead(@"premade\player.gcd");
+            _dudeGcd = Formats.Combat.GcdFile.Load(gcdStream);
+        }
+        _dudeLevel = Math.Max(state.DudeLevel, 1);
+        _dudeXp = state.DudeXp;
+        if (_dudeGcd is not null)
+        {
+            int endurance = _dudeGcd.Stats.BaseStats[Formats.Combat.CritterStat.Endurance];
+            _dudeGcd.Stats.BonusStats[Formats.Combat.CritterStat.MaximumHitPoints] +=
+                (_dudeLevel - 1) * Formats.Combat.Progression.HpPerLevel(endurance);
+        }
+        if (_dude is not null)
+            _dude.Dude.CurrentHp = state.DudeHp > 0
+                ? state.DudeHp
+                : GetCritterState(_dude.Dude)?.MaxHp ?? _dude.Dude.CurrentHp;
+
         // Rebuild the dude's bag from prototypes.
         _dudeInventory.Clear();
         foreach (SaveState.SavedItem item in state.DudeInventory)
@@ -3088,7 +3177,7 @@ public sealed class ViewerGame : Game
         }
 
         Log("Game loaded.");
-        Console.WriteLine($"loaded: map={state.Map} tile={state.DudeTile} clock={state.ClockTicks} items={_dudeInventory.Count} maps={_visitedMaps.Count}");
+        Console.WriteLine($"loaded: map={state.Map} tile={state.DudeTile} clock={state.ClockTicks} items={_dudeInventory.Count} maps={_visitedMaps.Count} L{_dudeLevel} xp={_dudeXp} hp={_dude?.Dude.CurrentHp}");
     }
 
     private void SaveScreenshot(string path)

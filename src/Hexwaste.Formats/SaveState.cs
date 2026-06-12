@@ -23,6 +23,11 @@ public sealed class SaveState
     public string Map { get; set; } = "artemple.map";
     public int DudeTile { get; set; }
     public int DudeRotation { get; set; }
+    public int DudeLevel { get; set; } = 1;
+    public int DudeXp { get; set; }
+
+    /// <summary>Current HP; -1 = full (pre-progression saves).</summary>
+    public int DudeHp { get; set; } = -1;
     public int Elevation { get; set; }
     public long ClockTicks { get; set; }
     public Dictionary<int, int> GlobalVars { get; set; } = [];

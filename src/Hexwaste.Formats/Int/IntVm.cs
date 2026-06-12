@@ -87,6 +87,9 @@ public interface IVmExternals
     /// <summary>anim_busy (opAnimBusy): is the object mid-animation?</summary>
     bool AnimBusy(int objectHandle) => false;
 
+    /// <summary>give_exp_points (opGiveExpPoints → pcAddExperience).</summary>
+    void GiveExpPoints(int amount) { }
+
     /// <summary>fixed_param (opGetFixedParam) — map_enter: first-run flag; timed: timer param.</summary>
     int FixedParam() => 0;
 
@@ -931,6 +934,9 @@ public sealed class IntVm
             }
             case 0x80E7: // anim_busy
                 PushInt(_externals.AnimBusy(PopInt()) ? 1 : 0);
+                break;
+            case 0x80A1: // give_exp_points
+                _externals.GiveExpPoints(PopInt());
                 break;
             case 0x814C: // rotation_to_tile (pops destTile, srcTile)
             {
