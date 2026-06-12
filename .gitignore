@@ -36,3 +36,7 @@ maps.txt
 *.msg
 *.lst
 *.gam
+
+# Python
+__pycache__/
+*.pyc

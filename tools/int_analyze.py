@@ -33,7 +33,10 @@ import struct
 import sys
 from collections import Counter
 
-SRC = "/home/eko/dev/FPOC/reference/fallout2-ce/src"
+import os
+SRC = os.environ.get(
+    "FALLOUT2_CE_SRC",
+    os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "reference", "fallout2-ce", "src"))
 
 # ---------------------------------------------------------------- opcode names
 def load_opcode_names():
