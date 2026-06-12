@@ -103,6 +103,21 @@ public interface IVmExternals
 
     /// <summary>gdialog_barter / gdialog_set_barter_mod — out of scope, surface a notice.</summary>
     void Barter(int modifier) { }
+
+    // ---- door/container state (phase-4 M2); handle 0 must no-op like the
+    // engine's scriptPredefinedError paths.
+
+    /// <summary>obj_is_locked (objectIsLocked).</summary>
+    bool ObjIsLocked(int objectHandle) => false;
+
+    /// <summary>obj_lock / obj_unlock / jam_lock (jam treated as lock).</summary>
+    void ObjSetLocked(int objectHandle, bool locked) { }
+
+    /// <summary>obj_is_open (door frame != 0).</summary>
+    bool ObjIsOpen(int objectHandle) => false;
+
+    /// <summary>obj_open / obj_close — the host animates and re-blocks.</summary>
+    void ObjSetOpen(int objectHandle, bool open) { }
 }
 
 /// <summary>
@@ -865,6 +880,27 @@ public sealed class IntVm
             case 0x8129: // gdialog_barter
             case 0x814E: // gdialog_set_barter_mod
                 _externals.Barter(PopInt());
+                break;
+
+            // ---- door/container state
+            case 0x812D: // obj_is_locked
+                PushInt(_externals.ObjIsLocked(PopInt()) ? 1 : 0);
+                break;
+            case 0x812E: // obj_lock
+            case 0x814D: // jam_lock (PoC: a jammed lock is just a locked lock)
+                _externals.ObjSetLocked(PopInt(), true);
+                break;
+            case 0x812F: // obj_unlock
+                _externals.ObjSetLocked(PopInt(), false);
+                break;
+            case 0x8130: // obj_is_open
+                PushInt(_externals.ObjIsOpen(PopInt()) ? 1 : 0);
+                break;
+            case 0x8131: // obj_open
+                _externals.ObjSetOpen(PopInt(), true);
+                break;
+            case 0x8132: // obj_close
+                _externals.ObjSetOpen(PopInt(), false);
                 break;
 
             // ---- clock (ported from fallout2-ce scripts.cc gameTimeGetHour())

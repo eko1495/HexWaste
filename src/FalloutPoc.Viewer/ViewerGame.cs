@@ -91,6 +91,9 @@ public sealed class ViewerGame : Game
     /// <summary>Open dialog with the critter at this hex tile on start (testing).</summary>
     public int? TalkAtHex { get; set; }
 
+    /// <summary>Use/lockpick objects at hex tiles on start, in order (testing).</summary>
+    public List<(int Hex, bool Lockpick)> UseAtHexes { get; set; } = [];
+
     /// <summary>Auto-pick these option indices after --talk, printing a transcript (testing).</summary>
     public int[] AutoChoose { get; set; } = [];
     private string _currentMapName = "";
@@ -178,6 +181,8 @@ public sealed class ViewerGame : Game
             _scriptHost = new Formats.Int.ScriptHost(_vfs, Formats.Int.ScriptList.Load(_vfs))
             {
                 NameResolver = obj => ObjectName(obj),
+                IsOpenResolver = obj => _openDoors.Contains(obj),
+                OpenStateChanged = (obj, open) => SetDoorState(obj, open),
             };
         }
         catch (Exception ex) when (ex is FileNotFoundException or InvalidDataException)
@@ -203,6 +208,25 @@ public sealed class ViewerGame : Game
                 TravelTo(area);
             else
                 Console.Error.WriteLine($"no area {areaIndex} in city.txt");
+        }
+
+        foreach ((int hex, bool lockpick) in UseAtHexes)
+        {
+            MapObject? target = _solidObjects[_elevation].FirstOrDefault(o => o.HexTile == hex);
+            if (target is null)
+            {
+                Console.Error.WriteLine($"nothing at hex {hex}");
+                continue;
+            }
+
+            _camera.SetCenter(hex);
+            if (_dude is not null) // teleport adjacent so range checks pass (test plumbing)
+                _dude.Dude.HexTile = Formats.Hex.HexGrid.TileInDirection(hex, 3);
+            if (lockpick)
+                TryLockpick(target);
+            else
+                InteractWith(target);
+            Console.WriteLine($"{(lockpick ? "lockpick" : "use")}@{hex}: locked={target.IsLockedState} open={_openDoors.Contains(target)}");
         }
 
         if (TalkAtHex is { } talkHex)
@@ -348,6 +372,17 @@ public sealed class ViewerGame : Game
 
         StartLoopingAnimations();
         SpawnDude(spawnTile, spawnRotation);
+
+        // Run map-entry scripts: locks get set, containers stocked (M3),
+        // before lighting is computed.
+        if (_scriptHost is not null)
+        {
+            IEnumerable<MapObject> scripted = _flatObjects.Concat(_solidObjects)
+                .SelectMany(list => list)
+                .Where(o => o.Sid != -1 && o != _dude?.Dude);
+            _scriptHost.RunMapEnter(_map, scripted, _dude?.Dude);
+        }
+
         RebuildLighting();
 
         _camera.SetWindowSize(Window.ClientBounds.Width, Window.ClientBounds.Height);
@@ -449,6 +484,10 @@ public sealed class ViewerGame : Game
 
         if (IsKeyPressed(keyboard, Keys.T))
             ToggleWalkMode();
+
+        // L: lockpick the hovered door.
+        if (IsKeyPressed(keyboard, Keys.L) && _hoveredObject is { } lockTarget && IsDoor(lockTarget))
+            TryLockpick(lockTarget);
 
         // [ and ] adjust ambient light (day/night preview).
         if (IsKeyPressed(keyboard, Keys.OemOpenBrackets) || IsKeyPressed(keyboard, Keys.OemCloseBrackets))
@@ -920,6 +959,22 @@ public sealed class ViewerGame : Game
                 Console.WriteLine("too far from the door");
                 return;
             }
+
+            // Engine order (_obj_use_door): the script's use_p_proc runs first
+            // and may override the default open/close entirely.
+            var scripted = _scriptHost?.RunObjectProc(obj, _map, _dude?.Dude, "use_p_proc");
+            if (scripted is not null)
+                foreach (string line in scripted.Messages)
+                    Log(line);
+            if (scripted is { Overridden: true })
+                return;
+
+            if (obj.IsLockedState && !_openDoors.Contains(obj))
+            {
+                Log($"The {ObjectName(obj)} is locked.");
+                return;
+            }
+
             ToggleDoor(obj);
             return;
         }
@@ -936,6 +991,44 @@ public sealed class ViewerGame : Game
         }
 
         Console.WriteLine($"picked: {DescribeObject(obj)}");
+    }
+
+    /// <summary>Script-driven obj_open/obj_close: idempotent door state change.</summary>
+    private void SetDoorState(MapObject door, bool open)
+    {
+        if (_openDoors.Contains(door) != open)
+            ToggleDoor(door);
+    }
+
+    /// <summary>
+    /// Lockpick the hovered door: the script's use_skill_on_p_proc runs with
+    /// action_being_used = SKILL_LOCKPICK (9); without an override the default
+    /// attempt unlocks (PoC rolls always succeed).
+    /// </summary>
+    private void TryLockpick(MapObject door)
+    {
+        if (!IsAdjacentToDude(door))
+        {
+            Log("Too far away.");
+            return;
+        }
+
+        var scripted = _scriptHost?.RunObjectProc(door, _map, _dude?.Dude,
+            fixedParam: 0, actionBeingUsed: 9, "use_skill_on_p_proc");
+        if (scripted is not null)
+            foreach (string line in scripted.Messages)
+                Log(line);
+        if (scripted is { Overridden: true })
+            return;
+
+        if (!door.IsLockedState)
+        {
+            Log("It isn't locked.");
+            return;
+        }
+
+        door.IsLockedState = false;
+        Log($"You pick the lock on the {ObjectName(door)}.");
     }
 
     private void ToggleDoor(MapObject door)

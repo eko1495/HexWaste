@@ -54,8 +54,40 @@ public sealed class MapObject
     public int LightDistance { get; init; }
     public int LightIntensity { get; init; }
 
-    /// <summary>Script id (type in the high byte), or -1; key into MapFile.ScriptListIndexBySid.</summary>
+    /// <summary>Script id (type in the high byte), or -1; key into MapFile.ScriptsBySid.</summary>
     public int Sid { get; init; }
+
+    /// <summary>The serialized "updated flags" (items carry their lock bit here).</summary>
+    public int UpdatedFlags { get; set; }
+
+    /// <summary>Doors' openFlags (scenery subtype 0) — lock bit 0x02000000, jam 0x04000000.</summary>
+    public int DoorOpenFlags { get; set; }
+
+    /// <summary>
+    /// Lock state, ported from fallout2-ce proto_instance.cc objectIsLocked():
+    /// items check data.flags, scenery checks door.openFlags; OBJ_LOCKED = 0x02000000.
+    /// </summary>
+    public bool IsLockedState
+    {
+        get => FalloutPoc.Formats.Fid.PidType(Pid) switch
+        {
+            0 => (UpdatedFlags & 0x02000000) != 0, // item/container
+            2 => (DoorOpenFlags & 0x02000000) != 0, // scenery/door
+            _ => false,
+        };
+        set
+        {
+            switch (FalloutPoc.Formats.Fid.PidType(Pid))
+            {
+                case 0:
+                    UpdatedFlags = value ? UpdatedFlags | 0x02000000 : UpdatedFlags & ~0x02000000;
+                    break;
+                case 2:
+                    DoorOpenFlags = value ? DoorOpenFlags | 0x02000000 : DoorOpenFlags & ~0x02000000;
+                    break;
+            }
+        }
+    }
     public List<MapObject> Inventory { get; } = [];
 
     // ported from fallout2-ce src/obj_types.h
@@ -335,7 +367,10 @@ public sealed class MapFile
             return inventoryLength;
         }
 
-        reader.Skip(4); // updated flags
+        int updatedFlags = reader.ReadInt32();
+        if (updatedFlags == unchecked((int)0xCCCCCCCC))
+            updatedFlags = 0; // engine: "Reading pud: updated_flags was un-Set!"
+        obj.UpdatedFlags = updatedFlags;
 
         switch ((ObjectType)pidType)
         {
@@ -353,7 +388,7 @@ public sealed class MapFile
                 switch (protos.Get(obj.Pid).SubType)
                 {
                     case 0: // SCENERY_TYPE_DOOR
-                        reader.Skip(4); // openFlags
+                        obj.DoorOpenFlags = reader.ReadInt32();
                         break;
                     case 1: // SCENERY_TYPE_STAIRS: builtTile then map
                     {

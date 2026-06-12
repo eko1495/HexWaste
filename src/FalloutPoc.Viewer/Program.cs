@@ -12,6 +12,7 @@ Microsoft.Xna.Framework.Point? examine = null;
 Microsoft.Xna.Framework.Point? talk = null;
 int[] choose = [];
 int? talkHex = null;
+List<(int, bool)> useHexes = [];
 int? gotoTile = null;
 int? doorTile = null;
 double ambient = 1.0;
@@ -81,6 +82,12 @@ for (int i = 0; i < args.Length; i++)
         case "--talk-hex" when i + 1 < args.Length:
             talkHex = int.Parse(args[++i]);
             break;
+        case "--use-hex" when i + 1 < args.Length:
+            useHexes.Add((int.Parse(args[++i]), false));
+            break;
+        case "--lockpick-hex" when i + 1 < args.Length:
+            useHexes.Add((int.Parse(args[++i]), true));
+            break;
         case "--game-dir" when i + 1 < args.Length:
             gameDir = args[++i];
             break;
@@ -113,6 +120,7 @@ using var game = new ViewerGame(gameDir, mapName, screenshot, roofs)
     ExamineAt = examine,
     TalkAt = talk,
     TalkAtHex = talkHex,
+    UseAtHexes = useHexes,
     AutoChoose = choose,
     WalkToTile = gotoTile,
     ToggleDoorAtTile = doorTile,

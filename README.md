@@ -30,7 +30,8 @@ All six milestones are complete.
 | mouse drag / arrow keys | pan (hold Shift for fast) |
 | hover / click | highlight object under cursor; click prints its PID/FID |
 | click open ground | dude walks there (A* on the hex grid, camera follows) |
-| click a door (adjacent) | opens/closes it — open doors stop blocking paths |
+| click a door (adjacent) | opens/closes it — scripts may lock it (map_enter runs for real) |
+| L on a hovered locked door | lockpick |
 | right-click an object | examine — name + description in the message log |
 | click a critter (nearby) | talk — real scripted dialog (keys 1–9 or click to choose) |
 | click stairs/ladder (adjacent) | travel to their destination (may load another map) |

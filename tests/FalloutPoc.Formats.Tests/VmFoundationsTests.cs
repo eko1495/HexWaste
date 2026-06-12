@@ -121,6 +121,27 @@ public class VmFoundationsTests
     }
 
     [GameDataFact]
+    public void MapEnterScriptsLockDoors()
+    {
+        using var vfs = GameFileSystem.Open(GameData.RequiredDir);
+        var protos = new ProtoDatabase(vfs);
+        var host = new ScriptHost(vfs, ScriptList.Load(vfs));
+
+        using Stream stream = vfs.OpenRead(@"maps\denbus1.map");
+        MapFile map = MapFile.Load(stream, protos);
+        List<MapObject> objects = map.Elevations[0]!.Objects;
+
+        Assert.Equal(0, objects.Count(o => o.IsLockedState)); // pristine flags
+
+        host.RunMapEnter(map, objects.Where(o => o.Sid != -1), null);
+
+        // The Den's scripts lock at least Mom's door (hex 16862) at map entry.
+        Assert.True(objects.Count(o => o.IsLockedState) >= 2,
+            "map_enter scripts locked no doors");
+        Assert.Contains(objects, o => o.HexTile == 16862 && o.IsLockedState);
+    }
+
+    [GameDataFact]
     public void ScriptsLstCarriesLocalVarCounts()
     {
         using var vfs = GameFileSystem.Open(GameData.RequiredDir);

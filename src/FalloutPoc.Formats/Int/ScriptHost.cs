@@ -43,6 +43,12 @@ public sealed class ScriptHost(GameFileSystem vfs, ScriptList scripts)
     /// <summary>Resolves object names for the VM (set by the host application).</summary>
     public Func<MapObject, string>? NameResolver { get; set; }
 
+    /// <summary>Resolves whether a door/container is currently open (set by the host).</summary>
+    public Func<MapObject, bool>? IsOpenResolver { get; set; }
+
+    /// <summary>Applies a script-driven open/close (animate, unblock — set by the host).</summary>
+    public Action<MapObject, bool>? OpenStateChanged { get; set; }
+
     /// <summary>Diagnostic sink for arity-stubbed externals.</summary>
     public Action<string>? OnStubbedExternal { get; set; }
 
@@ -65,12 +71,58 @@ public sealed class ScriptHost(GameFileSystem vfs, ScriptList scripts)
     /// proc / the VM fails (soft fallback).
     /// </summary>
     public ScriptRunResult? RunObjectProc(MapObject obj, MapFile map, MapObject? dude,
-        params string[] procedureNames)
+        params string[] procedureNames) =>
+        RunObjectProc(obj, map, dude, 0, -1, procedureNames);
+
+    public ScriptRunResult? RunObjectProc(MapObject obj, MapFile map, MapObject? dude,
+        int fixedParam, int actionBeingUsed, params string[] procedureNames)
     {
         if (obj.Sid == -1 || !map.ScriptsBySid.TryGetValue(obj.Sid, out MapScriptRecord? record))
             return null;
 
-        string? path = scripts.GetScriptPath(record.ScriptListIndex);
+        return RunProc(record.ScriptListIndex, map, obj.Sid, record, obj, dude,
+            fixedParam, actionBeingUsed, procedureNames);
+    }
+
+    /// <summary>
+    /// Runs map-entry scripts like fallout2-ce map.cc:952-975 +
+    /// scripts.cc scriptExecMapEnterScripts(): the MAP script first
+    /// (scripts.lst index = header.ScriptIndex - 1) with fixedParam =
+    /// first-run flag, then every scripted object's map_enter_p_proc.
+    /// </summary>
+    public void RunMapEnter(MapFile map, IEnumerable<MapObject> objects, MapObject? dude)
+    {
+        int firstRun = (map.Header.Flags & 0x01) == 0 ? 1 : 0;
+
+        if (map.Header.ScriptIndex > 0)
+        {
+            // The map script has no real owner object; synthesize one.
+            var owner = new MapObject
+            {
+                Id = -2,
+                HexTile = 1,
+                X = 0,
+                Y = 0,
+                Frame = 0,
+                Rotation = 0,
+                Fid = Fid.Build(ObjectType.Misc, 12),
+                Flags = 0,
+                Pid = 0x05000010,
+                Sid = -1,
+            };
+            var record = new MapScriptRecord(map.Header.ScriptIndex - 1, -1, 0);
+            RunProc(record.ScriptListIndex, map, sid: -2, record, owner, dude,
+                firstRun, -1, ["map_enter_p_proc"]);
+        }
+
+        foreach (MapObject obj in objects)
+            RunObjectProc(obj, map, dude, firstRun, -1, "map_enter_p_proc");
+    }
+
+    private ScriptRunResult? RunProc(int scriptListIndex, MapFile map, int sid, MapScriptRecord record,
+        MapObject self, MapObject? dude, int fixedParam, int actionBeingUsed, string[] procedureNames)
+    {
+        string? path = scripts.GetScriptPath(scriptListIndex);
         if (path is null)
             return null;
 
@@ -80,7 +132,11 @@ public sealed class ScriptHost(GameFileSystem vfs, ScriptList scripts)
             if (program is null)
                 return null;
 
-            var externals = new ScriptContext(this, map, obj.Sid, record, self: obj, source: dude, dude: dude);
+            var externals = new ScriptContext(this, map, sid, record, self: self, source: dude, dude: dude)
+            {
+                FixedParamValue = fixedParam,
+                ActionBeingUsedValue = actionBeingUsed,
+            };
             var vm = new IntVm(program, externals, OnStubbedExternal);
             foreach (string name in procedureNames)
             {
@@ -374,5 +430,25 @@ public sealed class ScriptHost(GameFileSystem vfs, ScriptList scripts)
         }
 
         public void Barter(int modifier) => Messages.Add("[Barter is not part of this PoC.]");
+
+        // ---- door/container state (handle 0 no-ops like the engine)
+
+        public bool ObjIsLocked(int objectHandle) =>
+            _host.ObjectOf(objectHandle)?.IsLockedState ?? false;
+
+        public void ObjSetLocked(int objectHandle, bool locked)
+        {
+            if (_host.ObjectOf(objectHandle) is { } obj)
+                obj.IsLockedState = locked;
+        }
+
+        public bool ObjIsOpen(int objectHandle) =>
+            _host.ObjectOf(objectHandle) is { } obj && (_host.IsOpenResolver?.Invoke(obj) ?? false);
+
+        public void ObjSetOpen(int objectHandle, bool open)
+        {
+            if (_host.ObjectOf(objectHandle) is { } obj)
+                _host.OpenStateChanged?.Invoke(obj, open);
+        }
     }
 }
