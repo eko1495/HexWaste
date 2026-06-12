@@ -129,6 +129,9 @@ for (int i = 0; i < args.Length; i++)
         case "--use-item" when i + 1 < args.Length:
             actions.Add(new ViewerGame.StartupAction.UseItemByPid(int.Parse(args[++i])));
             break;
+        case "--recruit" when i + 1 < args.Length:
+            actions.Add(new ViewerGame.StartupAction.Recruit(int.Parse(args[++i])));
+            break;
         case "--use-on" when i + 1 < args.Length:
         {
             string[] parts = args[++i].Split(':');

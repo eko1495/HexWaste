@@ -101,9 +101,17 @@ public sealed class ScriptHost(GameFileSystem vfs, ScriptList scripts, Hexwaste.
     /// applies HP loss and the death path.</summary>
     public Action<MapObject, int, bool>? CritterDamaged { get; set; }
 
+    /// <summary>The party roster (engine party.cc list, minimum cut): scripts
+    /// add/remove; party_member_obj answers by pid; the host carries members
+    /// across maps.</summary>
+    public List<MapObject> PartyMembers { get; } = [];
+
+    /// <summary>A script recruited (true) or dismissed (false) this critter.</summary>
+    public Action<MapObject, bool>? PartyChanged { get; set; }
+
     /// <summary>Runtime sid for a script-created object (engine scr_new): a
     /// fresh type-3 sid registered into the map's script table.</summary>
-    internal int AllocateSid(MapFile map, int scriptIndex)
+    public int AllocateSid(MapFile map, int scriptIndex)
     {
         int sid = 0x03000000 | 0x00800000; // synthetic range, clear of map sids
         while (map.ScriptsBySid.ContainsKey(sid))
@@ -924,6 +932,24 @@ public sealed class ScriptHost(GameFileSystem vfs, ScriptList scripts, Hexwaste.
         public void GiveExpPoints(int amount) => _host.ExpAwarded?.Invoke(amount);
 
         public void PlayMovie(int movieId) => _host.MoviePlayed?.Invoke(movieId);
+
+        public void PartyAdd(int objectHandle)
+        {
+            if (_host.ObjectOf(objectHandle) is not { } obj || _host.PartyMembers.Contains(obj))
+                return;
+            _host.PartyMembers.Add(obj);
+            _host.PartyChanged?.Invoke(obj, true);
+        }
+
+        public void PartyRemove(int objectHandle)
+        {
+            if (_host.ObjectOf(objectHandle) is not { } obj || !_host.PartyMembers.Remove(obj))
+                return;
+            _host.PartyChanged?.Invoke(obj, false);
+        }
+
+        public int PartyMemberByPid(int pid) =>
+            _host.HandleOf(_host.PartyMembers.FirstOrDefault(m => m.Pid == pid));
 
         // ported from fallout2-ce interpreter_extra.cc opCritterDamage()
         public void CritterDamage(int objectHandle, int amount, int damageTypeWithFlags)

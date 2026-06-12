@@ -40,6 +40,9 @@ public sealed class SaveState
     /// <summary>Per-map LVAR slices: mapName → sid → values.</summary>
     public Dictionary<string, Dictionary<int, int[]>> LocalVars { get; set; } = [];
 
+    /// <summary>The party roster (travels outside any map's delta).</summary>
+    public List<PartyMemberState> Party { get; set; } = [];
+
     /// <summary>Flags carries the equip bits (in-hand 0x3000000, worn 0x4000000).
     /// Ammo sentinels: -1 = derive from the prototype on load (V2).</summary>
     public sealed record SavedItem(int Pid, int Count, int Flags = 0,
@@ -52,6 +55,11 @@ public sealed class SaveState
 
     /// <summary>A pristine object's new position (V2).</summary>
     public sealed record MovedObject(int Ordinal, int Tile, int Elevation, int Rotation);
+
+    /// <summary>A recruited companion traveling with the dude (additive V2
+    /// field; absent in older saves → empty roster).</summary>
+    public sealed record PartyMemberState(int Pid, int ScriptListIndex, int Hp, int Team,
+        int AiPacket, List<SavedItem> Inventory);
 
     public sealed class MapDelta
     {

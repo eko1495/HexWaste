@@ -119,6 +119,13 @@ public sealed class ViewerGame : Game
     /// <summary>Movie caption card (play_gmovie): title + .sve subtitle lines.</summary>
     private List<string>? _movieCard;
 
+    /// <summary>scripts.lst index per party member — their follow script gets
+    /// re-bound on every map (fresh sid via AllocateSid).</summary>
+    private readonly Dictionary<MapObject, int> _partyScriptIndex = [];
+    private readonly Queue<MapObject> _allyQueue = new();
+    private MapObject? _actingAlly;
+    private int _actingAllyAp;
+
     /// <summary>Armed "use item on object": the next click applies the item.</summary>
     private MapObject? _pendingUseItem;
 
@@ -195,6 +202,7 @@ public sealed class ViewerGame : Game
         public sealed record Give(int Pid, int Count) : StartupAction;
         public sealed record UseItemByPid(int Pid) : StartupAction;
         public sealed record UseOn(int Pid, int Hex) : StartupAction;
+        public sealed record Recruit(int Hex) : StartupAction;
         public sealed record Buy(int Pid) : StartupAction;
         public sealed record Sell(int Pid) : StartupAction;
         public sealed record EndBarter : StartupAction;
@@ -344,6 +352,7 @@ public sealed class ViewerGame : Game
                 MapStartOverridden = (tile, elevation, rotation) => OverrideDudeStart(tile, elevation, rotation),
                 MoviePlayed = movieId => ShowMovieCard(movieId),
                 CritterDamaged = (victim, amount, bypassArmor) => OnScriptDamage(victim, amount, bypassArmor),
+                PartyChanged = (critter, joined) => OnPartyChanged(critter, joined),
                 AnimBusyResolver = obj => _animator.TryGetState(obj, out _)
                     || (_npcWalkers.TryGetValue(obj, out DudeController? walker) && walker.Moving),
                 DudeTraits = _dudeGcd?.Traits ?? [-1, -1],
@@ -614,6 +623,19 @@ public sealed class ViewerGame : Game
                         Console.Error.WriteLine($"use-item: pid 0x{usePid:X8} not in bag");
                     break;
                 }
+                case StartupAction.Recruit(var recruitHex):
+                {
+                    MapObject? critter = _solidObjects[_elevation].FirstOrDefault(o =>
+                        o.HexTile == recruitHex && Fid.Type(o.Fid) is ObjectType.Critter && !o.IsDead);
+                    if (critter is null || _scriptHost is null)
+                    {
+                        Console.Error.WriteLine($"recruit: no critter at {recruitHex}");
+                        break;
+                    }
+                    _scriptHost.PartyMembers.Add(critter);
+                    OnPartyChanged(critter, joined: true);
+                    break;
+                }
                 case StartupAction.UseOn(var usePid2, var useHex2):
                 {
                     MapObject? item = _dudeInventory.FirstOrDefault(i => i.Pid == usePid2);
@@ -727,7 +749,10 @@ public sealed class ViewerGame : Game
         // revisit can replay it over the pristine file (engine: SAVE.DAT
         // serializes whole visited maps; the PoC keeps deltas instead).
         if (captureOutgoing && _map is not null)
+        {
+            ExtractPartyFromMap();
             CaptureMapDelta();
+        }
 
         if (_stubbedExternals.Count > 0)
         {
@@ -840,6 +865,7 @@ public sealed class ViewerGame : Game
         }
         if (delta is not null)
             ApplyDeltaAfterScripts(delta);
+        InjectPartyMembers();
 
         RebuildLighting();
 
@@ -2405,8 +2431,16 @@ public sealed class ViewerGame : Game
             }
         }
 
-        if (!xpOverridden && killer == _dude?.Dude && GetCritterState(critter) is { } stats)
+        // Engine: kills by the dude OR his team accrue XP (combat.cc:4860).
+        bool dudeTeamKill = killer == _dude?.Dude || (killer is not null && killer.Team == 0);
+        if (!xpOverridden && dudeTeamKill && GetCritterState(critter) is { } stats)
             _combatXpPending += stats.Proto.Experience;
+
+        if (_scriptHost?.PartyMembers.Remove(critter) == true)
+        {
+            _partyScriptIndex.Remove(critter);
+            Log($"{ObjectName(critter)} has fallen.");
+        }
 
         critter.CombatResults |= 0x80; // DAM_DEAD
         critter.Sid = -1; // the engine removes the script on death (combat.cc:4876)
@@ -2506,6 +2540,11 @@ public sealed class ViewerGame : Game
         foreach (MapObject hostile in _hostiles.Where(h => !h.IsDead)
             .OrderByDescending(h => GetCritterState(h)?.Sequence ?? 0))
             _enemyQueue.Enqueue(hostile);
+
+        _allyQueue.Clear();
+        _actingAlly = null;
+        foreach (MapObject ally in (_scriptHost?.PartyMembers ?? []).Where(m => !m.IsDead))
+            _allyQueue.Enqueue(ally);
     }
 
     /// <summary>One critter_p_proc per game tick, round-robin — the flattened
@@ -2635,6 +2674,9 @@ public sealed class ViewerGame : Game
         if (_actingEnemy is { } moving && _npcWalkers.TryGetValue(moving, out DudeController? movingWalker)
             && movingWalker.Moving)
             return;
+        if (_actingAlly is { } movingAlly && _npcWalkers.TryGetValue(movingAlly, out DudeController? allyWalker)
+            && allyWalker.Moving)
+            return;
 
         if (_dude is { } dude && dude.Dude.CurrentHp <= 0)
         {
@@ -2673,6 +2715,26 @@ public sealed class ViewerGame : Game
             _actingEnemy = null;
         }
 
+        // Companions take their swings after the hostiles.
+        if (_actingAlly is { } actingAlly && !actingAlly.IsDead)
+        {
+            if (TryAllyAction(actingAlly))
+                return;
+            _actingAlly = null;
+        }
+
+        while (_allyQueue.Count > 0)
+        {
+            MapObject ally = _allyQueue.Dequeue();
+            if (ally.IsDead)
+                continue;
+            _actingAlly = ally;
+            _actingAllyAp = GetCritterState(ally)?.MaxActionPoints ?? 5;
+            if (TryAllyAction(ally))
+                return;
+            _actingAlly = null;
+        }
+
         // Everyone acted: next round.
         _combatRound++;
         AddJoiners();
@@ -2689,7 +2751,22 @@ public sealed class ViewerGame : Game
         if (_dude is null)
             return false;
 
-        int dudeTile = _dude.Dude.HexTile;
+        // Enemies pick the nearest of the dude and his living companions.
+        MapObject defenderObj = _dude.Dude;
+        int bestDistance = Formats.Hex.HexGrid.Distance(enemy.HexTile, _dude.Dude.HexTile);
+        foreach (MapObject ally in _scriptHost?.PartyMembers ?? [])
+        {
+            if (ally.IsDead)
+                continue;
+            int d = Formats.Hex.HexGrid.Distance(enemy.HexTile, ally.HexTile);
+            if (d < bestDistance)
+            {
+                bestDistance = d;
+                defenderObj = ally;
+            }
+        }
+
+        int dudeTile = defenderObj.HexTile;
         (ProtoInfo? enemyWeapon, MapObject? enemyWeaponItem) = EquippedWeapon(enemy);
         bool enemyGun = enemyWeapon?.Weapon is { } ew && ew.IsGun(enemyWeapon.ExtendedFlags);
         int enemyDistance = Formats.Hex.HexGrid.Distance(enemy.HexTile, dudeTile);
@@ -2717,7 +2794,7 @@ public sealed class ViewerGame : Game
         if (enemyGun && enemyDistance <= attackRange)
         {
             (MapObject? blocker, enemyCritters) = Formats.Combat.LineOfFire.Trace(
-                enemy.HexTile, dudeTile, tile => ShootBlockerAt(tile, enemy, _dude.Dude));
+                enemy.HexTile, dudeTile, tile => ShootBlockerAt(tile, enemy, defenderObj));
             shotBlocked = blocker is not null;
         }
 
@@ -2726,7 +2803,7 @@ public sealed class ViewerGame : Game
             if (_actingEnemyAp < attackCost)
                 return false;
             _actingEnemyAp -= attackCost;
-            EnemyAttack(enemy, enemyWeapon, enemyWeaponItem, enemyDistance, enemyCritters);
+            EnemyAttack(enemy, defenderObj, enemyWeapon, enemyWeaponItem, enemyDistance, enemyCritters);
             return true;
         }
 
@@ -2745,21 +2822,94 @@ public sealed class ViewerGame : Game
         return StartNpcWalk(enemy, targetTile);
     }
 
-    private void EnemyAttack(MapObject enemy, ProtoInfo? weaponProto, MapObject? weaponItem,
-        int distance, int crittersInPath)
+    /// <summary>A companion's action: punch/shoot the nearest living hostile,
+    /// else approach it — the same minimal AI the enemies run.</summary>
+    private bool TryAllyAction(MapObject ally)
+    {
+        MapObject? target = _hostiles.Where(h => !h.IsDead)
+            .OrderBy(h => Formats.Hex.HexGrid.Distance(ally.HexTile, h.HexTile))
+            .FirstOrDefault();
+        if (target is null)
+            return false;
+
+        (ProtoInfo? weaponProto, MapObject? weaponItem) = EquippedWeapon(ally);
+        bool isGun = weaponProto?.Weapon is { } w && w.IsGun(weaponProto.ExtendedFlags);
+        int distance = Formats.Hex.HexGrid.Distance(ally.HexTile, target.HexTile);
+
+        if (isGun && WeaponAmmo(weaponProto!, weaponItem!) <= 0)
+        {
+            if (_actingAllyAp >= Formats.Combat.RangedMath.ReloadApCost
+                && TryReload(ally, weaponProto!, weaponItem!))
+            {
+                _actingAllyAp -= Formats.Combat.RangedMath.ReloadApCost;
+                return true;
+            }
+            weaponProto = null;
+            weaponItem = null;
+            isGun = false;
+        }
+
+        int range = isGun ? weaponProto!.Weapon!.MaxRange1
+            : Math.Min(weaponProto?.Weapon?.MaxRange1 ?? 1, 2);
+        int apCost = weaponProto?.Weapon?.ApCost ?? Formats.Combat.CombatMath.PunchApCost;
+        int crittersInPath = 0;
+        bool blocked = false;
+        if (isGun && distance <= range)
+        {
+            (MapObject? blocker, crittersInPath) = Formats.Combat.LineOfFire.Trace(
+                ally.HexTile, target.HexTile, tile => ShootBlockerAt(tile, ally, target));
+            blocked = blocker is not null;
+        }
+
+        if (distance <= range && !blocked)
+        {
+            if (_actingAllyAp < apCost)
+                return false;
+            _actingAllyAp -= apCost;
+            if (GetCritterState(ally) is not { } attacker || GetCritterState(target) is not { } defender)
+                return false;
+            ally.Rotation = Formats.Hex.HexGrid.RotationTo(ally.HexTile, target.HexTile);
+            (int chance, bool hit, int damage) = RollAttack(attacker, defender, weaponProto, weaponItem,
+                distance, crittersInPath, attackerIsDude: false);
+            if (isGun && weaponItem is not null)
+                weaponItem.AmmoQuantity = WeaponAmmo(weaponProto!, weaponItem) - 1;
+            _pendingAttack = new PendingAttack(ally, target, chance, hit, damage);
+            Console.WriteLine($"ally-attack {ObjectName(ally)} -> {ObjectName(target)}@{target.HexTile}"
+                + $"{(weaponProto is null ? "" : $" [{ObjectNameByPid(weaponProto.Pid)}]")}: chance={chance}% hit={hit} damage={damage}");
+            PlayWeaponSfx(weaponProto);
+            StartAttackAnimation(ally, weaponProto);
+            return true;
+        }
+
+        if (_actingAllyAp < 1)
+            return false;
+        byte[]? path = Formats.Hex.Pathfinder.FindPath(ally.HexTile, target.HexTile,
+            tile => _blockedTiles.Contains(tile));
+        if (path is null || path.Length <= 1)
+            return false;
+        int steps = Math.Min(path.Length - 1, _actingAllyAp);
+        _actingAllyAp -= steps;
+        int walkTarget = ally.HexTile;
+        for (int i = 0; i < steps; i++)
+            walkTarget = Formats.Hex.HexGrid.TileInDirection(walkTarget, path[i]);
+        return StartNpcWalk(ally, walkTarget);
+    }
+
+    private void EnemyAttack(MapObject enemy, MapObject defenderObj, ProtoInfo? weaponProto,
+        MapObject? weaponItem, int distance, int crittersInPath)
     {
         if (_dude is null || GetCritterState(enemy) is not { } attacker
-            || GetCritterState(_dude.Dude) is not { } defender)
+            || GetCritterState(defenderObj) is not { } defender)
             return;
 
-        enemy.Rotation = Formats.Hex.HexGrid.RotationTo(enemy.HexTile, _dude.Dude.HexTile);
+        enemy.Rotation = Formats.Hex.HexGrid.RotationTo(enemy.HexTile, defenderObj.HexTile);
 
         bool isGun = weaponProto?.Weapon is { } w && w.IsGun(weaponProto.ExtendedFlags);
         (int chance, bool hit, int damage) = RollAttack(attacker, defender, weaponProto, weaponItem,
             distance, crittersInPath, attackerIsDude: false);
         if (isGun && weaponItem is not null)
             weaponItem.AmmoQuantity = WeaponAmmo(weaponProto!, weaponItem) - 1;
-        _pendingAttack = new PendingAttack(enemy, _dude.Dude, chance, hit, damage);
+        _pendingAttack = new PendingAttack(enemy, defenderObj, chance, hit, damage);
         Console.WriteLine($"enemy-attack {ObjectName(enemy)}@{enemy.HexTile}"
             + $"{(weaponProto is null ? "" : $" [{ObjectNameByPid(weaponProto.Pid)}{(isGun ? $" d{distance}" : "")}]")}: chance={chance}% hit={hit} damage={damage}");
 
@@ -4090,6 +4240,77 @@ public sealed class ViewerGame : Game
         Console.WriteLine($"override_map_start: tile={tile} elevation={elevation} rotation={rotation}");
     }
 
+    /// <summary>Recruit/dismiss bookkeeping: remember the follow script's
+    /// list index so transitions can re-bind it on the next map.</summary>
+    private void OnPartyChanged(MapObject critter, bool joined)
+    {
+        if (joined)
+        {
+            critter.Team = 0; // the dude's team (scripts also critter_add_trait it)
+            critter.WhoHitMeCid = 0;
+            _hostiles.Remove(critter);
+            if (critter.Sid != -1 && _map.ScriptsBySid.TryGetValue(critter.Sid, out MapScriptRecord? record))
+                _partyScriptIndex[critter] = record.ScriptListIndex;
+            Log($"{ObjectName(critter)} joins you.");
+            Console.WriteLine($"party: {ObjectName(critter)} joined (script {_partyScriptIndex.GetValueOrDefault(critter, -1)})");
+        }
+        else
+        {
+            _partyScriptIndex.Remove(critter);
+            Log($"{ObjectName(critter)} leaves.");
+            Console.WriteLine($"party: {ObjectName(critter)} left");
+        }
+    }
+
+    /// <summary>Companions travel OUTSIDE the per-map deltas: pulled from the
+    /// outgoing map before capture (their ordinals read as taken) and
+    /// injected next to the dude after the new map's delta applies.</summary>
+    private void ExtractPartyFromMap()
+    {
+        if (_scriptHost is null)
+            return;
+        foreach (MapObject member in _scriptHost.PartyMembers)
+        {
+            foreach (MapElevation? elev in _map.Elevations)
+                elev?.Objects.Remove(member);
+            foreach (List<MapObject> list in _flatObjects.Concat(_solidObjects))
+                list.Remove(member);
+            _npcWalkers.Remove(member);
+            _homeTiles.Remove(member);
+        }
+    }
+
+    private void InjectPartyMembers()
+    {
+        if (_scriptHost is null || _dude is null || _map.Elevations[_elevation] is not { } elev)
+            return;
+        foreach (MapObject member in _scriptHost.PartyMembers)
+        {
+            int spawn = _dude.Dude.HexTile;
+            for (int rotation = 0; rotation < 6; rotation++)
+            {
+                int candidate = Formats.Hex.HexGrid.TileInDirection(_dude.Dude.HexTile, rotation);
+                if (!_blockedTiles.Contains(candidate))
+                {
+                    spawn = candidate;
+                    break;
+                }
+            }
+
+            member.HexTile = spawn;
+            // Fresh script binding on this map so the follow critter_p_proc
+            // keeps running (sids are per-map).
+            if (_partyScriptIndex.TryGetValue(member, out int scriptIndex) && scriptIndex >= 0)
+                member.Sid = _scriptHost.AllocateSid(_map, scriptIndex);
+            elev.Objects.Add(member);
+            if (!_solidObjects[_elevation].Contains(member))
+                InsertSorted(_solidObjects[_elevation], member);
+        }
+
+        if (_scriptHost.PartyMembers.Count > 0)
+            RebuildBlockedTiles(_dude.Dude);
+    }
+
     /// <summary>Script-inflicted damage (traps): armor applies unless the
     /// script set the bypass flag; deaths reuse the combat path.</summary>
     private void OnScriptDamage(MapObject victim, int amount, bool bypassArmor)
@@ -4218,6 +4439,11 @@ public sealed class ViewerGame : Game
             DudeInventory = [.. _dudeInventory.Select(i => new SaveState.SavedItem(i.Pid, i.StackCount, i.Flags & (MapObject.FlagInLeftHand | MapObject.FlagInRightHand | MapObject.FlagWorn), i.AmmoQuantity, i.AmmoTypePid))],
             VisitedMaps = new Dictionary<string, SaveState.MapDelta>(_visitedMaps),
             LocalVars = _scriptHost?.ExportAllLocalVars() ?? [],
+            Party = [.. (_scriptHost?.PartyMembers ?? []).Select(m => new SaveState.PartyMemberState(
+                m.Pid, _partyScriptIndex.GetValueOrDefault(m, -1), m.CurrentHp, m.Team, m.AiPacket,
+                m.Inventory.Select(i => new SaveState.SavedItem(i.Pid, Math.Max(i.StackCount, 1),
+                    i.Flags & (MapObject.FlagInLeftHand | MapObject.FlagInRightHand | MapObject.FlagWorn),
+                    i.AmmoQuantity, i.AmmoTypePid)).ToList()))],
         };
         state.Save(SavePath);
         Log($"Game saved ({Path.GetFileName(SavePath)}).");
@@ -4260,6 +4486,9 @@ public sealed class ViewerGame : Game
         _visitedMaps.Clear();
         foreach ((string mapName, SaveState.MapDelta delta) in state.VisitedMaps)
             _visitedMaps[mapName] = delta;
+
+        _scriptHost?.PartyMembers.Clear();
+        _partyScriptIndex.Clear();
 
         // captureOutgoing: false — the pre-load world must not leak into the
         // freshly imported VisitedMaps.
@@ -4309,6 +4538,34 @@ public sealed class ViewerGame : Game
                     }
                 }
             }
+        }
+
+        // Rebuild the companions and stand them next to the dude.
+        if (_scriptHost is not null)
+        {
+            foreach (SaveState.PartyMemberState saved in state.Party)
+            {
+                if (RebuildObject(saved.Pid, 1) is not { } member)
+                    continue;
+                member.CurrentHp = saved.Hp;
+                member.Team = saved.Team;
+                member.AiPacket = saved.AiPacket;
+                foreach (SaveState.SavedItem item in saved.Inventory)
+                {
+                    if (RebuildObject(item.Pid, item.Count) is { } obj)
+                    {
+                        obj.Flags |= item.Flags;
+                        obj.AmmoQuantity = item.AmmoQuantity;
+                        obj.AmmoTypePid = item.AmmoTypePid;
+                        member.Inventory.Add(obj);
+                    }
+                }
+
+                _scriptHost.PartyMembers.Add(member);
+                if (saved.ScriptListIndex >= 0)
+                    _partyScriptIndex[member] = saved.ScriptListIndex;
+            }
+            InjectPartyMembers();
         }
 
         Log("Game loaded.");

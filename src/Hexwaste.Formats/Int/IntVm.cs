@@ -158,6 +158,15 @@ public interface IVmExternals
     /// bypass armor, 0x200 = no animation; low bits = damage type.</summary>
     void CritterDamage(int objectHandle, int amount, int damageTypeWithFlags) { }
 
+    /// <summary>party_add / party_remove (opPartyAdd/opPartyRemove).</summary>
+    void PartyAdd(int objectHandle) { }
+
+    void PartyRemove(int objectHandle) { }
+
+    /// <summary>party_member_obj (opGetPartyMember): handle of the party
+    /// member with this pid, or 0.</summary>
+    int PartyMemberByPid(int pid) => 0;
+
     // ---- door/container state (phase-4 M2); handle 0 must no-op like the
     // engine's scriptPredefinedError paths.
 
@@ -1106,6 +1115,15 @@ public sealed class IntVm
                 break;
             case 0x8115: // play_gmovie
                 _externals.PlayMovie(PopInt());
+                break;
+            case 0x8124: // party_add
+                _externals.PartyAdd(PopInt());
+                break;
+            case 0x8125: // party_remove
+                _externals.PartyRemove(PopInt());
+                break;
+            case 0x814B: // party_member_obj (pops pid, pushes handle)
+                PushInt(_externals.PartyMemberByPid(PopInt()));
                 break;
             case 0x80EF: // critter_damage (pops typeWithFlags, amount, obj)
             {
