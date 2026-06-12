@@ -114,6 +114,28 @@ GOTCHAS: map_enter must run HIDDEN scripted objects (shop boxes);
 the dude's bag is ALIASED to dude.Inventory (caps externals); --attack
 is a free-swing primitive (resets combat), --fight runs real turns.
 
+Phase 7 (DONE, per docs/phase7-research-report.md — "Ship It, Then Arm
+the Wasteland"): M0 v0.6 front door (menu + gcd picker + death screen,
+README screenshots, CHANGELOG, v0.6.0 tag; publish = user's git push
+per docs/RELEASING.md), M1 V2 saves (MovedOrdinals NPC positions
+replayed BEFORE map_enter; SavedItem ammo fields, -1 = derive from
+proto; override_map_start; V1 refuses), M2 guns (10mm-class = HITSCAN,
+muzzle flash baked in FRM 'j' — zero animator features; to-hit
+combat.cc:4314 subset; LoF = greedy hex walk DEVIATION from the
+engine's screen Bresenham; dude art hmjmps — hmwarr has no gun sets,
+engine has NO weapon-art fallback; R=reload, roofs moved to F4),
+M3 traps (spatial records kept in MapFile; RunSpatialsAt gated like
+_scr_SpatialsEnabled; create_object_sid BINDS scripts via AllocateSid;
+critter_damage real; use_obj_on item-then-target precedence; gmovie =
+caption card from .sve), M4 party minimum (followers travel OUTSIDE
+map deltas, follow script re-bound per map — follow logic is 100%
+script-side critter_p_proc; allies act after hostiles; enemies target
+nearest of dude+allies; team kills pay XP), M5 per-vertex floors
+(BasicEffect quads, corner light from NW/NE/SW/SE neighbor hexes;
+newr1 3.34 ms avg — faster than the sprite path).
+Spillover to phase 8: random encounters (worldmap.txt decoded, maps
+need saved=No delta-skip), burst/aimed shots, companion management.
+
 After each milestone: run tests, run the app if possible, update README progress checklist, conventional commit.
 
 ## Critical gotchas
