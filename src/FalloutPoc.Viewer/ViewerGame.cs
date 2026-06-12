@@ -68,6 +68,24 @@ public sealed class ViewerGame : Game
     /// <summary>Critters playing their death fall; value = death anim (20/21).</summary>
     private readonly Dictionary<MapObject, int> _fallingCritters = [];
     private int _dudeAp;
+
+    /// <summary>The engine's blocking _combat_turn loop flattened into a state
+    /// machine stepped from Update (phase advances only when no action plays).</summary>
+    private enum CombatPhase
+    {
+        Idle,
+        PlayerTurn,
+        EnemyTurn,
+        GameOver,
+    }
+
+    private CombatPhase _combatPhase = CombatPhase.Idle;
+    private readonly HashSet<MapObject> _hostiles = [];
+    private readonly Queue<MapObject> _enemyQueue = new();
+    private MapObject? _actingEnemy;
+    private int _actingEnemyAp;
+    private int _combatRound;
+    private bool _gameOver;
     private readonly Random _ambientRandom = new(20260612);
     private double _fidgetTimerMs;
     private double _wanderTimerMs;
@@ -129,6 +147,7 @@ public sealed class ViewerGame : Game
         public sealed record UseHex(int Hex, bool Lockpick) : StartupAction;
         public sealed record ExamineCritter(int Hex) : StartupAction;
         public sealed record Attack(int Hex) : StartupAction;
+        public sealed record Fight(int Hex) : StartupAction;
         public sealed record TakeAll : StartupAction;
         public sealed record Transit(string MapFile, int Tile, int Elevation) : StartupAction;
         public sealed record SaveNow : StartupAction;
@@ -354,7 +373,63 @@ public sealed class ViewerGame : Game
                         ProcessCombatAnimations();
                     }
 
+                    // --attack is a free-swing test primitive; --fight runs
+                    // the real turn loop with retaliation.
+                    ResetCombatState();
                     Console.WriteLine($"attack-result: hp={target.CurrentHp} dead={target.IsDead}");
+                    break;
+                }
+                case StartupAction.Fight(var fightHex):
+                {
+                    MapObject? target = _solidObjects[_elevation]
+                        .FirstOrDefault(o => o.HexTile == fightHex && Fid.Type(o.Fid) is ObjectType.Critter);
+                    if (target is null)
+                    {
+                        Console.Error.WriteLine($"no critter at hex {fightHex}");
+                        break;
+                    }
+
+                    _camera.SetCenter(fightHex);
+                    if (_dude is not null)
+                        _dude.Dude.HexTile = Formats.Hex.HexGrid.TileInDirection(fightHex, 3);
+
+                    // Autoplay: punch any adjacent hostile while AP lasts,
+                    // end turn, let the AI move — until someone wins.
+                    for (int guard = 0; guard < 200_000 && !_gameOver; guard++)
+                    {
+                        bool animating = _pendingAttack is not null || _fallingCritters.Count > 0
+                            || _npcWalkers.Values.Any(w => w.Moving);
+                        if (!animating)
+                        {
+                            if (_combatPhase == CombatPhase.Idle)
+                            {
+                                if (target.IsDead || _dude is null)
+                                    break;
+                                TryAttack(target);
+                                if (_pendingAttack is null && _combatPhase == CombatPhase.Idle)
+                                    break; // could not engage
+                            }
+                            else if (_combatPhase == CombatPhase.PlayerTurn)
+                            {
+                                MapObject? victim = _hostiles.FirstOrDefault(h => !h.IsDead
+                                    && RotationToAdjacent(_dude!.Dude.HexTile, h.HexTile) >= 0);
+                                if (victim is not null && _dudeAp >= Formats.Combat.CombatMath.PunchApCost)
+                                    TryAttack(victim);
+                                else
+                                    EndPlayerTurn();
+                            }
+                        }
+
+                        _animator.Update(10);
+                        ProcessCombatAnimations();
+                        UpdateCombat();
+                        foreach (DudeController walker in _npcWalkers.Values)
+                            walker.Update(10);
+                    }
+
+                    Console.WriteLine($"fight-result: rounds={_combatRound} dudeHp={_dude?.Dude.CurrentHp}"
+                        + $" gameOver={_gameOver} targetDead={target.IsDead}"
+                        + $" hostilesLeft={_hostiles.Count(h => !h.IsDead)}");
                     break;
                 }
                 case StartupAction.TakeAll:
@@ -486,6 +561,7 @@ public sealed class ViewerGame : Game
         _animator = new ObjectAnimator(_frmCache);
         _scriptHost?.ClearTimers();
         _scriptHost?.ResetHandles();
+        ResetCombatState();
         _walkMode = false;
         _hoveredObject = null;
         _dude = null;
@@ -590,6 +666,19 @@ public sealed class ViewerGame : Game
         _frameClock.Restart();
         KeyboardState keyboard = Keyboard.GetState();
         MouseState mouse = Mouse.GetState();
+
+        // Game over: the world freezes; only loading a save (or quitting) works.
+        if (_gameOver)
+        {
+            if (IsKeyPressed(keyboard, Keys.F9))
+                LoadGame();
+            if (keyboard.IsKeyDown(Keys.Escape))
+                Exit();
+            _previousMouse = mouse;
+            _previousKeyboard = keyboard;
+            base.Update(gameTime);
+            return;
+        }
 
         // Loot/inventory mode: number keys take/drop, A take-all, Esc/I close.
         if (_lootContainer is not null || _inventoryOpen)
@@ -735,6 +824,10 @@ public sealed class ViewerGame : Game
         if (IsKeyPressed(keyboard, Keys.F) && _hoveredObject is { } attackTarget)
             TryAttack(attackTarget);
 
+        // Space ends the player's combat turn.
+        if (IsKeyPressed(keyboard, Keys.Space))
+            EndPlayerTurn();
+
         // [ and ] adjust ambient light (day/night preview).
         if (IsKeyPressed(keyboard, Keys.OemOpenBrackets) || IsKeyPressed(keyboard, Keys.OemCloseBrackets))
         {
@@ -747,6 +840,7 @@ public sealed class ViewerGame : Game
 
         _animator.Update(gameTime.ElapsedGameTime.TotalMilliseconds);
         ProcessCombatAnimations();
+        UpdateCombat();
         _dude?.Update(gameTime.ElapsedGameTime.TotalMilliseconds);
         UpdateAmbientLife(gameTime.ElapsedGameTime.TotalMilliseconds);
 
@@ -1026,6 +1120,10 @@ public sealed class ViewerGame : Game
         if (finished is not null)
             foreach (MapObject npc in finished)
                 _npcWalkers.Remove(npc);
+
+        // No wandering or fidgeting while combat owns the choreography.
+        if (_combatPhase != CombatPhase.Idle)
+            return;
 
         Rectangle viewport = GraphicsDevice.Viewport.Bounds;
         bool IsVisible(MapObject obj)
@@ -1315,6 +1413,21 @@ public sealed class ViewerGame : Game
             return;
         }
 
+        // AP: in combat the round budget rules; the first swing opens combat
+        // with a fresh budget.
+        switch (_combatPhase)
+        {
+            case CombatPhase.PlayerTurn when _dudeAp < Formats.Combat.CombatMath.PunchApCost:
+                Log("Not enough action points.");
+                return;
+            case CombatPhase.EnemyTurn or CombatPhase.GameOver:
+                return;
+            case CombatPhase.Idle:
+                _dudeAp = attacker.MaxActionPoints;
+                break;
+        }
+        _dudeAp -= Formats.Combat.CombatMath.PunchApCost;
+
         // The engine reg_anim_clear()s both parties before choreographing.
         _animator.Remove(target);
         if (_npcWalkers.TryGetValue(target, out DudeController? walker))
@@ -1324,21 +1437,24 @@ public sealed class ViewerGame : Game
         }
         _dude.Dude.Rotation = rotation;
 
-        // Out of combat mode AP recovers instantly; rounds arrive in M4.
-        if (_dudeAp < Formats.Combat.CombatMath.PunchApCost && GetCritterState(_dude.Dude) is { } stats)
-            _dudeAp = stats.MaxActionPoints;
-        _dudeAp -= Formats.Combat.CombatMath.PunchApCost;
-
         int chance = Formats.Combat.CombatMath.ToHitChance(attacker, defender);
         bool hit = Formats.Combat.CombatMath.RollHit(_combatRng, chance);
         int damage = hit ? Formats.Combat.CombatMath.RollDamage(_combatRng, attacker, defender) : 0;
         _pendingAttack = new PendingAttack(_dude.Dude, target, chance, hit, damage);
         Console.WriteLine($"attack {ObjectName(target)}@{target.HexTile}: chance={chance}% hit={hit} damage={damage}");
 
+        StartPunchAnimation(_dude.Dude);
+
+        if (_combatPhase == CombatPhase.Idle)
+            BeginCombat(target);
+    }
+
+    private void StartPunchAnimation(MapObject attacker)
+    {
         const int animThrowPunch = 16;
-        int punchFid = Fid.Build(ObjectType.Critter, Fid.Index(_dude.Dude.Fid), animThrowPunch, 0);
+        int punchFid = Fid.Build(ObjectType.Critter, Fid.Index(attacker.Fid), animThrowPunch, 0);
         if (_vfs.Exists(_artIndex.GetFrmPath(punchFid)))
-            _animator.PlayActionOnce(_dude.Dude, punchFid);
+            _animator.PlayActionOnce(attacker, punchFid);
     }
 
     private static int RotationToAdjacent(int from, int to)
@@ -1373,25 +1489,34 @@ public sealed class ViewerGame : Game
 
     private void ResolveAttack(PendingAttack attack)
     {
-        string name = ObjectName(attack.Target);
+        bool byDude = attack.Attacker == _dude?.Dude;
+        string targetName = ObjectName(attack.Target);
+        string attackerName = ObjectName(attack.Attacker);
+
         if (!attack.Hit)
         {
-            Log($"You missed the {name}.");
+            Log(byDude ? $"You missed the {targetName}." : $"The {attackerName} misses you.");
             return;
         }
 
         attack.Target.CurrentHp -= attack.Damage;
-        Log($"You hit the {name} for {attack.Damage} damage.");
+        Log(byDude
+            ? $"You hit the {targetName} for {attack.Damage} damage."
+            : $"The {attackerName} hits you for {attack.Damage} damage.");
+
         if (attack.Target.CurrentHp <= 0)
         {
-            KillCritter(attack.Target);
+            if (attack.Target == _dude?.Dude)
+                GameOver();
+            else
+                KillCritter(attack.Target);
             return;
         }
 
         const int animHitFromFront = 14;
         int hitFid = Fid.Build(ObjectType.Critter, Fid.Index(attack.Target.Fid), animHitFromFront,
             Fid.WeaponCode(attack.Target.Fid));
-        if (_vfs.Exists(_artIndex.GetFrmPath(hitFid)))
+        if (attack.Target != _dude?.Dude && _vfs.Exists(_artIndex.GetFrmPath(hitFid)))
             _animator.PlayActionOnce(attack.Target, hitFid);
     }
 
@@ -1443,6 +1568,194 @@ public sealed class ViewerGame : Game
         if (!_flatObjects[_elevation].Contains(critter))
             InsertSorted(_flatObjects[_elevation], critter);
         RebuildBlockedTiles(_dude?.Dude);
+    }
+
+    private void BeginCombat(MapObject target)
+    {
+        _combatPhase = CombatPhase.PlayerTurn;
+        _combatRound = 1;
+        _hostiles.Clear();
+        _enemyQueue.Clear();
+        _actingEnemy = null;
+        _hostiles.Add(target);
+        AddJoiners();
+        Log($"Combat begins — round 1, your turn (AP {_dudeAp}).");
+    }
+
+    /// <summary>Scriptless hostility, the engine's combat_ai team rule: living
+    /// same-team critters within sight range join the fight at round start.</summary>
+    private void AddJoiners()
+    {
+        if (_dude is null)
+            return;
+        foreach (MapObject critter in _solidObjects[_elevation].Where(o =>
+            Fid.Type(o.Fid) is ObjectType.Critter
+            && o != _dude.Dude && !o.IsDead && !_hostiles.Contains(o)
+            && _hostiles.Any(h => h.Team == o.Team)
+            && Formats.Hex.HexGrid.Distance(o.HexTile, _dude.Dude.HexTile) <= 20).ToList())
+        {
+            _hostiles.Add(critter);
+            critter.WhoHitMeCid = -1; // marks the dude as the aggressor
+            Log($"The {ObjectName(critter)} joins the fight!");
+            Console.WriteLine($"joins: {ObjectName(critter)}@{critter.HexTile} (team {critter.Team})");
+        }
+    }
+
+    private void EndPlayerTurn()
+    {
+        if (_combatPhase != CombatPhase.PlayerTurn || _pendingAttack is not null)
+            return;
+
+        _combatPhase = CombatPhase.EnemyTurn;
+        _enemyQueue.Clear();
+        _actingEnemy = null;
+        foreach (MapObject hostile in _hostiles.Where(h => !h.IsDead)
+            .OrderByDescending(h => GetCritterState(h)?.Sequence ?? 0))
+            _enemyQueue.Enqueue(hostile);
+    }
+
+    /// <summary>ported from fallout2-ce src/combat.cc _combat_should_end():
+    /// combat is over when nothing hostile is left standing.</summary>
+    private bool CombatShouldEnd() => !_hostiles.Any(h => !h.IsDead);
+
+    private void EndCombat()
+    {
+        _combatPhase = CombatPhase.Idle;
+        _hostiles.Clear();
+        _enemyQueue.Clear();
+        _actingEnemy = null;
+        if (_dude is not null && GetCritterState(_dude.Dude) is { } stats)
+            _dudeAp = stats.MaxActionPoints;
+        Log("Combat ends.");
+    }
+
+    private void GameOver()
+    {
+        _combatPhase = CombatPhase.GameOver;
+        _gameOver = true;
+        Log("You have died. F9 loads the last save.");
+        Console.WriteLine("GAME OVER");
+    }
+
+    /// <summary>Steps the turn machine once nothing is animating — the
+    /// flattened _combat_turn_run loop (its counter over running sequences
+    /// becomes "wait until no pending attack / fall / walker").</summary>
+    private void UpdateCombat()
+    {
+        if (_combatPhase is CombatPhase.Idle or CombatPhase.GameOver)
+            return;
+        if (_pendingAttack is not null || _fallingCritters.Count > 0)
+            return;
+        if (_actingEnemy is { } moving && _npcWalkers.TryGetValue(moving, out DudeController? movingWalker)
+            && movingWalker.Moving)
+            return;
+
+        if (_dude is { } dude && dude.Dude.CurrentHp <= 0)
+        {
+            GameOver();
+            return;
+        }
+
+        if (CombatShouldEnd())
+        {
+            EndCombat();
+            return;
+        }
+
+        if (_combatPhase == CombatPhase.EnemyTurn)
+            StepEnemyTurn();
+    }
+
+    private void StepEnemyTurn()
+    {
+        if (_actingEnemy is { } acting && !acting.IsDead)
+        {
+            if (TryEnemyAction(acting))
+                return;
+            _actingEnemy = null;
+        }
+
+        while (_enemyQueue.Count > 0)
+        {
+            MapObject enemy = _enemyQueue.Dequeue();
+            if (enemy.IsDead)
+                continue;
+            _actingEnemy = enemy;
+            _actingEnemyAp = GetCritterState(enemy)?.MaxActionPoints ?? 5;
+            if (TryEnemyAction(enemy))
+                return;
+            _actingEnemy = null;
+        }
+
+        // Everyone acted: next round.
+        _combatRound++;
+        AddJoiners();
+        if (_dude is not null && GetCritterState(_dude.Dude) is { } stats)
+            _dudeAp = stats.MaxActionPoints;
+        _combatPhase = CombatPhase.PlayerTurn;
+        Log($"Round {_combatRound} — your turn (AP {_dudeAp}).");
+    }
+
+    /// <summary>One AI action: punch when adjacent, else an AP-budgeted
+    /// approach at 1 AP per hex (the engine's combat_ai movement budget).</summary>
+    private bool TryEnemyAction(MapObject enemy)
+    {
+        if (_dude is null)
+            return false;
+
+        int dudeTile = _dude.Dude.HexTile;
+        if (RotationToAdjacent(enemy.HexTile, dudeTile) >= 0)
+        {
+            if (_actingEnemyAp < Formats.Combat.CombatMath.PunchApCost)
+                return false;
+            _actingEnemyAp -= Formats.Combat.CombatMath.PunchApCost;
+            EnemyAttack(enemy);
+            return true;
+        }
+
+        if (_actingEnemyAp < 1)
+            return false;
+        byte[]? path = Formats.Hex.Pathfinder.FindPath(enemy.HexTile, dudeTile,
+            tile => _blockedTiles.Contains(tile));
+        if (path is null || path.Length <= 1)
+            return false;
+
+        int steps = Math.Min(path.Length - 1, _actingEnemyAp); // stop adjacent
+        _actingEnemyAp -= steps;
+        int targetTile = enemy.HexTile;
+        for (int i = 0; i < steps; i++)
+            targetTile = Formats.Hex.HexGrid.TileInDirection(targetTile, path[i]);
+        return StartNpcWalk(enemy, targetTile);
+    }
+
+    private void EnemyAttack(MapObject enemy)
+    {
+        if (_dude is null || GetCritterState(enemy) is not { } attacker
+            || GetCritterState(_dude.Dude) is not { } defender)
+            return;
+
+        int rotation = RotationToAdjacent(enemy.HexTile, _dude.Dude.HexTile);
+        if (rotation >= 0)
+            enemy.Rotation = rotation;
+
+        int chance = Formats.Combat.CombatMath.ToHitChance(attacker, defender);
+        bool hit = Formats.Combat.CombatMath.RollHit(_combatRng, chance);
+        int damage = hit ? Formats.Combat.CombatMath.RollDamage(_combatRng, attacker, defender) : 0;
+        _pendingAttack = new PendingAttack(enemy, _dude.Dude, chance, hit, damage);
+        Console.WriteLine($"enemy-attack {ObjectName(enemy)}@{enemy.HexTile}: chance={chance}% hit={hit} damage={damage}");
+
+        StartPunchAnimation(enemy);
+    }
+
+    private void ResetCombatState()
+    {
+        _combatPhase = CombatPhase.Idle;
+        _hostiles.Clear();
+        _enemyQueue.Clear();
+        _actingEnemy = null;
+        _pendingAttack = null;
+        _fallingCritters.Clear();
+        _gameOver = false;
     }
 
     private void InteractWith(MapObject obj)
@@ -2364,8 +2677,22 @@ public sealed class ViewerGame : Game
         if (_dude is not null && GetCritterState(_dude.Dude) is { } dudeStats)
         {
             string hud = $"HP {dudeStats.CurrentHp}/{dudeStats.MaxHp}  AP {_dudeAp}/{dudeStats.MaxActionPoints}";
+            if (_combatPhase != CombatPhase.Idle)
+                hud += $"  |  round {_combatRound}: "
+                    + (_combatPhase == CombatPhase.PlayerTurn ? "your turn (F attack, Space end turn)" : "enemy turn");
             int hudY = GraphicsDevice.Viewport.Height - 8 - (_messageLog.Count + 1) * _fontRenderer.LineHeight - 4;
             _fontRenderer.Draw(_spriteBatch, hud, new Vector2(8, hudY), new Color(252, 252, 84));
+        }
+
+        if (_gameOver)
+        {
+            const string banner = "YOU HAVE DIED";
+            const string hint = "Press F9 to load the last save, Esc to quit.";
+            var center = new Vector2(GraphicsDevice.Viewport.Width / 2f, GraphicsDevice.Viewport.Height / 2f);
+            _fontRenderer.Draw(_spriteBatch, banner,
+                center + new Vector2(-_fontRenderer.MeasureWidth(banner) / 2f, -_fontRenderer.LineHeight), new Color(252, 0, 0));
+            _fontRenderer.Draw(_spriteBatch, hint,
+                center + new Vector2(-_fontRenderer.MeasureWidth(hint) / 2f, _fontRenderer.LineHeight), new Color(252, 252, 84));
         }
 
         int y = GraphicsDevice.Viewport.Height - 8 - _messageLog.Count * _fontRenderer.LineHeight;

@@ -108,6 +108,9 @@ for (int i = 0; i < args.Length; i++)
         case "--attack" when i + 1 < args.Length:
             actions.Add(new ViewerGame.StartupAction.Attack(int.Parse(args[++i])));
             break;
+        case "--fight" when i + 1 < args.Length:
+            actions.Add(new ViewerGame.StartupAction.Fight(int.Parse(args[++i])));
+            break;
         case "--rng-seed" when i + 1 < args.Length:
             rngSeed = int.Parse(args[++i]);
             break;
