@@ -51,6 +51,16 @@ public sealed class ViewerGame : Game
     private bool _pickPrinted;
     private DudeController? _dude;
     private HashSet<int> _blockedTiles = [];
+
+    // Ambient NPC life: fidget replays + short wander walks around home tiles.
+    private readonly Dictionary<MapObject, DudeController> _npcWalkers = [];
+    private readonly Dictionary<MapObject, int> _homeTiles = [];
+    private readonly Random _ambientRandom = new(20260612);
+    private double _fidgetTimerMs;
+    private double _wanderTimerMs;
+
+    /// <summary>Disables ambient NPC life (deterministic screenshots).</summary>
+    public bool DisableAmbientLife { get; set; }
     private MapList _mapList = null!;
     private CityList _cities = null!;
     private AudioManager? _audio;
@@ -202,6 +212,7 @@ public sealed class ViewerGame : Game
             _cycler.Update(10);
             _animator.Update(10);
             _dude?.Update(10);
+            UpdateAmbientLife(10);
             if (_pendingTransition is { } transition)
             {
                 _pendingTransition = null;
@@ -227,6 +238,10 @@ public sealed class ViewerGame : Game
         _hoveredObject = null;
         _dude = null;
         _openDoors.Clear();
+        _npcWalkers.Clear();
+        _homeTiles.Clear();
+        _fidgetTimerMs = 0;
+        _wanderTimerMs = 0;
 
         // Tile -1 in a destination (e.g. city.txt entrances) means "use the
         // map's own entering position".
@@ -346,6 +361,7 @@ public sealed class ViewerGame : Game
 
         _animator.Update(gameTime.ElapsedGameTime.TotalMilliseconds);
         _dude?.Update(gameTime.ElapsedGameTime.TotalMilliseconds);
+        UpdateAmbientLife(gameTime.ElapsedGameTime.TotalMilliseconds);
 
         // Map transitions are queued by exit grids/stairs and applied here,
         // never while DudeController.Update is still on the stack.
@@ -584,6 +600,121 @@ public sealed class ViewerGame : Game
         float factor = _lightGrid.GetTileIntensity(hexTile) / (float)Formats.Light.LightGrid.IntensityMax;
         byte level = (byte)Math.Clamp((int)(factor * 255), 0, 255);
         return new Color(level, level, level);
+    }
+
+    /// <summary>
+    /// Ambient NPC life, no VM. Fidget ported from fallout2-ce
+    /// src/animation.cc _dude_fidget(): every 1..10 s (faster with more
+    /// candidates) one visible, standing, non-walking critter replays its
+    /// stand animation. Wandering is an honest fake (the original drives it
+    /// from scripts): a random critter takes a short A* walk within 3 hexes
+    /// of its home tile every few seconds.
+    /// </summary>
+    private void UpdateAmbientLife(double elapsedMs)
+    {
+        if (DisableAmbientLife || _worldmapOpen)
+            return;
+
+        // Advance active NPC walks; drop finished walkers.
+        List<MapObject>? finished = null;
+        foreach ((MapObject npc, DudeController walker) in _npcWalkers)
+        {
+            walker.Update(elapsedMs);
+            if (!walker.Moving)
+                (finished ??= []).Add(npc);
+        }
+        if (finished is not null)
+            foreach (MapObject npc in finished)
+                _npcWalkers.Remove(npc);
+
+        Rectangle viewport = GraphicsDevice.Viewport.Bounds;
+        bool IsVisible(MapObject obj)
+        {
+            (int x, int y) = _camera.HexToScreen(obj.HexTile);
+            return viewport.Contains(x, y);
+        }
+
+        List<MapObject> candidates = [.. _solidObjects[_elevation].Where(o =>
+            Fid.Type(o.Fid) is ObjectType.Critter
+            && o != _dude?.Dude
+            && !_npcWalkers.ContainsKey(o)
+            && Fid.AnimType(o.Fid) == 0 // standing
+            && IsVisible(o))];
+
+        _fidgetTimerMs -= elapsedMs;
+        if (_fidgetTimerMs <= 0)
+        {
+            // ported from _dude_fidget(): delay 20/candidates seconds (1..7),
+            // plus 0..3 s of jitter.
+            int delaySeconds = Math.Clamp(candidates.Count == 0 ? 7 : 20 / candidates.Count, 1, 7);
+            _fidgetTimerMs = _ambientRandom.Next(0, 3000) + 1000.0 * delaySeconds;
+
+            if (candidates.Count > 0)
+            {
+                MapObject critter = candidates[_ambientRandom.Next(candidates.Count)];
+                try
+                {
+                    if (_frmCache.GetFrm(critter.Fid).FrameCount > 1)
+                        _animator.PlayFidget(critter);
+                }
+                catch (Exception ex) when (ex is FileNotFoundException or InvalidDataException)
+                {
+                }
+            }
+        }
+
+        _wanderTimerMs -= elapsedMs;
+        if (_wanderTimerMs <= 0)
+        {
+            _wanderTimerMs = _ambientRandom.Next(3000, 9000);
+            if (candidates.Count > 0)
+                TryStartWander(candidates[_ambientRandom.Next(candidates.Count)]);
+        }
+    }
+
+    private void TryStartWander(MapObject npc)
+    {
+        // NPCs without walk art stay put.
+        int walkFid = Fid.Build(ObjectType.Critter, Fid.Index(npc.Fid), 1, Fid.WeaponCode(npc.Fid));
+        if (!_vfs.Exists(_artIndex.GetFrmPath(walkFid)))
+        {
+            walkFid = Fid.Build(ObjectType.Critter, Fid.Index(npc.Fid), 1);
+            if (!_vfs.Exists(_artIndex.GetFrmPath(walkFid)))
+                return;
+        }
+
+        int home = _homeTiles.TryGetValue(npc, out int stored) ? stored : (_homeTiles[npc] = npc.HexTile);
+
+        // A few tries at a random free tile within 3 hexes of home.
+        for (int attempt = 0; attempt < 4; attempt++)
+        {
+            int target = home;
+            int steps = _ambientRandom.Next(1, 4);
+            for (int i = 0; i < steps; i++)
+                target = Formats.Hex.HexGrid.TileInDirection(target, _ambientRandom.Next(6));
+
+            if (target == npc.HexTile || _blockedTiles.Contains(target))
+                continue;
+
+            var walker = new DudeController(npc, _frmCache, tile => _blockedTiles.Contains(tile));
+            int previousTile = npc.HexTile;
+            walker.TileChanged += tile =>
+            {
+                _blockedTiles.Remove(previousTile);
+                _blockedTiles.Add(tile);
+                previousTile = tile;
+                List<MapObject> solids = _solidObjects[_elevation];
+                solids.Remove(npc);
+                InsertSorted(solids, npc);
+            };
+
+            if (walker.WalkTo(target))
+            {
+                Console.WriteLine($"wander: {ObjectName(npc)} hex {npc.HexTile} -> {target}");
+                _npcWalkers[npc] = walker;
+                return;
+            }
+        }
     }
 
     private bool IsAdjacentToDude(MapObject obj)
@@ -925,14 +1056,16 @@ public sealed class ViewerGame : Game
         if (_failedFids.Contains(obj.Fid))
             return null;
 
-        bool isDude = _dude is not null && obj == _dude.Dude;
+        DudeController? walker = _dude is not null && obj == _dude.Dude ? _dude
+            : _npcWalkers.TryGetValue(obj, out DudeController? npcWalker) ? npcWalker
+            : null;
+        bool isDude = walker is not null;
         AnimationState? animation = null;
         if (!isDude && _animator.TryGetState(obj, out AnimationState state))
             animation = state;
 
-        int fid = isDude ? _dude!.CurrentFid
-            : animation is { DisplayFid: not 0 } ? animation.DisplayFid
-            : obj.Fid;
+        int fid = walker?.CurrentFid
+            ?? (animation is { DisplayFid: not 0 } ? animation.DisplayFid : obj.Fid);
 
         Formats.Frm.FrmFile frm;
         Formats.Frm.FrmFrame frame;
@@ -942,7 +1075,7 @@ public sealed class ViewerGame : Game
         {
             frm = _frmCache.GetFrm(fid);
             rotation = Math.Clamp(obj.Rotation, 0, Formats.Frm.FrmFile.RotationCount - 1);
-            frameIndex = isDude ? Math.Min(_dude!.Frame, frm.FrameCount - 1)
+            frameIndex = walker is not null ? Math.Min(walker.Frame, frm.FrameCount - 1)
                 : animation is not null ? animation.Frame
                 : Math.Clamp(obj.Frame, 0, frm.FrameCount - 1);
             frame = frm.GetFrame(frameIndex, rotation);
@@ -954,8 +1087,8 @@ public sealed class ViewerGame : Game
             return null;
         }
 
-        int extraX = isDude ? _dude!.OffsetX : animation?.OffsetX ?? 0;
-        int extraY = isDude ? _dude!.OffsetY : animation?.OffsetY ?? 0;
+        int extraX = walker?.OffsetX ?? animation?.OffsetX ?? 0;
+        int extraY = walker?.OffsetY ?? animation?.OffsetY ?? 0;
 
         (int hexX, int hexY) = _camera.HexToScreen(obj.HexTile);
         int anchorX = hexX + 16 + frm.RotationOffsetsX[rotation] + obj.X + extraX;

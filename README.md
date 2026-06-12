@@ -50,7 +50,8 @@ Extra CLI flags: `--screenshot out.png` (render one frame and exit),
 `--door TILE` (toggle the door at a hex tile after load — for testing),
 `--examine X,Y` (print/log name+description of the object at a screen point — for testing),
 `--ambient F` (ambient light fraction 0.25–1.0, e.g. 0.25 for night),
-`--worldmap` (open the worldmap on start), `--travel N` (travel to city.txt area N — for testing).
+`--worldmap` (open the worldmap on start), `--travel N` (travel to city.txt area N — for testing),
+`--no-audio` (mute), `--no-ambient` (freeze NPC fidget/wander — for deterministic screenshots).
 
 ## Phase 2 — walking simulator
 

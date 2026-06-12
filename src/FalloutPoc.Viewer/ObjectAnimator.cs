@@ -21,6 +21,9 @@ public enum AnimationMode
 
     /// <summary>Plays backwards to frame 0 and finishes (door closing).</summary>
     OnceReverse,
+
+    /// <summary>Plays once, then the state is removed (critter fidget).</summary>
+    OnceThenReset,
 }
 
 public sealed class AnimationState
@@ -68,6 +71,7 @@ public sealed class AnimationState
                     break;
 
                 case AnimationMode.Once:
+                case AnimationMode.OnceThenReset:
                     if (Frame + 1 >= frm.FrameCount)
                     {
                         Finished = true;
@@ -116,16 +120,28 @@ public sealed class ObjectAnimator(FrmCache frmCache)
     public void PlayOnceReverse(MapObject obj, int lastFrame) =>
         _states[obj] = new AnimationState { Mode = AnimationMode.OnceReverse, Frame = lastFrame };
 
+    /// <summary>Plays the object's frames once and snaps back (critter fidget).</summary>
+    public void PlayFidget(MapObject obj) =>
+        _states[obj] = new AnimationState { Mode = AnimationMode.OnceThenReset };
+
     public void Remove(MapObject obj) => _states.Remove(obj);
 
     public void Update(double elapsedMs)
     {
+        List<MapObject>? finishedFidgets = null;
         foreach ((MapObject obj, AnimationState state) in _states)
         {
             int fid = state.DisplayFid != 0 ? state.DisplayFid : obj.Fid;
             FrmFile frm = frmCache.GetFrm(fid);
             int rotation = Math.Clamp(obj.Rotation, 0, FrmFile.RotationCount - 1);
             state.Advance(elapsedMs, frm, rotation);
+
+            if (state is { Mode: AnimationMode.OnceThenReset, Finished: true })
+                (finishedFidgets ??= []).Add(obj);
         }
+
+        if (finishedFidgets is not null)
+            foreach (MapObject obj in finishedFidgets)
+                _states.Remove(obj);
     }
 }

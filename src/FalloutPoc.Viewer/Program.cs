@@ -15,6 +15,7 @@ double ambient = 1.0;
 bool worldmap = false;
 int? travelArea = null;
 bool noAudio = false;
+bool noAmbient = false;
 
 for (int i = 0; i < args.Length; i++)
 {
@@ -25,6 +26,9 @@ for (int i = 0; i < args.Length; i++)
             break;
         case "--no-audio":
             noAudio = true;
+            break;
+        case "--no-ambient":
+            noAmbient = true;
             break;
         case "--advance-ms" when i + 1 < args.Length:
             advanceMs = double.Parse(args[++i]);
@@ -98,6 +102,7 @@ using var game = new ViewerGame(gameDir, mapName, screenshot, roofs)
     StartOnWorldmap = worldmap,
     TravelToArea = travelArea,
     DisableAudio = noAudio,
+    DisableAmbientLife = noAmbient,
 };
 game.Run();
 return 0;
