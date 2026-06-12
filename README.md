@@ -38,11 +38,17 @@ Prebuilt self-contained builds (Linux x64 / Windows x64) are produced by
 - **Persistent world**: per-map deltas keyed to the pristine map files —
   loot a footlocker in the Den, walk to the Temple and back, it stays
   looted; F5/F9 saves the whole visited world as JSON.
-- **Combat**: turn-based unarmed fights with engine-accurate sequencing
-  (outcome rolled before the animation, damage applied when it completes),
-  AP budgets, death falls and lootable corpses, AI turns with AP-budgeted
-  approach, and scriptless same-team hostility — punch a Den peasant and
-  the whole block piles in. Lose, and F9 puts you back.
+- **Combat**: turn-based fights with engine-accurate sequencing (outcome
+  rolled before the animation, damage applied when it completes), AP
+  budgets, melee weapons and armor (equip flags straight from the MAP
+  files — enemies use their own spears), healing items, death falls and
+  lootable corpses that stay dead across map travel, AI turns, same-team
+  joiners, and script-driven aggro — temple ants jump you on sight. Kills
+  pay XP at combat end; levels raise your HP. Lose, and F9 puts you back.
+- **Character**: the dude's stats come from `premade\player.gcd`, so
+  stat-gated dialog runs the right branches.
+- **Barter**: real shopkeeper trade (Tubby's stock box and all) at the
+  engine's price formula.
 - **Worldmap**: click-to-travel between areas (`maps.txt`/`city.txt`).
 
 ## Controls

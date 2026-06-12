@@ -90,8 +90,29 @@ animate, damage on completion; corpse = anim+28, NO_BLOCK + flat → loot
 panel works unchanged), M4 AI turns (AP-budgeted approach, same-team
 joiners within 20 hexes, game over → F9), M5 ship-prep (renamed
 FalloutPoc→Hexwaste, SUL license + NOTICE, docs/ provenance,
-scripts/release.sh, game-dir probing). Barter is the designated phase-6
-spillover (externals half-done).
+scripts/release.sh, game-dir probing).
+
+Phase 6 (DONE, per docs/phase6-research-report.md — "The Opening Hour"):
+M0 hygiene (OnStubbedExternal finally hooked — it never was; SaveState
+Version=1 refuse-mismatch; DeadOrdinals — kills persist, sid=-1 BEFORE
+map_enter like the engine), M1 real dude (premade\player.gcd = the
+critter proto stat-block layout + name/tags/traits; real get_critter_-
+stat/has_trait/do_check/get_pc_stat — fixes every stat-gated dialog),
+M2 critter_p_proc heartbeat (1 script per 10 Hz tick round-robin,
+gated; real critter_add_trait/attack/anim_busy/rotation_to_tile —
+unprovoked aggro IS script-driven), M3 kills matter (destroy/damage
+procs; XP engine-side from proto exp, paid at combat END, forfeited on
+death; level-up EN/2+2 HP), M4 winnable combat (weapon/armor/drug proto
+payloads; equip = item flags 0x1/0x2/0x4000000 — MAP NPC weapons just
+work; armor mutates bonus stats; stimpak = -2-marker random heal), M5
+barter (export.cc vars session-scoped on ScriptHost — per-VM before,
+never connected; gdialog_barter flag-only, arg OVERWRITES set_barter_-
+mod; stock lives in the shop BOX at trade time because our dialog model
+runs the talk epilogue early — session tracks the box; price =
+cost×2×(mod+100)/100×(160+npcB)/(160+dudeB), sells at face).
+GOTCHAS: map_enter must run HIDDEN scripted objects (shop boxes);
+the dude's bag is ALIASED to dude.Inventory (caps externals); --attack
+is a free-swing primitive (resets combat), --fight runs real turns.
 
 After each milestone: run tests, run the app if possible, update README progress checklist, conventional commit.
 
