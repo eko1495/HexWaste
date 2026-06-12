@@ -11,6 +11,7 @@ public class SaveStateRoundTripTests
     {
         var state = new SaveState
         {
+            Version = SaveState.CurrentVersion,
             Map = "denbus1.map",
             DudeTile = 16321,
             Elevation = 0,
@@ -23,6 +24,7 @@ public class SaveStateRoundTripTests
         {
             Doors = { new SaveState.SavedDoor(15000, 0x02000021, Open: true, Locked: false) },
             TakenOrdinals = { 17, 304 },
+            DeadOrdinals = { 99 },
             Created = { new SaveState.CreatedObject(0x0700004A, 16000, 0, 1) },
             ContainerInventories = { [55] = [new SaveState.SavedItem(41, 50)] },
             MapVars = [9, 8, 7],
@@ -31,6 +33,7 @@ public class SaveStateRoundTripTests
         SaveState? loaded = SaveState.FromJson(state.ToJson());
 
         Assert.NotNull(loaded);
+        Assert.Equal(SaveState.CurrentVersion, loaded.Version);
         Assert.Equal(state.Map, loaded.Map);
         Assert.Equal(2, loaded.GlobalVars[5]);
         Assert.Equal(new SaveState.SavedItem(41, 120), Assert.Single(loaded.DudeInventory));
@@ -39,9 +42,22 @@ public class SaveStateRoundTripTests
         SaveState.MapDelta delta = loaded.VisitedMaps["denbus2.map"];
         Assert.Equal(new SaveState.SavedDoor(15000, 0x02000021, true, false), Assert.Single(delta.Doors));
         Assert.Equal([17, 304], delta.TakenOrdinals);
+        Assert.Equal(99, Assert.Single(delta.DeadOrdinals));
         Assert.Equal(new SaveState.CreatedObject(0x0700004A, 16000, 0, 1), Assert.Single(delta.Created));
         Assert.Equal(new SaveState.SavedItem(41, 50), Assert.Single(delta.ContainerInventories[55]));
         Assert.Equal([9, 8, 7], delta.MapVars);
+    }
+
+    [Fact]
+    public void PreVersioningSavesDeserializeAsVersionZero()
+    {
+        // Phase-5 saves have no Version property — they must read back as 0
+        // (≠ CurrentVersion) so the viewer refuses them instead of misreading
+        // ordinal-keyed deltas.
+        SaveState? legacy = SaveState.FromJson("""{"Map":"denbus2.map","DudeTile":1}""");
+        Assert.NotNull(legacy);
+        Assert.Equal(0, legacy.Version);
+        Assert.True(legacy.Version != SaveState.CurrentVersion);
     }
 }
 

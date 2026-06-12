@@ -14,6 +14,12 @@ namespace Hexwaste.Formats;
 /// </summary>
 public sealed class SaveState
 {
+    /// <summary>Bump on any shape change. Loads refuse mismatches (no silent
+    /// misreads of ordinal-keyed deltas); pre-versioning saves deserialize as 0.</summary>
+    public const int CurrentVersion = 1;
+
+    public int Version { get; set; }
+
     public string Map { get; set; } = "artemple.map";
     public int DudeTile { get; set; }
     public int DudeRotation { get; set; }
@@ -41,6 +47,11 @@ public sealed class SaveState
 
         /// <summary>Pristine objects removed from the world (picked up / destroyed), by load-order ordinal.</summary>
         public List<int> TakenOrdinals { get; set; } = [];
+
+        /// <summary>Killed critters by ordinal: replayed as sid=-1 + DAM_DEAD
+        /// before map_enter (dead scripts never run — combat.cc:4876) and a
+        /// corpse conversion after.</summary>
+        public List<int> DeadOrdinals { get; set; } = [];
 
         /// <summary>Player-dropped or script-created objects still on the map.</summary>
         public List<CreatedObject> Created { get; set; } = [];

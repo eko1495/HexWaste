@@ -55,7 +55,7 @@ public sealed class MapObject
     public int LightIntensity { get; init; }
 
     /// <summary>Script id (type in the high byte), or -1; key into MapFile.ScriptsBySid.</summary>
-    public int Sid { get; init; }
+    public int Sid { get; set; } // settable: engine removes a critter's script on death (combat.cc:4876)
 
     /// <summary>The serialized "updated flags" (items carry their lock bit here).</summary>
     public int UpdatedFlags { get; set; }

@@ -56,6 +56,9 @@ public sealed class ViewerGame : Game
     private readonly Dictionary<MapObject, DudeController> _npcWalkers = [];
     private readonly Dictionary<MapObject, int> _homeTiles = [];
 
+    /// <summary>Stub-hit histogram for the current map (dumped on map exit).</summary>
+    private readonly Dictionary<string, int> _stubbedExternals = [];
+
     /// <summary>Deterministic combat rolls for headless transcripts (--rng-seed).</summary>
     public int? RngSeed { get; set; }
     private Random _combatRng = new();
@@ -265,6 +268,15 @@ public sealed class ViewerGame : Game
                 CurrentMapIndexProvider = () => _mapList.GetIndexByFileName(_currentMapName),
                 OnScriptMessage = message => Log(message),
                 MoveRequested = (npc, tile) => StartNpcWalk(npc, tile),
+                // First hit of each distinct stub goes to stderr; counts are
+                // dumped per map on exit (gap analysis for wiring externals).
+                OnStubbedExternal = name =>
+                {
+                    if (!_stubbedExternals.TryAdd(name, 1))
+                        _stubbedExternals[name]++;
+                    else
+                        Console.Error.WriteLine(name);
+                },
             };
         }
         catch (Exception ex) when (ex is FileNotFoundException or InvalidDataException)
@@ -553,6 +565,14 @@ public sealed class ViewerGame : Game
         // serializes whole visited maps; the PoC keeps deltas instead).
         if (captureOutgoing && _map is not null)
             CaptureMapDelta();
+
+        if (_stubbedExternals.Count > 0)
+        {
+            Console.Error.WriteLine("stub histogram: " + string.Join(" ",
+                _stubbedExternals.OrderByDescending(kv => kv.Value).Take(10)
+                    .Select(kv => $"{kv.Key}×{kv.Value}")));
+            _stubbedExternals.Clear();
+        }
 
         _currentMapName = mapName;
         using (Stream stream = _vfs.OpenRead($@"maps\{mapName}"))
@@ -1523,22 +1543,13 @@ public sealed class ViewerGame : Game
     private void KillCritter(MapObject critter)
     {
         critter.CombatResults |= 0x80; // DAM_DEAD
+        critter.Sid = -1; // the engine removes the script on death (combat.cc:4876)
         _npcWalkers.Remove(critter);
         _homeTiles.Remove(critter);
         Log($"The {ObjectName(critter)} dies.");
 
-        // FALL_BACK first, FALL_FRONT when that art doesn't ship (the
-        // engine's behind-check flip is out of PoC scope).
-        const int animFallBack = 20;
-        const int animFallFront = 21;
-        int deathAnim = animFallBack;
+        int deathAnim = PickDeathAnim(critter);
         int fallFid = Fid.Build(ObjectType.Critter, Fid.Index(critter.Fid), deathAnim, 0);
-        if (!_vfs.Exists(_artIndex.GetFrmPath(fallFid)))
-        {
-            deathAnim = animFallFront;
-            fallFid = Fid.Build(ObjectType.Critter, Fid.Index(critter.Fid), deathAnim, 0);
-        }
-
         if (_vfs.Exists(_artIndex.GetFrmPath(fallFid)))
         {
             _animator.PlayFall(critter, fallFid);
@@ -1548,6 +1559,16 @@ public sealed class ViewerGame : Game
         {
             FinishCorpse(critter, deathAnim);
         }
+    }
+
+    /// <summary>FALL_BACK first, FALL_FRONT when that art doesn't ship (the
+    /// engine's behind-check flip is out of PoC scope).</summary>
+    private int PickDeathAnim(MapObject critter)
+    {
+        const int animFallBack = 20;
+        const int animFallFront = 21;
+        int fallFid = Fid.Build(ObjectType.Critter, Fid.Index(critter.Fid), animFallBack, 0);
+        return _vfs.Exists(_artIndex.GetFrmPath(fallFid)) ? animFallBack : animFallFront;
     }
 
     /// <summary>ported from fallout2-ce src/critter.cc critterKill(): the
@@ -1564,9 +1585,11 @@ public sealed class ViewerGame : Game
         critter.Flags |= 0x10; // OBJECT_NO_BLOCK
         critter.Flags |= 0x08; // flat: corpses draw under standing critters
 
-        _solidObjects[_elevation].Remove(critter);
-        if (!_flatObjects[_elevation].Contains(critter))
-            InsertSorted(_flatObjects[_elevation], critter);
+        for (int elevation = 0; elevation < MapFile.ElevationCount; elevation++)
+        {
+            if (_solidObjects[elevation].Remove(critter) && !_flatObjects[elevation].Contains(critter))
+                InsertSorted(_flatObjects[elevation], critter);
+        }
         RebuildBlockedTiles(_dude?.Dude);
     }
 
@@ -2754,9 +2777,15 @@ public sealed class ViewerGame : Game
 
         // Snapshot containers that hold something now OR were script-stocked
         // at map_enter — an empty snapshot is what keeps looted ones looted.
+        // Corpses count as containers (their loot must not resurrect).
         foreach ((MapObject obj, int ordinal) in _objectOrdinals)
         {
-            if (present.Contains(obj) && (obj.Inventory.Count > 0 || _stockedOrdinals.Contains(ordinal)))
+            if (!present.Contains(obj))
+                continue;
+            if (obj.IsDead && Fid.PidType(obj.Pid) == (int)ObjectType.Critter)
+                delta.DeadOrdinals.Add(ordinal);
+            if (obj.Inventory.Count > 0 || _stockedOrdinals.Contains(ordinal)
+                || (obj.IsDead && Fid.PidType(obj.Pid) == (int)ObjectType.Critter))
                 delta.ContainerInventories[ordinal] =
                     [.. obj.Inventory.Select(i => new SaveState.SavedItem(i.Pid, Math.Max(i.StackCount, 1)))];
         }
@@ -2780,6 +2809,19 @@ public sealed class ViewerGame : Game
                 elev?.Objects.Remove(taken);
             foreach (List<MapObject> list in _flatObjects.Concat(_solidObjects))
                 list.Remove(taken);
+        }
+
+        // Dead critters: scripts removed BEFORE map_enter (the engine nulls
+        // the sid on death and .SAV reloads keep it — combat.cc:4876), so
+        // their procs never run again.
+        foreach (int ordinal in delta.DeadOrdinals)
+        {
+            if (ordinal < 0 || ordinal >= _ordinalObjects.Length)
+                continue;
+            MapObject dead = _ordinalObjects[ordinal];
+            dead.Sid = -1;
+            dead.CombatResults |= 0x80; // DAM_DEAD
+            dead.CurrentHp = Math.Min(dead.CurrentHp, 0);
         }
     }
 
@@ -2807,6 +2849,17 @@ public sealed class ViewerGame : Game
             elev.Objects.Add(obj);
             if (!obj.IsHidden && Fid.Type(obj.Fid) is not ObjectType.Head && obj.HexTile >= 0)
                 InsertSorted(obj.IsFlat ? _flatObjects[created.Elevation] : _solidObjects[created.Elevation], obj);
+        }
+
+        // Corpse conversion replay (no fall animation on revisit — the body
+        // is long cold).
+        foreach (int ordinal in delta.DeadOrdinals)
+        {
+            if (ordinal < 0 || ordinal >= _ordinalObjects.Length)
+                continue;
+            MapObject dead = _ordinalObjects[ordinal];
+            if (Fid.AnimType(dead.Fid) == 0) // not yet converted
+                FinishCorpse(dead, PickDeathAnim(dead));
         }
 
         foreach ((int ordinal, List<SaveState.SavedItem> items) in delta.ContainerInventories)
@@ -2859,6 +2912,7 @@ public sealed class ViewerGame : Game
         CaptureMapDelta();
         var state = new SaveState
         {
+            Version = SaveState.CurrentVersion,
             Map = _currentMapName,
             DudeTile = _dude?.Dude.HexTile ?? _map.Header.EnteringTile,
             DudeRotation = _dude?.Dude.Rotation ?? 0,
@@ -2880,6 +2934,15 @@ public sealed class ViewerGame : Game
         if (state is null)
         {
             Log("No saved game found.");
+            return;
+        }
+
+        // Ordinal-keyed deltas make cross-version saves silently corrupting —
+        // refuse anything but an exact match.
+        if (state.Version != SaveState.CurrentVersion)
+        {
+            Log($"Save is from an incompatible version ({state.Version}, need {SaveState.CurrentVersion}).");
+            Console.WriteLine($"load refused: save version {state.Version} != {SaveState.CurrentVersion}");
             return;
         }
 
