@@ -28,3 +28,11 @@ artifacts/
 .idea/
 *.swp
 .DS_Store
+
+# Extracted game data (text configs slip past the binary patterns)
+city.txt
+worldmap.txt
+maps.txt
+*.msg
+*.lst
+*.gam
