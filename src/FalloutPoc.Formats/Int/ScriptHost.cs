@@ -11,7 +11,7 @@ namespace FalloutPoc.Formats.Int;
 /// map's global block, and session-level GVARs. Any VM failure falls back to
 /// non-scripted behavior — scripts are an enhancement, never a crash.
 /// </summary>
-public sealed class ScriptHost(GameFileSystem vfs, ScriptList scripts)
+public sealed class ScriptHost(GameFileSystem vfs, ScriptList scripts, FalloutPoc.Formats.Proto.ProtoDatabase protos)
 {
     private readonly Dictionary<string, IntProgram?> _programs = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<int, MessageFile?> _dialogMessages = [];
@@ -51,6 +51,15 @@ public sealed class ScriptHost(GameFileSystem vfs, ScriptList scripts)
 
     /// <summary>Diagnostic sink for arity-stubbed externals.</summary>
     public Action<string>? OnStubbedExternal { get; set; }
+
+    /// <summary>An object was placed on the map by a script (add to draw lists/blocking).</summary>
+    public Action<MapObject, MapFile>? ObjectPlaced { get; set; }
+
+    /// <summary>An object was removed from the map by a script.</summary>
+    public Action<MapObject>? ObjectRemoved { get; set; }
+
+    /// <summary>The prototype database (item icons, fids for created objects).</summary>
+    public FalloutPoc.Formats.Proto.ProtoDatabase Protos => protos;
 
     /// <summary>
     /// Runs the object's description_p_proc (falling back to look_at_p_proc).
@@ -115,7 +124,9 @@ public sealed class ScriptHost(GameFileSystem vfs, ScriptList scripts)
                 firstRun, -1, ["map_enter_p_proc"]);
         }
 
-        foreach (MapObject obj in objects)
+        // Snapshot: map_enter scripts create objects (container stocking),
+        // mutating the underlying lists mid-iteration.
+        foreach (MapObject obj in objects.ToList())
             RunObjectProc(obj, map, dude, firstRun, -1, "map_enter_p_proc");
     }
 
@@ -449,6 +460,132 @@ public sealed class ScriptHost(GameFileSystem vfs, ScriptList scripts)
         {
             if (_host.ObjectOf(objectHandle) is { } obj)
                 _host.OpenStateChanged?.Invoke(obj, open);
+        }
+
+        // ---- world mutation (phase-4 M3)
+
+        public int CreateObject(int pid, int tile, int elevation)
+        {
+            Proto.ProtoInfo proto;
+            try
+            {
+                proto = _host.Protos.Get(pid);
+            }
+            catch (Exception ex) when (ex is FileNotFoundException or InvalidDataException)
+            {
+                Console.Error.WriteLine($"create_object: bad pid 0x{pid:X8}: {ex.Message}");
+                return 0;
+            }
+
+            var obj = new MapObject
+            {
+                Id = -3,
+                HexTile = tile == -1 ? 0 : tile, // engine quirk: -1 coerced to 0
+                X = 0,
+                Y = 0,
+                Frame = 0,
+                Rotation = 0,
+                Fid = proto.Fid,
+                Flags = 0,
+                Pid = pid,
+                Sid = -1,
+            };
+
+            if (elevation is >= 0 and < MapFile.ElevationCount && _map.Elevations[elevation] is { } elev)
+            {
+                elev.Objects.Add(obj);
+                _host.ObjectPlaced?.Invoke(obj, _map);
+            }
+
+            return _host.HandleOf(obj);
+        }
+
+        public void DestroyObject(int objectHandle)
+        {
+            if (_host.ObjectOf(objectHandle) is not { } obj)
+                return;
+
+            foreach (MapElevation? elev in _map.Elevations)
+                elev?.Objects.Remove(obj);
+            foreach (MapElevation? elev in _map.Elevations)
+                if (elev is not null)
+                    foreach (MapObject holder in elev.Objects)
+                        holder.Inventory.Remove(obj);
+            _host.ObjectRemoved?.Invoke(obj);
+        }
+
+        public void AddToInventory(int targetHandle, int itemHandle, int quantity)
+        {
+            if (_host.ObjectOf(targetHandle) is not { } target || _host.ObjectOf(itemHandle) is not { } item)
+                return;
+
+            foreach (MapElevation? elev in _map.Elevations)
+                elev?.Objects.Remove(item);
+            _host.ObjectRemoved?.Invoke(item);
+
+            // Merge stacks of the same prototype like itemAdd does.
+            if (target.Inventory.FirstOrDefault(i => i.Pid == item.Pid) is { } existing)
+                existing.StackCount += Math.Max(quantity, 1);
+            else
+            {
+                item.StackCount = Math.Max(quantity, 1);
+                target.Inventory.Add(item);
+            }
+        }
+
+        public int RemoveFromInventory(int targetHandle, int itemHandle, int quantity)
+        {
+            if (_host.ObjectOf(targetHandle) is not { } target || _host.ObjectOf(itemHandle) is not { } item)
+                return 0;
+
+            MapObject? held = target.Inventory.FirstOrDefault(i => i == item || i.Pid == item.Pid);
+            if (held is null)
+                return 0;
+
+            int removed = Math.Min(Math.Max(quantity, 1), held.StackCount);
+            held.StackCount -= removed;
+            if (held.StackCount <= 0)
+                target.Inventory.Remove(held);
+            return removed;
+        }
+
+        public int MoveTo(int objectHandle, int tile, int elevation)
+        {
+            if (_host.ObjectOf(objectHandle) is not { } obj)
+                return -1;
+
+            foreach (MapElevation? elev in _map.Elevations)
+                elev?.Objects.Remove(obj);
+            obj.HexTile = tile;
+            if (elevation is >= 0 and < MapFile.ElevationCount && _map.Elevations[elevation] is { } targetElev)
+            {
+                targetElev.Objects.Add(obj);
+                _host.ObjectPlaced?.Invoke(obj, _map);
+            }
+
+            return tile;
+        }
+
+        public void SetObjectVisibility(int objectHandle, bool hidden)
+        {
+            if (_host.ObjectOf(objectHandle) is not { } obj || obj.IsHidden == hidden)
+                return;
+
+            obj.Flags = hidden ? obj.Flags | 0x01 : obj.Flags & ~0x01;
+            if (hidden)
+                _host.ObjectRemoved?.Invoke(obj);
+            else
+                _host.ObjectPlaced?.Invoke(obj, _map);
+        }
+
+        public int ObjPid(int objectHandle) => _host.ObjectOf(objectHandle)?.Pid ?? -1;
+
+        public int TileContainsPidObj(int tile, int elevation, int pid)
+        {
+            if (elevation is < 0 or >= MapFile.ElevationCount || _map.Elevations[elevation] is not { } elev)
+                return 0;
+            MapObject? found = elev.Objects.FirstOrDefault(o => o.HexTile == tile && o.Pid == pid);
+            return _host.HandleOf(found);
         }
     }
 }

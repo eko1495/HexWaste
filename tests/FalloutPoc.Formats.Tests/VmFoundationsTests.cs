@@ -100,7 +100,7 @@ public class VmFoundationsTests
     {
         using var vfs = GameFileSystem.Open(GameData.RequiredDir);
         var protos = new ProtoDatabase(vfs);
-        var host = new ScriptHost(vfs, ScriptList.Load(vfs));
+        var host = new ScriptHost(vfs, ScriptList.Load(vfs), protos);
 
         using Stream stream = vfs.OpenRead(@"maps\denbus1.map");
         MapFile map = MapFile.Load(stream, protos);
@@ -125,7 +125,7 @@ public class VmFoundationsTests
     {
         using var vfs = GameFileSystem.Open(GameData.RequiredDir);
         var protos = new ProtoDatabase(vfs);
-        var host = new ScriptHost(vfs, ScriptList.Load(vfs));
+        var host = new ScriptHost(vfs, ScriptList.Load(vfs), protos);
 
         using Stream stream = vfs.OpenRead(@"maps\denbus1.map");
         MapFile map = MapFile.Load(stream, protos);

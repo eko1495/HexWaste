@@ -118,6 +118,32 @@ public interface IVmExternals
 
     /// <summary>obj_open / obj_close — the host animates and re-blocks.</summary>
     void ObjSetOpen(int objectHandle, bool open) { }
+
+    // ---- world mutation (phase-4 M3); handle 0 must no-op.
+
+    /// <summary>create_object_sid (sid binding skipped); returns the new handle or 0.</summary>
+    int CreateObject(int pid, int tile, int elevation) => 0;
+
+    /// <summary>destroy_object.</summary>
+    void DestroyObject(int objectHandle) { }
+
+    /// <summary>add_obj_to_inven / add_mult_objs_to_inven.</summary>
+    void AddToInventory(int targetHandle, int itemHandle, int quantity) { }
+
+    /// <summary>rm_obj_from_inven / rm_mult_objs_from_inven; returns the removed count.</summary>
+    int RemoveFromInventory(int targetHandle, int itemHandle, int quantity) => 0;
+
+    /// <summary>move_to; returns the object's new tile (engine pushes a result).</summary>
+    int MoveTo(int objectHandle, int tile, int elevation) => -1;
+
+    /// <summary>set_obj_visibility (true = hidden).</summary>
+    void SetObjectVisibility(int objectHandle, bool hidden) { }
+
+    /// <summary>obj_pid.</summary>
+    int ObjPid(int objectHandle) => -1;
+
+    /// <summary>tile_contains_pid_obj — handle of a matching object, or 0.</summary>
+    int TileContainsPidObj(int tile, int elevation, int pid) => 0;
 }
 
 /// <summary>
@@ -902,6 +928,75 @@ public sealed class IntVm
             case 0x8132: // obj_close
                 _externals.ObjSetOpen(PopInt(), false);
                 break;
+
+            // ---- world mutation (pop orders from interpreter_extra.cc handlers)
+            case 0x80B7: // create_object_sid (pops sid, elevation, tile, pid)
+            {
+                Pop(); // sid — script binding not supported in the PoC
+                int elevation = PopInt();
+                int tile = PopInt();
+                int pid = PopInt();
+                PushInt(_externals.CreateObject(pid, tile, elevation));
+                break;
+            }
+            case 0x80F4: // destroy_object
+                _externals.DestroyObject(PopInt());
+                break;
+            case 0x80D8: // add_obj_to_inven (pops item, target)
+            {
+                int item = PopInt();
+                _externals.AddToInventory(PopInt(), item, 1);
+                break;
+            }
+            case 0x8116: // add_mult_objs_to_inven (pops quantity, item, target)
+            {
+                int quantity = PopInt();
+                int item = PopInt();
+                _externals.AddToInventory(PopInt(), item, quantity);
+                break;
+            }
+            case 0x80D9: // rm_obj_from_inven (pops item, target)
+            {
+                int item = PopInt();
+                _externals.RemoveFromInventory(PopInt(), item, 1);
+                break;
+            }
+            case 0x8117: // rm_mult_objs_from_inven (pops quantity, item, target) -> removed count
+            {
+                int quantity = PopInt();
+                int item = PopInt();
+                PushInt(_externals.RemoveFromInventory(PopInt(), item, quantity));
+                break;
+            }
+            case 0x80B6: // move_to (pops elevation, tile, obj) -> new tile
+            {
+                int elevation = PopInt();
+                int tile = PopInt();
+                PushInt(_externals.MoveTo(PopInt(), tile, elevation));
+                break;
+            }
+            case 0x80E3: // set_obj_visibility (pops hidden, obj)
+            {
+                int hidden = PopInt();
+                _externals.SetObjectVisibility(PopInt(), hidden != 0);
+                break;
+            }
+            case 0x8100: // obj_pid
+                PushInt(_externals.ObjPid(PopInt()));
+                break;
+            case 0x80C8: // obj_type — PID_TYPE of the object's pid
+            {
+                int pid = _externals.ObjPid(PopInt());
+                PushInt(pid == -1 ? -1 : pid >> 24);
+                break;
+            }
+            case 0x80A7: // tile_contains_pid_obj (pops pid, elevation, tile)
+            {
+                int pid = PopInt();
+                int elevation = PopInt();
+                PushInt(_externals.TileContainsPidObj(PopInt(), elevation, pid));
+                break;
+            }
 
             // ---- clock (ported from fallout2-ce scripts.cc gameTimeGetHour())
             case 0x80EA: // game_time (ticks)

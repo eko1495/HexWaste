@@ -82,6 +82,9 @@ public sealed class ViewerGame : Game
     private ProtoMessages _protoMessages = null!;
     private Formats.Int.ScriptHost? _scriptHost;
     private Formats.Int.ScriptHost.DialogSession? _dialog;
+    private MapObject? _lootContainer;
+    private bool _inventoryOpen;
+    private readonly List<MapObject> _dudeInventory = [];
     private Texture2D? _panelPixel;
     private readonly List<string> _messageLog = [];
 
@@ -178,11 +181,13 @@ public sealed class ViewerGame : Game
         _protoMessages = new ProtoMessages(_vfs, _protos);
         try
         {
-            _scriptHost = new Formats.Int.ScriptHost(_vfs, Formats.Int.ScriptList.Load(_vfs))
+            _scriptHost = new Formats.Int.ScriptHost(_vfs, Formats.Int.ScriptList.Load(_vfs), _protos)
             {
                 NameResolver = obj => ObjectName(obj),
                 IsOpenResolver = obj => _openDoors.Contains(obj),
                 OpenStateChanged = (obj, open) => SetDoorState(obj, open),
+                ObjectPlaced = (obj, map) => OnScriptObjectPlaced(obj),
+                ObjectRemoved = obj => OnScriptObjectRemoved(obj),
             };
         }
         catch (Exception ex) when (ex is FileNotFoundException or InvalidDataException)
@@ -227,6 +232,12 @@ public sealed class ViewerGame : Game
             else
                 InteractWith(target);
             Console.WriteLine($"{(lockpick ? "lockpick" : "use")}@{hex}: locked={target.IsLockedState} open={_openDoors.Contains(target)}");
+            if (_lootContainer is { } looted)
+            {
+                Console.WriteLine($"LOOT {ObjectName(looted)}:");
+                foreach (MapObject item in looted.Inventory)
+                    Console.WriteLine($"  ITEM: {ObjectName(item)} x{item.StackCount}");
+            }
         }
 
         if (TalkAtHex is { } talkHex)
@@ -401,6 +412,43 @@ public sealed class ViewerGame : Game
         _frameClock.Restart();
         KeyboardState keyboard = Keyboard.GetState();
         MouseState mouse = Mouse.GetState();
+
+        // Loot/inventory mode: number keys take/drop, A take-all, Esc/I close.
+        if (_lootContainer is not null || _inventoryOpen)
+        {
+            for (int i = 0; i < 9; i++)
+            {
+                if (IsKeyPressed(keyboard, Keys.D1 + i) || IsKeyPressed(keyboard, Keys.NumPad1 + i))
+                {
+                    if (_lootContainer is not null)
+                        TakeFromContainer(i);
+                    else
+                        DropFromInventory(i);
+                    break;
+                }
+            }
+
+            if (_lootContainer is not null && IsKeyPressed(keyboard, Keys.A))
+                while (_lootContainer.Inventory.Count > 0)
+                    TakeFromContainer(0);
+
+            if (IsKeyPressed(keyboard, Keys.Escape) || IsKeyPressed(keyboard, Keys.I))
+            {
+                _lootContainer = null;
+                _inventoryOpen = false;
+            }
+
+            _previousMouse = mouse;
+            _previousKeyboard = keyboard;
+            base.Update(gameTime);
+            return;
+        }
+
+        if (IsKeyPressed(keyboard, Keys.I))
+        {
+            _inventoryOpen = true;
+            PrewarmItemTextures(_dudeInventory);
+        }
 
         // Dialog mode swallows all input.
         if (_dialog is not null)
@@ -866,6 +914,66 @@ public sealed class ViewerGame : Game
         return Enumerable.Range(0, 6).Any(r => Formats.Hex.HexGrid.TileInDirection(dudeTile, r) == obj.HexTile);
     }
 
+    private bool IsContainer(MapObject obj)
+    {
+        if (Fid.PidType(obj.Pid) != 0) // items only
+            return false;
+        try
+        {
+            return _protos.Get(obj.Pid).SubType == 1; // ITEM_TYPE_CONTAINER
+        }
+        catch (Exception ex) when (ex is FileNotFoundException or InvalidDataException)
+        {
+            return false;
+        }
+    }
+
+    private void PickUpItem(MapObject item)
+    {
+        var scripted = _scriptHost?.RunObjectProc(item, _map, _dude?.Dude, "pickup_p_proc");
+        if (scripted is not null)
+            foreach (string line in scripted.Messages)
+                Log(line);
+        if (scripted is { Overridden: true })
+            return;
+
+        OnScriptObjectRemoved(item);
+        foreach (MapElevation? elev in _map.Elevations)
+            elev?.Objects.Remove(item);
+        AddToDudeInventory(item);
+        Log($"You pick up: {ObjectName(item)}.");
+    }
+
+    private void AddToDudeInventory(MapObject item)
+    {
+        if (_dudeInventory.FirstOrDefault(i => i.Pid == item.Pid) is { } existing)
+            existing.StackCount += Math.Max(item.StackCount, 1);
+        else
+            _dudeInventory.Add(item);
+    }
+
+    private void TakeFromContainer(int index)
+    {
+        if (_lootContainer is null || index < 0 || index >= _lootContainer.Inventory.Count)
+            return;
+        MapObject item = _lootContainer.Inventory[index];
+        _lootContainer.Inventory.RemoveAt(index);
+        AddToDudeInventory(item);
+        Log($"You take: {ObjectName(item)}{(item.StackCount > 1 ? $" x{item.StackCount}" : "")}.");
+    }
+
+    private void DropFromInventory(int index)
+    {
+        if (_dude is null || index < 0 || index >= _dudeInventory.Count)
+            return;
+        MapObject item = _dudeInventory[index];
+        _dudeInventory.RemoveAt(index);
+        item.HexTile = _dude.Dude.HexTile;
+        _map.Elevations[_elevation]?.Objects.Add(item);
+        OnScriptObjectPlaced(item);
+        Log($"You drop: {ObjectName(item)}.");
+    }
+
     private bool IsDoor(MapObject obj)
     {
         if (Fid.Type(obj.Fid) is not ObjectType.Scenery || Fid.PidType(obj.Pid) != (int)ObjectType.Scenery)
@@ -952,6 +1060,43 @@ public sealed class ViewerGame : Game
             return;
         }
 
+        if (IsContainer(obj) || (Fid.Type(obj.Fid) is ObjectType.Item && obj.Inventory.Count > 0))
+        {
+            if (!IsAdjacentToDude(obj))
+            {
+                Log("Too far away.");
+                return;
+            }
+
+            var containerScripted = _scriptHost?.RunObjectProc(obj, _map, _dude?.Dude, "use_p_proc");
+            if (containerScripted is not null)
+                foreach (string line in containerScripted.Messages)
+                    Log(line);
+            if (containerScripted is { Overridden: true })
+                return;
+
+            if (obj.IsLockedState)
+            {
+                Log($"The {ObjectName(obj)} is locked.");
+                return;
+            }
+
+            _lootContainer = obj;
+            PrewarmItemTextures(obj.Inventory);
+            return;
+        }
+
+        if (Fid.Type(obj.Fid) is ObjectType.Item)
+        {
+            if (!IsAdjacentToDude(obj))
+            {
+                Log("Too far away.");
+                return;
+            }
+            PickUpItem(obj);
+            return;
+        }
+
         if (IsDoor(obj))
         {
             if (!IsAdjacentToDude(obj))
@@ -991,6 +1136,28 @@ public sealed class ViewerGame : Game
         }
 
         Console.WriteLine($"picked: {DescribeObject(obj)}");
+    }
+
+    /// <summary>Script-created or unhidden object enters the draw lists + blocking.</summary>
+    private void OnScriptObjectPlaced(MapObject obj)
+    {
+        if (Fid.Type(obj.Fid) is ObjectType.Head || obj.HexTile < 0)
+            return;
+
+        List<MapObject> list = obj.IsFlat ? _flatObjects[_elevation] : _solidObjects[_elevation];
+        list.Remove(obj);
+        if (!obj.IsHidden)
+            InsertSorted(list, obj);
+        if (_dude is not null)
+            RebuildBlockedTiles(_dude.Dude);
+    }
+
+    private void OnScriptObjectRemoved(MapObject obj)
+    {
+        foreach (List<MapObject> list in _flatObjects.Concat(_solidObjects))
+            list.Remove(obj);
+        if (_dude is not null)
+            RebuildBlockedTiles(_dude.Dude);
     }
 
     /// <summary>Script-driven obj_open/obj_close: idempotent door state change.</summary>
@@ -1195,8 +1362,22 @@ public sealed class ViewerGame : Game
         }
     }
 
+    private RenderTarget2D? _screenshotTarget;
+
     protected override void Draw(GameTime gameTime)
     {
+        // Screenshots render via an offscreen target: reading the backbuffer
+        // races the GPU on this driver and loses late sprites in the upper
+        // screen region (observed: panels above y~250 vanish from readback
+        // while displaying fine).
+        if (_screenshotPath is not null)
+        {
+            _screenshotTarget ??= new RenderTarget2D(GraphicsDevice,
+                GraphicsDevice.PresentationParameters.BackBufferWidth,
+                GraphicsDevice.PresentationParameters.BackBufferHeight);
+            GraphicsDevice.SetRenderTarget(_screenshotTarget);
+        }
+
         GraphicsDevice.Clear(Color.Black);
 
         // Draw order ported from the fallout2-ce render loop (src/map.cc
@@ -1216,8 +1397,18 @@ public sealed class ViewerGame : Game
                 DrawRoofs();
             DrawTextOverlay();
             DrawDialogPanel();
+            DrawItemPanels();
         }
         _spriteBatch.End();
+
+        if (_screenshotPath is not null && _screenshotTarget is not null)
+        {
+            GraphicsDevice.SetRenderTarget(null);
+            GraphicsDevice.Clear(Color.Black);
+            _spriteBatch.Begin();
+            _spriteBatch.Draw(_screenshotTarget, Vector2.Zero, Color.White);
+            _spriteBatch.End();
+        }
 
         base.Draw(gameTime);
         _drawMs.Add(_frameClock.Elapsed.TotalMilliseconds);
@@ -1559,6 +1750,93 @@ public sealed class ViewerGame : Game
             _dialogOptionRects.Add(currentRect);
     }
 
+    /// <summary>Loot or inventory panel: item icons + names + counts, numbered rows.</summary>
+    private void DrawItemPanels()
+    {
+        if (_fontRenderer is null)
+            return;
+
+        if (_lootContainer is { } container)
+        {
+            DrawItemList($"{ObjectName(container)} - 1-9 take, A take all, Esc close",
+                container.Inventory, 40);
+        }
+        else if (_inventoryOpen)
+        {
+            DrawItemList("Inventory - 1-9 drop, Esc close", _dudeInventory, 40);
+        }
+    }
+
+    private void DrawItemList(string title, List<MapObject> items, int x)
+    {
+        _panelPixel ??= CreatePixel();
+        int lineHeight = Math.Max(_fontRenderer!.LineHeight, 26);
+        int panelWidth = 360;
+        int panelHeight = (Math.Max(items.Count, 1) + 2) * lineHeight + 16;
+        int y = 60;
+
+        _spriteBatch.Draw(_panelPixel, new Rectangle(x, y, panelWidth, panelHeight), new Color(8, 8, 8, 230));
+        _fontRenderer.Draw(_spriteBatch, title, new Vector2(x + 10, y + 8), Color.LightGray);
+
+        int rowY = y + 8 + lineHeight + 6;
+        var green = new Color(0, 252, 0);
+        if (items.Count == 0)
+            _fontRenderer.Draw(_spriteBatch, "(empty)", new Vector2(x + 10, rowY), Color.Gray);
+
+        for (int i = 0; i < items.Count && i < 9; i++)
+        {
+            MapObject item = items[i];
+            DrawItemIcon(item, new Rectangle(x + 28, rowY - 2, 28, 22));
+            string count = item.StackCount > 1 ? $" x{item.StackCount}" : "";
+            _fontRenderer.Draw(_spriteBatch, $"{i + 1}.", new Vector2(x + 10, rowY), green);
+            _fontRenderer.Draw(_spriteBatch, $"{ObjectName(item)}{count}", new Vector2(x + 62, rowY), green);
+            rowY += lineHeight;
+        }
+
+        if (items.Count > 9)
+            _fontRenderer.Draw(_spriteBatch, $"(+{items.Count - 9} more)", new Vector2(x + 10, rowY), Color.Gray);
+    }
+
+    /// <summary>
+    /// Creating textures (SetData) inside an active SpriteBatch corrupts the
+    /// in-flight batch — warm the icon cache before the panel ever draws.
+    /// </summary>
+    private void PrewarmItemTextures(IEnumerable<MapObject> items)
+    {
+        foreach (MapObject item in items)
+        {
+            try
+            {
+                int inventoryFid = _protos.Get(item.Pid).InventoryFid;
+                if (inventoryFid != -1)
+                    _frmCache.GetTexture(inventoryFid);
+            }
+            catch (Exception ex) when (ex is FileNotFoundException or InvalidDataException or NotSupportedException)
+            {
+            }
+        }
+    }
+
+    private void DrawItemIcon(MapObject item, Rectangle destination)
+    {
+        try
+        {
+            int inventoryFid = _protos.Get(item.Pid).InventoryFid;
+            if (inventoryFid == -1)
+                return;
+            Texture2D texture = _frmCache.GetTexture(inventoryFid);
+            float scale = Math.Min((float)destination.Width / texture.Width,
+                (float)destination.Height / texture.Height);
+            var size = new Point((int)(texture.Width * scale), (int)(texture.Height * scale));
+            _spriteBatch.Draw(texture,
+                new Rectangle(destination.X, destination.Y + (destination.Height - size.Y) / 2, size.X, size.Y),
+                Color.White);
+        }
+        catch (Exception ex) when (ex is FileNotFoundException or InvalidDataException or NotSupportedException)
+        {
+        }
+    }
+
     private Texture2D CreatePixel()
     {
         var pixel = new Texture2D(GraphicsDevice, 1, 1);
@@ -1594,7 +1872,10 @@ public sealed class ViewerGame : Game
         int width = GraphicsDevice.PresentationParameters.BackBufferWidth;
         int height = GraphicsDevice.PresentationParameters.BackBufferHeight;
         var pixels = new Color[width * height];
-        GraphicsDevice.GetBackBufferData(pixels);
+        if (_screenshotTarget is not null)
+            _screenshotTarget.GetData(pixels); // offscreen target: race-free
+        else
+            GraphicsDevice.GetBackBufferData(pixels);
 
         // The backbuffer's alpha channel is meaningless for an opaque window;
         // force it so the PNG matches what's on screen.

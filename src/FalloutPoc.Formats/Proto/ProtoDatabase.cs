@@ -15,7 +15,9 @@ public sealed record ProtoInfo(
     /// <summary>Item type or scenery type; -1 for other object types.</summary>
     int SubType,
     /// <summary>Sound id char for sfx names (scenery field_34 / item field_80); 0 when absent.</summary>
-    byte SoundId = 0);
+    byte SoundId = 0,
+    /// <summary>Inventory-list icon FID (items only); -1 otherwise.</summary>
+    int InventoryFid = -1);
 
 /// <summary>
 /// Lazily loads .pro prototypes via the VFS, following fallout2-ce
@@ -64,6 +66,7 @@ public sealed class ProtoDatabase(GameFileSystem vfs)
         int extendedFlags;
         int subType = -1;
         byte soundId = 0;
+        int inventoryFid = -1;
         switch ((ObjectType)type)
         {
             case ObjectType.Item:
@@ -88,7 +91,8 @@ public sealed class ProtoDatabase(GameFileSystem vfs)
                 }
                 else if ((ObjectType)type is ObjectType.Item)
                 {
-                    reader.Skip(5 * 4); // material, size, weight, cost, inventoryFid
+                    reader.Skip(4 * 4); // material, size, weight, cost
+                    inventoryFid = reader.ReadInt32();
                     soundId = reader.ReadByte();
                 }
                 break;
@@ -102,7 +106,7 @@ public sealed class ProtoDatabase(GameFileSystem vfs)
                 throw new InvalidDataException($"PID 0x{pid:X8}: unexpected type {type}.");
         }
 
-        return new ProtoInfo(filePid, messageId, fid, flags, extendedFlags, subType, soundId);
+        return new ProtoInfo(filePid, messageId, fid, flags, extendedFlags, subType, soundId, inventoryFid);
     }
 
     private string[] GetList(int type)

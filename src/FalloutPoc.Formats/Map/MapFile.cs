@@ -47,7 +47,7 @@ public sealed class MapObject
     public required int Frame { get; init; }
     public required int Rotation { get; set; }
     public required int Fid { get; set; }
-    public required int Flags { get; init; }
+    public required int Flags { get; set; }
     public required int Pid { get; init; }
 
     /// <summary>Light emission: radius in hexes (max 8) and intensity (0..65536).</summary>
@@ -89,6 +89,9 @@ public sealed class MapObject
         }
     }
     public List<MapObject> Inventory { get; } = [];
+
+    /// <summary>Stack size when this object sits in an inventory (MAP quantity field).</summary>
+    public int StackCount { get; set; } = 1;
 
     // ported from fallout2-ce src/obj_types.h
     public bool IsHidden => (Flags & 0x01) != 0;
@@ -343,8 +346,10 @@ public sealed class MapFile
 
         for (int i = 0; i < inventoryLength; i++)
         {
-            reader.Skip(4); // quantity
-            obj.Inventory.Add(ReadObject(reader, protos, mapVersion));
+            int quantity = reader.ReadInt32();
+            MapObject item = ReadObject(reader, protos, mapVersion);
+            item.StackCount = Math.Max(quantity, 1);
+            obj.Inventory.Add(item);
         }
 
         return obj;
