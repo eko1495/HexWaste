@@ -8,6 +8,7 @@ namespace FalloutPoc.Formats.Map;
 public sealed class MapList
 {
     private readonly Dictionary<int, string> _names = [];
+    private readonly Dictionary<string, int> _byLookupName = new(StringComparer.OrdinalIgnoreCase);
 
     public static MapList Load(GameFileSystem vfs)
     {
@@ -30,6 +31,11 @@ public sealed class MapList
             {
                 list._names[currentIndex] = line["map_name=".Length..].Trim();
             }
+            else if (currentIndex >= 0 && line.StartsWith("lookup_name=", StringComparison.OrdinalIgnoreCase))
+            {
+                string lookup = line["lookup_name=".Length..].Split(';')[0].Trim();
+                list._byLookupName.TryAdd(lookup, currentIndex);
+            }
         }
 
         return list;
@@ -38,4 +44,8 @@ public sealed class MapList
     /// <summary>Returns e.g. "artemple.map", or null for unknown indices.</summary>
     public string? GetMapFileName(int index) =>
         _names.TryGetValue(index, out string? name) ? $"{name}.map" : null;
+
+    /// <summary>Resolves a maps.txt lookup_name (used by city.txt entrances) to a map index, or -1.</summary>
+    public int FindByLookupName(string lookupName) =>
+        _byLookupName.TryGetValue(lookupName.Trim(), out int index) ? index : -1;
 }

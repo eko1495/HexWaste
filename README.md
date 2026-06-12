@@ -38,6 +38,7 @@ All six milestones are complete.
 | T | toggle critter walk cycle (in place) |
 | PgUp / PgDn | switch elevation |
 | [ / ] | ambient light down/up (night ↔ day) |
+| M | worldmap — click a location to travel there |
 | Esc | quit |
 
 Extra CLI flags: `--screenshot out.png` (render one frame and exit),
@@ -48,7 +49,8 @@ Extra CLI flags: `--screenshot out.png` (render one frame and exit),
 `--goto TILE` (walk the dude to a hex tile after load — for testing),
 `--door TILE` (toggle the door at a hex tile after load — for testing),
 `--examine X,Y` (print/log name+description of the object at a screen point — for testing),
-`--ambient F` (ambient light fraction 0.25–1.0, e.g. 0.25 for night).
+`--ambient F` (ambient light fraction 0.25–1.0, e.g. 0.25 for night),
+`--worldmap` (open the worldmap on start), `--travel N` (travel to city.txt area N — for testing).
 
 ## Phase 2 — walking simulator
 

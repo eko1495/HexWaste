@@ -12,6 +12,8 @@ Microsoft.Xna.Framework.Point? examine = null;
 int? gotoTile = null;
 int? doorTile = null;
 double ambient = 1.0;
+bool worldmap = false;
+int? travelArea = null;
 
 for (int i = 0; i < args.Length; i++)
 {
@@ -34,6 +36,12 @@ for (int i = 0; i < args.Length; i++)
             break;
         case "--door" when i + 1 < args.Length:
             doorTile = int.Parse(args[++i]);
+            break;
+        case "--worldmap":
+            worldmap = true;
+            break;
+        case "--travel" when i + 1 < args.Length:
+            travelArea = int.Parse(args[++i]);
             break;
         case "--ambient" when i + 1 < args.Length:
             ambient = double.Parse(args[++i], System.Globalization.CultureInfo.InvariantCulture);
@@ -83,6 +91,8 @@ using var game = new ViewerGame(gameDir, mapName, screenshot, roofs)
     WalkToTile = gotoTile,
     ToggleDoorAtTile = doorTile,
     InitialAmbient = ambient,
+    StartOnWorldmap = worldmap,
+    TravelToArea = travelArea,
 };
 game.Run();
 return 0;

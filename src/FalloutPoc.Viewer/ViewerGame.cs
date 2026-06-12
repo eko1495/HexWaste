@@ -52,7 +52,17 @@ public sealed class ViewerGame : Game
     private DudeController? _dude;
     private HashSet<int> _blockedTiles = [];
     private MapList _mapList = null!;
+    private CityList _cities = null!;
+    private WorldmapScreen? _worldmapScreen;
+    private bool _worldmapOpen;
+    private WorldArea? _hoveredArea;
     private Formats.Light.LightGrid _lightGrid = new();
+
+    /// <summary>Open the worldmap on start (screenshot testing).</summary>
+    public bool StartOnWorldmap { get; set; }
+
+    /// <summary>Travel to this city.txt area index right after load (screenshot testing).</summary>
+    public int? TravelToArea { get; set; }
     private AafFontRenderer? _fontRenderer;
 
     /// <summary>Ambient light as a fraction of full brightness (CLI --ambient).</summary>
@@ -132,6 +142,7 @@ public sealed class ViewerGame : Game
         _artIndex = new ArtIndex(_vfs);
         _frmCache = new FrmCache(_vfs, _artIndex, GraphicsDevice, _palette);
         _mapList = MapList.Load(_vfs);
+        _cities = CityList.Load(_vfs);
         _protoMessages = new ProtoMessages(_vfs, _protos);
 
         // font1.aaf is the standard readable interface font.
@@ -141,6 +152,18 @@ public sealed class ViewerGame : Game
             Console.Error.WriteLine("font1.aaf not found — text overlay disabled");
 
         LoadMap(_mapName, spawnAt: null);
+
+        _worldmapScreen = new WorldmapScreen(GraphicsDevice, _vfs, _palette, _cities, _fontRenderer);
+        if (StartOnWorldmap)
+            _worldmapOpen = true;
+        if (TravelToArea is { } areaIndex)
+        {
+            WorldArea? area = _cities.Areas.FirstOrDefault(a => a.Index == areaIndex);
+            if (area is not null)
+                TravelTo(area);
+            else
+                Console.Error.WriteLine($"no area {areaIndex} in city.txt");
+        }
 
         if (ExamineAt is { } examinePoint)
         {
@@ -198,9 +221,11 @@ public sealed class ViewerGame : Game
         _dude = null;
         _openDoors.Clear();
 
-        int spawnTile = spawnAt?.Tile ?? _map.Header.EnteringTile;
-        int spawnRotation = spawnAt?.Rotation ?? _map.Header.EnteringRotation;
-        _elevation = spawnAt?.Elevation ?? _map.Header.EnteringElevation;
+        // Tile -1 in a destination (e.g. city.txt entrances) means "use the
+        // map's own entering position".
+        int spawnTile = spawnAt is { Tile: > 0 } ? spawnAt.Tile : _map.Header.EnteringTile;
+        int spawnRotation = spawnAt is { Tile: > 0 } ? spawnAt.Rotation : _map.Header.EnteringRotation;
+        _elevation = spawnAt is { Elevation: >= 0 } ? spawnAt.Elevation : _map.Header.EnteringElevation;
         if (_elevation is < 0 or >= MapFile.ElevationCount || _map.Elevations[_elevation] is null)
             _elevation = Array.FindIndex(_map.Elevations, e => e is not null);
 
@@ -249,6 +274,26 @@ public sealed class ViewerGame : Game
         _frameClock.Restart();
         KeyboardState keyboard = Keyboard.GetState();
         MouseState mouse = Mouse.GetState();
+
+        // Worldmap mode swallows map input.
+        if (_worldmapOpen)
+        {
+            if (IsKeyPressed(keyboard, Keys.Escape) || IsKeyPressed(keyboard, Keys.M))
+                _worldmapOpen = false;
+
+            _hoveredArea = _worldmapScreen?.HitTest(mouse.X, mouse.Y, GraphicsDevice.Viewport.Bounds);
+            if (mouse.LeftButton == ButtonState.Pressed && _previousMouse.LeftButton == ButtonState.Released
+                && _hoveredArea is not null)
+                TravelTo(_hoveredArea);
+
+            _previousMouse = mouse;
+            _previousKeyboard = keyboard;
+            base.Update(gameTime);
+            return;
+        }
+
+        if (IsKeyPressed(keyboard, Keys.M))
+            _worldmapOpen = true;
 
         if (keyboard.IsKeyDown(Keys.Escape))
             Exit();
@@ -634,7 +679,8 @@ public sealed class ViewerGame : Game
 
         if (destination.Map < 0)
         {
-            Console.WriteLine("exit to the worldmap — not part of this PoC");
+            _worldmapOpen = true;
+            Log("You head out to the wasteland.");
             return;
         }
 
@@ -655,6 +701,27 @@ public sealed class ViewerGame : Game
         _camera.PanY = 0;
         _baseTitle = $"FalloutPoc viewer — {_map.Header.Name} (elevation {_elevation})";
         Window.Title = _baseTitle;
+    }
+
+    /// <summary>Travels to a worldmap area: first usable entrance, resolved via maps.txt lookup names.</summary>
+    private void TravelTo(WorldArea area)
+    {
+        // ported behavior from fallout2-ce src/worldmap.cc
+        // wmAreaFindFirstValidMap(): first enabled entrance, else force the first.
+        AreaEntrance entrance = area.Entrances.FirstOrDefault(e => e.StartsOn) ?? area.Entrances.First();
+
+        int mapIndex = _mapList.FindByLookupName(entrance.MapLookupName);
+        string? mapFile = mapIndex >= 0 ? _mapList.GetMapFileName(mapIndex) : null;
+        if (mapFile is null)
+        {
+            Console.Error.WriteLine($"area '{area.Name}': cannot resolve map '{entrance.MapLookupName}'");
+            return;
+        }
+
+        _worldmapOpen = false;
+        Console.WriteLine($"travelling to {area.Name} -> {mapFile}");
+        LoadMap(mapFile, new MapDestination(mapIndex, entrance.Tile, entrance.Elevation, entrance.Rotation));
+        Log($"You arrive at {area.Name}.");
     }
 
     /// <summary>Queues the transition when the dude steps onto an exit grid.</summary>
@@ -721,12 +788,19 @@ public sealed class ViewerGame : Game
         // isoWindowRefreshRectGame): floors -> flat objects -> non-flat
         // objects -> roofs.
         _spriteBatch.Begin(samplerState: SamplerState.PointClamp);
-        DrawFloors();
-        DrawObjects(_flatObjects[_elevation]);
-        DrawObjects(_solidObjects[_elevation]);
-        if (_roofsVisible)
-            DrawRoofs();
-        DrawTextOverlay();
+        if (_worldmapOpen)
+        {
+            _worldmapScreen?.Draw(_spriteBatch, GraphicsDevice.Viewport.Bounds, _hoveredArea);
+        }
+        else
+        {
+            DrawFloors();
+            DrawObjects(_flatObjects[_elevation]);
+            DrawObjects(_solidObjects[_elevation]);
+            if (_roofsVisible)
+                DrawRoofs();
+            DrawTextOverlay();
+        }
         _spriteBatch.End();
 
         base.Draw(gameTime);
