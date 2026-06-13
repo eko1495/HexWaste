@@ -67,6 +67,12 @@ public static class EncounterSpawner
     {
         var f = new Formation(group.Formation, rng, dudeTile, startTiles);
 
+        // The engine places critters one at a time, so each later placement sees the
+        // earlier ones as blocking (wmEvalTileNumForPlacement → _obj_blocking_at). The
+        // planner creates nothing, so it tracks its own placed tiles to the same end —
+        // two spawns never share a hex.
+        var placed = new HashSet<int>();
+
         foreach (GroupMember member in group.Members)
         {
             if (member.Pid <= 0) // pid -1 (and our parse's 0 for a pid-less member, e.g. Special1) = nothing
@@ -79,8 +85,9 @@ public static class EncounterSpawner
 
             for (int i = 0; i < count; i++)
             {
-                if (f.NextTile(group, dudePerception, isBlocked, reachable) is not { } tile)
+                if (f.NextTile(group, dudePerception, t => isBlocked(t) || placed.Contains(t), reachable) is not { } tile)
                     continue; // 25-retry exhausted: skip this critter (engine continues)
+                placed.Add(tile);
 
                 int rotation = HexGrid.RotationTo(tile, dudeTile); // face the dude
                 var items = new List<SpawnItem>();

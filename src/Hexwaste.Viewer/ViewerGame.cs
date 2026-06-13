@@ -218,6 +218,7 @@ public sealed class ViewerGame : Game, Formats.Combat.ICombatHost
         public sealed record Throw(int Hex) : StartupAction;
         public sealed record LoadTransient(string Map) : StartupAction;
         public sealed record EncounterWalk(int X0, int Y0, int X1, int Y1, int Steps) : StartupAction;
+        public sealed record EncounterSpawnAt(string Map, string Group, int Count) : StartupAction;
         public sealed record Fight(int Hex) : StartupAction;
         public sealed record Give(int Pid, int Count) : StartupAction;
         public sealed record UseItemByPid(int Pid) : StartupAction;
@@ -572,6 +573,30 @@ public sealed class ViewerGame : Game, Formats.Combat.ICombatHost
                     Console.WriteLine($"encounter-walk: ({x0},{y0})->({x1},{y1}) steps={steps} encounters={hits}");
                     break;
                 }
+                case StartupAction.EncounterSpawnAt(var emap, var group, var count):
+                {
+                    // Phase-10 M3 demo: load a transient encounter map and spawn a
+                    // named worldmap.txt group on it (the live worldmap roll wires the
+                    // same _pendingEncounter hook). Deterministic under --rng-seed; the
+                    // census is the golden transcript.
+                    var entry = new Formats.Map.EncounterEntry(100, null,
+                        [new Formats.Map.EncounterSpawn(count, count, group)], "AMBUSH", []);
+                    var table = new Formats.Map.EncounterTable("demo", [], [entry]);
+                    _pendingEncounter = new Formats.Map.EncounterResult(table, entry);
+                    LoadMap(emap, null, transient: true);
+
+                    var spawned = _solidObjects[_elevation]
+                        .Where(o => o.Id == -3 && Fid.Type(o.Fid) is ObjectType.Critter)
+                        .OrderBy(o => o.HexTile)
+                        .ToList();
+                    var corpses = _flatObjects[_elevation].Where(o => o.Id == -3).ToList();
+                    foreach (MapObject o in spawned)
+                        Console.WriteLine($"  spawn pid=0x{o.Pid:X8} tile={o.HexTile} rot={o.Rotation}"
+                            + $" hp={o.CurrentHp} team={o.Team} sid={(o.Sid == -1 ? "none" : "bound")} items={o.Inventory.Count}");
+                    Console.WriteLine($"encounter: map={emap} group={group} requested={count}"
+                        + $" critters={spawned.Count} corpses={corpses.Count}");
+                    break;
+                }
                 case StartupAction.LoadTransient(var tmap):
                 {
                     // Phase-10 M0 guard check: load a transient (saved=No) map twice
@@ -888,6 +913,11 @@ public sealed class ViewerGame : Game, Formats.Combat.ICombatHost
     /// (phase-10 M0; the engine erases its .SAV — map.cc:1456).</summary>
     private bool _currentMapTransient;
 
+    /// <summary>The encounter whose group the next transient LoadMap spawns, then
+    /// clears (phase-10 M3). Set by the worldmap roll / the --encounter demo right
+    /// before LoadMap(..., transient: true).</summary>
+    private Formats.Map.EncounterResult? _pendingEncounter;
+
     private void LoadMap(string mapName, MapDestination? spawnAt, bool captureOutgoing = true,
         bool transient = false)
     {
@@ -1023,6 +1053,15 @@ public sealed class ViewerGame : Game, Formats.Combat.ICombatHost
         if (delta is not null)
             ApplyDeltaAfterScripts(delta);
         InjectPartyMembers();
+
+        // The engine order: map_enter runs, THEN wmSetupRandomEncounter spawns the
+        // group (map.cc:974,978). On a transient encounter map the pending roll lays
+        // its critters down here; the critter_p_proc heartbeat then aggros them.
+        if (transient && _pendingEncounter is { } pending)
+        {
+            SpawnEncounter(pending);
+            _pendingEncounter = null;
+        }
 
         RebuildLighting();
 
@@ -2876,6 +2915,98 @@ public sealed class ViewerGame : Game, Formats.Combat.ICombatHost
             list.Remove(obj);
         if (_dude is not null)
             RebuildBlockedTiles(_dude.Dude);
+    }
+
+    /// <summary>Lay out + create a random encounter's critters on the freshly loaded
+    /// transient map (phase-10 M3). The pure <see cref="EncounterSpawner"/> picks the
+    /// tiles (formations, the dude's Perception, the map's random_start_points, A*
+    /// reachability); this turns each instruction into a live MapObject — proto art,
+    /// a bound script sid (so the heartbeat aggros it), a hostile team, its gear, and
+    /// a corpse for Dead members. Deterministic under --rng-seed.</summary>
+    private void SpawnEncounter(Formats.Map.EncounterResult encounter)
+    {
+        if (_dude is null)
+            return;
+
+        int perception = GetCritterState(_dude.Dude)?.Stat(Formats.Combat.CritterStat.Perception) ?? 5;
+        int partyCount = (_scriptHost?.PartyMembers.Count ?? 0) + 1; // dude + companions
+        IReadOnlyList<int> startTiles = [.. _mapList.GetRandomStartPoints(_currentMapName).Select(p => p.Tile)];
+
+        bool IsBlocked(int t) => _blockedTiles.Contains(t);
+        bool Reachable(int from, int to) => Formats.Hex.Pathfinder.FindPath(from, to, IsBlocked) is not null;
+
+        var rng = new Formats.Combat.SystemCombatRng(RngSeed ?? 1);
+        IReadOnlyList<Formats.Map.SpawnInstruction> plan = Formats.Map.EncounterSpawner.Plan(
+            encounter, Worldmap, rng, _dude.Dude.HexTile, perception, partyCount, startTiles,
+            IsBlocked, Reachable);
+
+        int placed = 0;
+        foreach (Formats.Map.SpawnInstruction si in plan)
+        {
+            if (BuildSpawn(si) is not { } obj)
+                continue;
+            _map.Elevations[_elevation]!.Objects.Add(obj);
+            OnScriptObjectPlaced(obj);
+            if (si.Dead)
+                ConvertToCorpse(obj, PickDeathAnim(obj));
+            placed++;
+        }
+        Console.WriteLine($"encounter-spawn: {encounter.Entry.Spawns.FirstOrDefault()?.Group ?? "?"}"
+            + $" planned={plan.Count} placed={placed} on {_currentMapName}");
+    }
+
+    /// <summary>Build one spawned encounter critter (or scenery): proto art, an
+    /// allocated script sid, full HP, a hostile team, and its carried gear with the
+    /// in-hand / worn equip flags the CombatEngine reads (phase-10 M3).</summary>
+    private MapObject? BuildSpawn(Formats.Map.SpawnInstruction si)
+    {
+        Formats.Proto.ProtoInfo proto;
+        try
+        {
+            proto = _protos.Get(si.Pid);
+        }
+        catch (Exception ex) when (ex is FileNotFoundException or InvalidDataException)
+        {
+            Console.Error.WriteLine($"encounter-spawn: bad pid 0x{si.Pid:X8}: {ex.Message}");
+            return null;
+        }
+
+        var obj = new MapObject
+        {
+            Id = -3, // script-created marker, like ScriptContext.CreateObject
+            HexTile = si.Tile,
+            X = 0,
+            Y = 0,
+            Frame = 0,
+            Rotation = Math.Clamp(si.Rotation, 0, 5),
+            Fid = proto.Fid,
+            Flags = 0,
+            Pid = si.Pid,
+            Sid = si.ScriptIndex >= 0 && _scriptHost is not null
+                ? _scriptHost.AllocateSid(_map, si.ScriptIndex)
+                : -1,
+        };
+
+        if (Fid.Type(obj.Fid) is ObjectType.Critter)
+        {
+            // Team 0 is the dude's; a nonzero team makes the spawn hostile-eligible
+            // (the bound EC script may re-set it via critter_add_trait, but this
+            // guarantees an AMBUSH is hostile even before its first heartbeat).
+            obj.Team = 1;
+            obj.CurrentHp = GetCritterState(obj)?.MaxHp ?? obj.CurrentHp;
+        }
+
+        foreach (Formats.Map.SpawnItem it in si.Items)
+        {
+            if (RebuildObject(it.Pid, it.Count) is not { } item)
+                continue;
+            if (it.Wielded)
+                item.Flags |= MapObject.FlagInRightHand;
+            if (it.Worn)
+                item.Flags |= MapObject.FlagWorn;
+            obj.Inventory.Add(item);
+        }
+        return obj;
     }
 
     /// <summary>Script-driven obj_open/obj_close: idempotent door state change.</summary>

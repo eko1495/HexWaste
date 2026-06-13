@@ -129,6 +129,13 @@ for (int i = 0; i < args.Length; i++)
                 int.Parse(args[i + 4]), int.Parse(args[i + 5])));
             i += 5;
             break;
+        case "--encounter" when i + 3 < args.Length:
+            // --encounter <map> <group> <count>: spawn a worldmap.txt group on a
+            // transient encounter map (e.g. --encounter desert1.map ARRO_Rats 3).
+            actions.Add(new ViewerGame.StartupAction.EncounterSpawnAt(
+                args[i + 1], args[i + 2], int.Parse(args[i + 3])));
+            i += 3;
+            break;
         case "--fight" when i + 1 < args.Length:
             actions.Add(new ViewerGame.StartupAction.Fight(int.Parse(args[++i])));
             break;

@@ -6,7 +6,9 @@ namespace Hexwaste.Formats.Tests;
 
 public class EncounterSpawnerTests
 {
-    private const int DudeTile = 20000;
+    // An interior tile (row 100, col 100); NOT on a grid edge, where TileInDirection
+    // can't step and a formation would collapse onto one hex.
+    private const int DudeTile = 20100;
 
     private sealed record Scenario(EncounterResult Result, WorldmapFile World, ICombatRng Rng);
 
@@ -141,7 +143,7 @@ public class EncounterSpawnerTests
     [Fact]
     public void WedgeAnchorsOnARandomStartPoint()
     {
-        const int start = 18000;
+        const int start = 18100; // interior, so the 2nd wedge critter can step off it
         IReadOnlyList<SpawnInstruction> plan = Plan(Setup("""
             [Encounter: GRP]
             type_00=ratio:100%, pid:100
@@ -150,6 +152,19 @@ public class EncounterSpawnerTests
         // First wedge critter lands on the chosen start point (callCount==0 path).
         Assert.Equal(2, plan.Count);
         Assert.Equal(start, plan[0].Tile);
+    }
+
+    [Fact]
+    public void SpawnedTilesNeverOverlap()
+    {
+        // The placed-tile guard means no two critters share a hex even when the
+        // formation geometry would otherwise repeat one.
+        IReadOnlyList<SpawnInstruction> plan = Plan(Setup("""
+            [Encounter: RING]
+            type_00=ratio:100%, pid:50
+            position=Surrounding
+            """, "Enc:(6-6) RING AMBUSH Player"));
+        Assert.Equal(plan.Count, plan.Select(s => s.Tile).Distinct().Count());
     }
 
     [Fact]
