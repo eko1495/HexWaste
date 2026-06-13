@@ -989,7 +989,7 @@ public sealed class ViewerGame : Game
             if (IsKeyPressed(keyboard, Keys.Right) || IsKeyPressed(keyboard, Keys.Enter)
                 || IsKeyPressed(keyboard, Keys.OemPlus) || IsKeyPressed(keyboard, Keys.Add))
                 SpendSkillPoint(_skillAllocIndex);
-            if (IsKeyPressed(keyboard, Keys.Escape) || IsKeyPressed(keyboard, Keys.K))
+            if (IsKeyPressed(keyboard, Keys.Escape) || IsKeyPressed(keyboard, Keys.K) || IsKeyPressed(keyboard, Keys.C))
                 _skillAllocOpen = false;
 
             _previousMouse = mouse;
@@ -1078,8 +1078,8 @@ public sealed class ViewerGame : Game
             PrewarmItemTextures(_dudeInventory);
         }
 
-        // K opens the skill allocator (spend banked level-up points).
-        if (IsKeyPressed(keyboard, Keys.K) && _dudeGcd is not null)
+        // C or K opens the character sheet (spend banked points with K's panel).
+        if ((IsKeyPressed(keyboard, Keys.C) || IsKeyPressed(keyboard, Keys.K)) && _dudeGcd is not null)
             _skillAllocOpen = true;
 
         if (IsKeyPressed(keyboard, Keys.F5))
@@ -3862,43 +3862,70 @@ public sealed class ViewerGame : Game
             _dialogOptionRects.Add(currentRect);
     }
 
-    /// <summary>Loot or inventory panel: item icons + names + counts, numbered rows.</summary>
-    /// <summary>The level-up skill allocator: every skill with its effective
-    /// %, tag mark, and the next-point cost on the highlighted row.</summary>
+    /// <summary>The character sheet (C / K): SPECIAL + derived stats + level
+    /// on the left, the 18 skills on the right. Read-only, but a skill can be
+    /// raised in place while banked points remain (Right/Enter).</summary>
     private void DrawSkillAllocator()
     {
         if (!_skillAllocOpen || _fontRenderer is null || _dudeGcd is null)
             return;
 
         _panelPixel ??= CreatePixel();
-        int lineHeight = Math.Max(_fontRenderer.LineHeight, 22);
-        int x = 60, y = 36, w = 420;
-        int h = (Formats.Combat.SkillSet.SkillCount + 3) * lineHeight + 16;
-        _spriteBatch.Draw(_panelPixel, new Rectangle(x, y, w, h), new Color(8, 8, 8, 235));
+        int lh = Math.Max(_fontRenderer.LineHeight, 22);
+        int x = 48, y = 28, w = 660;
+        int h = (Formats.Combat.SkillSet.SkillCount + 3) * lh + 16;
+        _spriteBatch.Draw(_panelPixel, new Rectangle(x, y, w, h), new Color(8, 8, 8, 238));
 
         var gold = new Color(252, 252, 84);
         var green = new Color(0, 252, 0);
         var gray = new Color(150, 150, 150);
-        _fontRenderer.Draw(_spriteBatch, $"SKILLS — {_unspentSkillPoints} points to spend",
-            new Vector2(x + 12, y + 8), gold);
-        _fontRenderer.Draw(_spriteBatch, "arrows pick · Right/Enter raise · Esc close",
-            new Vector2(x + 12, y + 8 + lineHeight), gray);
-
         int[] b = _dudeGcd.Stats.BaseStats, bo = _dudeGcd.Stats.BonusStats, sk = _dudeGcd.Stats.Skills;
         int[] tags = _dudeGcd.TaggedSkills;
-        int rowY = y + 8 + lineHeight * 2 + 6;
+        int Stat(int i) => b[i] + bo[i];
+
+        // ---- left column: header + SPECIAL + derived ----
+        int lx = x + 14, ly = y + 10;
+        void Line(string text, Color c) { _fontRenderer.Draw(_spriteBatch, text, new Vector2(lx, ly), c); ly += lh; }
+        string name = _dudeGcd is { Name.Length: > 0 } g && g.Name != "None" ? g.Name : "Wanderer";
+        Line($"{name}  —  Level {_dudeLevel}", gold);
+        int nextXp = Formats.Combat.Progression.XpForLevel(_dudeLevel + 1);
+        Line($"XP {_dudeXp}" + (nextXp > 0 ? $" / {nextXp}" : " (max)"), gray);
+        Formats.Combat.CritterState? cs = _dude is not null ? GetCritterState(_dude.Dude) : null;
+        if (cs is not null)
+        {
+            Line($"HP {_dude!.Dude.CurrentHp}/{cs.MaxHp}   AP {cs.MaxActionPoints}", green);
+            ly += 4;
+            string[] sp = ["ST", "PE", "EN", "CH", "IN", "AG", "LK"];
+            for (int i = 0; i < 7; i++)
+                _fontRenderer.Draw(_spriteBatch, $"{sp[i]} {Stat(i)}",
+                    new Vector2(lx + (i % 2) * 130, ly + i / 2 * lh), gold);
+            ly += 4 * lh + 6;
+            Line($"Armor Class {cs.ArmorClass}", gray);
+            Line($"Melee Damage {cs.MeleeDamage}", gray);
+            Line($"Sequence {cs.Sequence}", gray);
+            Line($"Critical % {Stat(Formats.Combat.CritterStat.CriticalChance)}", gray);
+            Line($"Healing Rate {Math.Max(Stat(Formats.Combat.CritterStat.Endurance) / 3, 1)}", gray);
+        }
+        ly += 6;
+        if (_unspentSkillPoints > 0)
+            Line($"{_unspentSkillPoints} skill points — raise →", green);
+        _fontRenderer.Draw(_spriteBatch, "C / K / Esc close", new Vector2(lx, y + h - lh - 8), gray);
+
+        // ---- right column: the 18 skills ----
+        int rx = x + 330;
+        int rowY = y + 10;
         for (int i = 0; i < Formats.Combat.SkillSet.SkillCount; i++)
         {
             int value = Formats.Combat.SkillSet.Value(b, bo, sk, tags, i);
             bool tagged = Array.IndexOf(tags, i) >= 0;
-            bool selected = i == _skillAllocIndex;
+            bool selected = i == _skillAllocIndex && _unspentSkillPoints > 0;
             string tag = tagged ? " (T)" : "";
-            string cost = selected ? $"   next +1 = {Formats.Combat.SkillSet.Cost(value)} pt" : "";
+            string cost = selected ? $"  +1={Formats.Combat.SkillSet.Cost(value)}" : "";
             _fontRenderer.Draw(_spriteBatch, $"{(selected ? ">" : " ")} {Formats.Combat.SkillSet.Names[i]}{tag}",
-                new Vector2(x + 12, rowY), selected ? green : (tagged ? gold : gray));
-            _fontRenderer.Draw(_spriteBatch, $"{value}%{cost}", new Vector2(x + 250, rowY),
+                new Vector2(rx, rowY), selected ? green : (tagged ? gold : gray));
+            _fontRenderer.Draw(_spriteBatch, $"{value}%{cost}", new Vector2(rx + 220, rowY),
                 selected ? green : gray);
-            rowY += lineHeight;
+            rowY += lh;
         }
     }
 
