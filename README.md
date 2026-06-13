@@ -70,6 +70,7 @@ Prebuilt self-contained builds (Linux x64 / Windows x64) are produced by
 | Space | end combat turn |
 | L | lockpick the hovered door |
 | I | inventory (1–9 use/equip/consume, Shift+1–9 drop) |
+| K | spend level-up skill points |
 | F5 / F9 | save / load |
 | R | reload the equipped gun (2 AP in combat) |
 | F4 / T / PgUp / PgDn | roofs / walk-cycle / elevation |

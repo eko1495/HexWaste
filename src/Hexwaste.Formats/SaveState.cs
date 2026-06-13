@@ -27,6 +27,17 @@ public sealed class SaveState
     public int DudeLevel { get; set; } = 1;
     public int DudeXp { get; set; }
 
+    /// <summary>Banked, unspent skill points (P8-M1; additive — old saves = 0).</summary>
+    public int UnspentSkillPoints { get; set; }
+
+    /// <summary>The active premade name whose base sheet to restore ("player" =
+    /// blank default); null on very old saves → player.</summary>
+    public string? Character { get; set; }
+
+    /// <summary>The dude's current base skill points (18; null = use the
+    /// premade as-is). Captures level-up spends over the base sheet.</summary>
+    public int[]? DudeSkills { get; set; }
+
     /// <summary>Current HP; -1 = full (pre-progression saves).</summary>
     public int DudeHp { get; set; } = -1;
     public int Elevation { get; set; }

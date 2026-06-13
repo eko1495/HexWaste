@@ -64,6 +64,15 @@ public sealed class ViewerGame : Game
     private Formats.Combat.GcdFile? _dudeGcd;
     private int _dudeLevel = 1;
     private int _dudeXp = 0; // accrues in P6-M3 (kill XP at combat end)
+    private int _unspentSkillPoints;
+
+    /// <summary>The active premade name (for save/restore of the base sheet);
+    /// "player" = the blank default.</summary>
+    private string _activeCharacter = "player";
+
+    /// <summary>Skill allocator panel (K): open + currently-highlighted skill.</summary>
+    private bool _skillAllocOpen;
+    private int _skillAllocIndex;
 
     /// <summary>Deterministic combat rolls for headless transcripts (--rng-seed).</summary>
     public int? RngSeed { get; set; }
@@ -215,6 +224,9 @@ public sealed class ViewerGame : Game
         public sealed record Transit(string MapFile, int Tile, int Elevation) : StartupAction;
         public sealed record SaveNow : StartupAction;
         public sealed record LoadNow : StartupAction;
+        public sealed record GrantXp(int Amount) : StartupAction;
+        public sealed record SpendSkill(int Skill) : StartupAction;
+        public sealed record OpenSkills : StartupAction;
     }
 
     public List<StartupAction> StartupActions { get; set; } = [];
@@ -319,7 +331,8 @@ public sealed class ViewerGame : Game
 
         // --character picks a premade sheet (combat/diplomat/stealth/player);
         // default is the blank player.gcd. Used for testing builds + gender.
-        string gcdPath = $@"premade\{(string.IsNullOrEmpty(CharacterName) ? "player" : CharacterName)}.gcd";
+        _activeCharacter = string.IsNullOrEmpty(CharacterName) ? "player" : CharacterName;
+        string gcdPath = $@"premade\{_activeCharacter}.gcd";
         if (_vfs.Exists(gcdPath))
         {
             using Stream gcdStream = _vfs.OpenRead(gcdPath);
@@ -696,6 +709,15 @@ public sealed class ViewerGame : Game
                 case StartupAction.LoadNow:
                     LoadGame();
                     break;
+                case StartupAction.GrantXp(var amount):
+                    AwardXp(amount);
+                    break;
+                case StartupAction.SpendSkill(var skill):
+                    SpendSkillPoint(skill);
+                    break;
+                case StartupAction.OpenSkills:
+                    _skillAllocOpen = _dudeGcd is not null;
+                    break;
             }
         }
 
@@ -956,6 +978,26 @@ public sealed class ViewerGame : Game
             return;
         }
 
+        // Skill allocator (K): arrows pick a skill, Right/Enter/+ spends a
+        // point, Esc/K closes.
+        if (_skillAllocOpen)
+        {
+            if (IsKeyPressed(keyboard, Keys.Up))
+                _skillAllocIndex = (_skillAllocIndex + Formats.Combat.SkillSet.SkillCount - 1) % Formats.Combat.SkillSet.SkillCount;
+            if (IsKeyPressed(keyboard, Keys.Down))
+                _skillAllocIndex = (_skillAllocIndex + 1) % Formats.Combat.SkillSet.SkillCount;
+            if (IsKeyPressed(keyboard, Keys.Right) || IsKeyPressed(keyboard, Keys.Enter)
+                || IsKeyPressed(keyboard, Keys.OemPlus) || IsKeyPressed(keyboard, Keys.Add))
+                SpendSkillPoint(_skillAllocIndex);
+            if (IsKeyPressed(keyboard, Keys.Escape) || IsKeyPressed(keyboard, Keys.K))
+                _skillAllocOpen = false;
+
+            _previousMouse = mouse;
+            _previousKeyboard = keyboard;
+            base.Update(gameTime);
+            return;
+        }
+
         // Barter mode: 1-9 buy, Shift+1-9 sell, Esc close (back to dialog).
         if (_barterNpc is not null)
         {
@@ -1035,6 +1077,10 @@ public sealed class ViewerGame : Game
             _inventoryOpen = true;
             PrewarmItemTextures(_dudeInventory);
         }
+
+        // K opens the skill allocator (spend banked level-up points).
+        if (IsKeyPressed(keyboard, Keys.K) && _dudeGcd is not null)
+            _skillAllocOpen = true;
 
         if (IsKeyPressed(keyboard, Keys.F5))
             SaveGame();
@@ -2668,10 +2714,44 @@ public sealed class ViewerGame : Game
                 int gain = Formats.Combat.Progression.HpPerLevel(endurance);
                 _dudeGcd.Stats.BonusStats[Formats.Combat.CritterStat.MaximumHitPoints] += gain;
                 _dude.Dude.CurrentHp += gain; // the engine heals the delta
+
+                // Skill points: 5 + 2×IN per level, banked cap 99.
+                int intel = _dudeGcd.Stats.BaseStats[Formats.Combat.CritterStat.Intelligence];
+                _unspentSkillPoints = Math.Min(Formats.Combat.SkillSet.PointsBankCap,
+                    _unspentSkillPoints + Formats.Combat.SkillSet.PointsPerLevel(intel));
             }
-            Log($"You have reached level {_dudeLevel}!");
-            Console.WriteLine($"level-up: now level {_dudeLevel}");
+            Log($"You have reached level {_dudeLevel}! ({_unspentSkillPoints} skill points — press K)");
+            Console.WriteLine($"level-up: now level {_dudeLevel}, skillPoints={_unspentSkillPoints}");
         }
+    }
+
+    /// <summary>Spend one banked point on a skill: cost is read off the
+    /// EFFECTIVE (tag-doubled) value, the base point goes into the gcd, and
+    /// the value recomputes through SkillSet (skill.cc skillAdd).</summary>
+    private void SpendSkillPoint(int skill)
+    {
+        if (_dudeGcd is null)
+            return;
+        int[] b = _dudeGcd.Stats.BaseStats, bo = _dudeGcd.Stats.BonusStats, sk = _dudeGcd.Stats.Skills;
+        int[] tags = _dudeGcd.TaggedSkills;
+        int current = Formats.Combat.SkillSet.Value(b, bo, sk, tags, skill);
+        if (current >= Formats.Combat.SkillSet.MaxSkill)
+        {
+            Log($"{Formats.Combat.SkillSet.Names[skill]} is maxed.");
+            return;
+        }
+        int cost = Formats.Combat.SkillSet.Cost(current);
+        if (_unspentSkillPoints < cost)
+        {
+            Log("Not enough skill points.");
+            return;
+        }
+
+        sk[skill] += 1;
+        _unspentSkillPoints -= cost;
+        int after = Formats.Combat.SkillSet.Value(b, bo, sk, tags, skill);
+        Log($"{Formats.Combat.SkillSet.Names[skill]} {current}% → {after}% ({_unspentSkillPoints} pts left)");
+        Console.WriteLine($"skill-spend: {Formats.Combat.SkillSet.Names[skill]} {current}->{after} cost={cost} left={_unspentSkillPoints}");
     }
 
     private void GameOver()
@@ -3327,6 +3407,7 @@ public sealed class ViewerGame : Game
             DrawTextOverlay();
             DrawDialogPanel();
             DrawItemPanels();
+            DrawSkillAllocator();
         }
         _spriteBatch.End();
 
@@ -3782,6 +3863,45 @@ public sealed class ViewerGame : Game
     }
 
     /// <summary>Loot or inventory panel: item icons + names + counts, numbered rows.</summary>
+    /// <summary>The level-up skill allocator: every skill with its effective
+    /// %, tag mark, and the next-point cost on the highlighted row.</summary>
+    private void DrawSkillAllocator()
+    {
+        if (!_skillAllocOpen || _fontRenderer is null || _dudeGcd is null)
+            return;
+
+        _panelPixel ??= CreatePixel();
+        int lineHeight = Math.Max(_fontRenderer.LineHeight, 22);
+        int x = 60, y = 36, w = 420;
+        int h = (Formats.Combat.SkillSet.SkillCount + 3) * lineHeight + 16;
+        _spriteBatch.Draw(_panelPixel, new Rectangle(x, y, w, h), new Color(8, 8, 8, 235));
+
+        var gold = new Color(252, 252, 84);
+        var green = new Color(0, 252, 0);
+        var gray = new Color(150, 150, 150);
+        _fontRenderer.Draw(_spriteBatch, $"SKILLS — {_unspentSkillPoints} points to spend",
+            new Vector2(x + 12, y + 8), gold);
+        _fontRenderer.Draw(_spriteBatch, "arrows pick · Right/Enter raise · Esc close",
+            new Vector2(x + 12, y + 8 + lineHeight), gray);
+
+        int[] b = _dudeGcd.Stats.BaseStats, bo = _dudeGcd.Stats.BonusStats, sk = _dudeGcd.Stats.Skills;
+        int[] tags = _dudeGcd.TaggedSkills;
+        int rowY = y + 8 + lineHeight * 2 + 6;
+        for (int i = 0; i < Formats.Combat.SkillSet.SkillCount; i++)
+        {
+            int value = Formats.Combat.SkillSet.Value(b, bo, sk, tags, i);
+            bool tagged = Array.IndexOf(tags, i) >= 0;
+            bool selected = i == _skillAllocIndex;
+            string tag = tagged ? " (T)" : "";
+            string cost = selected ? $"   next +1 = {Formats.Combat.SkillSet.Cost(value)} pt" : "";
+            _fontRenderer.Draw(_spriteBatch, $"{(selected ? ">" : " ")} {Formats.Combat.SkillSet.Names[i]}{tag}",
+                new Vector2(x + 12, rowY), selected ? green : (tagged ? gold : gray));
+            _fontRenderer.Draw(_spriteBatch, $"{value}%{cost}", new Vector2(x + 250, rowY),
+                selected ? green : gray);
+            rowY += lineHeight;
+        }
+    }
+
     private void DrawItemPanels()
     {
         if (_fontRenderer is null)
@@ -4247,8 +4367,11 @@ public sealed class ViewerGame : Game
         }
         else if (_menu == MenuState.CharacterPick && _menuIndex < _premadeGcds.Count)
         {
-            using (Stream stream = _vfs.OpenRead(_premadeGcds[_menuIndex].VirtualPath))
+            string path = _premadeGcds[_menuIndex].VirtualPath;
+            using (Stream stream = _vfs.OpenRead(path))
                 _dudeGcd = Formats.Combat.GcdFile.Load(stream);
+            // premade\NAME.gcd → NAME, for save/restore of the base sheet.
+            _activeCharacter = Path.GetFileNameWithoutExtension(path);
             StartNewGame();
             _menu = MenuState.None;
         }
@@ -4444,6 +4567,8 @@ public sealed class ViewerGame : Game
     {
         _dudeLevel = 1;
         _dudeXp = 0;
+        _unspentSkillPoints = 0;
+        _skillAllocOpen = false;
         _dudeInventory = [];
         _visitedMaps.Clear();
         _gameOver = false;
@@ -4472,6 +4597,9 @@ public sealed class ViewerGame : Game
             DudeLevel = _dudeLevel,
             DudeXp = _dudeXp,
             DudeHp = _dude?.Dude.CurrentHp ?? -1,
+            UnspentSkillPoints = _unspentSkillPoints,
+            Character = _activeCharacter,
+            DudeSkills = _dudeGcd is not null ? [.. _dudeGcd.Stats.Skills] : null,
             Elevation = _elevation,
             ClockTicks = _clock.Ticks,
             GlobalVars = new Dictionary<int, int>(_scriptHost?.GlobalVars ?? []),
@@ -4534,17 +4662,22 @@ public sealed class ViewerGame : Game
         LoadMap(state.Map, new MapDestination(0, state.DudeTile, state.Elevation, state.DudeRotation),
             captureOutgoing: false);
 
-        // Progression: reload the pristine sheet and replay level-up HP gains
-        // (level-ups mutate the in-memory gcd bonus stats).
-        if (_dudeGcd is not null && _vfs.Exists(@"premade\player.gcd"))
+        // Progression: reload the pristine base sheet for the saved character,
+        // re-apply spent skill points, then replay level-up HP gains.
+        _activeCharacter = string.IsNullOrEmpty(state.Character) ? "player" : state.Character;
+        string sheetPath = $@"premade\{_activeCharacter}.gcd";
+        if (_dudeGcd is not null && _vfs.Exists(sheetPath))
         {
-            using Stream gcdStream = _vfs.OpenRead(@"premade\player.gcd");
+            using Stream gcdStream = _vfs.OpenRead(sheetPath);
             _dudeGcd = Formats.Combat.GcdFile.Load(gcdStream);
         }
         _dudeLevel = Math.Max(state.DudeLevel, 1);
         _dudeXp = state.DudeXp;
+        _unspentSkillPoints = state.UnspentSkillPoints;
         if (_dudeGcd is not null)
         {
+            if (state.DudeSkills is { Length: 18 } savedSkills)
+                Array.Copy(savedSkills, _dudeGcd.Stats.Skills, 18);
             int endurance = _dudeGcd.Stats.BaseStats[Formats.Combat.CritterStat.Endurance];
             _dudeGcd.Stats.BonusStats[Formats.Combat.CritterStat.MaximumHitPoints] +=
                 (_dudeLevel - 1) * Formats.Combat.Progression.HpPerLevel(endurance);

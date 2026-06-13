@@ -169,6 +169,15 @@ for (int i = 0; i < args.Length; i++)
         case "--load-now":
             actions.Add(new ViewerGame.StartupAction.LoadNow());
             break;
+        case "--grant-xp" when i + 1 < args.Length:
+            actions.Add(new ViewerGame.StartupAction.GrantXp(int.Parse(args[++i])));
+            break;
+        case "--spend-skill" when i + 1 < args.Length:
+            actions.Add(new ViewerGame.StartupAction.SpendSkill(int.Parse(args[++i])));
+            break;
+        case "--show-skills":
+            actions.Add(new ViewerGame.StartupAction.OpenSkills());
+            break;
         case "--game-dir" when i + 1 < args.Length:
             gameDir = args[++i];
             break;

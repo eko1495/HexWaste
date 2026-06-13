@@ -17,6 +17,9 @@ public class SaveStateRoundTripTests
             Elevation = 0,
             ClockTicks = 302400,
             GlobalVars = { [5] = 2 },
+            UnspentSkillPoints = 7,
+            Character = "combat",
+            DudeSkills = [.. Enumerable.Range(0, 18)],
             DudeInventory = { new SaveState.SavedItem(41, 120), new SaveState.SavedItem(8, 1, 0, 7, 0x1F) },
             LocalVars = { ["denbus1.map"] = new Dictionary<int, int[]> { [3] = [1, 0, 7] } },
         };
@@ -35,6 +38,10 @@ public class SaveStateRoundTripTests
 
         Assert.NotNull(loaded);
         Assert.Equal(SaveState.CurrentVersion, loaded.Version);
+        Assert.Equal(7, loaded.UnspentSkillPoints);
+        Assert.Equal("combat", loaded.Character);
+        Assert.Equal([.. Enumerable.Range(0, 18)], loaded.DudeSkills!);
+        Assert.Null(new SaveState().DudeSkills); // additive: default absent
         Assert.Equal(state.Map, loaded.Map);
         Assert.Equal(2, loaded.GlobalVars[5]);
         Assert.Equal(new SaveState.SavedItem(41, 120), loaded.DudeInventory[0]);
