@@ -219,6 +219,7 @@ public sealed class ViewerGame : Game, Formats.Combat.ICombatHost
         public sealed record LoadTransient(string Map) : StartupAction;
         public sealed record EncounterWalk(int X0, int Y0, int X1, int Y1, int Steps) : StartupAction;
         public sealed record EncounterSpawnAt(string Map, string Group, int Count) : StartupAction;
+        public sealed record TravelFrom(int X, int Y, int AreaIndex) : StartupAction;
         public sealed record Fight(int Hex) : StartupAction;
         public sealed record Give(int Pid, int Count) : StartupAction;
         public sealed record UseItemByPid(int Pid) : StartupAction;
@@ -595,6 +596,28 @@ public sealed class ViewerGame : Game, Formats.Combat.ICombatHost
                             + $" hp={o.CurrentHp} team={o.Team} sid={(o.Sid == -1 ? "none" : "bound")} items={o.Inventory.Count}");
                     Console.WriteLine($"encounter: map={emap} group={group} requested={count}"
                         + $" critters={spawned.Count} corpses={corpses.Count}");
+                    break;
+                }
+                case StartupAction.TravelFrom(var tx, var ty, var ai):
+                {
+                    // Phase-10 M3 live-travel demo: stand at worldmap (tx,ty) and travel
+                    // toward area ai, rolling encounters along the way (deterministic
+                    // under --rng-seed). Either an encounter map loads (group spawned)
+                    // or the dude arrives at the town.
+                    _worldPosX = tx;
+                    _worldPosY = ty;
+                    WorldArea? dest = _cities.Areas.FirstOrDefault(a => a.Index == ai);
+                    if (dest is null)
+                    {
+                        Console.WriteLine($"travel-from: no area {ai} in city.txt");
+                        break;
+                    }
+                    TravelTo(dest);
+                    int spawnedCount = _solidObjects[_elevation]
+                        .Count(o => o.Id == -3 && Fid.Type(o.Fid) is ObjectType.Critter);
+                    string outcome = _currentMapTransient ? "encounter" : "arrived";
+                    Console.WriteLine($"travel-from: ({tx},{ty})->area{ai} {outcome} map={_currentMapName}"
+                        + $" worldPos=({_worldPosX},{_worldPosY}) spawned={spawnedCount}");
                     break;
                 }
                 case StartupAction.LoadTransient(var tmap):
@@ -3137,6 +3160,14 @@ public sealed class ViewerGame : Game, Formats.Combat.ICombatHost
     /// <summary>Travels to a worldmap area: first usable entrance, resolved via maps.txt lookup names.</summary>
     private void TravelTo(WorldArea area)
     {
+        // Phase-10 M3: roll for encounters along the way. If the wasteland bites, the
+        // encounter map loads instead of the town — re-clicking the destination
+        // resumes travel from the encounter spot (the engine's isWalking auto-resume
+        // is a documented v1 simplification). The very first travel of a game (no
+        // worldPos yet) skips the roll and just arrives.
+        if (_worldPosX >= 0 && _worldPosY >= 0 && RollTravelPath(area))
+            return;
+
         // ported behavior from fallout2-ce src/worldmap.cc
         // wmAreaFindFirstValidMap(): first enabled entrance, else force the first.
         AreaEntrance entrance = area.Entrances.FirstOrDefault(e => e.StartsOn) ?? area.Entrances.First();
@@ -3159,6 +3190,77 @@ public sealed class ViewerGame : Game, Formats.Combat.ICombatHost
         Console.WriteLine($"travelling to {area.Name} -> {mapFile}");
         LoadMap(mapFile, new MapDestination(mapIndex, entrance.Tile, entrance.Elevation, entrance.Rotation));
         Log($"You arrive at {area.Name}.");
+    }
+
+    /// <summary>The worldmap RNG — persisted across travel legs so successive rolls
+    /// differ; seeded off --rng-seed for golden transcripts, else wall-clock for a
+    /// fresh wasteland each playthrough (phase-10 M3).</summary>
+    private Formats.Combat.ICombatRng? _wmRng;
+
+    /// <summary>Walk the worldmap straight line from worldPos to the destination,
+    /// rolling an encounter per pixel-step (+30 game-min). On the first hit, load the
+    /// encounter map (transient, group spawned) and return true; on a clean arrival
+    /// return false. Mirrors the --encounter-walk demo, but live and loading.</summary>
+    private bool RollTravelPath(WorldArea area)
+    {
+        _wmRng ??= new Formats.Combat.SystemCombatRng(RngSeed ?? Environment.TickCount);
+        var enc = new Formats.Map.WorldEncounters(Worldmap, _wmRng, _worldPosX, _worldPosY);
+        int getGlobal(int g) => _scriptHost?.GlobalVars.GetValueOrDefault(g, 0) ?? 0;
+
+        int x = _worldPosX, y = _worldPosY, x1 = area.WorldX, y1 = area.WorldY;
+        int dx = Math.Abs(x1 - x), dy = Math.Abs(y1 - y), sx = x < x1 ? 1 : -1, sy = y < y1 ? 1 : -1, err = dx - dy;
+        for (int guard = 0; (x != x1 || y != y1) && guard < 4000; guard++)
+        {
+            int e2 = 2 * err;
+            if (e2 > -dy) { err -= dy; x += sx; }
+            if (e2 < dx) { err += dx; y += sy; }
+            _clock.Ticks += 18000; // 30 game-minutes per pixel-step
+            if (enc.Roll(x, y, _clock.Hour, getGlobal, _dudeLevel, _clock.Day) is { } r)
+            {
+                _worldPosX = x;
+                _worldPosY = y;
+                LoadEncounter(r);
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /// <summary>Load the rolled encounter's map as a transient map with its group
+    /// queued to spawn after map_enter (phase-10 M3).</summary>
+    private void LoadEncounter(Formats.Map.EncounterResult enc)
+    {
+        string map = ResolveEncounterMap(enc);
+        _pendingEncounter = enc;
+        _worldmapOpen = false;
+        Console.WriteLine($"encounter while travelling: {enc.Entry.Spawns.FirstOrDefault()?.Group ?? "?"} -> {map}");
+        Log("Ambush! The wasteland bites.");
+        LoadMap(map, null, transient: true);
+    }
+
+    /// <summary>Pick the encounter's transient map: the entry's Map override, else a
+    /// random map from the table's pool, falling back to desert1 — only ever a
+    /// saved=No map (phase-10 M3, wmRndEncounterPick map selection, simplified).</summary>
+    private string ResolveEncounterMap(Formats.Map.EncounterResult enc)
+    {
+        string? Resolve(string lookup)
+        {
+            int idx = _mapList.FindByLookupName(lookup);
+            string? file = idx >= 0 ? _mapList.GetMapFileName(idx) : null;
+            return file is not null && _mapList.IsTransient(file) ? file : null;
+        }
+
+        if (enc.Entry.Map is { Length: > 0 } m && Resolve(m) is { } mapped)
+            return mapped;
+        if (enc.Table.Maps.Count > 0)
+        {
+            _wmRng ??= new Formats.Combat.SystemCombatRng(RngSeed ?? Environment.TickCount);
+            // one shuffled pass so a non-transient/unresolvable entry doesn't loop forever
+            foreach (string lookup in enc.Table.Maps.OrderBy(_ => _wmRng.Next(0, enc.Table.Maps.Count)))
+                if (Resolve(lookup) is { } file)
+                    return file;
+        }
+        return "desert1.map"; // guaranteed transient fallback
     }
 
     /// <summary>Queues the transition when the dude steps onto an exit grid.</summary>

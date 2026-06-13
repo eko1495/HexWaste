@@ -136,6 +136,13 @@ for (int i = 0; i < args.Length; i++)
                 args[i + 1], args[i + 2], int.Parse(args[i + 3])));
             i += 3;
             break;
+        case "--travel-from" when i + 3 < args.Length:
+            // --travel-from <x> <y> <areaIndex>: travel from worldmap pixel (x,y)
+            // toward a city.txt area, rolling encounters along the way.
+            actions.Add(new ViewerGame.StartupAction.TravelFrom(
+                int.Parse(args[i + 1]), int.Parse(args[i + 2]), int.Parse(args[i + 3])));
+            i += 3;
+            break;
         case "--fight" when i + 1 < args.Length:
             actions.Add(new ViewerGame.StartupAction.Fight(int.Parse(args[++i])));
             break;
