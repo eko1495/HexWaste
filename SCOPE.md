@@ -18,17 +18,19 @@ filing an issue.
   traps, the critter heartbeat, ~70 real engine externals.
 - **Simulation**: A* movement, mouse picking, doors/stairs/exit grids, worldmap
   click-to-travel, ambient NPC life, sound (music/sfx/footsteps/combat).
-- **Gameplay**: turn-based melee + single-shot gun combat (engine to-hit,
-  line-of-fire, ammo/reload), armor, drugs, lootable corpses, scripted aggro,
-  same-team joiners, a minimum party member, barter, kill XP, level-ups,
-  per-map persistent world, versioned JSON save/load, a main menu, character
-  creation, rest.
+- **Gameplay**: turn-based melee + gun combat with the engine's depth — to-hit /
+  line-of-fire / ammo+reload, AI behaviour packets (close-or-flee), critical hits
+  + aimed called shots, knockback + persisting knockdown, area explosions, and
+  throwing (spears, grenades, recoverable); armor, drugs, lootable corpses,
+  scripted aggro, same-team joiners, a minimum party member, barter, kill XP,
+  level-ups, per-map persistent world, versioned JSON save/load, a main menu,
+  character creation, rest.
 
 ## What's out (by design, today)
 
-- **Burst / aimed shots / criticals / throwing / explosives** — single-shot
-  melee + guns only (see the phase reports under `docs/`).
-- **Random worldmap encounters** — designed, not yet built.
+- **Burst fire** — single-shot (and aimed/thrown) only; no burst-capable weapon
+  reaches the player in the shippable slice (see `docs/phase9-research-report.md`).
+- **Random worldmap encounters** — designed; in progress (phase 10).
 - **Most quest chains** — the opening hour (Arroyo → Temple → Klamath/Den) is
   the target; deeper quests, reputation/karma badges, and the slave-run path
   are not wired.

@@ -205,6 +205,7 @@ public sealed class ViewerGame : Game, Formats.Combat.ICombatHost
         public sealed record Attack(int Hex) : StartupAction;
         public sealed record Explode(int Hex) : StartupAction;
         public sealed record Throw(int Hex) : StartupAction;
+        public sealed record LoadTransient(string Map) : StartupAction;
         public sealed record Fight(int Hex) : StartupAction;
         public sealed record Give(int Pid, int Count) : StartupAction;
         public sealed record UseItemByPid(int Pid) : StartupAction;
@@ -533,6 +534,20 @@ public sealed class ViewerGame : Game, Formats.Combat.ICombatHost
                         + $" killType={state.Proto.KillType} bodyType={state.Proto.BodyType} damageType={state.Proto.DamageType}");
                     break;
                 }
+                case StartupAction.LoadTransient(var tmap):
+                {
+                    // Phase-10 M0 guard check: load a transient (saved=No) map twice
+                    // and assert it stays first-run with NO delta slot (regenerated,
+                    // never remembered). The full two-reentry integration test lands
+                    // in M3 when real encounter maps spawn groups.
+                    LoadMap(tmap, null, transient: true);
+                    bool firstRun1 = _scriptHost?.IsFirstRun(_map) ?? true;
+                    LoadMap(tmap, null, transient: true); // re-enter: exit-write guard must skip
+                    bool firstRun2 = _scriptHost?.IsFirstRun(_map) ?? true;
+                    bool deltaSlot = _visitedMaps.ContainsKey(_map.Header.Name);
+                    Console.WriteLine($"transient-load: {tmap} firstRun1={firstRun1} firstRun2={firstRun2} deltaSlot={deltaSlot}");
+                    break;
+                }
                 case StartupAction.Throw(var throwHex):
                 {
                     if (_dude is not null) // teleport into throw range (test plumbing)
@@ -830,16 +845,25 @@ public sealed class ViewerGame : Game, Formats.Combat.ICombatHost
     /// dude at an exit-grid/stairs destination; null uses the map's entering
     /// position.
     /// </summary>
-    private void LoadMap(string mapName, MapDestination? spawnAt, bool captureOutgoing = true)
+    /// <summary>Set while the current map is a transient random-encounter map
+    /// (saved=No): it gets NO delta slot and regenerates pristine each visit
+    /// (phase-10 M0; the engine erases its .SAV — map.cc:1456).</summary>
+    private bool _currentMapTransient;
+
+    private void LoadMap(string mapName, MapDestination? spawnAt, bool captureOutgoing = true,
+        bool transient = false)
     {
         // Remember what the player changed on the map being left, so a
         // revisit can replay it over the pristine file (engine: SAVE.DAT
         // serializes whole visited maps; the PoC keeps deltas instead).
-        if (captureOutgoing && _map is not null)
+        // Guard #2 (transient persistence): a transient map being LEFT writes no
+        // delta — it is regenerated, not remembered.
+        if (captureOutgoing && _map is not null && !_currentMapTransient)
         {
             ExtractPartyFromMap();
             CaptureMapDelta();
         }
+        _currentMapTransient = transient;
 
         if (_stubbedExternals.Count > 0)
         {
@@ -919,7 +943,12 @@ public sealed class ViewerGame : Game, Formats.Combat.ICombatHost
         _ordinalObjects = [.. ordinalObjects];
         _pristinePositions = [.. pristine];
 
-        _visitedMaps.TryGetValue(_map.Header.Name, out SaveState.MapDelta? delta);
+        // Guard #1: a transient map reads NO stored delta on entry — which leaves
+        // `delta` null, so RunMapEnter below falls to the pristine firstRun=1
+        // default (guard #3). Real maps keep their name-keyed delta replay.
+        SaveState.MapDelta? delta = null;
+        if (!transient)
+            _visitedMaps.TryGetValue(_map.Header.Name, out delta);
         if (delta is not null)
             ApplyDeltaBeforeScripts(delta);
 
@@ -940,8 +969,11 @@ public sealed class ViewerGame : Game, Formats.Combat.ICombatHost
                 .SelectMany(e => e!.Objects)
                 .Where(o => o.Sid != -1 && o != _dude?.Dude);
             _scriptHost.SpatialsEnabled = false; // _scr_SpatialsEnabled gate (map.cc:973)
+            // Guard #3: a transient map is pristine every visit — force firstRun=1
+            // (the engine always treats a saved=No map as first-run), overriding the
+            // run-once cache. Real maps keep the delta/cache behaviour.
             _scriptHost.RunMapEnter(_map, scripted, _dude?.Dude,
-                firstRunOverride: delta is not null ? false : null);
+                firstRunOverride: transient ? true : delta is not null ? false : null);
             _scriptHost.SpatialsEnabled = true;
         }
 

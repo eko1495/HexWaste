@@ -48,4 +48,23 @@ public class WorldmapRealGameDataTests
         Assert.True(bridge >= 0);
         Assert.Equal("arbridge.map", maps.GetMapFileName(bridge));
     }
+
+    [GameDataFact]
+    public void MapListReadsSavedFlagAndRandomStartPoints()
+    {
+        using var vfs = GameFileSystem.Open(GameData.RequiredDir);
+        MapList maps = MapList.Load(vfs);
+
+        // desert1 is a transient random-encounter map: saved=No + 5 start points
+        // (verified against maps.txt this session: tiles 19086/17302/21315/22699/20526).
+        Assert.True(maps.IsTransient("desert1.map"));
+        IReadOnlyList<StartPoint> points = maps.GetRandomStartPoints("desert1.map");
+        Assert.Equal(5, points.Count);
+        Assert.Contains(new StartPoint(0, 19086), points);
+        Assert.All(points, p => Assert.Equal(0, p.Elevation));
+
+        // A real, saved town map is NOT transient and has no random start points.
+        Assert.False(maps.IsTransient("denbus1.map"));
+        Assert.Empty(maps.GetRandomStartPoints("denbus1.map"));
+    }
 }

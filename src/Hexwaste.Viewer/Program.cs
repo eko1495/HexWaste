@@ -120,6 +120,9 @@ for (int i = 0; i < args.Length; i++)
         case "--throw" when i + 1 < args.Length:
             actions.Add(new ViewerGame.StartupAction.Throw(int.Parse(args[++i])));
             break;
+        case "--load-transient" when i + 1 < args.Length:
+            actions.Add(new ViewerGame.StartupAction.LoadTransient(args[++i]));
+            break;
         case "--fight" when i + 1 < args.Length:
             actions.Add(new ViewerGame.StartupAction.Fight(int.Parse(args[++i])));
             break;

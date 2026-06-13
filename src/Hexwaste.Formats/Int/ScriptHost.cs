@@ -484,7 +484,7 @@ public sealed class ScriptHost(GameFileSystem vfs, ScriptList scripts, Hexwaste.
     /// <summary>Revisit tracking: metarule 14 FIRST_RUN consults this.</summary>
     private readonly Dictionary<string, bool> _firstRunByMap = [];
 
-    internal bool IsFirstRun(MapFile map) =>
+    public bool IsFirstRun(MapFile map) =>
         _firstRunByMap.TryGetValue(map.Header.Name, out bool firstRun)
             ? firstRun
             : (map.Header.Flags & 0x01) == 0;

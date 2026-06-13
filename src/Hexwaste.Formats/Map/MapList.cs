@@ -1,5 +1,8 @@
 namespace Hexwaste.Formats.Map;
 
+/// <summary>A random-encounter spawn point (maps.txt random_start_point_N).</summary>
+public readonly record struct StartPoint(int Elevation, int Tile);
+
 /// <summary>
 /// Map index → file name registry from <c>data\maps.txt</c>
 /// (<c>[Map NNN]</c> sections with <c>map_name=</c> keys) — the same data the
@@ -11,6 +14,8 @@ public sealed class MapList
     private readonly Dictionary<string, int> _byLookupName = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<int, string> _musicByIndex = [];
     private readonly Dictionary<string, int> _indexByMapName = new(StringComparer.OrdinalIgnoreCase);
+    private readonly HashSet<int> _unsaved = [];           // saved=No → transient encounter maps
+    private readonly Dictionary<int, List<StartPoint>> _startPoints = [];
 
     public static MapList Load(GameFileSystem vfs)
     {
@@ -44,14 +49,56 @@ public sealed class MapList
             {
                 list._musicByIndex[currentIndex] = line["music=".Length..].Split(';')[0].Trim();
             }
+            else if (currentIndex >= 0 && line.StartsWith("saved=", StringComparison.OrdinalIgnoreCase))
+            {
+                // saved=No marks a random-encounter map that is regenerated each
+                // visit (no save slot); anything else (Yes/absent) is saved.
+                if (line["saved=".Length..].Split(';')[0].Trim().StartsWith("No", StringComparison.OrdinalIgnoreCase))
+                    list._unsaved.Add(currentIndex);
+            }
+            else if (currentIndex >= 0 && line.StartsWith("random_start_point_", StringComparison.OrdinalIgnoreCase))
+            {
+                int eq = line.IndexOf('=');
+                if (eq > 0 && ParseStartPoint(line[(eq + 1)..]) is { } sp)
+                    (list._startPoints.TryGetValue(currentIndex, out List<StartPoint>? pts)
+                        ? pts : list._startPoints[currentIndex] = []).Add(sp);
+            }
         }
 
         return list;
     }
 
+    /// <summary>Parse "elev:0, tile_num:19086" → StartPoint; null if no tile.</summary>
+    private static StartPoint? ParseStartPoint(string value)
+    {
+        int elev = 0, tile = -1;
+        foreach (string part in value.Split(';')[0].Split(','))
+        {
+            string[] kv = part.Split(':');
+            if (kv.Length != 2 || !int.TryParse(kv[1].Trim(), out int n))
+                continue;
+            if (kv[0].Trim().Equals("elev", StringComparison.OrdinalIgnoreCase))
+                elev = n;
+            else if (kv[0].Trim().Equals("tile_num", StringComparison.OrdinalIgnoreCase))
+                tile = n;
+        }
+        return tile >= 0 ? new StartPoint(elev, tile) : null;
+    }
+
     /// <summary>Returns e.g. "artemple.map", or null for unknown indices.</summary>
     public string? GetMapFileName(int index) =>
         _names.TryGetValue(index, out string? name) ? $"{name}.map" : null;
+
+    /// <summary>True if the map is saved=No — a transient random-encounter map that
+    /// regenerates each visit (no save slot). Default true (saved) for real maps.</summary>
+    public bool IsTransient(string mapFileName) =>
+        _unsaved.Contains(GetIndexByFileName(mapFileName));
+
+    /// <summary>The map's random-encounter spawn points (maps.txt
+    /// random_start_point_N), or empty.</summary>
+    public IReadOnlyList<StartPoint> GetRandomStartPoints(string mapFileName) =>
+        _startPoints.TryGetValue(GetIndexByFileName(mapFileName), out List<StartPoint>? pts)
+            ? pts : [];
 
     /// <summary>Resolves a maps.txt lookup_name (used by city.txt entrances) to a map index, or -1.</summary>
     public int FindByLookupName(string lookupName) =>
