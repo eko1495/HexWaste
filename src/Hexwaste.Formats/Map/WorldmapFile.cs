@@ -24,6 +24,11 @@ public sealed class WorldmapFile
     /// <summary>Terrain → ordered random-map lookup-names ([Random Maps: TERRAIN]).</summary>
     public IReadOnlyDictionary<string, IReadOnlyList<string>> RandomMaps { get; }
 
+    // The pristine per-entry counters captured at parse time (before any pick
+    // decrements them) — ExportCounters diffs against this so only the handful of
+    // actually-consumed one-shots reach the save, not all 60+ Counter:1 tables.
+    private readonly Dictionary<string, int[]> _pristineCounters;
+
     private WorldmapFile(Dictionary<string, int> freq, List<WorldTile> tiles,
         Dictionary<string, EncounterTable> tables, Dictionary<string, EncounterGroup> groups,
         Dictionary<string, IReadOnlyList<string>> randomMaps)
@@ -33,6 +38,8 @@ public sealed class WorldmapFile
         Tables = tables;
         Groups = groups;
         RandomMaps = randomMaps;
+        _pristineCounters = tables.ToDictionary(kv => kv.Key,
+            kv => kv.Value.Entries.Select(e => e.Counter).ToArray(), StringComparer.OrdinalIgnoreCase);
     }
 
     /// <summary>The encounter % a frequency name resolves to (None/unknown → 0).</summary>
@@ -40,6 +47,40 @@ public sealed class WorldmapFile
 
     public EncounterTable? Table(string lookupName) => Tables.GetValueOrDefault(lookupName);
     public EncounterGroup? Group(string name) => Groups.GetValueOrDefault(name);
+
+    /// <summary>Snapshot the one-shot encounter counters consumed this session, as
+    /// table lookup_name → per-entry counter array (phase-10 M2). Only tables whose
+    /// counters have actually changed from their parsed-pristine values are emitted
+    /// — worldmap.txt carries 375 <c>Counter:1</c> entries across ~60 tables, so an
+    /// unconsumed game saves an empty dict, not 60 redundant arrays. The emitted
+    /// arrays are dense and index-aligned with <see cref="EncounterTable.Entries"/>;
+    /// on a re-parse the entry order is stable (enc_NN, ordered), so import lines up.</summary>
+    public Dictionary<string, int[]> ExportCounters()
+    {
+        var result = new Dictionary<string, int[]>(StringComparer.OrdinalIgnoreCase);
+        foreach ((string name, EncounterTable table) in Tables)
+        {
+            int[] pristine = _pristineCounters[name];
+            bool changed = false;
+            for (int i = 0; i < table.Entries.Count; i++)
+                if (table.Entries[i].Counter != pristine[i]) { changed = true; break; }
+            if (changed)
+                result[name] = [.. table.Entries.Select(e => e.Counter)];
+        }
+        return result;
+    }
+
+    /// <summary>Restore consumed one-shot counters over the freshly parsed pristine
+    /// tables (phase-10 M2, the load side of <see cref="ExportCounters"/>). Unknown
+    /// table names, out-of-range indices, and a null array (hand-edited save) are
+    /// ignored so a stale save degrades to pristine counters instead of throwing.</summary>
+    public void ImportCounters(IReadOnlyDictionary<string, int[]> saved)
+    {
+        foreach ((string name, int[] counters) in saved)
+            if (counters is not null && Tables.TryGetValue(name, out EncounterTable? table))
+                for (int i = 0; i < counters.Length && i < table.Entries.Count; i++)
+                    table.Entries[i].Counter = counters[i];
+    }
 
     /// <summary>The subtile under a worldmap pixel position. The map is 4 tiles wide
     /// (×350) × 5 tall (×300); each tile is a 7×6 grid of 50px subtiles indexed

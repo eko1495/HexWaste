@@ -79,6 +79,77 @@ public class WorldmapFileTests
         Assert.Equal(2, wm.RandomMaps["Desert"].Count);
     }
 
+    [Fact]
+    public void CountersExportOnlyChangedTablesAndImportRoundTrips()
+    {
+        const string w = """
+            [Encounter Table 0]
+            lookup_name=Limited
+            enc_00=Chance:50%,Counter:2,Enc:(1-1) A AMBUSH Player
+            enc_01=Chance:50%,Enc:(1-1) B AMBUSH Player
+
+            [Encounter Table 1]
+            lookup_name=Unlimited
+            enc_00=Chance:50%,Enc:(1-1) C AMBUSH Player
+            """;
+        WorldmapFile wm = WorldmapFile.Parse(w);
+
+        // Pristine (nothing consumed): export is empty — no redundant arrays.
+        Assert.Empty(wm.ExportCounters());
+
+        // Spend the one-shot: only the changed table is emitted, dense per-entry
+        // (the -1 unlimited sibling tags along); the untouched table stays absent.
+        wm.Table("Limited")!.Entries[0].Counter = 0;
+        Dictionary<string, int[]> spent = wm.ExportCounters();
+        Assert.Equal([0, -1], Assert.Contains("Limited", (IReadOnlyDictionary<string, int[]>)spent));
+        Assert.DoesNotContain("Unlimited", spent.Keys);
+
+        // Re-apply over a freshly parsed (pristine) map.
+        WorldmapFile reload = WorldmapFile.Parse(w);
+        Assert.Equal(2, reload.Table("Limited")!.Entries[0].Counter); // pristine again
+        reload.ImportCounters(spent);
+        Assert.Equal(0, reload.Table("Limited")!.Entries[0].Counter); // restored
+        Assert.Equal(-1, reload.Table("Limited")!.Entries[1].Counter); // untouched
+
+        // And a re-export from the reloaded map reproduces the same delta.
+        Assert.Equal([0, -1], Assert.Contains("Limited", (IReadOnlyDictionary<string, int[]>)reload.ExportCounters()));
+    }
+
+    [Fact]
+    public void ImportCountersIgnoresUnknownTablesAndOutOfRangeIndices()
+    {
+        const string w = """
+            [Encounter Table 0]
+            lookup_name=T
+            enc_00=Chance:50%,Counter:3,Enc:(1-1) A AMBUSH Player
+            """;
+        WorldmapFile wm = WorldmapFile.Parse(w);
+        // Unknown table skipped; the index past Entries.Count is ignored (no throw).
+        wm.ImportCounters(new Dictionary<string, int[]>
+        {
+            ["Nonexistent"] = [9, 9],
+            ["T"] = [1, 7, 7],
+        });
+        Assert.Single(wm.Table("T")!.Entries);
+        Assert.Equal(1, wm.Table("T")!.Entries[0].Counter);
+    }
+
+    [Fact]
+    public void ImportCountersIgnoresNullArrayFromHandEditedSave()
+    {
+        const string w = """
+            [Encounter Table 0]
+            lookup_name=T
+            enc_00=Chance:50%,Counter:3,Enc:(1-1) A AMBUSH Player
+            """;
+        WorldmapFile wm = WorldmapFile.Parse(w);
+        // A hand-edited/corrupt save with {"T": null} must degrade to pristine,
+        // honouring the documented non-throwing contract (a present JSON null
+        // deserializes to a null array, not a skipped key).
+        wm.ImportCounters(new Dictionary<string, int[]> { ["T"] = null! });
+        Assert.Equal(3, wm.Table("T")!.Entries[0].Counter);
+    }
+
     [GameDataFact]
     public void RealWorldmapTxtParsesToTheKnownCounts()
     {

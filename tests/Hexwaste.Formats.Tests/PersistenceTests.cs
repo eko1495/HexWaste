@@ -62,6 +62,45 @@ public class SaveStateRoundTripTests
     }
 
     [Fact]
+    public void WorldmapStateAndCountersRoundTrip()
+    {
+        var state = new SaveState
+        {
+            Version = SaveState.CurrentVersion,
+            WorldPosX = 473,
+            WorldPosY = 272,
+            CurrentAreaId = 3,
+            EncounterCounters = { ["Den_D"] = [0, -1, 2], ["Arro_O"] = [1] },
+        };
+
+        SaveState loaded = SaveState.FromJson(state.ToJson())!;
+        Assert.Equal(473, loaded.WorldPosX);
+        Assert.Equal(272, loaded.WorldPosY);
+        Assert.Equal(3, loaded.CurrentAreaId);
+        Assert.Equal([0, -1, 2], loaded.EncounterCounters["Den_D"]);
+        Assert.Equal([1], loaded.EncounterCounters["Arro_O"]);
+    }
+
+    [Fact]
+    public void WorldmapFieldsAreAdditiveWithinV2()
+    {
+        // Additive within V2 (no version bump): a save written before P10-M2 has
+        // no worldmap keys → sentinel -1 position/area + empty counters (pristine
+        // encounters), and still loads (Version 2 == CurrentVersion).
+        var fresh = new SaveState();
+        Assert.Equal(-1, fresh.WorldPosX);
+        Assert.Equal(-1, fresh.WorldPosY);
+        Assert.Equal(-1, fresh.CurrentAreaId);
+        Assert.Empty(fresh.EncounterCounters);
+
+        SaveState legacy = SaveState.FromJson("""{"Version":2,"Map":"denbus2.map"}""")!;
+        Assert.Equal(SaveState.CurrentVersion, legacy.Version);
+        Assert.Equal(-1, legacy.WorldPosX);
+        Assert.Equal(-1, legacy.CurrentAreaId);
+        Assert.Empty(legacy.EncounterCounters);
+    }
+
+    [Fact]
     public void PreVersioningSavesDeserializeAsVersionZero()
     {
         // Phase-5 saves have no Version property — they must read back as 0

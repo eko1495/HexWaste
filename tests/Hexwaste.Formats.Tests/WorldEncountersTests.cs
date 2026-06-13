@@ -94,6 +94,71 @@ public class WorldEncountersTests
     }
 
     [Fact]
+    public void SpentOneShotCounterSurvivesExportImport()
+    {
+        // The felt effect of P10-M2: a one-shot encounter consumed before a save
+        // stays consumed after the reload (export the counter, re-parse pristine,
+        // import) — the entry is filtered out on the reloaded world.
+        const string w = """
+            [Data]
+            Forced=100%
+            [Tile 0]
+            2_2=Desert,_,Forced,Forced,Forced,T
+            [Encounter Table 0]
+            lookup_name=T
+            enc_00=Chance:50%,Counter:1,Enc:(1-1) ONE_SHOT AMBUSH Player
+            """;
+        WorldmapFile wm = WorldmapFile.Parse(w);
+        Assert.Equal("ONE_SHOT",
+            new WorldEncounters(wm, new MinRng(), 0, 0).Roll(110, 110, 1200, _ => 0, 1, 0)!
+                .Entry.Spawns.Single().Group);
+
+        Dictionary<string, int[]> saved = wm.ExportCounters();
+        Assert.Equal([0], saved["T"]); // spent
+
+        WorldmapFile reload = WorldmapFile.Parse(w);
+        reload.ImportCounters(saved);
+        // Counter restored to 0 → filtered → no candidate → no encounter.
+        Assert.Null(new WorldEncounters(reload, new MinRng(), 0, 0).Roll(110, 110, 1200, _ => 0, 1, 0));
+    }
+
+    [Fact]
+    public void MultiUseCounterDecrementsThroughPickAndPersistsEachCycle()
+    {
+        // A Counter:2 one-shot driven through real Roll/Pick (not a direct field
+        // write): it fires twice (2->1->0), survives export/import as a STILL-LIVE
+        // value each cycle, and is filtered on the third roll. Synthetic — shipping
+        // worldmap.txt carries only Counter:1 — but it locks the decrement-through-
+        // Pick + multi-cycle persistence path against regression.
+        const string w = """
+            [Data]
+            Forced=100%
+            [Tile 0]
+            2_2=Desert,_,Forced,Forced,Forced,T
+            [Encounter Table 0]
+            lookup_name=T
+            enc_00=Chance:50%,Counter:2,Enc:(1-1) TWICE AMBUSH Player
+            """;
+        string? Fire(WorldmapFile m) =>
+            new WorldEncounters(m, new MinRng(), 0, 0).Roll(110, 110, 1200, _ => 0, 1, 0)
+                ?.Entry.Spawns.Single().Group;
+
+        WorldmapFile wm = WorldmapFile.Parse(w);
+        Assert.Equal("TWICE", Fire(wm));              // cycle 1: 2 -> 1
+        Assert.Equal([1], wm.ExportCounters()["T"]);  // still live, persisted as 1
+
+        WorldmapFile r2 = WorldmapFile.Parse(w);
+        r2.ImportCounters(wm.ExportCounters());
+        Assert.Equal(1, r2.Table("T")!.Entries[0].Counter);
+        Assert.Equal("TWICE", Fire(r2));              // cycle 2: 1 -> 0
+        Assert.Equal([0], r2.ExportCounters()["T"]);  // now spent
+
+        WorldmapFile r3 = WorldmapFile.Parse(w);
+        r3.ImportCounters(r2.ExportCounters());
+        Assert.Null(Fire(r3));                        // cycle 3: filtered, no encounter
+    }
+
+    [Fact]
     public void DeterministicUnderSeed()
     {
         EncounterResult? Run() =>

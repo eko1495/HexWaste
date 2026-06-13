@@ -16,7 +16,10 @@ public sealed class SaveState
 {
     /// <summary>Bump on any shape change. Loads refuse mismatches (no silent
     /// misreads of ordinal-keyed deltas); pre-versioning saves deserialize as 0.
-    /// V2: SavedItem ammo fields + MapDelta.MovedOrdinals (NPC positions).</summary>
+    /// V2: SavedItem ammo fields + MapDelta.MovedOrdinals (NPC positions);
+    /// worldmap position + encounter counters (P10-M2) are additive within V2
+    /// (defaulted sentinels / empty dict) — old V2 saves load with no worldmap
+    /// state, matching the engine, so no V3 bump.</summary>
     public const int CurrentVersion = 2;
 
     public int Version { get; set; }
@@ -61,6 +64,23 @@ public sealed class SaveState
 
     /// <summary>The party roster (travels outside any map's delta).</summary>
     public List<PartyMemberState> Party { get; set; } = [];
+
+    /// <summary>Last worldmap pixel position (P10-M2; -1 = never left a town /
+    /// no worldmap state). The engine saves worldPos but NOT a mid-walk
+    /// destination, so a reload drops you back on the worldmap here, stopped.</summary>
+    public int WorldPosX { get; set; } = -1;
+    public int WorldPosY { get; set; } = -1;
+
+    /// <summary>The city.txt area index the dude last travelled to (P10-M2;
+    /// -1 = wilderness / none). Area 0 is a real area, so the sentinel is -1.</summary>
+    public int CurrentAreaId { get; set; } = -1;
+
+    /// <summary>Consumed one-shot encounter counters, table lookup_name →
+    /// per-entry counter array (P10-M2). Only tables whose counters changed from
+    /// pristine are stored (sparse); empty/absent → pristine worldmap.txt
+    /// counters. Re-applied over the freshly parsed tables on load
+    /// (WorldmapFile.ImportCounters).</summary>
+    public Dictionary<string, int[]> EncounterCounters { get; set; } = [];
 
     /// <summary>Flags carries the equip bits (in-hand 0x3000000, worn 0x4000000).
     /// Ammo sentinels: -1 = derive from the prototype on load (V2).</summary>

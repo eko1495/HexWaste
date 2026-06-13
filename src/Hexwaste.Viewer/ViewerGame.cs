@@ -152,6 +152,12 @@ public sealed class ViewerGame : Game, Formats.Combat.ICombatHost
     private bool _worldmapOpen;
     private WorldArea? _hoveredArea;
 
+    /// <summary>The dude's last worldmap position + area, persisted across saves
+    /// (phase-10 M2). -1 = no worldmap state yet (a fresh game before any travel);
+    /// set when the player travels to a city, restored on load.</summary>
+    private int _worldPosX = -1, _worldPosY = -1;
+    private int _currentAreaId = -1;
+
     /// <summary>The parsed worldmap.txt (random-encounter tables); lazy (phase-10 M1).</summary>
     private Formats.Map.WorldmapFile? _worldmap;
     private Formats.Map.WorldmapFile Worldmap => _worldmap ??=
@@ -3014,6 +3020,11 @@ public sealed class ViewerGame : Game, Formats.Combat.ICombatHost
 
         _worldmapOpen = false;
         _clock.AdvanceHours(8); // travel takes time
+        // Record the dude's worldmap whereabouts so a save round-trips it
+        // (phase-10 M2); a reload drops you back on the worldmap here.
+        _currentAreaId = area.Index;
+        _worldPosX = area.WorldX;
+        _worldPosY = area.WorldY;
         Console.WriteLine($"travelling to {area.Name} -> {mapFile}");
         LoadMap(mapFile, new MapDestination(mapIndex, entrance.Tile, entrance.Elevation, entrance.Rotation));
         Log($"You arrive at {area.Name}.");
@@ -4484,6 +4495,14 @@ public sealed class ViewerGame : Game, Formats.Combat.ICombatHost
         _combat.Reset();
         _clock.Ticks = 302400; // engine boot time
         _lastAmbientHour = -1;
+
+        // A fresh wasteland: clear worldmap whereabouts and drop the parsed
+        // worldmap so its one-shot encounter counters re-parse pristine (phase-10
+        // M2 — otherwise a one-shot consumed in a prior playthrough this process
+        // would stay spent in the new game).
+        _worldPosX = _worldPosY = -1;
+        _currentAreaId = -1;
+        _worldmap = null;
         if (_scriptHost is not null)
         {
             _scriptHost.GlobalVars.Clear();
@@ -4523,10 +4542,16 @@ public sealed class ViewerGame : Game, Formats.Combat.ICombatHost
                 m.Inventory.Select(i => new SaveState.SavedItem(i.Pid, Math.Max(i.StackCount, 1),
                     i.Flags & (MapObject.FlagInLeftHand | MapObject.FlagInRightHand | MapObject.FlagWorn),
                     i.AmmoQuantity, i.AmmoTypePid)).ToList()))],
+            WorldPosX = _worldPosX,
+            WorldPosY = _worldPosY,
+            CurrentAreaId = _currentAreaId,
+            // _worldmap (not Worldmap): only export if worldmap.txt was actually
+            // touched this session — never force-parse it just to save.
+            EncounterCounters = _worldmap?.ExportCounters() ?? [],
         };
         state.Save(SavePath);
         Log($"Game saved ({Path.GetFileName(SavePath)}).");
-        Console.WriteLine($"saved: map={state.Map} tile={state.DudeTile} clock={state.ClockTicks} items={state.DudeInventory.Count} maps={state.VisitedMaps.Count} L{state.DudeLevel} xp={state.DudeXp} hp={state.DudeHp}");
+        Console.WriteLine($"saved: map={state.Map} tile={state.DudeTile} clock={state.ClockTicks} items={state.DudeInventory.Count} maps={state.VisitedMaps.Count} L{state.DudeLevel} xp={state.DudeXp} hp={state.DudeHp} worldPos=({state.WorldPosX},{state.WorldPosY}) area={state.CurrentAreaId} encCounters={state.EncounterCounters.Count}");
     }
 
     private void LoadGame()
@@ -4565,6 +4590,21 @@ public sealed class ViewerGame : Game, Formats.Combat.ICombatHost
         _visitedMaps.Clear();
         foreach ((string mapName, SaveState.MapDelta delta) in state.VisitedMaps)
             _visitedMaps[mapName] = delta;
+
+        // Worldmap whereabouts + consumed one-shot encounter counters (phase-10
+        // M2). Drop the parsed worldmap so the restore starts from PRISTINE
+        // counters, exactly like StartNewGame — ImportCounters is a sparse delta
+        // (only changed tables), so without this reset a one-shot the abandoned
+        // session spent would leak past an F9 reload into a save that left it
+        // pristine. Nulling preserves the lazy parse: an empty (Count==0) save
+        // leaves _worldmap unparsed; a non-empty one re-parses clean, then
+        // applies only the saved deltas.
+        _worldPosX = state.WorldPosX;
+        _worldPosY = state.WorldPosY;
+        _currentAreaId = state.CurrentAreaId;
+        _worldmap = null;
+        if (state.EncounterCounters.Count > 0)
+            Worldmap.ImportCounters(state.EncounterCounters);
 
         _scriptHost?.PartyMembers.Clear();
         _partyScriptIndex.Clear();
@@ -4671,7 +4711,7 @@ public sealed class ViewerGame : Game, Formats.Combat.ICombatHost
         }
 
         Log("Game loaded.");
-        Console.WriteLine($"loaded: map={state.Map} tile={state.DudeTile} clock={state.ClockTicks} items={_dudeInventory.Count} maps={_visitedMaps.Count} L{_dudeLevel} xp={_dudeXp} hp={_dude?.Dude.CurrentHp}");
+        Console.WriteLine($"loaded: map={state.Map} tile={state.DudeTile} clock={state.ClockTicks} items={_dudeInventory.Count} maps={_visitedMaps.Count} L{_dudeLevel} xp={_dudeXp} hp={_dude?.Dude.CurrentHp} worldPos=({_worldPosX},{_worldPosY}) area={_currentAreaId} encCounters={state.EncounterCounters.Count}");
     }
 
     private void SaveScreenshot(string path)
