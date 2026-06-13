@@ -67,6 +67,10 @@ public sealed class ViewerGame : Game
 
     /// <summary>Deterministic combat rolls for headless transcripts (--rng-seed).</summary>
     public int? RngSeed { get; set; }
+
+    /// <summary>Premade character sheet to start with (combat/diplomat/stealth);
+    /// null/empty = the blank player.gcd. Test plumbing for builds + gender.</summary>
+    public string? CharacterName { get; set; }
     private Random _combatRng = new();
 
     /// <summary>The rolled-but-not-applied attack: damage lands when the punch
@@ -313,16 +317,20 @@ public sealed class ViewerGame : Game
             _audio = new AudioManager(_vfs, _gameDir);
         _protoMessages = new ProtoMessages(_vfs, _protos);
 
-        if (_vfs.Exists(@"premade\player.gcd"))
+        // --character picks a premade sheet (combat/diplomat/stealth/player);
+        // default is the blank player.gcd. Used for testing builds + gender.
+        string gcdPath = $@"premade\{(string.IsNullOrEmpty(CharacterName) ? "player" : CharacterName)}.gcd";
+        if (_vfs.Exists(gcdPath))
         {
-            using Stream gcdStream = _vfs.OpenRead(@"premade\player.gcd");
+            using Stream gcdStream = _vfs.OpenRead(gcdPath);
             _dudeGcd = Formats.Combat.GcdFile.Load(gcdStream);
-            Console.WriteLine($"dude sheet: {_dudeGcd.Name},"
-                + $" SPECIAL {string.Join("/", Enumerable.Range(0, 7).Select(s => _dudeGcd.Stats.BaseStats[s] + _dudeGcd.Stats.BonusStats[s]))}");
+            Console.WriteLine($"dude sheet: {_dudeGcd.Name} (gender {_dudeGcd.Stats.BaseStats[34]}),"
+                + $" SPECIAL {string.Join("/", Enumerable.Range(0, 7).Select(s => _dudeGcd.Stats.BaseStats[s] + _dudeGcd.Stats.BonusStats[s]))},"
+                + $" tags [{string.Join(",", _dudeGcd.TaggedSkills.Where(t => t >= 0))}]");
         }
         else
         {
-            Console.Error.WriteLine("premade\\player.gcd not found — dude uses art-proto stats");
+            Console.Error.WriteLine($"{gcdPath} not found — dude uses art-proto stats");
         }
 
         try
@@ -1283,12 +1291,18 @@ public sealed class ViewerGame : Game
     /// </summary>
     private void SpawnDude(int tile, int rotation)
     {
-        // hmjmps (the engine's vault-suit default) ships every weapon anim
-        // set; hmwarr only had unarmed+spear (phase-7 track A).
-        int critterIndex = _artIndex.FindCritterIndex("hmjmps");
+        // hmjmps/hfjmps (the engine's vault-suit default per gender — art.cc
+        // _art_vault_person_nums[JUMPSUIT][gender]) ship every weapon anim set;
+        // hmwarr only had unarmed+spear (phase-7 track A). Gender = gcd
+        // baseStats[34] (STAT_GENDER: 0 male, 1 female).
+        bool female = _dudeGcd?.Stats.BaseStats[34] == 1;
+        string dudeArt = female ? "hfjmps" : "hmjmps";
+        int critterIndex = _artIndex.FindCritterIndex(dudeArt);
+        if (critterIndex < 0 && female)
+            critterIndex = _artIndex.FindCritterIndex("hmjmps"); // fallback
         if (critterIndex < 0)
         {
-            Console.Error.WriteLine("hmjmps not found in critters.lst — no dude");
+            Console.Error.WriteLine($"{dudeArt} not found in critters.lst — no dude");
             return;
         }
 
@@ -2450,7 +2464,12 @@ public sealed class ViewerGame : Game
         Log($"The {ObjectName(critter)} dies.");
 
         int deathAnim = PickDeathAnim(critter);
-        _audio?.PlaySfx(Formats.Sound.SfxName.HumanDeath(female: false, deathAnim));
+        // Gender from the critter's art base name (2nd char 'm'/'f' — the
+        // engine's sfxBuildCharName convention); the dude uses his gcd.
+        bool female = critter == _dude?.Dude
+            ? _dudeGcd?.Stats.BaseStats[34] == 1
+            : _artIndex.CritterBaseName(critter.Fid) is { Length: > 1 } n && char.ToLowerInvariant(n[1]) == 'f';
+        _audio?.PlaySfx(Formats.Sound.SfxName.HumanDeath(female, deathAnim));
         int fallFid = Fid.Build(ObjectType.Critter, Fid.Index(critter.Fid), deathAnim, 0);
         if (_vfs.Exists(_artIndex.GetFrmPath(fallFid)))
         {
@@ -3620,7 +3639,7 @@ public sealed class ViewerGame : Game
     private Formats.Combat.CritterState? GetCritterState(MapObject obj)
     {
         if (obj == _dude?.Dude && _dudeGcd is not null)
-            return new Formats.Combat.CritterState(obj, _dudeGcd.Stats);
+            return new Formats.Combat.CritterState(obj, _dudeGcd.Stats, _dudeGcd.TaggedSkills);
         if (Fid.PidType(obj.Pid) != (int)ObjectType.Critter)
             return null;
         try

@@ -1,0 +1,5 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Is it in scope?
+    url: https://github.com/_/hexwaste/blob/main/SCOPE.md
+    about: Hexwaste re-implements a slice of the Fallout 2 engine. Read what's in and out of scope before filing — many "missing" features are deliberate.

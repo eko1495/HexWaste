@@ -8,9 +8,9 @@ namespace Hexwaste.Formats.Combat;
 /// </summary>
 public static class BarterMath
 {
-    /// <summary>skill.cc gSkillDescriptions[15]: barter = 4 × CH + points.</summary>
-    public static int BarterSkill(CritterState critter) =>
-        4 * critter.Stat(CritterStat.Charisma) + critter.Proto.Skills[15];
+    /// <summary>Barter skill = 4 × CH + points (+ tag bonus for the dude);
+    /// delegates to <see cref="CritterState.BarterSkill"/>.</summary>
+    public static int BarterSkill(CritterState critter) => critter.BarterSkill;
 
     /// <summary>What the NPC demands for an item:
     /// cost × 2 × (mod+100)/100 × (160+npcBarter)/(160+dudeBarter).

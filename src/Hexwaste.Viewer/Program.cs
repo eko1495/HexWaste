@@ -13,6 +13,7 @@ Microsoft.Xna.Framework.Point? talk = null;
 int[] choose = [];
 int? talkHex = null;
 int? rngSeed = null;
+string? characterName = null;
 List<ViewerGame.StartupAction> actions = [];
 int? gotoTile = null;
 int? doorTile = null;
@@ -114,6 +115,9 @@ for (int i = 0; i < args.Length; i++)
             break;
         case "--fight" when i + 1 < args.Length:
             actions.Add(new ViewerGame.StartupAction.Fight(int.Parse(args[++i])));
+            break;
+        case "--character" when i + 1 < args.Length:
+            characterName = args[++i];
             break;
         case "--rng-seed" when i + 1 < args.Length:
             rngSeed = int.Parse(args[++i]);
@@ -242,6 +246,7 @@ using var game = new ViewerGame(gameDir!, mapName, screenshot, roofs)
     TalkAtHex = talkHex,
     StartupActions = actions,
     RngSeed = rngSeed,
+    CharacterName = characterName,
     AutoChoose = choose,
     WalkToTile = gotoTile,
     ToggleDoorAtTile = doorTile,

@@ -42,6 +42,15 @@ public sealed class ArtIndex(GameFileSystem vfs)
         return Array.FindIndex(list, n => string.Equals(n, baseName, StringComparison.OrdinalIgnoreCase));
     }
 
+    /// <summary>The critters.lst base name for a critter FID (e.g. "hfprim"), or null.
+    /// The 2nd char encodes gender ('m'/'f') — used for gender-correct sfx.</summary>
+    public string? CritterBaseName(int fid)
+    {
+        string[] list = GetList((int)ObjectType.Critter);
+        int index = Fid.Index(fid);
+        return index >= 0 && index < list.Length ? list[index] : null;
+    }
+
     /// <summary>
     /// Critter FRM names are composed: base name from critters.lst + a
     /// two-character animation/weapon code + ".frm" (or ".fr0".." for

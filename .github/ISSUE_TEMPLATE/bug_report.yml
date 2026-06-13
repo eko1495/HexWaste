@@ -1,0 +1,45 @@
+name: Bug report
+description: Something Hexwaste does wrong with your own Fallout 2 data
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for testing Hexwaste! Please confirm your report is **in scope**
+        first — see [SCOPE.md](../blob/main/SCOPE.md). Hexwaste re-implements a
+        *slice* of the engine; many "missing" features are out of scope by design.
+        Never attach game assets (maps, .dat files, sprites) — they can't be shared.
+  - type: input
+    id: version
+    attributes:
+      label: Hexwaste version
+      placeholder: "v0.7.0 (or commit hash)"
+    validations: { required: true }
+  - type: dropdown
+    id: os
+    attributes:
+      label: OS
+      options: [Linux x64, Windows x64, Other]
+    validations: { required: true }
+  - type: input
+    id: gamedata
+    attributes:
+      label: Game-data origin
+      placeholder: "GOG / Steam / CD, and language (e.g. GOG English)"
+    validations: { required: true }
+  - type: input
+    id: map
+    attributes:
+      label: Map / location
+      placeholder: "e.g. denbus1.map, talking to Tubby"
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened vs what you expected
+    validations: { required: true }
+  - type: textarea
+    id: log
+    attributes:
+      label: Console output
+      description: Hexwaste prints script/stub diagnostics to the console — paste the relevant lines.
+      render: shell

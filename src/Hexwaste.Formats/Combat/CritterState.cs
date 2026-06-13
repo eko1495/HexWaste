@@ -29,13 +29,25 @@ public static class CritterStat
 /// non-dude path of fallout2-ce src/stat.cc critterGetStat()) over the MAP
 /// instance's per-critter state (current HP, team, result flags).
 /// </summary>
-public sealed class CritterState(MapObject critter, CritterProtoStats proto)
+public sealed class CritterState(MapObject critter, CritterProtoStats proto, int[]? taggedSkills = null)
 {
     public MapObject Critter => critter;
     public CritterProtoStats Proto => proto;
 
     /// <summary>Effective stat = base + bonus (src/stat.cc critterGetStat()).</summary>
     public int Stat(int stat) => proto.BaseStats[stat] + proto.BonusStats[stat];
+
+    /// <summary>
+    /// Tag bonus for a skill, ported from fallout2-ce src/skill.cc
+    /// skillGetValue() (skill.cc:251-256): only the dude (taggedSkills != null)
+    /// is tagged; a tagged skill counts its spent base points a SECOND time
+    /// (× baseValueMult) and gets a flat +20. The gcd's Skills[] hold spent
+    /// points, not the final %, so there is no double-apply.
+    /// </summary>
+    private int TagBonus(int skill, int baseValueMult) =>
+        taggedSkills is not null && Array.IndexOf(taggedSkills, skill) >= 0
+            ? proto.Skills[skill] * baseValueMult + 20
+            : 0;
 
     public int MaxHp => Stat(CritterStat.MaximumHitPoints);
 
@@ -51,18 +63,24 @@ public sealed class CritterState(MapObject critter, CritterProtoStats proto)
     public int DamageResistance => Stat(CritterStat.DamageResistance);
 
     /// <summary>ported from fallout2-ce src/skill.cc skillGetValue(): unarmed =
-    /// 30 + 2 × (AG + ST) + proto skill points (skill index 3).</summary>
-    public int UnarmedSkill => 30 + 2 * (Stat(CritterStat.Agility) + Stat(CritterStat.Strength))
-        + proto.Skills[3];
+    /// 30 + 2 × (AG + ST) + proto skill points (skill index 3) [+ tag].</summary>
+    public int UnarmedSkill => Math.Min(300,
+        30 + 2 * (Stat(CritterStat.Agility) + Stat(CritterStat.Strength)) + proto.Skills[3] + TagBonus(3, 1));
 
     /// <summary>skill.cc gSkillDescriptions[4]: melee weapons = 20 + 2 × (AG + ST)
-    /// + proto skill points (skill index 4).</summary>
-    public int MeleeWeaponsSkill => 20 + 2 * (Stat(CritterStat.Agility) + Stat(CritterStat.Strength))
-        + proto.Skills[4];
+    /// + proto skill points (skill index 4) [+ tag].</summary>
+    public int MeleeWeaponsSkill => Math.Min(300,
+        20 + 2 * (Stat(CritterStat.Agility) + Stat(CritterStat.Strength)) + proto.Skills[4] + TagBonus(4, 1));
 
     /// <summary>skill.cc gSkillDescriptions[0]: small guns = 5 + 4 × AG
-    /// + proto skill points (skill index 0).</summary>
-    public int SmallGunsSkill => 5 + 4 * Stat(CritterStat.Agility) + proto.Skills[0];
+    /// + proto skill points (skill index 0) [+ tag].</summary>
+    public int SmallGunsSkill => Math.Min(300,
+        5 + 4 * Stat(CritterStat.Agility) + proto.Skills[0] + TagBonus(0, 1));
+
+    /// <summary>skill.cc gSkillDescriptions[15]: barter = 4 × CH
+    /// + proto skill points (skill index 15) [+ tag].</summary>
+    public int BarterSkill => Math.Min(300,
+        4 * Stat(CritterStat.Charisma) + proto.Skills[15] + TagBonus(15, 1));
 
     public bool IsDead => critter.IsDead;
 }
