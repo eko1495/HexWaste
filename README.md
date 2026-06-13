@@ -54,7 +54,10 @@ Prebuilt self-contained builds (Linux x64 / Windows x64) are produced by
   wounded, instead of fighting to the last hit point. Critical hits (from in-game
   day 2, like the engine) roll off the real Fallout 2 crit tables — bonus damage,
   armor bypass, the occasional instant kill; aim a called shot (V) at eyes/head/
-  legs to trade accuracy for a far better critical. Kills pay XP at combat end;
+  legs to trade accuracy for a far better critical. Big melee blows knock the
+  target sprawling back along the hex line; a crit leaves it prone (+40 to hit,
+  3 AP to stand). Area explosions deal blast damage with falloff and knockback.
+  Kills pay XP at combat end;
   levels raise your HP. Lose, and F9 puts you back.
 - **Character**: create your own (SPECIAL, gender, tagged skills) or pick a
   premade; level-ups grant skill points you spend on the character sheet (C),

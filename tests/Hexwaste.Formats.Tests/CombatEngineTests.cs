@@ -277,6 +277,47 @@ public class CombatEngineTests
         Assert.Contains(host.Transcripts, t => t.StartsWith("getup:"));
     }
 
+    [Fact]
+    public void ExplosionDamagesCrittersInRadiusButNotBeyond()
+    {
+        var host = new FakeCombatHost();
+        host.SetDude(NewCritter(20100, hp: 50));
+        int center = Step(20100, 0, 10); // 10 hexes from the dude (he's clear)
+        MapObject a = host.AddCritter(NewCritter(center, hp: 100));
+        MapObject b = host.AddCritter(NewCritter(Step(center, 1, 1), hp: 100));   // 1 away — in radius
+        MapObject far = host.AddCritter(NewCritter(Step(center, 0, 4), hp: 100));  // 4 away — clear
+        var engine = new CombatEngine(host, new MinRng()); // 20 dmg each (no explosion DT/DR)
+
+        engine.Explode(center, killer: null, minDamage: 20, maxDamage: 35, radius: 2);
+
+        Assert.True(a.CurrentHp < 100);
+        Assert.True(b.CurrentHp < 100);
+        Assert.Equal(100, far.CurrentHp);
+        Assert.Equal(50, host.Dude!.CurrentHp);
+    }
+
+    [Fact]
+    public void LethalExplosionKillsAndPaysXp()
+    {
+        var host = new FakeCombatHost();
+        host.SetDude(NewCritter(20100, hp: 50));
+        int center = Step(20100, 0, 10);
+        MapObject victim = host.AddCritter(NewCritter(center, hp: 5, exp: 75));
+        var engine = new CombatEngine(host, new MinRng());
+
+        engine.Explode(center, killer: host.Dude, minDamage: 20, maxDamage: 35, radius: 2);
+
+        Assert.True(victim.IsDead);
+        Assert.Equal(75, host.XpAwarded); // out-of-combat blast pays immediately
+    }
+
+    private static int Step(int tile, int dir, int n)
+    {
+        for (int i = 0; i < n; i++)
+            tile = HexGrid.TileInDirection(tile, dir);
+        return tile;
+    }
+
     // --- helpers ---------------------------------------------------------
 
     /// <summary>STR/AG 5 ⇒ unarmed skill 50, so a MinRng roll always connects.</summary>

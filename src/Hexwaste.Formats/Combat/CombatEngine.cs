@@ -355,31 +355,98 @@ public sealed class CombatEngine
         if (!eligible)
             return;
 
-        int distance = Math.Min(attack.Damage / 10, 20); // dmg/10, MAX_KNOCKDOWN_DISTANCE
-        if (distance > 0)
-        {
-            int rotation = HexGrid.RotationTo(attack.Attacker.HexTile, target.HexTile);
-            int tile = target.HexTile;
-            for (int i = 0; i < distance; i++)
-            {
-                int next = HexGrid.TileInDirection(tile, rotation);
-                if (_host.IsBlocked(next)) // blocked by an occupied tile — stop short
-                    break;
-                tile = next;
-            }
-            if (tile != target.HexTile)
-            {
-                int from = target.HexTile;
-                _host.PlaceCritter(target, tile);
-                _host.Transcript($"knockback: {_host.ObjectName(target)}@{from} -> {tile}");
-            }
-        }
+        Shove(attack.Attacker.HexTile, target, attack.Damage / 10);
 
         // Persisting prone only from a crit (a pure shove bounces back up).
         if ((attack.CritFlags & CriticalTables.DamKnockedDown) != 0 && _knockedDown.Add(target))
         {
             _host.Log($"The {_host.ObjectName(target)} is knocked down!");
             _host.Transcript($"knockdown: {_host.ObjectName(target)}@{target.HexTile}");
+        }
+    }
+
+    /// <summary>Push a critter away from a source tile, distance tiles (capped at
+    /// MAX_KNOCKDOWN_DISTANCE 20), stopping before the first blocked tile.</summary>
+    private void Shove(int fromTile, MapObject target, int distance)
+    {
+        distance = Math.Min(distance, 20);
+        if (distance <= 0)
+            return;
+        int rotation = HexGrid.RotationTo(fromTile, target.HexTile);
+        int tile = target.HexTile;
+        for (int i = 0; i < distance; i++)
+        {
+            int next = HexGrid.TileInDirection(tile, rotation);
+            if (_host.IsBlocked(next)) // blocked by an occupied tile — stop short
+                break;
+            tile = next;
+        }
+        if (tile != target.HexTile)
+        {
+            int from = target.HexTile;
+            _host.PlaceCritter(target, tile);
+            _host.Transcript($"knockback: {_host.ObjectName(target)}@{from} -> {tile}");
+        }
+    }
+
+    /// <summary>An area explosion at <paramref name="centerTile"/> (a thrown grenade
+    /// or the misc-10 marker): every critter within radius with clear line-of-sight
+    /// takes rand(min,max) − DT_explosion − DR_explosion (stats 23/30), plus
+    /// knockback dmg/10 away from the blast. Ported from actions.cc actionExplode /
+    /// _compute_explosion_*; the engine's ring-spiral is simplified to radius + LoS,
+    /// capped at 6 targets (combat.cc explosionGetMaxTargets).</summary>
+    public void Explode(int centerTile, MapObject? killer, int minDamage, int maxDamage, int radius)
+    {
+        const int maxTargets = 6;
+        const int explosionDt = CritterStat.DamageThreshold + 6; // STAT_DAMAGE_THRESHOLD_EXPLOSION
+        const int explosionDr = CritterStat.DamageResistance + 6; // STAT_DAMAGE_RESISTANCE_EXPLOSION
+
+        var victims = _host.CombatCritters.Where(c => !c.IsDead).ToList();
+        if (_host.Dude is { } dude && !victims.Contains(dude))
+            victims.Add(dude);
+
+        int hits = 0;
+        foreach (MapObject victim in victims
+            .Where(c => HexGrid.Distance(c.HexTile, centerTile) <= radius)
+            .OrderBy(c => HexGrid.Distance(c.HexTile, centerTile)))
+        {
+            if (hits >= maxTargets)
+                break;
+            // Line-of-sight from the blast centre (walls shield).
+            (MapObject? blocker, _) = LineOfFire.Trace(centerTile, victim.HexTile,
+                t => _host.ShootBlockerAt(t, victim, victim));
+            if (blocker is not null && victim.HexTile != centerTile)
+                continue;
+            if (_host.GetCritterState(victim) is not { } state)
+                continue;
+
+            hits++;
+            int raw = _rng.Next(minDamage, maxDamage + 1);
+            int damage = Math.Max(raw - state.Stat(explosionDt), 0);
+            damage -= state.Stat(explosionDr) * damage / 100;
+            if (damage <= 0)
+                continue;
+
+            victim.CurrentHp -= damage;
+            _host.Log($"The blast hits the {_host.ObjectName(victim)} for {damage} damage.");
+            _host.Transcript($"explosion-hit: {_host.ObjectName(victim)}@{victim.HexTile} damage={damage}");
+
+            if ((victim.Flags & OBJECT_MULTIHEX) == 0)
+                Shove(centerTile, victim, damage / 10);
+
+            if (victim.CurrentHp <= 0)
+            {
+                if (victim == _host.Dude)
+                    GameOver();
+                else
+                    KillCritter(victim, killer);
+            }
+        }
+
+        if (_xpPending > 0 && _phase == CombatPhase.Idle) // out-of-combat blast pays now
+        {
+            _host.AwardXp(_xpPending);
+            _xpPending = 0;
         }
     }
 

@@ -203,6 +203,7 @@ public sealed class ViewerGame : Game, Formats.Combat.ICombatHost
         public sealed record UseHex(int Hex, bool Lockpick) : StartupAction;
         public sealed record ExamineCritter(int Hex) : StartupAction;
         public sealed record Attack(int Hex) : StartupAction;
+        public sealed record Explode(int Hex) : StartupAction;
         public sealed record Fight(int Hex) : StartupAction;
         public sealed record Give(int Pid, int Count) : StartupAction;
         public sealed record UseItemByPid(int Pid) : StartupAction;
@@ -529,6 +530,20 @@ public sealed class ViewerGame : Game, Formats.Combat.ICombatHost
                         + $" (proto {state.Proto.AiPacket}) results=0x{critter.CombatResults:X} dead={state.IsDead}");
                     Console.WriteLine($"  dt={state.DamageThreshold} dr={state.DamageResistance} exp={state.Proto.Experience}"
                         + $" killType={state.Proto.KillType} bodyType={state.Proto.BodyType} damageType={state.Proto.DamageType}");
+                    break;
+                }
+                case StartupAction.Explode(var explodeHex):
+                {
+                    // Frag-grenade payload (20-35, radius 3) at a hex — test hook for
+                    // the M3 AoE; M4 throwing will trigger it from a thrown weapon.
+                    _combat.Explode(explodeHex, _dude?.Dude, minDamage: 20, maxDamage: 35, radius: 3);
+                    for (int guard = 0; guard < 3000 && _combat.IsResolving; guard++)
+                    {
+                        _animator.Update(10);
+                        _combat.ProcessAnimations();
+                    }
+                    _combat.Reset();
+                    Console.WriteLine($"explode-result: hex={explodeHex}");
                     break;
                 }
                 case StartupAction.Attack(var attackHex):

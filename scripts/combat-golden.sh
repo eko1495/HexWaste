@@ -30,6 +30,7 @@ SCENARIOS=(
   "arcaves-crit-day2|--character combat --advance-days 1 --map arcaves.map --fight 20529 --rng-seed 2"
   "arcaves-aim-eyes-day2|--character combat --advance-days 1 --aim eyes --map arcaves.map --fight 20529 --rng-seed 2"
   "arcaves-knockdown-day2|--character combat --advance-days 1 --aim right_leg --map arcaves.map --fight 20529 --rng-seed 4"
+  "arcaves-explode|--map arcaves.map --explode 20529 --rng-seed 1"
 )
 
 echo "Building viewer..."
