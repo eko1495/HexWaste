@@ -141,11 +141,76 @@ public class CombatEngineTests
         Assert.DoesNotContain(host.Transcripts, t => t.StartsWith("flee:"));
     }
 
+    [Fact]
+    public void CriticalsStayOffUntilEnabled()
+    {
+        // Same MinRng, criticals disabled: a plain swing, no crit tag, base damage.
+        var host = new FakeCombatHost { CriticalsEnabled = false };
+        host.SetDude(NewCritter(20100, hp: 30, ap: 10));
+        MapObject enemy = host.AddCritter(NewCritter(HexGrid.TileInDirection(20100, 0), hp: 100));
+        var engine = new CombatEngine(host, new MinRng());
+
+        Assert.True(engine.TryAttack(enemy));
+        host.Animating.Clear();
+        engine.ProcessAnimations();
+
+        Assert.DoesNotContain(host.Transcripts, t => t.Contains("CRITICAL"));
+        Assert.Equal(99, enemy.CurrentHp); // unarmed floor damage 1, no multiplier
+    }
+
+    [Fact]
+    public void CriticalHitAppliesTheTableMultiplier()
+    {
+        var host = new FakeCombatHost { CriticalsEnabled = true };
+        host.SetDude(NewCritter(20100, hp: 30, ap: 10));
+        MapObject enemy = host.AddCritter(NewCritter(HexGrid.TileInDirection(20100, 0), hp: 100));
+        var engine = new CombatEngine(host, new MinRng()); // forces hit → crit, severity 0
+
+        Assert.True(engine.TryAttack(enemy)); // UNCALLED
+        host.Animating.Clear();
+        engine.ProcessAnimations();
+
+        Assert.Contains(host.Transcripts, t => t.Contains("CRITICAL"));
+        // damage = floor-roll 1 × multiplier / 2 (no armor); multiplier from the table.
+        int mult = CriticalTables.Lookup(0, CriticalTables.LocationUncalled, 0, false).DamageMultiplier;
+        Assert.Equal(100 - 1 * mult / 2, enemy.CurrentHp);
+    }
+
+    [Fact]
+    public void DeadCriticalKillsRegardlessOfHp()
+    {
+        var host = new FakeCombatHost { CriticalsEnabled = true };
+        // betterCrit 100 forces severity 5; aimed HEAD → MAN/HEAD/5 = DAM_DEAD.
+        host.SetDude(NewCritter(20100, hp: 30, ap: 10, betterCrit: 100));
+        MapObject enemy = host.AddCritter(NewCritter(HexGrid.TileInDirection(20100, 0), hp: 1000));
+        var engine = new CombatEngine(host, new MinRng());
+
+        Assert.True(engine.TryAttack(enemy, hitLocation: 0)); // HEAD
+        host.Animating.Clear();
+        engine.ProcessAnimations();
+
+        Assert.True(enemy.IsDead); // instant kill despite 1000 HP
+        Assert.Contains(host.Transcripts, t => t.Contains("CRITICAL(kill)"));
+    }
+
+    [Fact]
+    public void AimedShotIsHarderAndCostsAnExtraAp()
+    {
+        var host = new FakeCombatHost { CriticalsEnabled = false };
+        host.SetDude(NewCritter(20100, hp: 30, ap: 10));
+        MapObject enemy = host.AddCritter(NewCritter(HexGrid.TileInDirection(20100, 0), hp: 100));
+        var engine = new CombatEngine(host, new MinRng());
+
+        engine.TryAttack(enemy, hitLocation: 6); // EYES: -60 ranged / -30 melee
+        Assert.Equal(6, engine.DudeAp);          // punch 3 + aimed 1 → 10 − 4
+        Assert.Contains(host.Transcripts, t => t.Contains("chance=20%")); // 50 − 30
+    }
+
     // --- helpers ---------------------------------------------------------
 
     /// <summary>STR/AG 5 ⇒ unarmed skill 50, so a MinRng roll always connects.</summary>
     private static (MapObject Obj, CritterProtoStats Proto) NewCritter(
-        int tile, int hp, int ap = 10, int seq = 1, int exp = 0)
+        int tile, int hp, int ap = 10, int seq = 1, int exp = 0, int betterCrit = 0)
     {
         int[] b = new int[35];
         b[CritterStat.Strength] = 5;
@@ -153,6 +218,7 @@ public class CombatEngineTests
         b[CritterStat.MaximumHitPoints] = hp;
         b[CritterStat.MaximumActionPoints] = ap;
         b[CritterStat.Sequence] = seq;
+        b[CritterStat.BetterCriticals] = betterCrit;
         var proto = new CritterProtoStats(0, 0, 0, b, new int[35], new int[18], 0, exp, 0, 0);
         var obj = new MapObject
         {
@@ -196,6 +262,7 @@ public class CombatEngineTests
         }
 
         public readonly Dictionary<MapObject, AiPacket> AiPackets = [];
+        public bool CriticalsEnabled { get; set; }
         public CritterState? GetCritterState(MapObject critter) => _states.GetValueOrDefault(critter);
         public AiPacket? GetAiPacket(MapObject critter) => AiPackets.GetValueOrDefault(critter);
         public (ProtoInfo? Proto, MapObject? Item) EquippedWeapon(MapObject critter) => (null, null);

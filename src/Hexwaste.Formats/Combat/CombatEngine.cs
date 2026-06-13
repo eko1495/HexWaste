@@ -31,7 +31,7 @@ public sealed class CombatEngine
 
     /// <summary>The rolled-but-not-applied attack: damage lands when the punch
     /// animation completes (engine: _apply_damage in _combat_anim_finished).</summary>
-    private sealed record PendingAttack(MapObject Attacker, MapObject Target, int Chance, bool Hit, int Damage);
+    private sealed record PendingAttack(MapObject Attacker, MapObject Target, int Chance, bool Hit, int Damage, int CritFlags);
     private PendingAttack? _pendingAttack;
 
     /// <summary>Critters playing their death fall; value = death anim (20/21).</summary>
@@ -83,7 +83,7 @@ public sealed class CombatEngine
     /// any animation — damage waits for the swing to finish (ported from
     /// fallout2-ce src/combat.cc _combat_attack() / combatAttemptAttack()).
     /// </summary>
-    public bool TryAttack(MapObject target)
+    public bool TryAttack(MapObject target, int hitLocation = CriticalTables.LocationUncalled)
     {
         MapObject? dude = _host.Dude;
         if (dude is null || _pendingAttack is not null || target == dude)
@@ -97,7 +97,8 @@ public sealed class CombatEngine
         bool isGun = weaponProto?.Weapon is { } wstats && wstats.IsGun(weaponProto.ExtendedFlags);
         int range = isGun ? weaponProto!.Weapon!.MaxRange1
             : Math.Min(weaponProto?.Weapon?.MaxRange1 ?? 1, 2); // throwers melee-capped until rung (a)
-        int apCost = weaponProto?.Weapon?.ApCost ?? CombatMath.PunchApCost;
+        int apCost = (weaponProto?.Weapon?.ApCost ?? CombatMath.PunchApCost)
+            + (hitLocation != CriticalTables.LocationUncalled ? 1 : 0); // aimed shot +1 AP (item.cc:1706)
         int distance = HexGrid.Distance(dude.HexTile, target.HexTile);
         if (distance > range)
         {
@@ -152,13 +153,13 @@ public sealed class CombatEngine
         _host.ClearAnimation(target);
         dude.Rotation = HexGrid.RotationTo(dude.HexTile, target.HexTile);
 
-        (int chance, bool hit, int damage) = RollAttack(attacker, defender, weaponProto, weaponItem,
-            distance, crittersInPath, attackerIsDude: true);
+        (int chance, bool hit, int damage, int critFlags) = RollAttack(attacker, defender, weaponProto, weaponItem,
+            distance, crittersInPath, attackerIsDude: true, defenderIsDude: target == dude, hitLocation);
         if (isGun)
             weaponItem!.AmmoQuantity = _host.WeaponAmmo(weaponProto!, weaponItem) - 1;
-        _pendingAttack = new PendingAttack(dude, target, chance, hit, damage);
+        _pendingAttack = new PendingAttack(dude, target, chance, hit, damage, critFlags);
         _host.Transcript($"attack {_host.ObjectName(target)}@{target.HexTile}"
-            + $"{(weaponProto is null ? "" : $" [{_host.ObjectNameByPid(weaponProto.Pid)}{(isGun ? $" {weaponItem!.AmmoQuantity}rnd d{distance}" : "")}]")}: chance={chance}% hit={hit} damage={damage}");
+            + $"{(weaponProto is null ? "" : $" [{_host.ObjectNameByPid(weaponProto.Pid)}{(isGun ? $" {weaponItem!.AmmoQuantity}rnd d{distance}" : "")}]")}: chance={chance}% hit={hit} damage={damage}{CritTag(critFlags)}");
 
         _host.OnAttackStarted(dude, weaponProto);
 
@@ -170,34 +171,75 @@ public sealed class CombatEngine
     /// <summary>Roll an attack with the equipped weapon (or fists). Guns use the
     /// ranged to-hit (distance/PE, ammo AC mod, min-ST, crowd) and ammo damage
     /// mods; melee keeps the phase-6 path.</summary>
-    private (int Chance, bool Hit, int Damage) RollAttack(
+    private (int Chance, bool Hit, int Damage, int CritFlags) RollAttack(
         CritterState attacker, CritterState defender,
         ProtoInfo? weaponProto, MapObject? weaponItem, int distance, int crittersInPath,
-        bool attackerIsDude)
+        bool attackerIsDude, bool defenderIsDude, int hitLocation)
     {
         bool isGun = weaponProto?.Weapon is { } w && w.IsGun(weaponProto.ExtendedFlags);
-        int chance = ComputeToHit(attacker, defender, weaponProto, weaponItem, distance, crittersInPath, attackerIsDude);
 
-        bool hit = CombatMath.RollHit(_rng, chance);
+        // Aimed-shot location penalty: full for ranged, halved for melee. Lowers
+        // the to-hit but (being negative) raises the crit modifier below.
+        int locPenalty = CriticalTables.LocationPenalty[Math.Clamp(hitLocation, 0, CriticalTables.LocationCount - 1)];
+        if (!isGun)
+            locPenalty /= 2;
+        int accuracy = Math.Clamp(
+            ComputeToHit(attacker, defender, weaponProto, weaponItem, distance, crittersInPath, attackerIsDude) + locPenalty,
+            0, 95);
+
+        // randomRoll: delta >= 0 is a hit; on a hit (criticals enabled from day 2)
+        // a second d100 <= delta/10 + (critChance - locPenalty) upgrades to a crit.
+        int roll = _rng.Next(1, 101);
+        int delta = accuracy - roll;
+        bool hit = delta >= 0;
+
+        int critMultiplier = 2;
+        int critFlags = 0;
+        if (hit && _host.CriticalsEnabled)
+        {
+            int critModifier = attacker.Stat(CritterStat.CriticalChance) - locPenalty;
+            if (_rng.Next(1, 101) <= delta / 10 + critModifier)
+            {
+                int severity = CriticalTables.Severity(_rng.Next(1, 101) + attacker.Stat(CritterStat.BetterCriticals));
+                CriticalEffect eff = CriticalTables.Lookup(defender.Proto.KillType, hitLocation, severity, defenderIsDude);
+                critMultiplier = eff.DamageMultiplier;
+                critFlags = (eff.Flags & CriticalTables.HonoredFlags) | CriticalTables.DamCritical;
+            }
+        }
+
         int damage = 0;
         if (hit)
         {
+            bool bypass = (critFlags & CriticalTables.DamBypass) != 0;
             if (isGun)
             {
                 AmmoProtoStats? ammo = weaponItem is null ? null : _host.LoadedAmmo(weaponProto!, weaponItem);
                 damage = RangedMath.RollDamage(_rng,
                     weaponProto!.Weapon!.MinDamage, weaponProto.Weapon.MaxDamage, defender,
-                    ammo?.DrModifier ?? 0, ammo?.DamageMultiplier ?? 1, ammo?.DamageDivisor ?? 1);
+                    ammo?.DrModifier ?? 0, ammo?.DamageMultiplier ?? 1, ammo?.DamageDivisor ?? 1,
+                    critMultiplier, bypass);
             }
             else
             {
                 damage = weaponProto?.Weapon is { } weapon
-                    ? CombatMath.RollWeaponDamage(_rng, attacker, defender, weapon.MinDamage, weapon.MaxDamage)
-                    : CombatMath.RollDamage(_rng, attacker, defender);
+                    ? CombatMath.RollWeaponDamage(_rng, attacker, defender, weapon.MinDamage, weapon.MaxDamage, critMultiplier, bypass)
+                    : CombatMath.RollDamage(_rng, attacker, defender, critMultiplier, bypass);
             }
         }
 
-        return (chance, hit, damage);
+        return (accuracy, hit, damage, critFlags);
+    }
+
+    /// <summary>Transcript suffix marking a critical (and its honoured effect).</summary>
+    private static string CritTag(int critFlags)
+    {
+        if ((critFlags & CriticalTables.DamCritical) == 0)
+            return "";
+        if ((critFlags & CriticalTables.DamDead) != 0)
+            return " CRITICAL(kill)";
+        if ((critFlags & CriticalTables.DamKnockedDown) != 0)
+            return " CRITICAL(knockdown)";
+        return " CRITICAL";
     }
 
     /// <summary>The to-hit % only (no roll) — for AI min_to_hit decisions and the
@@ -254,10 +296,12 @@ public sealed class CombatEngine
             return;
         }
 
+        bool critical = (attack.CritFlags & CriticalTables.DamCritical) != 0;
         attack.Target.CurrentHp -= attack.Damage;
-        _host.Log(byDude
+        _host.Log((byDude
             ? $"You hit the {targetName} for {attack.Damage} damage."
-            : $"The {attackerName} hits you for {attack.Damage} damage.");
+            : $"The {attackerName} hits you for {attack.Damage} damage.")
+            + (critical ? " Critical hit!" : ""));
 
         // damage_p_proc runs as damage applies, fixedParam = amount, source =
         // attacker (combat.cc:4850-4851; party-on-party skip is moot here).
@@ -265,7 +309,8 @@ public sealed class CombatEngine
             foreach (string line in _host.RunDamageProc(attack.Target, attack.Attacker, attack.Damage))
                 _host.Log(line);
 
-        if (attack.Target.CurrentHp <= 0)
+        // A DEAD critical kills outright regardless of remaining HP (combat.cc DAM_DEAD).
+        if (attack.Target.CurrentHp <= 0 || (attack.CritFlags & CriticalTables.DamDead) != 0)
         {
             if (attack.Target == dude)
                 GameOver();
@@ -739,13 +784,13 @@ public sealed class CombatEngine
             if (_host.GetCritterState(ally) is not { } attacker || _host.GetCritterState(target) is not { } defender)
                 return false;
             ally.Rotation = HexGrid.RotationTo(ally.HexTile, target.HexTile);
-            (int chance, bool hit, int damage) = RollAttack(attacker, defender, weaponProto, weaponItem,
-                distance, crittersInPath, attackerIsDude: false);
+            (int chance, bool hit, int damage, int critFlags) = RollAttack(attacker, defender, weaponProto, weaponItem,
+                distance, crittersInPath, attackerIsDude: false, defenderIsDude: false, CriticalTables.LocationUncalled);
             if (isGun && weaponItem is not null)
                 weaponItem.AmmoQuantity = _host.WeaponAmmo(weaponProto!, weaponItem) - 1;
-            _pendingAttack = new PendingAttack(ally, target, chance, hit, damage);
+            _pendingAttack = new PendingAttack(ally, target, chance, hit, damage, critFlags);
             _host.Transcript($"ally-attack {_host.ObjectName(ally)} -> {_host.ObjectName(target)}@{target.HexTile}"
-                + $"{(weaponProto is null ? "" : $" [{_host.ObjectNameByPid(weaponProto.Pid)}]")}: chance={chance}% hit={hit} damage={damage}");
+                + $"{(weaponProto is null ? "" : $" [{_host.ObjectNameByPid(weaponProto.Pid)}]")}: chance={chance}% hit={hit} damage={damage}{CritTag(critFlags)}");
             _host.OnAttackStarted(ally, weaponProto);
             return true;
         }
@@ -773,13 +818,14 @@ public sealed class CombatEngine
         enemy.Rotation = HexGrid.RotationTo(enemy.HexTile, defenderObj.HexTile);
 
         bool isGun = weaponProto?.Weapon is { } w && w.IsGun(weaponProto.ExtendedFlags);
-        (int chance, bool hit, int damage) = RollAttack(attacker, defender, weaponProto, weaponItem,
-            distance, crittersInPath, attackerIsDude: false);
+        (int chance, bool hit, int damage, int critFlags) = RollAttack(attacker, defender, weaponProto, weaponItem,
+            distance, crittersInPath, attackerIsDude: false, defenderIsDude: defenderObj == _host.Dude,
+            CriticalTables.LocationUncalled);
         if (isGun && weaponItem is not null)
             weaponItem.AmmoQuantity = _host.WeaponAmmo(weaponProto!, weaponItem) - 1;
-        _pendingAttack = new PendingAttack(enemy, defenderObj, chance, hit, damage);
+        _pendingAttack = new PendingAttack(enemy, defenderObj, chance, hit, damage, critFlags);
         _host.Transcript($"enemy-attack {_host.ObjectName(enemy)}@{enemy.HexTile}"
-            + $"{(weaponProto is null ? "" : $" [{_host.ObjectNameByPid(weaponProto.Pid)}{(isGun ? $" d{distance}" : "")}]")}: chance={chance}% hit={hit} damage={damage}");
+            + $"{(weaponProto is null ? "" : $" [{_host.ObjectNameByPid(weaponProto.Pid)}{(isGun ? $" d{distance}" : "")}]")}: chance={chance}% hit={hit} damage={damage}{CritTag(critFlags)}");
 
         _host.OnAttackStarted(enemy, weaponProto);
     }

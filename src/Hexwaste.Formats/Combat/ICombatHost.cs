@@ -33,6 +33,9 @@ public interface ICombatHost
     /// <summary>The critter's ai.txt behaviour packet (instance aiPacket, proto
     /// fallback), or null if none / ai.txt absent. Drives min_to_hit + min_hp.</summary>
     AiPacket? GetAiPacket(MapObject critter);
+    /// <summary>True once a full in-game day has elapsed — the engine enables
+    /// critical hits from "day 2" (random.cc randomTranslateRoll).</summary>
+    bool CriticalsEnabled { get; }
     (ProtoInfo? Proto, MapObject? Item) EquippedWeapon(MapObject critter); // :2305
     int WeaponAmmo(ProtoInfo weaponProto, MapObject item);              // :2326
     AmmoProtoStats? LoadedAmmo(ProtoInfo weaponProto, MapObject item);  // :2333

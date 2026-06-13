@@ -19,6 +19,22 @@ public static partial class CriticalTables
     public const int DamCritical = 0x200;
     public const int DamBypass = 0x800;
 
+    /// <summary>The flags phase-9 honours; everything else is masked at apply time.</summary>
+    public const int HonoredFlags = DamKnockedDown | DamDead | DamBypass | DamCritical;
+
+    /// <summary>hit_location_penalty_default (combat.cc:172) — HEAD, L_ARM, R_ARM,
+    /// TORSO, R_LEG, L_LEG, EYES, GROIN, UNCALLED. Full for ranged, halved for
+    /// melee (combat.cc:4437). Negative ⇒ harder to hit but more likely to crit.</summary>
+    public static readonly int[] LocationPenalty = { -40, -30, -30, 0, -20, -20, -60, -30, 0 };
+
+    /// <summary>HIT_LOCATION_UNCALLED — the default, no aiming (penalty 0).</summary>
+    public const int LocationUncalled = 8;
+
+    /// <summary>Severity bucket from rand(1,100)+STAT_BETTER_CRITICALS
+    /// (combat.cc:4105-4117); effect 5 needs the Better Criticals perk.</summary>
+    public static int Severity(int chance) =>
+        chance <= 20 ? 0 : chance <= 45 ? 1 : chance <= 70 ? 2 : chance <= 90 ? 3 : chance <= 100 ? 4 : 5;
+
     /// <summary>The crit effect for a (killType, hitLocation, severity). The dude
     /// uses the player table; an out-of-range killType falls back to KILL_TYPE_MAN
     /// (0) — the slice's non-tabulated critters resolve to MAN by design.</summary>

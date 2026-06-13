@@ -2437,6 +2437,10 @@ public sealed class ViewerGame : Game, Formats.Combat.ICombatHost
     public MapObject? Dude => _dude?.Dude;
     public void StopDude() => _dude?.Stop();
 
+    /// <summary>Criticals enable after one full game-day, like the engine
+    /// (random.cc: gameTime / TICKS_PER_DAY >= 1).</summary>
+    public bool CriticalsEnabled => _clock.Ticks / Formats.GameClock.TicksPerDay >= 1;
+
     private Formats.Combat.AiPacketTable? _aiPackets;
     private bool _aiPacketsLoaded;
 

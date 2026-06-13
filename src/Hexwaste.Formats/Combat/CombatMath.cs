@@ -19,26 +19,36 @@ public static class CombatMath
 
     public static bool RollHit(ICombatRng rng, int chance) => rng.Next(1, 101) <= chance;
 
-    /// <summary>Unarmed: damage = rand(1, 2 + meleeDmg) − DT, ×(1 − DR/100), floor 0.</summary>
-    public static int RollDamage(ICombatRng rng, CritterState attacker, CritterState target)
+    /// <summary>Unarmed: damage = rand(1, 2 + meleeDmg), ×critMult/2 (default 2 =
+    /// identity; the crit multiplier slots where the engine's hardcoded 2 lives),
+    /// then DT/DR. BYPASS cuts DT/DR to 20% (combat.cc:4530).</summary>
+    public static int RollDamage(ICombatRng rng, CritterState attacker, CritterState target,
+        int critMultiplier = 2, bool bypassArmor = false)
     {
         int raw = rng.Next(1, attacker.MeleeDamage + 3); // inclusive 1 .. 2+meleeDmg
-        return ReduceByArmor(raw, target);
+        return ReduceByArmor(raw * critMultiplier / 2, target, bypassArmor);
     }
 
     /// <summary>Melee weapon: rand(min, max) + the attacker's melee-damage
-    /// bonus (item.cc:1244), then DT/DR.</summary>
+    /// bonus (item.cc:1244), ×critMult/2, then DT/DR.</summary>
     public static int RollWeaponDamage(ICombatRng rng, CritterState attacker, CritterState target,
-        int minDamage, int maxDamage)
+        int minDamage, int maxDamage, int critMultiplier = 2, bool bypassArmor = false)
     {
         int raw = rng.Next(minDamage, Math.Max(minDamage, maxDamage) + 1) + attacker.MeleeDamage;
-        return ReduceByArmor(raw, target);
+        return ReduceByArmor(raw * critMultiplier / 2, target, bypassArmor);
     }
 
-    private static int ReduceByArmor(int raw, CritterState target)
+    private static int ReduceByArmor(int raw, CritterState target, bool bypassArmor = false)
     {
-        int afterThreshold = Math.Max(raw - target.DamageThreshold, 0);
-        return afterThreshold * (100 - Math.Clamp(target.DamageResistance, 0, 100)) / 100;
+        int dt = target.DamageThreshold;
+        int dr = target.DamageResistance;
+        if (bypassArmor)
+        {
+            dt = 20 * dt / 100;
+            dr = 20 * dr / 100;
+        }
+        int afterThreshold = Math.Max(raw - dt, 0);
+        return afterThreshold * (100 - Math.Clamp(dr, 0, 100)) / 100;
     }
 }
 
@@ -79,16 +89,26 @@ public static class RangedMath
     /// multiplier then ÷2 wrapper is identity until criticals exist; ammo
     /// mult/div and DR modifier land here. Guns get no melee bonus.</summary>
     public static int RollDamage(ICombatRng rng, int minDamage, int maxDamage, CritterState target,
-        int ammoDrModifier, int ammoDamageMultiplier, int ammoDamageDivisor)
+        int ammoDrModifier, int ammoDamageMultiplier, int ammoDamageDivisor,
+        int critMultiplier = 2, bool bypassArmor = false)
     {
         int raw = rng.Next(minDamage, Math.Max(minDamage, maxDamage) + 1);
-        int damage = raw * 2 * Math.Max(ammoDamageMultiplier, 1);
+        // critMultiplier replaces the engine's hardcoded ×2 (default 2 = identity).
+        int damage = raw * critMultiplier * Math.Max(ammoDamageMultiplier, 1);
         damage /= Math.Max(ammoDamageDivisor, 1);
         damage /= 2;
-        damage -= target.DamageThreshold;
+
+        int dt = target.DamageThreshold;
+        int dr = target.DamageResistance;
+        if (bypassArmor) // BYPASS cuts DT/DR to 20% (combat.cc:4530); ammo DR mod still applies
+        {
+            dt = 20 * dt / 100;
+            dr = 20 * dr / 100;
+        }
+        damage -= dt;
         if (damage <= 0)
             return 0;
-        int resistance = Math.Clamp(target.DamageResistance + ammoDrModifier, 0, 100);
+        int resistance = Math.Clamp(dr + ammoDrModifier, 0, 100);
         return damage - damage * resistance / 100;
     }
 }

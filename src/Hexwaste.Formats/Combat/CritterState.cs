@@ -20,6 +20,7 @@ public static class CritterStat
     public const int MeleeDamage = 11;
     public const int Sequence = 13;
     public const int CriticalChance = 15;
+    public const int BetterCriticals = 16;
     public const int DamageThreshold = 17;
     public const int DamageResistance = 24;
 }
