@@ -104,6 +104,11 @@ public sealed class SaveState
         public Dictionary<int, List<SavedItem>> ContainerInventories { get; set; } = [];
 
         public int[] MapVars { get; set; } = [];
+
+        /// <summary>Game-day this delta was captured (P8-M5). Script-stocked
+        /// merchant containers restock from pristine map data once this is
+        /// older than the restock window; 0 = pre-M5 (treated as "today").</summary>
+        public int SnapshotDay { get; set; }
     }
 
     private static readonly JsonSerializerOptions Options = new()

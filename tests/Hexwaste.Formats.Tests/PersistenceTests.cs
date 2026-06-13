@@ -32,6 +32,7 @@ public class SaveStateRoundTripTests
             Created = { new SaveState.CreatedObject(0x0700004A, 16000, 0, 1) },
             ContainerInventories = { [55] = [new SaveState.SavedItem(41, 50)] },
             MapVars = [9, 8, 7],
+            SnapshotDay = 12,
         };
 
         SaveState? loaded = SaveState.FromJson(state.ToJson());
@@ -57,6 +58,7 @@ public class SaveStateRoundTripTests
         Assert.Equal(new SaveState.CreatedObject(0x0700004A, 16000, 0, 1), Assert.Single(delta.Created));
         Assert.Equal(new SaveState.SavedItem(41, 50), Assert.Single(delta.ContainerInventories[55]));
         Assert.Equal([9, 8, 7], delta.MapVars);
+        Assert.Equal(12, delta.SnapshotDay);
     }
 
     [Fact]

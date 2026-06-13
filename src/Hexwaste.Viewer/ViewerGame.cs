@@ -66,6 +66,10 @@ public sealed class ViewerGame : Game
     private int _dudeXp = 0; // accrues in P6-M3 (kill XP at combat end)
     private int _unspentSkillPoints;
 
+    /// <summary>Game-days before a script-stocked merchant container restocks
+    /// (P8-M5 — the engine's box scripts use a 1-2 day timer; ours approximates).</summary>
+    private const int RestockDays = 3;
+
     /// <summary>The active premade name (for save/restore of the base sheet);
     /// "player" = the blank default.</summary>
     private string _activeCharacter = "player";
@@ -239,6 +243,7 @@ public sealed class ViewerGame : Game
         public sealed record Hurt(int Amount) : StartupAction;
         public sealed record CreateCharacter(int[] Special, int[] Tags, int Gender) : StartupAction;
         public sealed record ShowCreate : StartupAction;
+        public sealed record AdvanceDays(int Days) : StartupAction;
     }
 
     public List<StartupAction> StartupActions { get; set; } = [];
@@ -746,6 +751,10 @@ public sealed class ViewerGame : Game
                 case StartupAction.ShowCreate:
                     EnterCreation();
                     _menu = MenuState.CreateStats;
+                    break;
+                case StartupAction.AdvanceDays(var days):
+                    _clock.AdvanceHours(days * 24);
+                    Console.WriteLine($"advance: now day {_clock.Day}");
                     break;
             }
         }
@@ -4308,7 +4317,7 @@ public sealed class ViewerGame : Game
     /// — so revisits and saves replay them over pristine + map_enter(0).</summary>
     private void CaptureMapDelta()
     {
-        var delta = new SaveState.MapDelta { MapVars = [.. _map.GlobalVariables] };
+        var delta = new SaveState.MapDelta { MapVars = [.. _map.GlobalVariables], SnapshotDay = _clock.Day };
 
         var present = new HashSet<MapObject>();
         foreach (MapElevation? elev in _map.Elevations)
@@ -4460,10 +4469,22 @@ public sealed class ViewerGame : Game
                 FinishCorpse(dead, PickDeathAnim(dead));
         }
 
+        // A script-stocked merchant container restocks from pristine data once
+        // its snapshot is older than the window: skip the stale snapshot and
+        // keep the fresh map_enter stock (the box's own caps + goods). World
+        // loot (footlockers) is never script-stocked, so it always honors its
+        // snapshot — a looted chest stays looted.
+        int daysElapsed = delta.SnapshotDay > 0 ? _clock.Day - delta.SnapshotDay : 0;
         foreach ((int ordinal, List<SaveState.SavedItem> items) in delta.ContainerInventories)
         {
             if (ordinal < 0 || ordinal >= _ordinalObjects.Length)
                 continue;
+            if (daysElapsed >= RestockDays && _stockedOrdinals.Contains(ordinal))
+            {
+                Console.WriteLine($"restock: ordinal {ordinal} refreshed ({daysElapsed}d since snapshot)");
+                continue;
+            }
+
             MapObject container = _ordinalObjects[ordinal];
             container.Inventory.Clear();
             foreach (SaveState.SavedItem item in items)
