@@ -136,6 +136,29 @@ newr1 3.34 ms avg — faster than the sprite path).
 Spillover to phase 8: random encounters (worldmap.txt decoded, maps
 need saved=No delta-skip), burst/aimed shots, companion management.
 
+Phase 8 (DONE, per docs/phase8-research-report.md — "The Character
+Comes Alive"): M0 bug fixes + ops (CritterState now tag-aware — gcd
+TaggedSkills add +20 + double-rate per skill.cc:251; female dude art
+hfjmps + female death scream when gcd gender baseStats[34]==1; CI yaml
++ issue templates + SCOPE.md), M1 skill growth (Formats/Combat/SkillSet
+= gSkillDescriptions + skillGetValue + cost ramp + 5+2*IN points/level
+cap 99; K allocator; additive-V2 save: UnspentSkillPoints + DudeSkills
++ Character), M2 character sheet (C/K — SPECIAL+derived+skills, the
+allocator enriched, not a 2nd panel), M3 rest-to-heal (Z; pipboy.cc:2113
+need/rate*3 truncation, HEALING_RATE=max(EN/3,1); gates on local safety
+not the engine's can_rest_here flag — a documented divergence), M4
+character creation (GcdFile.Create recomputes derived stats per
+stat.cc:554; menu state machine Title/Pick/CreateStats/CreateTags; save
+self-contained via DudeBaseStats+DudeTaggedSkills — BUG FIX: SpawnDude
+took the generic proto's 30 HP for ALL gcd characters because
+GetCritterState keyed on the unset _dude; now reads the gcd directly),
+M5 merchant restock (MapDelta.SnapshotDay; a _stockedOrdinals container
+with a stale snapshot keeps fresh map_enter stock after RestockDays=3;
+world loot stays looted). GOTCHA: premade SPECIAL is ordered S/P/E/C/I/A/L
+= baseStats[0..6] (Agility is index 5, NOT 4). Spillover to phase 9:
+random encounters, combat depth II (extract CombatEngine FIRST), Vic's
+rescue legitimately + companion trade/dismiss.
+
 After each milestone: run tests, run the app if possible, update README progress checklist, conventional commit.
 
 ## Critical gotchas

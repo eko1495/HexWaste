@@ -1,5 +1,23 @@
 # Changelog
 
+## v0.8.0 — 2026-06-13
+
+The character comes alive — progression, creation, and survivability.
+
+- **Skills grow**: level-ups award skill points (5 + 2*IN, banked); a
+  character sheet (C/K) spends them past the engine's cost ramp. Two
+  shipped-build bugs fixed: tagged skills now get the +20 and double-rate
+  they were missing, and the female premade renders + screams female.
+- **Character creation**: roll your own at New Game — allocate SPECIAL,
+  pick a gender, tag three skills, with a live derived-stat readout. Or
+  pick a premade. Created characters save self-contained.
+- **Rest to heal** (Z): recover HP over game-hours when no enemies are
+  near — no more permanent attrition death-spiral.
+- **Merchants restock**: shop stock refreshes after a few game-days, so a
+  gun build can't permanently run dry. Looted world containers stay looted.
+- **Ops**: GitHub Actions CI (build + data-free tests), issue templates,
+  and a public SCOPE.md.
+
 ## v0.7.0 — 2026-06-13
 
 - **Guns**: single-shot pistols/rifles with the engine's ranged to-hit

@@ -51,8 +51,9 @@ Prebuilt self-contained builds (Linux x64 / Windows x64) are produced by
   lootable corpses that stay dead across map travel, AI turns, same-team
   joiners, and script-driven aggro — temple ants jump you on sight. Kills
   pay XP at combat end; levels raise your HP. Lose, and F9 puts you back.
-- **Character**: the dude's stats come from `premade\player.gcd`, so
-  stat-gated dialog runs the right branches.
+- **Character**: create your own (SPECIAL, gender, tagged skills) or pick a
+  premade; level-ups grant skill points you spend on the character sheet (C),
+  and stat-gated dialog runs the right branches. Rest (Z) heals over time.
 - **Barter**: real shopkeeper trade (Tubby's stock box and all) at the
   engine's price formula.
 - **Worldmap**: click-to-travel between areas (`maps.txt`/`city.txt`).
