@@ -91,3 +91,30 @@ public class RotationToTests
         }
     }
 }
+
+public class GcdCreateTests
+{
+    [Fact]
+    public void CreateComputesDerivedStatsLikeTheEngine()
+    {
+        // ST8 PE5 EN9 CH3 IN4 AG7 LK4, female, tags Small Guns/Melee/Throwing.
+        int[] special = [8, 5, 9, 3, 4, 7, 4];
+        Hexwaste.Formats.Combat.GcdFile g =
+            Hexwaste.Formats.Combat.GcdFile.Create(special, [0, 4, 5], gender: 1);
+
+        int[] bs = g.Stats.BaseStats;
+        Assert.Equal(8 + 2 * 9 + 15, bs[7]);   // MaxHP = ST + 2*EN + 15 = 41
+        Assert.Equal(7 / 2 + 5, bs[8]);        // MaxAP = AG/2 + 5 = 8
+        Assert.Equal(7, bs[9]);                // AC = AG
+        Assert.Equal(Math.Max(8 - 5, 1), bs[11]); // Melee = max(ST-5,1) = 3
+        Assert.Equal(2 * 5, bs[13]);           // Sequence = 2*PE = 10
+        Assert.Equal(4, bs[15]);               // CritChance = LK
+        Assert.Equal(1, bs[34]);               // gender female
+        Assert.Equal(100, bs[29]);             // EMP resist forced
+        Assert.Equal([0, 4, 5, -1], g.TaggedSkills);
+
+        // The tag bonus flows through SkillSet for the created dude.
+        Assert.Equal(5 + 4 * 7 + 20, Hexwaste.Formats.Combat.SkillSet.Value(
+            bs, g.Stats.BonusStats, g.Stats.Skills, g.TaggedSkills, 0)); // Small Guns tagged = 53
+    }
+}

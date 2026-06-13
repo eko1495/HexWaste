@@ -38,6 +38,14 @@ public sealed class SaveState
     /// premade as-is). Captures level-up spends over the base sheet.</summary>
     public int[]? DudeSkills { get; set; }
 
+    /// <summary>The dude's base stat block (35; null = reload the named
+    /// premade). Self-contained so a created character round-trips without a
+    /// .gcd file. Level-up HP lives in bonus stats and is replayed from level.</summary>
+    public int[]? DudeBaseStats { get; set; }
+
+    /// <summary>The dude's tagged skills (4; -1 padded). Pairs with DudeBaseStats.</summary>
+    public int[]? DudeTaggedSkills { get; set; }
+
     /// <summary>Current HP; -1 = full (pre-progression saves).</summary>
     public int DudeHp { get; set; } = -1;
     public int Elevation { get; set; }

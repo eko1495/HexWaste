@@ -123,11 +123,19 @@ public sealed class ViewerGame : Game
     /// Headless/test flags skip it entirely.</summary>
     public bool StartInMenu { get; set; }
 
-    private enum MenuState { None, Title, CharacterPick }
+    private enum MenuState { None, Title, CharacterPick, CreateStats, CreateTags }
 
     private MenuState _menu = MenuState.None;
     private int _menuIndex;
     private List<(string Label, string VirtualPath)> _premadeGcds = [];
+
+    // Character creation (P8-M4): 7 SPECIAL at base 5 + 5 free points, a
+    // gender row, then a 3-skill tag pick.
+    private readonly int[] _createSpecial = [5, 5, 5, 5, 5, 5, 5];
+    private int _createPoints = 5;
+    private int _createCursor; // 0-6 = SPECIAL stat, 7 = gender
+    private int _createGender;
+    private readonly List<int> _createTags = [];
 
     /// <summary>Movie caption card (play_gmovie): title + .sve subtitle lines.</summary>
     private List<string>? _movieCard;
@@ -229,6 +237,8 @@ public sealed class ViewerGame : Game
         public sealed record OpenSkills : StartupAction;
         public sealed record Rest : StartupAction;
         public sealed record Hurt(int Amount) : StartupAction;
+        public sealed record CreateCharacter(int[] Special, int[] Tags, int Gender) : StartupAction;
+        public sealed record ShowCreate : StartupAction;
     }
 
     public List<StartupAction> StartupActions { get; set; } = [];
@@ -727,6 +737,16 @@ public sealed class ViewerGame : Game
                     _dude.Dude.CurrentHp = Math.Max(1, _dude.Dude.CurrentHp - dmg);
                     Console.WriteLine($"hurt: dude HP now {_dude.Dude.CurrentHp}");
                     break;
+                case StartupAction.CreateCharacter(var special, var tags, var gender):
+                    _dudeGcd = Formats.Combat.GcdFile.Create(special, tags, gender);
+                    _activeCharacter = "custom";
+                    Console.WriteLine($"create: SPECIAL {string.Join("/", special)} gender {gender} tags [{string.Join(",", tags)}] HP {_dudeGcd.Stats.BaseStats[7]} AP {_dudeGcd.Stats.BaseStats[8]}");
+                    StartNewGame();
+                    break;
+                case StartupAction.ShowCreate:
+                    EnterCreation();
+                    _menu = MenuState.CreateStats;
+                    break;
             }
         }
 
@@ -926,35 +946,10 @@ public sealed class ViewerGame : Game
         KeyboardState keyboard = Keyboard.GetState();
         MouseState mouse = Mouse.GetState();
 
-        // Main menu: arrows/enter (or 1-9); the world idles underneath.
+        // Main menu / character creation: the world idles underneath.
         if (_menu != MenuState.None)
         {
-            int itemCount = _menu == MenuState.Title ? 2 : _premadeGcds.Count;
-            if (IsKeyPressed(keyboard, Keys.Up))
-                _menuIndex = (_menuIndex + itemCount - 1) % itemCount;
-            if (IsKeyPressed(keyboard, Keys.Down))
-                _menuIndex = (_menuIndex + 1) % itemCount;
-            for (int i = 0; i < itemCount && i < 9; i++)
-                if (IsKeyPressed(keyboard, Keys.D1 + i))
-                {
-                    _menuIndex = i;
-                    ActivateMenuItem();
-                }
-            if (IsKeyPressed(keyboard, Keys.Enter))
-                ActivateMenuItem();
-            if (IsKeyPressed(keyboard, Keys.Escape))
-            {
-                if (_menu == MenuState.CharacterPick)
-                {
-                    _menu = MenuState.Title;
-                    _menuIndex = 0;
-                }
-                else
-                {
-                    Exit();
-                }
-            }
-
+            HandleMenuInput(keyboard);
             _previousMouse = mouse;
             _previousKeyboard = keyboard;
             base.Update(gameTime);
@@ -1378,8 +1373,14 @@ public sealed class ViewerGame : Game
             Pid = 0x01000001,
         };
 
-        // Combat numbers come from the proto like any critter's.
-        if (GetCritterState(dude) is { } stats)
+        // Combat numbers come from the dude's gcd sheet (the critter proto is
+        // the fallback). Read the gcd directly here: GetCritterState keys on
+        // _dude, which isn't assigned until below — without this the dude took
+        // the generic proto's 30 HP regardless of his SPECIAL.
+        Formats.Combat.CritterState? stats = _dudeGcd is not null
+            ? new Formats.Combat.CritterState(dude, _dudeGcd.Stats, _dudeGcd.TaggedSkills)
+            : GetCritterState(dude);
+        if (stats is not null)
         {
             dude.CurrentHp = stats.MaxHp;
             _dudeAp = stats.MaxActionPoints;
@@ -4189,24 +4190,30 @@ public sealed class ViewerGame : Game
             _fontRenderer.Draw(_spriteBatch, subtitle,
                 new Vector2(center.X - _fontRenderer.MeasureWidth(subtitle) / 2f, center.Y - 120 + _fontRenderer.LineHeight * 1.4f), gray);
 
-            string[] items = _menu == MenuState.Title
-                ? ["New game", "Quit"]
-                : [.. _premadeGcds.Select(g => g.Label)];
-            float itemY = center.Y - 20;
-            for (int i = 0; i < items.Length; i++)
+            if (_menu is MenuState.Title or MenuState.CharacterPick)
             {
-                string line = (i == _menuIndex ? "> " : "  ") + items[i];
-                _fontRenderer.Draw(_spriteBatch, line,
-                    new Vector2(center.X - _fontRenderer.MeasureWidth(line) / 2f, itemY),
-                    i == _menuIndex ? menuGreen : gray);
-                itemY += _fontRenderer.LineHeight * 1.6f;
+                string[] items = _menu == MenuState.Title
+                    ? ["New game", "Quit"]
+                    : ["Create your own", .. _premadeGcds.Select(g => g.Label)];
+                float itemY = center.Y - 20;
+                for (int i = 0; i < items.Length; i++)
+                {
+                    string line = (i == _menuIndex ? "> " : "  ") + items[i];
+                    _fontRenderer.Draw(_spriteBatch, line,
+                        new Vector2(center.X - _fontRenderer.MeasureWidth(line) / 2f, itemY),
+                        i == _menuIndex ? menuGreen : gray);
+                    itemY += _fontRenderer.LineHeight * 1.6f;
+                }
+                string hint = _menu == MenuState.Title
+                    ? "arrows + Enter; Esc quits"
+                    : "create or pick a character - arrows + Enter; Esc back";
+                _fontRenderer.Draw(_spriteBatch, hint,
+                    new Vector2(center.X - _fontRenderer.MeasureWidth(hint) / 2f, itemY + _fontRenderer.LineHeight), gray);
             }
-
-            string hint = _menu == MenuState.Title
-                ? "arrows + Enter; Esc quits"
-                : "pick a premade character - arrows + Enter; Esc back";
-            _fontRenderer.Draw(_spriteBatch, hint,
-                new Vector2(center.X - _fontRenderer.MeasureWidth(hint) / 2f, itemY + _fontRenderer.LineHeight), gray);
+            else
+            {
+                DrawCreationScreen(center, gold, menuGreen, gray);
+            }
         }
 
         int y = GraphicsDevice.Viewport.Height - 8 - _messageLog.Count * _fontRenderer.LineHeight;
@@ -4214,6 +4221,67 @@ public sealed class ViewerGame : Game
         {
             _fontRenderer.Draw(_spriteBatch, message, new Vector2(8, y), green);
             y += _fontRenderer.LineHeight;
+        }
+    }
+
+    /// <summary>The SPECIAL/gender point-buy and the 3-skill tag picker.</summary>
+    private void DrawCreationScreen(Vector2 center, Color gold, Color green, Color gray)
+    {
+        if (_fontRenderer is null)
+            return;
+        float lh = _fontRenderer.LineHeight * 1.3f;
+
+        void Row(float x, float yy, string s, Color c) =>
+            _fontRenderer.Draw(_spriteBatch, s, new Vector2(x, yy), c);
+
+        if (_menu == MenuState.CreateStats)
+        {
+            Row(center.X - 200, center.Y - 90, $"CREATE CHARACTER — {_createPoints} points left", gold);
+            string[] sp = ["Strength", "Perception", "Endurance", "Charisma", "Intelligence", "Agility", "Luck"];
+            float y = center.Y - 60;
+            for (int i = 0; i < 7; i++)
+            {
+                bool sel = _createCursor == i;
+                Row(center.X - 200, y, $"{(sel ? ">" : " ")} {sp[i]}", sel ? green : gray);
+                Row(center.X - 30, y, $"{_createSpecial[i]}", sel ? green : gold);
+                y += lh;
+            }
+            bool gsel = _createCursor == 7;
+            Row(center.X - 200, y, $"{(gsel ? ">" : " ")} Gender", gsel ? green : gray);
+            Row(center.X - 30, y, _createGender == 1 ? "Female" : "Male", gsel ? green : gold);
+
+            // live derived readout
+            int st = _createSpecial[0], pe = _createSpecial[1], en = _createSpecial[2], ag = _createSpecial[5], lk = _createSpecial[6];
+            float dx = center.X + 70, dy = center.Y - 60;
+            Row(dx, dy, $"Hit Points {st + 2 * en + 15}", gray);
+            Row(dx, dy + lh, $"Action Pts {ag / 2 + 5}", gray);
+            Row(dx, dy + lh * 2, $"Armor Class {ag}", gray);
+            Row(dx, dy + lh * 3, $"Melee Dmg {Math.Max(st - 5, 1)}", gray);
+            Row(dx, dy + lh * 4, $"Sequence {2 * pe}", gray);
+            Row(dx, dy + lh * 5, $"Critical % {lk}", gray);
+            Row(dx, dy + lh * 6, $"Heal Rate {Math.Max(en / 3, 1)}", gray);
+
+            string hint = _createPoints == 0
+                ? "Left/Right adjust · Enter: tag skills · Esc back"
+                : "Left/Right adjust · spend all points to continue · Esc back";
+            Row(center.X - 200, center.Y + 150, hint, gray);
+        }
+        else // CreateTags
+        {
+            Row(center.X - 200, center.Y - 130, $"TAG 3 SKILLS — {_createTags.Count}/3 chosen", gold);
+            int cols = 2, perCol = 9;
+            for (int i = 0; i < Formats.Combat.SkillSet.SkillCount; i++)
+            {
+                bool sel = i == _skillAllocIndex;
+                bool tagged = _createTags.Contains(i);
+                float cx = center.X - 200 + (i / perCol) * 230;
+                float cy = center.Y - 100 + (i % perCol) * lh;
+                Row(cx, cy, $"{(sel ? ">" : " ")} [{(tagged ? "x" : " ")}] {Formats.Combat.SkillSet.Names[i]}",
+                    sel ? green : (tagged ? gold : gray));
+            }
+            Row(center.X - 200, center.Y + 90,
+                _createTags.Count == 3 ? "Space toggles · Enter: begin · Esc back" : "Space toggles a tag · Esc back",
+                gray);
         }
     }
 
@@ -4442,37 +4510,129 @@ public sealed class ViewerGame : Game
         }
     }
 
-    private void ActivateMenuItem()
+    /// <summary>The front-door state machine: Title → character pick (Create
+    /// or a premade) → optional SPECIAL/tags creation → play.</summary>
+    private void HandleMenuInput(KeyboardState k)
     {
-        if (_menu == MenuState.Title)
+        switch (_menu)
         {
-            if (_menuIndex == 0)
-            {
-                if (_premadeGcds.Count > 0)
+            case MenuState.Title:
+                MoveMenu(k, 2);
+                if (Activated(k))
                 {
-                    _menu = MenuState.CharacterPick;
-                    _menuIndex = 0;
+                    if (_menuIndex == 0) { _menu = MenuState.CharacterPick; _menuIndex = 0; }
+                    else Exit();
                 }
-                else
-                {
-                    _menu = MenuState.None; // no premades — play the default sheet
-                }
-            }
-            else
+                if (IsKeyPressed(k, Keys.Escape)) Exit();
+                break;
+
+            case MenuState.CharacterPick:
             {
-                Exit();
+                int n = _premadeGcds.Count + 1; // index 0 = "Create your own"
+                MoveMenu(k, n);
+                if (Activated(k))
+                {
+                    if (_menuIndex == 0) EnterCreation();
+                    else PickPremade(_menuIndex - 1);
+                }
+                if (IsKeyPressed(k, Keys.Escape)) { _menu = MenuState.Title; _menuIndex = 0; }
+                break;
             }
+
+            case MenuState.CreateStats:
+            {
+                if (IsKeyPressed(k, Keys.Up)) _createCursor = (_createCursor + 7) % 8;
+                if (IsKeyPressed(k, Keys.Down)) _createCursor = (_createCursor + 1) % 8;
+                int delta = IsKeyPressed(k, Keys.Right) ? 1 : IsKeyPressed(k, Keys.Left) ? -1 : 0;
+                if (delta != 0)
+                {
+                    if (_createCursor < 7) AdjustCreateStat(_createCursor, delta);
+                    else _createGender ^= 1;
+                }
+                if (IsKeyPressed(k, Keys.Enter))
+                {
+                    if (_createPoints == 0) { _menu = MenuState.CreateTags; _skillAllocIndex = 0; }
+                    else Console.WriteLine("create: spend all character points first");
+                }
+                if (IsKeyPressed(k, Keys.Escape)) { _menu = MenuState.CharacterPick; _menuIndex = 0; }
+                break;
+            }
+
+            case MenuState.CreateTags:
+                if (IsKeyPressed(k, Keys.Up)) _skillAllocIndex = (_skillAllocIndex + 17) % 18;
+                if (IsKeyPressed(k, Keys.Down)) _skillAllocIndex = (_skillAllocIndex + 1) % 18;
+                if (IsKeyPressed(k, Keys.Space)) ToggleCreateTag(_skillAllocIndex);
+                if (IsKeyPressed(k, Keys.Enter)) FinishCreation();
+                if (IsKeyPressed(k, Keys.Escape)) _menu = MenuState.CreateStats;
+                break;
         }
-        else if (_menu == MenuState.CharacterPick && _menuIndex < _premadeGcds.Count)
+    }
+
+    private void MoveMenu(KeyboardState k, int n)
+    {
+        if (IsKeyPressed(k, Keys.Up)) _menuIndex = (_menuIndex + n - 1) % n;
+        if (IsKeyPressed(k, Keys.Down)) _menuIndex = (_menuIndex + 1) % n;
+        for (int i = 0; i < n && i < 9; i++)
+            if (IsKeyPressed(k, Keys.D1 + i)) _menuIndex = i;
+    }
+
+    private bool Activated(KeyboardState k) =>
+        IsKeyPressed(k, Keys.Enter) || Enumerable.Range(0, 9).Any(i => IsKeyPressed(k, Keys.D1 + i));
+
+    private void PickPremade(int idx)
+    {
+        if (idx < 0 || idx >= _premadeGcds.Count)
+            return;
+        string path = _premadeGcds[idx].VirtualPath;
+        using (Stream stream = _vfs.OpenRead(path))
+            _dudeGcd = Formats.Combat.GcdFile.Load(stream);
+        _activeCharacter = Path.GetFileNameWithoutExtension(path);
+        StartNewGame();
+        _menu = MenuState.None;
+    }
+
+    private void EnterCreation()
+    {
+        Array.Fill(_createSpecial, 5);
+        _createPoints = 5;
+        _createCursor = 0;
+        _createGender = 0;
+        _createTags.Clear();
+        _skillAllocIndex = 0;
+        _menu = MenuState.CreateStats;
+    }
+
+    /// <summary>Adjust a SPECIAL stat 1..10, charging/refunding the point pool.</summary>
+    private void AdjustCreateStat(int stat, int delta)
+    {
+        int v = _createSpecial[stat] + delta;
+        if (v is < 1 or > 10)
+            return;
+        if (delta > 0 && _createPoints <= 0)
+            return;
+        _createSpecial[stat] = v;
+        _createPoints -= delta;
+    }
+
+    private void ToggleCreateTag(int skill)
+    {
+        if (!_createTags.Remove(skill) && _createTags.Count < 3)
+            _createTags.Add(skill);
+    }
+
+    private void FinishCreation()
+    {
+        if (_createTags.Count != 3)
         {
-            string path = _premadeGcds[_menuIndex].VirtualPath;
-            using (Stream stream = _vfs.OpenRead(path))
-                _dudeGcd = Formats.Combat.GcdFile.Load(stream);
-            // premade\NAME.gcd → NAME, for save/restore of the base sheet.
-            _activeCharacter = Path.GetFileNameWithoutExtension(path);
-            StartNewGame();
-            _menu = MenuState.None;
+            Console.WriteLine("create: pick exactly 3 tag skills (Space)");
+            return;
         }
+        _dudeGcd = Formats.Combat.GcdFile.Create(_createSpecial, [.. _createTags], _createGender);
+        _activeCharacter = "custom";
+        Console.WriteLine($"create: SPECIAL {string.Join("/", _createSpecial)} gender {_createGender}"
+            + $" tags [{string.Join(",", _createTags)}] HP {_dudeGcd.Stats.BaseStats[7]}");
+        StartNewGame();
+        _menu = MenuState.None;
     }
 
     /// <summary>Fresh start: wipe session state and reload the first map with
@@ -4698,6 +4858,8 @@ public sealed class ViewerGame : Game
             UnspentSkillPoints = _unspentSkillPoints,
             Character = _activeCharacter,
             DudeSkills = _dudeGcd is not null ? [.. _dudeGcd.Stats.Skills] : null,
+            DudeBaseStats = _dudeGcd is not null ? [.. _dudeGcd.Stats.BaseStats] : null,
+            DudeTaggedSkills = _dudeGcd is not null ? [.. _dudeGcd.TaggedSkills] : null,
             Elevation = _elevation,
             ClockTicks = _clock.Ticks,
             GlobalVars = new Dictionary<int, int>(_scriptHost?.GlobalVars ?? []),
@@ -4760,22 +4922,40 @@ public sealed class ViewerGame : Game
         LoadMap(state.Map, new MapDestination(0, state.DudeTile, state.Elevation, state.DudeRotation),
             captureOutgoing: false);
 
-        // Progression: reload the pristine base sheet for the saved character,
-        // re-apply spent skill points, then replay level-up HP gains.
+        // Progression: rebuild the sheet from the saved base stats + tags +
+        // skills (self-contained — works for created characters); fall back to
+        // reloading the named premade for older saves. Then replay level HP.
         _activeCharacter = string.IsNullOrEmpty(state.Character) ? "player" : state.Character;
-        string sheetPath = $@"premade\{_activeCharacter}.gcd";
-        if (_dudeGcd is not null && _vfs.Exists(sheetPath))
-        {
-            using Stream gcdStream = _vfs.OpenRead(sheetPath);
-            _dudeGcd = Formats.Combat.GcdFile.Load(gcdStream);
-        }
         _dudeLevel = Math.Max(state.DudeLevel, 1);
         _dudeXp = state.DudeXp;
         _unspentSkillPoints = state.UnspentSkillPoints;
+
+        if (state.DudeBaseStats is { Length: 35 } savedBase)
+        {
+            _dudeGcd = new Formats.Combat.GcdFile
+            {
+                Stats = new Formats.Proto.CritterProtoStats(0, 0, 0,
+                    [.. savedBase], new int[35], state.DudeSkills is { Length: 18 } s ? [.. s] : new int[18],
+                    0, 0, 0, 0),
+                Name = _activeCharacter == "custom" ? "Wanderer" : _dudeGcd?.Name ?? "Wanderer",
+                TaggedSkills = state.DudeTaggedSkills is { Length: 4 } t ? [.. t] : [-1, -1, -1, -1],
+                Traits = [-1, -1],
+            };
+        }
+        else
+        {
+            string sheetPath = $@"premade\{_activeCharacter}.gcd";
+            if (_dudeGcd is not null && _vfs.Exists(sheetPath))
+            {
+                using Stream gcdStream = _vfs.OpenRead(sheetPath);
+                _dudeGcd = Formats.Combat.GcdFile.Load(gcdStream);
+            }
+            if (_dudeGcd is not null && state.DudeSkills is { Length: 18 } savedSkills)
+                Array.Copy(savedSkills, _dudeGcd.Stats.Skills, 18);
+        }
+
         if (_dudeGcd is not null)
         {
-            if (state.DudeSkills is { Length: 18 } savedSkills)
-                Array.Copy(savedSkills, _dudeGcd.Stats.Skills, 18);
             int endurance = _dudeGcd.Stats.BaseStats[Formats.Combat.CritterStat.Endurance];
             _dudeGcd.Stats.BonusStats[Formats.Combat.CritterStat.MaximumHitPoints] +=
                 (_dudeLevel - 1) * Formats.Combat.Progression.HpPerLevel(endurance);

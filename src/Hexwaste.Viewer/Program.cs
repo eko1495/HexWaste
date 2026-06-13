@@ -184,6 +184,19 @@ for (int i = 0; i < args.Length; i++)
         case "--hurt" when i + 1 < args.Length:
             actions.Add(new ViewerGame.StartupAction.Hurt(int.Parse(args[++i])));
             break;
+        case "--create" when i + 1 < args.Length:
+        {
+            // "S,P,E,C,I,A,L:t,t,t:g"
+            string[] parts = args[++i].Split(':');
+            int[] special = parts[0].Split(',').Select(int.Parse).ToArray();
+            int[] tags = parts[1].Split(',').Select(int.Parse).ToArray();
+            int gender = parts.Length > 2 ? int.Parse(parts[2]) : 0;
+            actions.Add(new ViewerGame.StartupAction.CreateCharacter(special, tags, gender));
+            break;
+        }
+        case "--show-create":
+            actions.Add(new ViewerGame.StartupAction.ShowCreate());
+            break;
         case "--game-dir" when i + 1 < args.Length:
             gameDir = args[++i];
             break;

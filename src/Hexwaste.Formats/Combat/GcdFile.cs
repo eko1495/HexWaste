@@ -21,6 +21,43 @@ public sealed class GcdFile
 
     public int RemainingCharPoints { get; init; }
 
+    /// <summary>Builds an in-memory sheet from a created character (no .gcd
+    /// write). Derived stats recompute per fallout2-ce stat.cc
+    /// critterUpdateDerivedStats(). special = the 7 SPECIAL values; tags = the
+    /// chosen skill indices (padded to 4 with -1); gender 0/1.</summary>
+    public static GcdFile Create(int[] special, int[] tags, int gender, string name = "Wanderer")
+    {
+        int[] baseStats = new int[35];
+        for (int i = 0; i < 7; i++)
+            baseStats[i] = special[i];
+        int st = special[0], pe = special[1], en = special[2], ag = special[5], lk = special[6];
+        baseStats[7] = st + 2 * en + 15;          // MAXIMUM_HIT_POINTS
+        baseStats[8] = ag / 2 + 5;                // MAXIMUM_ACTION_POINTS
+        baseStats[9] = ag;                        // ARMOR_CLASS
+        baseStats[11] = Math.Max(st - 5, 1);      // MELEE_DAMAGE
+        baseStats[12] = 25 * st + 25;             // CARRY_WEIGHT
+        baseStats[13] = 2 * pe;                   // SEQUENCE
+        baseStats[14] = Math.Max(en / 3, 1);      // HEALING_RATE
+        baseStats[15] = lk;                       // CRITICAL_CHANCE
+        baseStats[29] = 100;                      // DAMAGE_RESISTANCE_EMP (gcdLoad)
+        baseStats[31] = 2 * en;                   // RADIATION_RESISTANCE
+        baseStats[32] = 5 * en;                   // POISON_RESISTANCE
+        baseStats[34] = gender;                   // GENDER
+
+        int[] tagged = [.. Enumerable.Range(0, 4).Select(i => i < tags.Length ? tags[i] : -1)];
+        return new GcdFile
+        {
+            Stats = new CritterProtoStats(
+                AiPacket: 0, Team: 0, CritterFlags: 0,
+                baseStats, new int[35], new int[18],
+                BodyType: 0, Experience: 0, KillType: 0, DamageType: 0),
+            Name = name,
+            TaggedSkills = tagged,
+            Traits = [-1, -1],
+            RemainingCharPoints = 0,
+        };
+    }
+
     public static GcdFile Load(Stream stream)
     {
         var reader = new BigEndianReader(stream);
