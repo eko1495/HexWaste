@@ -1,5 +1,27 @@
 # Changelog
 
+## v0.9.0 — 2026-06-13
+
+Combat depth II — the fight gets tactical.
+
+- **Extract-first refactor**: the turn machine is now an engine-free
+  `Hexwaste.Formats.Combat.CombatEngine` behind a host interface — unit-tested
+  with no GraphicsDevice for the first time, and locked by a golden-transcript
+  harness that diffs combat output byte-for-byte.
+- **Smarter enemies**: NPCs read their `ai.txt` behaviour packets — they close
+  to a viable shot and flee when badly wounded instead of fighting to the last
+  hit point; a fled enemy disengages so combat actually ends.
+- **Critical hits**: from in-game day 2 (like the engine), attacks roll off the
+  real Fallout 2 critical tables — bonus damage, armour bypass, the occasional
+  instant kill.
+- **Aimed shots**: cycle a called shot (V) to eyes/head/legs/etc. — harder to
+  hit (+1 AP) but a far better critical.
+- **Knockdown & knockback**: big melee blows shove the target sprawling back
+  along the hex line; a crit leaves it prone (+40 to hit, 3 AP to stand).
+- **Explosives & throwing**: throw a spear or rock (Throwing skill, range scaled
+  by Strength — it lands recoverable) or lob a grenade for an area blast with
+  damage falloff and knockback.
+
 ## v0.8.0 — 2026-06-13
 
 The character comes alive — progression, creation, and survivability.

@@ -77,6 +77,7 @@ Prebuilt self-contained builds (Linux x64 / Windows x64) are produced by
 | click a critter | talk (real scripted dialog, 1–9 to choose; shopkeepers open a barter panel) |
 | right-click | examine (critters show HP/AC) |
 | F | attack the hovered critter (starts combat) |
+| V | cycle the called-shot location (aimed shot) |
 | Space | end combat turn |
 | L | lockpick the hovered door |
 | I | inventory (1–9 use/equip/consume, Shift+1–9 drop) |

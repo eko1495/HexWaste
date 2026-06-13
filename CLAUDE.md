@@ -159,6 +159,53 @@ world loot stays looted). GOTCHA: premade SPECIAL is ordered S/P/E/C/I/A/L
 random encounters, combat depth II (extract CombatEngine FIRST), Vic's
 rescue legitimately + companion trade/dismiss.
 
+Phase 9 (DONE, per docs/phase9-research-report.md — "Combat Depth II"):
+M0 extract-first (the ~700-line turn machine lifted out of ViewerGame
+into Hexwaste.Formats.Combat.CombatEngine behind ICombatHost +
+ICombatRng, NO behavior change; the viewer keeps sole ownership of
+animator/walkers/draw-lists/_blockedTiles so the walker TileChanged
+closure stays correct without an engine callback; the adversarial audit
+caught two missing side-effects — NPC-walker TileChanged + script
+damage/destroy procs; regression net = scripts/combat-golden.sh golden
+transcripts + a clean headless exit (--fight/--attack auto-exit after
+their startup actions) + the fake-host CI unit tests the extraction
+finally unblocked), M1 AI packets (Formats/Combat/AiPackets parses
+data\ai.txt 187 packets; MapObject.AiPacket was parsed since phase-5 but
+read NOWHERE; min_to_hit close-or-flee + RAW min_hp flee — combat_ai.cc:3077,
+run_away_mode is party-UI/debug only, NOT the combat flee; PruneEscaped-
+Hostiles disengages critters fled beyond sight so combat ends. GOTCHA:
+arcaves radscorpions are script-spawned at runtime with pkt-8 min-0 — the
+static map's pkt-14 never applies; Den slaves pkt-33 min_hp-30 actually
+flee), M2 aimed shots + criticals (tools/gen_critical_tables.py generates
+the 1080-row crit table from combat.cc into CriticalTables.g.cs, FNV-1a
+checksum-guarded; the to-hit roll upgrades SUCCESS→CRITICAL via a 2nd
+d100 ≤ delta/10 + (critChance − hit_location_penalty); severity bucket +
+STAT_BETTER_CRITICALS; honor the damage multiplier + flags {CRITICAL,
+DEAD, KNOCKED_DOWN, BYPASS}, mask the rest; aimed shot +1 AP + the penalty full-ranged/half-
+melee. GOTCHA: criticals gate on day≥2 (random.cc randomTranslateRoll,
+gameTime/TICKS_PER_DAY≥1) — so the day-1 golden fixtures take ZERO extra
+RNG draws and stay byte-identical; the called-shot UI is a V-cycle, not
+the engine's click dialog — documented simplification), M3 knockback +
+persisting knockdown + explosions (shove dmg/10 along the hex line for
+melee/explosion, NEVER guns — combat.cc:4633, !MULTIHEX/!NO_KNOCKBACK;
+a crit DAM_KNOCKED_DOWN persists prone — +40 to hit combat.cc:4474, 3 AP
+to stand; CombatEngine.Explode = radius+LoS AoE with explosion DT/DR
+stats 23/30 + knockback, cap 6 — the ring-spiral simplified to
+radius+LoS), M4 throwing (TryThrow reuses the ranged to-hit with the
+Throwing skill, range min(maxRange, 3×ST); explosives detonate at the
+landing tile via Explode + the misc-10 marker + metarule(49)==EXPLOSION
++ a radius-3 damage_p_proc broadcast = the temple-door path; non-
+explosives drop recoverable on the ground; --throw/--aim/--explode
+harness hooks. GOTCHA: the projectile flies via the throw anim, not a
+tweened sprite; throws don't crit; the artemple door-blast beat is WIRED
+but unverified in-game — lockpick stays the advertised opener, per the
+content gate). 108→182 Formats tests; an 11-fixture golden combat
+harness; tools/ContentAudit (weapon/killtype/packet census) +
+gen_critical_tables.py. Spillover to phase 10: burst (DEFERRED — ZERO
+burst weapons in the shippable slice), random encounters, Vic's rescue +
+companion management, the projectile tween + recoverable persistence +
+the verified door beat.
+
 After each milestone: run tests, run the app if possible, update README progress checklist, conventional commit.
 
 ## Critical gotchas
