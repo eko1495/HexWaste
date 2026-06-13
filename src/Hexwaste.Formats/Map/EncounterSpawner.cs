@@ -42,6 +42,12 @@ public static class EncounterSpawner
     {
         var result = new List<SpawnInstruction>();
 
+        // wmRndIndex is a module-global the engine resets ONCE (program start), never
+        // per group — so the cluster-anchor alternation carries across an encounter's
+        // sub-groups (wmSetupRndNextTileNumInit resets the rest, not the index). Share
+        // one holder across every group in this Plan to match.
+        int[] sharedIndex = [0];
+
         // wmSetupRandomEncounter: each Enc:(min-max) GROUP sub-entry rolls its own
         // size, then wmSetupCritterObjs lays the group out. +2 if a real party.
         foreach (EncounterSpawn sub in encounter.Entry.Spawns)
@@ -54,7 +60,7 @@ public static class EncounterSpawner
 
             if (world.Group(sub.Group) is { } group)
                 SpawnGroup(group, critterCount, rng, dudeTile, dudePerception, startTiles,
-                    isBlocked, reachable, result);
+                    isBlocked, reachable, result, sharedIndex);
         }
 
         return result;
@@ -63,9 +69,10 @@ public static class EncounterSpawner
     // ported from fallout2-ce src/worldmap.cc wmSetupCritterObjs()
     private static void SpawnGroup(EncounterGroup group, int critterCount, ICombatRng rng,
         int dudeTile, int dudePerception, IReadOnlyList<int> startTiles,
-        Func<int, bool> isBlocked, Func<int, int, bool> reachable, List<SpawnInstruction> output)
+        Func<int, bool> isBlocked, Func<int, int, bool> reachable, List<SpawnInstruction> output,
+        int[] sharedIndex)
     {
-        var f = new Formation(group.Formation, rng, dudeTile, startTiles);
+        var f = new Formation(group.Formation, rng, dudeTile, startTiles, sharedIndex);
 
         // The engine places critters one at a time, so each later placement sees the
         // earlier ones as blocking (wmEvalTileNumForPlacement → _obj_blocking_at). The
@@ -117,14 +124,15 @@ public static class EncounterSpawner
         private readonly int[] _tileDirs = [0, 0];
         private static readonly int[] RotOffsets = [1, 5]; // wmRndRotOffsets: [0]=1, [1]=5
         private readonly int _originalCenter;
-        private int _index;     // wmRndIndex (alternates the two cluster anchors)
-        private int _callCount; // wmRndCallCount (first call returns the anchor unchanged)
+        private readonly int[] _index;  // wmRndIndex holder — SHARED across an encounter's groups
+        private int _callCount;         // wmRndCallCount (reset per group; first call returns the anchor)
 
-        public Formation(string type, ICombatRng rng, int dudeTile, IReadOnlyList<int> startTiles)
+        public Formation(string type, ICombatRng rng, int dudeTile, IReadOnlyList<int> startTiles, int[] index)
         {
             _type = type;
             _rng = rng;
             _dudeTile = dudeTile;
+            _index = index;
 
             if (type == "surrounding")
             {
@@ -153,7 +161,7 @@ public static class EncounterSpawner
 
                 if (!isBlocked(tile) && reachable(_dudeTile, tile))
                     return tile;
-                if (HexGrid.Distance(_originalCenter, _centerTiles[_index]) > 25 || attempt > 25)
+                if (HexGrid.Distance(_originalCenter, _centerTiles[_index[0]]) > 25 || attempt > 25)
                     return null;
             }
         }
@@ -161,13 +169,16 @@ public static class EncounterSpawner
         private int Step(EncounterGroup group, int dudePerception)
         {
             int spacing = group.Spacing;
+            int idx = _index[0];
             switch (_type)
             {
                 case "surrounding":
                 {
-                    int distance = group.Distance > 0
-                        ? group.Distance
-                        : Math.Max(0, Between(_rng, -2, 2) + dudePerception);
+                    // The engine's distance is the PER-MEMBER encounterEntry->distance
+                    // (default 0 → the Perception path). That field isn't parsed in v1, so
+                    // every member rings at Perception±2 (worldmap.cc:3981-3987); the
+                    // group-level Distance: is DEAD in the engine and deliberately ignored.
+                    int distance = Math.Max(0, Between(_rng, -2, 2) + dudePerception);
                     int origin = HexGrid.TileInDirection(_dudeTile, _tileDirs[0], distance);
                     _tileDirs[0] = (_tileDirs[0] + 1) % HexGrid.RotationCount;
                     int rDist = Between(_rng, 0, distance / 2);
@@ -177,38 +188,38 @@ public static class EncounterSpawner
                 case "straight_line":
                 case "double_line":
                 {
-                    int tile = _centerTiles[_index];
+                    int tile = _centerTiles[idx];
                     if (_callCount != 0)
                     {
-                        int rot = (RotOffsets[_index] + _tileDirs[_index]) % HexGrid.RotationCount;
-                        int origin = HexGrid.TileInDirection(_centerTiles[_index], rot, spacing);
-                        tile = HexGrid.TileInDirection(origin, (rot + RotOffsets[_index]) % HexGrid.RotationCount, spacing);
-                        _centerTiles[_index] = tile;
-                        _index = 1 - _index;
+                        int rot = (RotOffsets[idx] + _tileDirs[idx]) % HexGrid.RotationCount;
+                        int origin = HexGrid.TileInDirection(_centerTiles[idx], rot, spacing);
+                        tile = HexGrid.TileInDirection(origin, (rot + RotOffsets[idx]) % HexGrid.RotationCount, spacing);
+                        _centerTiles[idx] = tile;
+                        _index[0] = 1 - idx;
                     }
                     return tile;
                 }
                 case "wedge":
                 {
-                    int tile = _centerTiles[_index];
+                    int tile = _centerTiles[idx];
                     if (_callCount != 0)
                     {
-                        tile = HexGrid.TileInDirection(_centerTiles[_index],
-                            (RotOffsets[_index] + _tileDirs[_index]) % HexGrid.RotationCount, spacing);
-                        _centerTiles[_index] = tile;
-                        _index = 1 - _index;
+                        tile = HexGrid.TileInDirection(_centerTiles[idx],
+                            (RotOffsets[idx] + _tileDirs[idx]) % HexGrid.RotationCount, spacing);
+                        _centerTiles[idx] = tile;
+                        _index[0] = 1 - idx;
                     }
                     return tile;
                 }
                 case "cone":
                 {
-                    int tile = _centerTiles[_index];
+                    int tile = _centerTiles[idx];
                     if (_callCount != 0)
                     {
-                        tile = HexGrid.TileInDirection(_centerTiles[_index],
-                            (_tileDirs[_index] + 3 + RotOffsets[_index]) % HexGrid.RotationCount, spacing);
-                        _centerTiles[_index] = tile;
-                        _index = 1 - _index;
+                        tile = HexGrid.TileInDirection(_centerTiles[idx],
+                            (_tileDirs[idx] + 3 + RotOffsets[idx]) % HexGrid.RotationCount, spacing);
+                        _centerTiles[idx] = tile;
+                        _index[0] = 1 - idx;
                     }
                     return tile;
                 }

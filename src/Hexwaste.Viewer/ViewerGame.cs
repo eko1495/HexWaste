@@ -2958,9 +2958,12 @@ public sealed class ViewerGame : Game, Formats.Combat.ICombatHost
         bool IsBlocked(int t) => _blockedTiles.Contains(t);
         bool Reachable(int from, int to) => Formats.Hex.Pathfinder.FindPath(from, to, IsBlocked) is not null;
 
-        var rng = new Formats.Combat.SystemCombatRng(RngSeed ?? 1);
+        // Reuse the persisted worldmap RNG (seeded off --rng-seed, else wall-clock) so
+        // spawns VARY per encounter and per playthrough — a fresh fixed seed here made
+        // every wasteland fight identical.
+        _wmRng ??= new Formats.Combat.SystemCombatRng(RngSeed ?? Environment.TickCount);
         IReadOnlyList<Formats.Map.SpawnInstruction> plan = Formats.Map.EncounterSpawner.Plan(
-            encounter, Worldmap, rng, _dude.Dude.HexTile, perception, partyCount, startTiles,
+            encounter, Worldmap, _wmRng, _dude.Dude.HexTile, perception, partyCount, startTiles,
             IsBlocked, Reachable);
 
         int placed = 0;
@@ -2971,7 +2974,15 @@ public sealed class ViewerGame : Game, Formats.Combat.ICombatHost
             _map.Elevations[_elevation]!.Objects.Add(obj);
             OnScriptObjectPlaced(obj);
             if (si.Dead)
+            {
+                // Complete the death state so the body is lootable + examines as a
+                // corpse: the combat kill path sets DAM_DEAD + clears the sid before
+                // converting (CombatEngine.cs), so mirror it here.
+                obj.CombatResults |= 0x80; // DAM_DEAD
+                obj.CurrentHp = 0;
+                obj.Sid = -1;
                 ConvertToCorpse(obj, PickDeathAnim(obj));
+            }
             placed++;
         }
         Console.WriteLine($"encounter-spawn: {encounter.Entry.Spawns.FirstOrDefault()?.Group ?? "?"}"
@@ -3165,7 +3176,8 @@ public sealed class ViewerGame : Game, Formats.Combat.ICombatHost
         // resumes travel from the encounter spot (the engine's isWalking auto-resume
         // is a documented v1 simplification). The very first travel of a game (no
         // worldPos yet) skips the roll and just arrives.
-        if (_worldPosX >= 0 && _worldPosY >= 0 && RollTravelPath(area))
+        bool rolled = _worldPosX >= 0 && _worldPosY >= 0;
+        if (rolled && RollTravelPath(area))
             return;
 
         // ported behavior from fallout2-ce src/worldmap.cc
@@ -3181,7 +3193,11 @@ public sealed class ViewerGame : Game, Formats.Combat.ICombatHost
         }
 
         _worldmapOpen = false;
-        _clock.AdvanceHours(8); // travel takes time
+        // RollTravelPath already advanced the clock per pixel-step across the whole
+        // leg; only the first travel of a game (no prior worldPos → no roll) needs the
+        // flat estimate, else the clock double-counts the trip.
+        if (!rolled)
+            _clock.AdvanceHours(8);
         // Record the dude's worldmap whereabouts so a save round-trips it
         // (phase-10 M2); a reload drops you back on the worldmap here.
         _currentAreaId = area.Index;
@@ -3215,6 +3231,8 @@ public sealed class ViewerGame : Game, Formats.Combat.ICombatHost
             if (e2 > -dy) { err -= dy; x += sx; }
             if (e2 < dx) { err += dx; y += sy; }
             _clock.Ticks += 18000; // 30 game-minutes per pixel-step
+            if (IsNearKnownArea(x, y)) // known-area suppression (worldmap.cc:3340-3343)
+                continue;
             if (enc.Roll(x, y, _clock.Hour, getGlobal, _dudeLevel, _clock.Day) is { } r)
             {
                 _worldPosX = x;
@@ -3222,6 +3240,23 @@ public sealed class ViewerGame : Game, Formats.Combat.ICombatHost
                 LoadEncounter(r);
                 return true;
             }
+        }
+        return false;
+    }
+
+    /// <summary>True when a worldmap pixel sits on/near a known city circle — the
+    /// engine never rolls an encounter there (worldmap.cc:3340-3343, the KEEP
+    /// decision in the phase-10 report). Suppresses ambushes at a town's doorstep.</summary>
+    private bool IsNearKnownArea(int worldX, int worldY)
+    {
+        const int radiusSq = 12 * 12; // ~ the engine's area circle in worldmap pixels
+        foreach (WorldArea a in _cities.Areas)
+        {
+            if (a.Entrances.Count == 0)
+                continue;
+            int dx = a.WorldX - worldX, dy = a.WorldY - worldY;
+            if (dx * dx + dy * dy <= radiusSq)
+                return true;
         }
         return false;
     }
@@ -4192,6 +4227,14 @@ public sealed class ViewerGame : Game, Formats.Combat.ICombatHost
     /// — so revisits and saves replay them over pristine + map_enter(0).</summary>
     private void CaptureMapDelta()
     {
+        // A transient (saved=No) encounter map is never remembered — it regenerates
+        // pristine every visit (phase-10 M0/M3). This is the single _visitedMaps writer,
+        // so guarding it here closes BOTH the map-exit path and the F5/save path (which
+        // calls this directly, bypassing LoadMap's guard #2) — otherwise saving mid-
+        // encounter wrote a phantom delta that replayed the spawned critters on load.
+        if (_currentMapTransient)
+            return;
+
         var delta = new SaveState.MapDelta { MapVars = [.. _map.GlobalVariables], SnapshotDay = _clock.Day };
 
         var present = new HashSet<MapObject>();
@@ -4769,7 +4812,11 @@ public sealed class ViewerGame : Game, Formats.Combat.ICombatHost
             GlobalVars = new Dictionary<int, int>(_scriptHost?.GlobalVars ?? []),
             DudeInventory = [.. _dudeInventory.Select(i => new SaveState.SavedItem(i.Pid, i.StackCount, i.Flags & (MapObject.FlagInLeftHand | MapObject.FlagInRightHand | MapObject.FlagWorn), i.AmmoQuantity, i.AmmoTypePid))],
             VisitedMaps = new Dictionary<string, SaveState.MapDelta>(_visitedMaps),
-            LocalVars = _scriptHost?.ExportAllLocalVars() ?? [],
+            // Drop transient (saved=No) maps' LVAR slices: their sids are reallocated
+            // fresh each visit, so saved slices would be orphaned dead weight (phase-10 M3).
+            LocalVars = (_scriptHost?.ExportAllLocalVars() ?? [])
+                .Where(kv => !_mapList.IsTransient(kv.Key))
+                .ToDictionary(kv => kv.Key, kv => kv.Value),
             Party = [.. (_scriptHost?.PartyMembers ?? []).Select(m => new SaveState.PartyMemberState(
                 m.Pid, _partyScriptIndex.GetValueOrDefault(m, -1), m.CurrentHp, m.Team, m.AiPacket,
                 m.Inventory.Select(i => new SaveState.SavedItem(i.Pid, Math.Max(i.StackCount, 1),
@@ -4843,9 +4890,14 @@ public sealed class ViewerGame : Game, Formats.Combat.ICombatHost
         _partyScriptIndex.Clear();
 
         // captureOutgoing: false — the pre-load world must not leak into the
-        // freshly imported VisitedMaps.
+        // freshly imported VisitedMaps. transient: a saved=No map (a save taken
+        // mid-encounter) reloads pristine — and per the documented rule we then drop
+        // the player back on the worldmap at the saved worldPos, not mid-ambush.
+        bool savedOnTransient = _mapList.IsTransient(state.Map);
         LoadMap(state.Map, new MapDestination(0, state.DudeTile, state.Elevation, state.DudeRotation),
-            captureOutgoing: false);
+            captureOutgoing: false, transient: savedOnTransient);
+        if (savedOnTransient)
+            _worldmapOpen = true;
 
         // Progression: rebuild the sheet from the saved base stats + tags +
         // skills (self-contained — works for created characters); fall back to

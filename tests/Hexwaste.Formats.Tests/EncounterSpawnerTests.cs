@@ -168,6 +168,53 @@ public class EncounterSpawnerTests
     }
 
     [Fact]
+    public void HuddleCollisionForcesSkips()
+    {
+        // spacing:0 makes every huddle step land back on the anchor (TileInDirection
+        // by 0 = same hex), so the placed-dedup must skip all but the first critter —
+        // proving the guard actually rejects genuine collisions, not just spreads.
+        IReadOnlyList<SpawnInstruction> plan = Plan(Setup("""
+            [Encounter: GRP]
+            type_00=ratio:100%, pid:100
+            position=huddle, spacing:0
+            """, "Enc:(4-4) GRP AMBUSH Player"));
+        Assert.Single(plan);
+    }
+
+    [Fact]
+    public void WedgeStepsByRotOffsetAndSpacingFromTheAnchor()
+    {
+        // Pin the wedge stepping geometry: critter 1 sits on the start point, critter 2
+        // steps `spacing` hexes in (rotOffset[0]=1 + tileDirs[0]) — re-derived via the
+        // same HexGrid helper so the test fails if the formula wiring changes.
+        const int start = 18100, spacing = 2;
+        IReadOnlyList<SpawnInstruction> plan = Plan(Setup("""
+            [Encounter: GRP]
+            type_00=ratio:100%, pid:100
+            position=wedge, spacing:2
+            """, "Enc:(2-2) GRP AMBUSH Player"), startTiles: [start]);
+
+        Assert.Equal(2, plan.Count);
+        Assert.Equal(start, plan[0].Tile);
+        int dir0 = HexGrid.RotationTo(start, DudeTile);
+        Assert.Equal(HexGrid.TileInDirection(start, (1 + dir0) % 6, spacing), plan[1].Tile);
+    }
+
+    [Fact]
+    public void SurroundingRingsAtThePerceptionDistance()
+    {
+        // MinRng: distance = max(0, -2 + Perception(5)) = 3; rDist = Between(0, 3/2)=0,
+        // so the spawn sits exactly 3 hexes from the dude (the ring radius), proving the
+        // distance reads Perception (not the dead group-level Distance) and draws it.
+        IReadOnlyList<SpawnInstruction> plan = Plan(Setup("""
+            [Encounter: RING]
+            type_00=ratio:100%, pid:50
+            position=Surrounding, distance:9
+            """, "Enc:(1-1) RING AMBUSH Player"));
+        Assert.Equal(3, HexGrid.Distance(DudeTile, Assert.Single(plan).Tile)); // 3, not the group distance:9
+    }
+
+    [Fact]
     public void DeterministicUnderSeed()
     {
         const string g = """
