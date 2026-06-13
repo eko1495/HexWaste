@@ -805,7 +805,18 @@ public sealed class ViewerGame : Game
             }
         }
         _frmCache.OnPaletteChanged(_palette);
+
+        // Headless transcript runs (--fight/--attack/… with no screenshot or
+        // bench, which have their own exits in Draw) settle their actions here
+        // and then have nothing left to do — exit cleanly so the determinism
+        // harness gets a stdout + exit code without killing a hung window.
+        if (StartupActions.Count > 0 && _screenshotPath is null && BenchFrames == 0)
+            _exitAfterStartupActions = true;
     }
+
+    /// <summary>Set once headless startup actions have run (no screenshot/bench);
+    /// the next Update saves-if-asked and exits.</summary>
+    private bool _exitAfterStartupActions;
 
     /// <summary>
     /// Loads (or transitions to) a map. <paramref name="spawnAt"/> places the
@@ -951,6 +962,14 @@ public sealed class ViewerGame : Game
 
     protected override void Update(GameTime gameTime)
     {
+        if (_exitAfterStartupActions)
+        {
+            if (SaveOnExit)
+                SaveGame();
+            Exit();
+            return;
+        }
+
         _frameClock.Restart();
         KeyboardState keyboard = Keyboard.GetState();
         MouseState mouse = Mouse.GetState();
