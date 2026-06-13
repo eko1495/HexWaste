@@ -33,6 +33,22 @@ public class ProgressionTests
         Assert.Equal(gain, Progression.HpPerLevel(endurance));
 }
 
+public class RestMathTests
+{
+    [Theory]
+    [InlineData(3, 1)] [InlineData(9, 3)] [InlineData(10, 3)] [InlineData(1, 1)] [InlineData(2, 1)]
+    public void HealingRateIsThirdOfEnduranceFloorOne(int en, int rate) =>
+        Assert.Equal(rate, Combat.Progression.HealingRate(en));
+
+    [Theory]
+    [InlineData(0, 3, 0)]     // already full
+    [InlineData(39, 3, 39)]   // need/rate*3 with float truncation
+    [InlineData(10, 3, 10)]   // (int)(10/3*3) = 10, not 9
+    [InlineData(7, 2, 10)]    // (int)(7/2*3) = (int)10.5 = 10
+    public void RestHoursMatchesEngineTruncation(int need, int rate, int hours) =>
+        Assert.Equal(hours, Combat.Progression.RestHoursToHeal(need, rate));
+}
+
 public class CombatRulesTests
 {
     private static MapObject Critter(int tile, int team, bool dead = false)

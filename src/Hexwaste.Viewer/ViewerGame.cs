@@ -227,6 +227,8 @@ public sealed class ViewerGame : Game
         public sealed record GrantXp(int Amount) : StartupAction;
         public sealed record SpendSkill(int Skill) : StartupAction;
         public sealed record OpenSkills : StartupAction;
+        public sealed record Rest : StartupAction;
+        public sealed record Hurt(int Amount) : StartupAction;
     }
 
     public List<StartupAction> StartupActions { get; set; } = [];
@@ -718,6 +720,13 @@ public sealed class ViewerGame : Game
                 case StartupAction.OpenSkills:
                     _skillAllocOpen = _dudeGcd is not null;
                     break;
+                case StartupAction.Rest:
+                    RestToHeal();
+                    break;
+                case StartupAction.Hurt(var dmg) when _dude is not null:
+                    _dude.Dude.CurrentHp = Math.Max(1, _dude.Dude.CurrentHp - dmg);
+                    Console.WriteLine($"hurt: dude HP now {_dude.Dude.CurrentHp}");
+                    break;
             }
         }
 
@@ -1081,6 +1090,10 @@ public sealed class ViewerGame : Game
         // C or K opens the character sheet (spend banked points with K's panel).
         if ((IsKeyPressed(keyboard, Keys.C) || IsKeyPressed(keyboard, Keys.K)) && _dudeGcd is not null)
             _skillAllocOpen = true;
+
+        // Z rests to heal (when it's safe).
+        if (IsKeyPressed(keyboard, Keys.Z))
+            RestToHeal();
 
         if (IsKeyPressed(keyboard, Keys.F5))
             SaveGame();
@@ -2752,6 +2765,64 @@ public sealed class ViewerGame : Game
         int after = Formats.Combat.SkillSet.Value(b, bo, sk, tags, skill);
         Log($"{Formats.Combat.SkillSet.Names[skill]} {current}% → {after}% ({_unspentSkillPoints} pts left)");
         Console.WriteLine($"skill-spend: {Formats.Combat.SkillSet.Names[skill]} {current}->{after} cost={cost} left={_unspentSkillPoints}");
+    }
+
+    /// <summary>
+    /// Rest to heal, modeled on fallout2-ce pipboy.cc:2111-2113: advance the
+    /// clock by hpToHeal / HEALING_RATE × 3 hours and restore HP. The engine
+    /// gates on the per-map can_rest_here flag + the worldmap rest loop; we
+    /// have neither, so we gate on local safety (no living non-party critter
+    /// within sight) — a documented divergence. Heals the dude + companions.
+    /// </summary>
+    private void RestToHeal()
+    {
+        if (_dude is null)
+            return;
+        if (_combatPhase != CombatPhase.Idle)
+        {
+            Log("You can't rest during a fight.");
+            Console.WriteLine("rest: refused (in combat)");
+            return;
+        }
+
+        bool danger = _solidObjects[_elevation].Any(o =>
+            Fid.Type(o.Fid) is ObjectType.Critter && o != _dude.Dude && !o.IsDead
+            && (_scriptHost is null || !_scriptHost.PartyMembers.Contains(o))
+            && Formats.Hex.HexGrid.Distance(o.HexTile, _dude.Dude.HexTile)
+                <= Formats.Combat.CombatRules.SightRangeHexes);
+        if (danger)
+        {
+            Log("It isn't safe to rest here.");
+            Console.WriteLine("rest: refused (enemies near)");
+            return;
+        }
+
+        List<MapObject> sleepers = [_dude.Dude, .. (_scriptHost?.PartyMembers ?? []).Where(m => !m.IsDead)];
+        int hours = 0;
+        foreach (MapObject c in sleepers)
+        {
+            if (GetCritterState(c) is not { } st)
+                continue;
+            int need = st.MaxHp - c.CurrentHp;
+            if (need <= 0)
+                continue;
+            int rate = Formats.Combat.Progression.HealingRate(st.Stat(Formats.Combat.CritterStat.Endurance));
+            hours = Math.Max(hours, Formats.Combat.Progression.RestHoursToHeal(need, rate));
+        }
+        if (hours == 0)
+        {
+            Log("You are already rested.");
+            Console.WriteLine("rest: already at full HP");
+            return;
+        }
+
+        _clock.AdvanceHours(hours);
+        _lastAmbientHour = -1; // refresh ambient lighting to the new hour
+        foreach (MapObject c in sleepers)
+            if (GetCritterState(c) is { } st)
+                c.CurrentHp = st.MaxHp;
+        Log($"You rest for {hours} hours. Fully healed.");
+        Console.WriteLine($"rest: +{hours}h, healed {sleepers.Count} to full (hour {_clock.Hour / 100:00})");
     }
 
     private void GameOver()

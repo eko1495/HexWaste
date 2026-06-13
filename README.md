@@ -71,6 +71,7 @@ Prebuilt self-contained builds (Linux x64 / Windows x64) are produced by
 | L | lockpick the hovered door |
 | I | inventory (1–9 use/equip/consume, Shift+1–9 drop) |
 | C / K | character sheet (spend level-up skill points) |
+| Z | rest to heal (when no enemies are near) |
 | F5 / F9 | save / load |
 | R | reload the equipped gun (2 AP in combat) |
 | F4 / T / PgUp / PgDn | roofs / walk-cycle / elevation |

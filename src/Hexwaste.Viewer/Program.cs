@@ -178,6 +178,12 @@ for (int i = 0; i < args.Length; i++)
         case "--show-skills":
             actions.Add(new ViewerGame.StartupAction.OpenSkills());
             break;
+        case "--rest":
+            actions.Add(new ViewerGame.StartupAction.Rest());
+            break;
+        case "--hurt" when i + 1 < args.Length:
+            actions.Add(new ViewerGame.StartupAction.Hurt(int.Parse(args[++i])));
+            break;
         case "--game-dir" when i + 1 < args.Length:
             gameDir = args[++i];
             break;

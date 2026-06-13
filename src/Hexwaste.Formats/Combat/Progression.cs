@@ -29,6 +29,14 @@ public static class Progression
     /// <summary>Bonus max HP gained per level (stat.cc:771): EN/2 + 2
     /// (Lifegiver perks are out of PoC scope).</summary>
     public static int HpPerLevel(int endurance) => endurance / 2 + 2;
+
+    /// <summary>Healing rate = max(EN/3, 1) (stat.cc:573).</summary>
+    public static int HealingRate(int endurance) => Math.Max(endurance / 3, 1);
+
+    /// <summary>Game-hours to heal a wound by resting (pipboy.cc:2113):
+    /// (int)(hpToHeal / healingRate × 3).</summary>
+    public static int RestHoursToHeal(int hpToHeal, int healingRate) =>
+        hpToHeal <= 0 ? 0 : (int)((double)hpToHeal / Math.Max(healingRate, 1) * 3.0);
 }
 
 /// <summary>
