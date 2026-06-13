@@ -17,10 +17,10 @@ public static class CombatMath
     public static int ToHitChance(int attackSkill, CritterState target) =>
         Math.Clamp(attackSkill - target.ArmorClass, 0, 95);
 
-    public static bool RollHit(Random rng, int chance) => rng.Next(1, 101) <= chance;
+    public static bool RollHit(ICombatRng rng, int chance) => rng.Next(1, 101) <= chance;
 
     /// <summary>Unarmed: damage = rand(1, 2 + meleeDmg) − DT, ×(1 − DR/100), floor 0.</summary>
-    public static int RollDamage(Random rng, CritterState attacker, CritterState target)
+    public static int RollDamage(ICombatRng rng, CritterState attacker, CritterState target)
     {
         int raw = rng.Next(1, attacker.MeleeDamage + 3); // inclusive 1 .. 2+meleeDmg
         return ReduceByArmor(raw, target);
@@ -28,7 +28,7 @@ public static class CombatMath
 
     /// <summary>Melee weapon: rand(min, max) + the attacker's melee-damage
     /// bonus (item.cc:1244), then DT/DR.</summary>
-    public static int RollWeaponDamage(Random rng, CritterState attacker, CritterState target,
+    public static int RollWeaponDamage(ICombatRng rng, CritterState attacker, CritterState target,
         int minDamage, int maxDamage)
     {
         int raw = rng.Next(minDamage, Math.Max(minDamage, maxDamage) + 1) + attacker.MeleeDamage;
@@ -78,7 +78,7 @@ public static class RangedMath
     /// <summary>Gun damage (combat.cc:4581-4614 default path): the ×2 default
     /// multiplier then ÷2 wrapper is identity until criticals exist; ammo
     /// mult/div and DR modifier land here. Guns get no melee bonus.</summary>
-    public static int RollDamage(Random rng, int minDamage, int maxDamage, CritterState target,
+    public static int RollDamage(ICombatRng rng, int minDamage, int maxDamage, CritterState target,
         int ammoDrModifier, int ammoDamageMultiplier, int ammoDamageDivisor)
     {
         int raw = rng.Next(minDamage, Math.Max(minDamage, maxDamage) + 1);

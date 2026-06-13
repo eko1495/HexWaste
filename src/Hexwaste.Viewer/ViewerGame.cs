@@ -84,7 +84,7 @@ public sealed class ViewerGame : Game
     /// <summary>Premade character sheet to start with (combat/diplomat/stealth);
     /// null/empty = the blank player.gcd. Test plumbing for builds + gender.</summary>
     public string? CharacterName { get; set; }
-    private Random _combatRng = new();
+    private Formats.Combat.ICombatRng _combatRng = new Formats.Combat.SystemCombatRng();
 
     /// <summary>The rolled-but-not-applied attack: damage lands when the punch
     /// animation completes (engine: _apply_damage in _combat_anim_finished).</summary>
@@ -334,7 +334,7 @@ public sealed class ViewerGame : Game
         _vfs = GameFileSystem.Open(_gameDir);
         _palette = Palette.Load(_vfs.ReadAllBytes("color.pal"));
         if (RngSeed is { } seed)
-            _combatRng = new Random(seed);
+            _combatRng = new Formats.Combat.SystemCombatRng(seed);
 
         _protos = new ProtoDatabase(_vfs);
         _cycler = new PaletteCycler(_palette);

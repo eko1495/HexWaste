@@ -51,7 +51,7 @@ public class CombatMathTests
     [Fact]
     public void DamageRespectsThresholdAndResistance()
     {
-        var rng = new Random(7);
+        var rng = new SystemCombatRng(7);
         CritterState attacker = NewState(meleeDmg: 4); // raw 1..6
 
         for (int i = 0; i < 200; i++)
@@ -70,7 +70,7 @@ public class CombatMathTests
     {
         int[] RollSeries()
         {
-            var rng = new Random(42);
+            var rng = new SystemCombatRng(42);
             CritterState attacker = NewState();
             CritterState target = NewState(ac: 5);
             return [.. Enumerable.Range(0, 20).Select(_ =>
