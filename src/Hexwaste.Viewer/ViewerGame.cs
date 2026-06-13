@@ -141,7 +141,7 @@ public sealed class ViewerGame : Game, Formats.Combat.ICombatHost
 
     // Companion control hub (phase-10 M4): talking to a recruited (or dismissed)
     // member opens a wait/follow/dismiss/rejoin hub instead of scripted dialog.
-    private enum CompanionCmd { Wait, Follow, Dismiss, Rejoin, Cancel }
+    private enum CompanionCmd { Talk, Wait, Follow, Dismiss, Rejoin, Cancel }
     private MapObject? _companionHub;
     private readonly List<(string Label, CompanionCmd Cmd)> _hubOptions = [];
     /// <summary>Party members told to "wait here" — PumpCritterProcs skips them, so
@@ -2118,12 +2118,22 @@ public sealed class ViewerGame : Game, Formats.Combat.ICombatHost
             return;
 
         // A recruited or dismissed companion opens the control hub, not scripted
-        // dialog (phase-10 M4).
+        // dialog (phase-10 M4) — their scripted dialog is still reachable from the
+        // hub's "Talk to them" option.
         if (_scriptHost.PartyMembers.Contains(npc) || _dismissedCompanions.ContainsKey(npc))
         {
             OpenCompanionHub(npc);
             return;
         }
+
+        OpenScriptedDialog(npc);
+    }
+
+    /// <summary>Run a critter's talk_p_proc and show the dialog (or floaters).</summary>
+    private void OpenScriptedDialog(MapObject npc)
+    {
+        if (_scriptHost is null)
+            return;
 
         Formats.Int.ScriptHost.DialogSession? session =
             _scriptHost.StartDialog(npc, _map, _dude?.Dude, out IReadOnlyList<string> floaters);
@@ -2162,6 +2172,7 @@ public sealed class ViewerGame : Game, Formats.Combat.ICombatHost
         _hubOptions.Clear();
         if (_scriptHost?.PartyMembers.Contains(member) ?? false)
         {
+            _hubOptions.Add(("Talk to them.", CompanionCmd.Talk));
             _hubOptions.Add(_waitingCompanions.Contains(member)
                 ? ("Let's go. (follow me)", CompanionCmd.Follow)
                 : ("Wait here.", CompanionCmd.Wait));
@@ -2185,6 +2196,9 @@ public sealed class ViewerGame : Game, Formats.Combat.ICombatHost
 
         switch (cmd)
         {
+            case CompanionCmd.Talk:
+                OpenScriptedDialog(member); // companion quest/banter dialog
+                break;
             case CompanionCmd.Wait:
                 _waitingCompanions.Add(member);
                 Log($"{ObjectName(member)} will wait here.");
