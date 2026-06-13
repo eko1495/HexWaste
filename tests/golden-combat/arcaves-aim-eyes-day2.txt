@@ -1,0 +1,25 @@
+dude sheet: Narg (gender 0), SPECIAL 8/5/9/3/4/7/4, tags [4,0,5]
+animating 2 multi-frame scenery/misc object(s)
+advance: now day 2
+attack Radscorpion@20529: chance=27% hit=False damage=0
+joins: Radscorpion@21729 (team 4)
+attack Radscorpion@20529: chance=27% hit=False damage=0
+enemy-attack Radscorpion@20529: chance=67% hit=True damage=1
+attack Radscorpion@20529: chance=27% hit=False damage=0
+attack Radscorpion@20529: chance=27% hit=False damage=0
+enemy-attack Radscorpion@20529: chance=67% hit=True damage=1
+enemy-attack Radscorpion@20729: chance=67% hit=False damage=0
+attack Radscorpion@20529: chance=27% hit=True damage=9 CRITICAL
+attack Radscorpion@20529: chance=27% hit=False damage=0
+enemy-attack Radscorpion@20529: chance=67% hit=False damage=0
+enemy-attack Radscorpion@20729: chance=67% hit=True damage=1
+attack Radscorpion@20529: chance=27% hit=True damage=10 CRITICAL
+attack Radscorpion@20729: chance=27% hit=False damage=0
+enemy-attack Radscorpion@20729: chance=67% hit=False damage=0
+attack Radscorpion@20729: chance=27% hit=False damage=0
+attack Radscorpion@20729: chance=27% hit=False damage=0
+enemy-attack Radscorpion@20729: chance=67% hit=True damage=6
+attack Radscorpion@20729: chance=27% hit=False damage=0
+attack Radscorpion@20729: chance=27% hit=True damage=12 CRITICAL
+xp: +120 (total 120, level 1)
+fight-result: rounds=6 dudeHp=35 gameOver=False targetDead=True hostilesLeft=0

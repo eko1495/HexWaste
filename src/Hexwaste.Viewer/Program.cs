@@ -13,6 +13,7 @@ Microsoft.Xna.Framework.Point? talk = null;
 int[] choose = [];
 int? talkHex = null;
 int? rngSeed = null;
+int aimLocation = 8; // HIT_LOCATION_UNCALLED
 string? characterName = null;
 List<ViewerGame.StartupAction> actions = [];
 int? gotoTile = null;
@@ -121,6 +122,14 @@ for (int i = 0; i < args.Length; i++)
             break;
         case "--rng-seed" when i + 1 < args.Length:
             rngSeed = int.Parse(args[++i]);
+            break;
+        case "--aim" when i + 1 < args.Length:
+            aimLocation = args[++i].ToLowerInvariant() switch
+            {
+                "head" => 0, "left_arm" => 1, "right_arm" => 2, "torso" => 3,
+                "right_leg" => 4, "left_leg" => 5, "eyes" => 6, "groin" => 7,
+                _ => 8, // uncalled
+            };
             break;
         case "--give" when i + 1 < args.Length:
         {
@@ -277,6 +286,7 @@ using var game = new ViewerGame(gameDir!, mapName, screenshot, roofs)
     TalkAtHex = talkHex,
     StartupActions = actions,
     RngSeed = rngSeed,
+    AimLocation = aimLocation,
     CharacterName = characterName,
     AutoChoose = choose,
     WalkToTile = gotoTile,

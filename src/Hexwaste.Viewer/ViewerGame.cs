@@ -81,6 +81,14 @@ public sealed class ViewerGame : Game, Formats.Combat.ICombatHost
     /// <summary>Deterministic combat rolls for headless transcripts (--rng-seed).</summary>
     public int? RngSeed { get; set; }
 
+    /// <summary>The dude's called-shot location for attacks (V cycles it; --aim sets
+    /// it headlessly). UNCALLED = no aiming. See Formats.Combat.CriticalTables.</summary>
+    public int AimLocation { get; set; } = Formats.Combat.CriticalTables.LocationUncalled;
+
+    private static readonly string[] AimNames =
+        ["head", "left arm", "right arm", "torso", "right leg", "left leg", "eyes", "groin", "uncalled"];
+    private static string AimName(int loc) => AimNames[Math.Clamp(loc, 0, AimNames.Length - 1)];
+
     /// <summary>Premade character sheet to start with (combat/diplomat/stealth);
     /// null/empty = the blank player.gcd. Test plumbing for builds + gender.</summary>
     public string? CharacterName { get; set; }
@@ -536,7 +544,7 @@ public sealed class ViewerGame : Game, Formats.Combat.ICombatHost
                     _camera.SetCenter(attackHex);
                     if (_dude is not null) // teleport adjacent (test plumbing, like use-hex)
                         _dude.Dude.HexTile = Formats.Hex.HexGrid.TileInDirection(attackHex, 3);
-                    _combat.TryAttack(target);
+                    _combat.TryAttack(target, AimLocation);
 
                     // Run the choreography to completion so transcripts and
                     // follow-up actions see the resolved world.
@@ -577,7 +585,7 @@ public sealed class ViewerGame : Game, Formats.Combat.ICombatHost
                             {
                                 if (target.IsDead || _dude is null)
                                     break;
-                                _combat.TryAttack(target);
+                                _combat.TryAttack(target, AimLocation);
                                 if (!_combat.HasPendingAttack && _combat.Phase == Formats.Combat.CombatPhase.Idle)
                                     break; // could not engage
                             }
@@ -599,7 +607,7 @@ public sealed class ViewerGame : Game, Formats.Combat.ICombatHost
                                 if (stimpak >= 0 && _combat.DudeAp >= 2)
                                     UseInventoryItem(stimpak);
                                 else if (victim is not null && _combat.DudeAp >= swingCost)
-                                    _combat.TryAttack(victim);
+                                    _combat.TryAttack(victim, AimLocation);
                                 else
                                     _combat.EndPlayerTurn();
                             }
@@ -1190,9 +1198,18 @@ public sealed class ViewerGame : Game, Formats.Combat.ICombatHost
         if (IsKeyPressed(keyboard, Keys.L) && _hoveredObject is { } lockTarget && IsDoor(lockTarget))
             TryLockpick(lockTarget);
 
-        // F: punch the hovered critter (A is take-all in loot mode).
+        // V: cycle the called-shot location (uncalled → head … groin → uncalled).
+        // A minimal stand-in for the engine's aim dialog — harder to hit, more
+        // likely to crit, +1 AP. A documented PoC simplification.
+        if (IsKeyPressed(keyboard, Keys.V))
+        {
+            AimLocation = (AimLocation + 1) % (Formats.Combat.CriticalTables.LocationUncalled + 1);
+            Log($"Aiming: {AimName(AimLocation)}.");
+        }
+
+        // F: attack the hovered critter at the current aim location (A is take-all in loot mode).
         if (IsKeyPressed(keyboard, Keys.F) && _hoveredObject is { } attackTarget)
-            _combat.TryAttack(attackTarget);
+            _combat.TryAttack(attackTarget, AimLocation);
 
         // Space ends the player's combat turn.
         if (IsKeyPressed(keyboard, Keys.Space))
@@ -3585,6 +3602,8 @@ public sealed class ViewerGame : Game, Formats.Combat.ICombatHost
         {
             string hud = $"HP {dudeStats.CurrentHp}/{dudeStats.MaxHp}  AP {_combat.DudeAp}/{dudeStats.MaxActionPoints}"
                 + $"  L{_dudeLevel} XP {_dudeXp}";
+            if (AimLocation != Formats.Combat.CriticalTables.LocationUncalled)
+                hud += $"  |  aim: {AimName(AimLocation)} (V)";
             if (_combat.Phase != Formats.Combat.CombatPhase.Idle)
                 hud += $"  |  round {_combat.Round}: "
                     + (_combat.Phase == Formats.Combat.CombatPhase.PlayerTurn ? "your turn (F attack, Space end turn)" : "enemy turn");
