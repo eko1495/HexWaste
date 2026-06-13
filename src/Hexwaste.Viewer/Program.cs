@@ -123,6 +123,12 @@ for (int i = 0; i < args.Length; i++)
         case "--load-transient" when i + 1 < args.Length:
             actions.Add(new ViewerGame.StartupAction.LoadTransient(args[++i]));
             break;
+        case "--encounter-walk" when i + 5 < args.Length:
+            actions.Add(new ViewerGame.StartupAction.EncounterWalk(
+                int.Parse(args[i + 1]), int.Parse(args[i + 2]), int.Parse(args[i + 3]),
+                int.Parse(args[i + 4]), int.Parse(args[i + 5])));
+            i += 5;
+            break;
         case "--fight" when i + 1 < args.Length:
             actions.Add(new ViewerGame.StartupAction.Fight(int.Parse(args[++i])));
             break;

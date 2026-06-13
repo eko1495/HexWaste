@@ -151,6 +151,11 @@ public sealed class ViewerGame : Game, Formats.Combat.ICombatHost
     private WorldmapScreen? _worldmapScreen;
     private bool _worldmapOpen;
     private WorldArea? _hoveredArea;
+
+    /// <summary>The parsed worldmap.txt (random-encounter tables); lazy (phase-10 M1).</summary>
+    private Formats.Map.WorldmapFile? _worldmap;
+    private Formats.Map.WorldmapFile Worldmap => _worldmap ??=
+        Formats.Map.WorldmapFile.Parse(System.Text.Encoding.Latin1.GetString(_vfs.ReadAllBytes(@"data\worldmap.txt")));
     private Formats.Light.LightGrid _lightGrid = new();
 
     /// <summary>Open the worldmap on start (screenshot testing).</summary>
@@ -206,6 +211,7 @@ public sealed class ViewerGame : Game, Formats.Combat.ICombatHost
         public sealed record Explode(int Hex) : StartupAction;
         public sealed record Throw(int Hex) : StartupAction;
         public sealed record LoadTransient(string Map) : StartupAction;
+        public sealed record EncounterWalk(int X0, int Y0, int X1, int Y1, int Steps) : StartupAction;
         public sealed record Fight(int Hex) : StartupAction;
         public sealed record Give(int Pid, int Count) : StartupAction;
         public sealed record UseItemByPid(int Pid) : StartupAction;
@@ -532,6 +538,32 @@ public sealed class ViewerGame : Game, Formats.Combat.ICombatHost
                         + $" (proto {state.Proto.AiPacket}) results=0x{critter.CombatResults:X} dead={state.IsDead}");
                     Console.WriteLine($"  dt={state.DamageThreshold} dr={state.DamageResistance} exp={state.Proto.Experience}"
                         + $" killType={state.Proto.KillType} bodyType={state.Proto.BodyType} damageType={state.Proto.DamageType}");
+                    break;
+                }
+                case StartupAction.EncounterWalk(var x0, var y0, var x1, var y1, var steps):
+                {
+                    // Phase-10 M1 traveling-dot demo: Bresenham from (x0,y0) toward
+                    // (x1,y1), +30 game-min per pixel-step, roll an encounter each
+                    // step. Deterministic under --rng-seed (golden transcript).
+                    var wmRng = new Formats.Combat.SystemCombatRng(RngSeed ?? 1);
+                    var encounters = new Formats.Map.WorldEncounters(Worldmap, wmRng, x0, y0);
+                    int x = x0, y = y0, dx = Math.Abs(x1 - x0), dy = Math.Abs(y1 - y0);
+                    int sx = x0 < x1 ? 1 : -1, sy = y0 < y1 ? 1 : -1, err = dx - dy;
+                    int hits = 0;
+                    for (int s = 0; s < steps && (x != x1 || y != y1); s++)
+                    {
+                        int e2 = 2 * err;
+                        if (e2 > -dy) { err -= dy; x += sx; }
+                        if (e2 < dx) { err += dx; y += sy; }
+                        _clock.Ticks += 18000; // 30 game-minutes per step
+                        if (encounters.Roll(x, y, _clock.Hour, _ => 0, _dudeLevel, _clock.Day) is { } r)
+                        {
+                            hits++;
+                            Console.WriteLine($"encounter @step{s + 1} @({x},{y}): "
+                                + $"{r.Entry.Spawns.FirstOrDefault()?.Group ?? "?"} [{r.Table.LookupName}] {r.Entry.Situation}");
+                        }
+                    }
+                    Console.WriteLine($"encounter-walk: ({x0},{y0})->({x1},{y1}) steps={steps} encounters={hits}");
                     break;
                 }
                 case StartupAction.LoadTransient(var tmap):

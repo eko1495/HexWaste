@@ -1,3 +1,5 @@
+using System.Text;
+using Hexwaste.Formats;
 using Hexwaste.Formats.Combat;
 using Hexwaste.Formats.Map;
 
@@ -98,6 +100,38 @@ public class WorldEncountersTests
             new WorldEncounters(World0(), new SystemCombatRng(123), 0, 0)
                 .Roll(110, 110, 1200, _ => 0, playerLevel: 9, daysPlayed: 0);
         Assert.Equal(Run()?.Entry.Spawns.Single().Group, Run()?.Entry.Spawns.Single().Group);
+    }
+
+    [GameDataFact]
+    public void RealWorldmapWalkIsDeterministicAndFiresEncounters()
+    {
+        // Mirrors the viewer's --encounter-walk: a Bresenham diagonal across the
+        // Arroyo tiles, +30 game-min per step, seeded. The roll chain is pure, so
+        // this is the canonical regression test (no GraphicsDevice needed).
+        List<string> Walk()
+        {
+            using var vfs = GameFileSystem.Open(GameData.RequiredDir);
+            var world = WorldmapFile.Parse(Encoding.Latin1.GetString(vfs.ReadAllBytes(@"data\worldmap.txt")));
+            var clock = new GameClock();
+            var enc = new WorldEncounters(world, new SystemCombatRng(7), 80, 40);
+            int x = 80, y = 40, dx = 610, dy = 250, sx = 1, sy = 1, err = dx - dy;
+            var groups = new List<string>();
+            for (int s = 0; s < 150 && (x != 690 || y != 290); s++)
+            {
+                int e2 = 2 * err;
+                if (e2 > -dy) { err -= dy; x += sx; }
+                if (e2 < dx) { err += dx; y += sy; }
+                clock.Ticks += 18000;
+                if (enc.Roll(x, y, clock.Hour, _ => 0, playerLevel: 1, daysPlayed: clock.Day) is { } r)
+                    groups.Add(r.Entry.Spawns.FirstOrDefault()?.Group ?? "?");
+            }
+            return groups;
+        }
+
+        List<string> a = Walk();
+        List<string> b = Walk();
+        Assert.NotEmpty(a);              // the wasteland bites
+        Assert.Equal(a, b);             // deterministic under the seed
     }
 
     private sealed class MinRng : ICombatRng
