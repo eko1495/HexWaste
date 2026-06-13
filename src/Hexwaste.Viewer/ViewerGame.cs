@@ -138,6 +138,22 @@ public sealed class ViewerGame : Game, Formats.Combat.ICombatHost
     private MapObject? _barterStock;
     private int _barterModifier;
     private MapObject? _dialogNpc;
+
+    // Companion control hub (phase-10 M4): talking to a recruited (or dismissed)
+    // member opens a wait/follow/dismiss/rejoin hub instead of scripted dialog.
+    private enum CompanionCmd { Wait, Follow, Dismiss, Rejoin, Cancel }
+    private MapObject? _companionHub;
+    private readonly List<(string Label, CompanionCmd Cmd)> _hubOptions = [];
+    /// <summary>Party members told to "wait here" — PumpCritterProcs skips them, so
+    /// their follow critter_p_proc stops and they hold position.</summary>
+    private readonly HashSet<MapObject> _waitingCompanions = [];
+    /// <summary>Dismissed former companions left standing on the map, by script index,
+    /// so talking to one offers "rejoin" (same session).</summary>
+    private readonly Dictionary<MapObject, int> _dismissedCompanions = [];
+    /// <summary>The team a critter had before recruiting, restored on dismiss
+    /// (e.g. Vic's team 25) — captured once, preserved across dismiss/rejoin.</summary>
+    private readonly Dictionary<MapObject, int> _originalTeam = [];
+
     private readonly Random _ambientRandom = new(20260612);
     private double _fidgetTimerMs;
     private double _wanderTimerMs;
@@ -225,6 +241,7 @@ public sealed class ViewerGame : Game, Formats.Combat.ICombatHost
         public sealed record UseItemByPid(int Pid) : StartupAction;
         public sealed record UseOn(int Pid, int Hex) : StartupAction;
         public sealed record Recruit(int Hex) : StartupAction;
+        public sealed record CompanionLifecycle(int Hex) : StartupAction;
         public sealed record Buy(int Pid) : StartupAction;
         public sealed record Sell(int Pid) : StartupAction;
         public sealed record EndBarter : StartupAction;
@@ -784,6 +801,41 @@ public sealed class ViewerGame : Game, Formats.Combat.ICombatHost
                     OnPartyChanged(critter, joined: true);
                     break;
                 }
+                case StartupAction.CompanionLifecycle(var compHex):
+                {
+                    MapObject? m = _solidObjects[_elevation].FirstOrDefault(o =>
+                        o.HexTile == compHex && Fid.Type(o.Fid) is ObjectType.Critter && !o.IsDead);
+                    if (m is null || _scriptHost is null)
+                    {
+                        Console.Error.WriteLine($"companion: no critter at {compHex}");
+                        break;
+                    }
+
+                    int Count() => Formats.Int.ScriptHost.PartyMemberCount(_scriptHost.PartyMembers);
+                    int HeartbeatEligible() => _solidObjects[_elevation].Count(o =>
+                        Fid.Type(o.Fid) is ObjectType.Critter && o != _dude?.Dude
+                        && !o.IsDead && o.Sid != -1 && !_waitingCompanions.Contains(o));
+                    void Pick(CompanionCmd cmd)
+                    {
+                        OpenCompanionHub(m);
+                        ChooseCompanionOption(_hubOptions.FindIndex(o => o.Cmd == cmd));
+                    }
+
+                    int originalTeam = m.Team;
+                    _scriptHost.PartyMembers.Add(m);
+                    OnPartyChanged(m, joined: true);
+                    Console.WriteLine($"companion-lifecycle: recruited partyCount={Count()} heartbeatEligible={HeartbeatEligible()}");
+
+                    Pick(CompanionCmd.Wait);
+                    Console.WriteLine($"  wait: heartbeatEligible={HeartbeatEligible()} (member held)");
+                    Pick(CompanionCmd.Follow);
+                    Console.WriteLine($"  follow: heartbeatEligible={HeartbeatEligible()}");
+                    Pick(CompanionCmd.Dismiss);
+                    Console.WriteLine($"  dismiss: partyCount={Count()} team={m.Team} (orig {originalTeam}) sid={(m.Sid == -1 ? "none" : "bound")}");
+                    Pick(CompanionCmd.Rejoin);
+                    Console.WriteLine($"  rejoin: partyCount={Count()} sid={(m.Sid == -1 ? "none" : "bound")}");
+                    break;
+                }
                 case StartupAction.UseOn(var usePid2, var useHex2):
                 {
                     MapObject? item = _dudeInventory.FirstOrDefault(i => i.Pid == usePid2);
@@ -1287,6 +1339,31 @@ public sealed class ViewerGame : Game, Formats.Combat.ICombatHost
                 Log("[conversation ends]");
                 _dialog = null;
             }
+
+            _previousMouse = mouse;
+            _previousKeyboard = keyboard;
+            base.Update(gameTime);
+            return;
+        }
+
+        // Companion-control hub swallows input (phase-10 M4).
+        if (_companionHub is not null)
+        {
+            for (int i = 0; i < _hubOptions.Count; i++)
+                if (IsKeyPressed(keyboard, Keys.D1 + i) || IsKeyPressed(keyboard, Keys.NumPad1 + i))
+                {
+                    ChooseCompanionOption(i);
+                    break;
+                }
+            if (_companionHub is not null && mouse.LeftButton == ButtonState.Pressed
+                && _previousMouse.LeftButton == ButtonState.Released)
+            {
+                int hit = HitTestDialogOption(mouse.X, mouse.Y);
+                if (hit >= 0)
+                    ChooseCompanionOption(hit);
+            }
+            if (_companionHub is not null && IsKeyPressed(keyboard, Keys.Escape))
+                _companionHub = null;
 
             _previousMouse = mouse;
             _previousKeyboard = keyboard;
@@ -2040,6 +2117,14 @@ public sealed class ViewerGame : Game, Formats.Combat.ICombatHost
         if (_scriptHost is null)
             return;
 
+        // A recruited or dismissed companion opens the control hub, not scripted
+        // dialog (phase-10 M4).
+        if (_scriptHost.PartyMembers.Contains(npc) || _dismissedCompanions.ContainsKey(npc))
+        {
+            OpenCompanionHub(npc);
+            return;
+        }
+
         Formats.Int.ScriptHost.DialogSession? session =
             _scriptHost.StartDialog(npc, _map, _dude?.Dude, out IReadOnlyList<string> floaters);
 
@@ -2065,6 +2150,99 @@ public sealed class ViewerGame : Game, Formats.Combat.ICombatHost
         Console.WriteLine($"REPLY: {_dialog.Reply}");
         for (int i = 0; i < _dialog.Options.Count; i++)
             Console.WriteLine($"  OPTION {i + 1}: {_dialog.Options[i]}");
+    }
+
+    /// <summary>Build the companion-control hub options for a member (phase-10 M4).
+    /// In-party: wait/follow toggle + dismiss; dismissed: rejoin. Always a cancel.
+    /// A viewer hub rather than the engine's per-script dialog nodes — robust, reusable
+    /// for ANY companion (incl. encounter-spawned allies), no partymbr.msg routing.</summary>
+    private void OpenCompanionHub(MapObject member)
+    {
+        _companionHub = member;
+        _hubOptions.Clear();
+        if (_scriptHost?.PartyMembers.Contains(member) ?? false)
+        {
+            _hubOptions.Add(_waitingCompanions.Contains(member)
+                ? ("Let's go. (follow me)", CompanionCmd.Follow)
+                : ("Wait here.", CompanionCmd.Wait));
+            _hubOptions.Add(("It's time for us to part ways. (dismiss)", CompanionCmd.Dismiss));
+        }
+        else // a dismissed former companion still standing on the map
+        {
+            _hubOptions.Add(("Join me again.", CompanionCmd.Rejoin));
+        }
+        _hubOptions.Add(("Never mind.", CompanionCmd.Cancel));
+
+        Console.WriteLine($"companion-hub: {ObjectName(member)} options=[{string.Join(" | ", _hubOptions.Select(o => o.Label))}]");
+    }
+
+    private void ChooseCompanionOption(int index)
+    {
+        if (_companionHub is not { } member || index < 0 || index >= _hubOptions.Count)
+            return;
+        CompanionCmd cmd = _hubOptions[index].Cmd;
+        _companionHub = null;
+
+        switch (cmd)
+        {
+            case CompanionCmd.Wait:
+                _waitingCompanions.Add(member);
+                Log($"{ObjectName(member)} will wait here.");
+                Console.WriteLine($"companion: {ObjectName(member)} waiting");
+                break;
+            case CompanionCmd.Follow:
+                _waitingCompanions.Remove(member);
+                Log($"{ObjectName(member)} follows you again.");
+                Console.WriteLine($"companion: {ObjectName(member)} following");
+                break;
+            case CompanionCmd.Dismiss:
+                DismissCompanion(member);
+                break;
+            case CompanionCmd.Rejoin:
+                RejoinCompanion(member);
+                break;
+            case CompanionCmd.Cancel:
+                break;
+        }
+    }
+
+    /// <summary>party_remove + restore the saved team + stop following (sid cleared so
+    /// the follow critter_p_proc no longer runs); the body stays on the map for a
+    /// same-session rejoin (phase-10 M4).</summary>
+    private void DismissCompanion(MapObject member)
+    {
+        if (_scriptHost is null)
+            return;
+        int scriptIndex = _partyScriptIndex.GetValueOrDefault(member, -1);
+        _scriptHost.PartyMembers.Remove(member);
+        OnPartyChanged(member, joined: false); // clears _partyScriptIndex, logs "leaves"
+        _waitingCompanions.Remove(member);
+        member.Team = _originalTeam.GetValueOrDefault(member, member.Team); // Vic → 25, etc.
+        member.Sid = -1; // halt the follow loop — an inert NPC again
+        if (scriptIndex >= 0)
+            _dismissedCompanions[member] = scriptIndex;
+        Log($"{ObjectName(member)} parts ways.");
+        Console.WriteLine($"companion: {ObjectName(member)} dismissed team={member.Team} count={Formats.Int.ScriptHost.PartyMemberCount(_scriptHost.PartyMembers)}");
+    }
+
+    /// <summary>Re-recruit a dismissed companion (alive-gated, like the engine's REJOIN
+    /// node): rebind its follow script and add it back to the roster (phase-10 M4).</summary>
+    private void RejoinCompanion(MapObject member)
+    {
+        if (_scriptHost is null)
+            return;
+        if (member.IsDead)
+        {
+            Log($"{ObjectName(member)} is in no state to travel.");
+            return;
+        }
+        int scriptIndex = _dismissedCompanions.GetValueOrDefault(member, -1);
+        _dismissedCompanions.Remove(member);
+        if (scriptIndex >= 0)
+            member.Sid = _scriptHost.AllocateSid(_map, scriptIndex); // rebind before OnPartyChanged reads it
+        _scriptHost.PartyMembers.Add(member);
+        OnPartyChanged(member, joined: true);
+        Console.WriteLine($"companion: {ObjectName(member)} rejoined count={Formats.Int.ScriptHost.PartyMemberCount(_scriptHost.PartyMembers)}");
     }
 
     private void ChooseDialogOption(int index)
@@ -2461,7 +2639,7 @@ public sealed class ViewerGame : Game, Formats.Combat.ICombatHost
     private void PumpCritterProcs(double elapsedMs)
     {
         if (_scriptHost is null || _combat.Phase != Formats.Combat.CombatPhase.Idle || _combat.IsGameOver
-            || _dialog is not null || _lootContainer is not null || _worldmapOpen)
+            || _dialog is not null || _companionHub is not null || _lootContainer is not null || _worldmapOpen)
             return;
 
         _critterProcTimerMs += elapsedMs;
@@ -2469,9 +2647,11 @@ public sealed class ViewerGame : Game, Formats.Combat.ICombatHost
             return;
         _critterProcTimerMs = 0;
 
+        // A "wait here" companion is skipped, so its follow critter_p_proc never runs
+        // and it holds position until told to follow again (phase-10 M4).
         List<MapObject> scripted = [.. _solidObjects[_elevation].Where(o =>
             Fid.Type(o.Fid) is ObjectType.Critter && o != _dude?.Dude
-            && !o.IsDead && o.Sid != -1)];
+            && !o.IsDead && o.Sid != -1 && !_waitingCompanions.Contains(o))];
         if (scripted.Count == 0)
             return;
 
@@ -3790,7 +3970,22 @@ public sealed class ViewerGame : Game, Formats.Combat.ICombatHost
     /// <summary>Text dialog panel: reply on top, numbered options below (keys 1-9 or click).</summary>
     private void DrawDialogPanel()
     {
-        if (_dialog is null || _fontRenderer is null)
+        if (_companionHub is not null)
+        {
+            DrawConversationPanel(ObjectName(_companionHub), "What do you need?",
+                [.. _hubOptions.Select(o => o.Label)]);
+            return;
+        }
+        if (_dialog is not null)
+            DrawConversationPanel(_dialog.NpcName, _dialog.Reply, _dialog.Options);
+    }
+
+    /// <summary>The shared conversation panel — reply text + numbered options at the
+    /// bottom of the screen. Drives both scripted dialog and the companion-control hub
+    /// (phase-10 M4); <see cref="_dialogOptionRects"/> feeds mouse hit-testing.</summary>
+    private void DrawConversationPanel(string name, string reply, IReadOnlyList<string> options)
+    {
+        if (_fontRenderer is null)
             return;
 
         _panelPixel ??= CreatePixel();
@@ -3800,11 +3995,11 @@ public sealed class ViewerGame : Game, Formats.Combat.ICombatHost
         int textWidth = panelWidth - 32;
         int lineHeight = _fontRenderer.LineHeight;
 
-        List<string> replyLines = _fontRenderer.WrapText(_dialog.Reply, textWidth);
+        List<string> replyLines = _fontRenderer.WrapText(reply, textWidth);
         var optionLines = new List<(int Option, string Line, bool First)>();
-        for (int i = 0; i < _dialog.Options.Count; i++)
+        for (int i = 0; i < options.Count; i++)
         {
-            List<string> wrapped = _fontRenderer.WrapText($"{i + 1}. {_dialog.Options[i]}", textWidth - 12);
+            List<string> wrapped = _fontRenderer.WrapText($"{i + 1}. {options[i]}", textWidth - 12);
             for (int l = 0; l < wrapped.Count; l++)
                 optionLines.Add((i, wrapped[l], l == 0));
         }
@@ -3820,7 +4015,7 @@ public sealed class ViewerGame : Game, Formats.Combat.ICombatHost
         var green = new Color(0, 252, 0);
         int y = panelY + 12;
 
-        _fontRenderer.Draw(_spriteBatch, _dialog.NpcName, new Vector2(panelX + 16, y), Color.LightGray);
+        _fontRenderer.Draw(_spriteBatch, name, new Vector2(panelX + 16, y), Color.LightGray);
         y += lineHeight + lineHeight / 2;
 
         foreach (string line in replyLines)
@@ -4605,6 +4800,7 @@ public sealed class ViewerGame : Game, Formats.Combat.ICombatHost
     {
         if (joined)
         {
+            _originalTeam.TryAdd(critter, critter.Team); // remember the pre-recruit team for dismiss
             critter.Team = 0; // the dude's team (scripts also critter_add_trait it)
             critter.WhoHitMeCid = 0;
             _combat.RemoveHostile(critter);

@@ -171,6 +171,11 @@ for (int i = 0; i < args.Length; i++)
         case "--use-item" when i + 1 < args.Length:
             actions.Add(new ViewerGame.StartupAction.UseItemByPid(int.Parse(args[++i])));
             break;
+        case "--companion" when i + 1 < args.Length:
+            // --companion <hex>: recruit the critter at hex, then drive the full
+            // control lifecycle (wait/follow/dismiss/rejoin) and print a transcript.
+            actions.Add(new ViewerGame.StartupAction.CompanionLifecycle(int.Parse(args[++i])));
+            break;
         case "--recruit" when i + 1 < args.Length:
             actions.Add(new ViewerGame.StartupAction.Recruit(int.Parse(args[++i])));
             break;
