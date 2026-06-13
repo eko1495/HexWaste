@@ -41,6 +41,20 @@ public sealed class WorldmapFile
     public EncounterTable? Table(string lookupName) => Tables.GetValueOrDefault(lookupName);
     public EncounterGroup? Group(string name) => Groups.GetValueOrDefault(name);
 
+    /// <summary>The subtile under a worldmap pixel position. The map is 4 tiles wide
+    /// (×350) × 5 tall (×300); each tile is a 7×6 grid of 50px subtiles indexed
+    /// [row=(x%350)/50][col=(y%300)/50] (worldmap.cc:3533-3543).</summary>
+    public Subtile? SubtileAt(int worldX, int worldY)
+    {
+        int tileIndex = worldY / 300 * 4 + worldX / 350;
+        WorldTile? tile = Tiles.FirstOrDefault(t => t.Index == tileIndex);
+        if (tile is null)
+            return null;
+        int row = worldX % 350 / 50;
+        int col = worldY % 300 / 50;
+        return row < SubtileGridWidth && col < SubtileGridHeight ? tile.Subtiles[row, col] : null;
+    }
+
     public static WorldmapFile Parse(string text)
     {
         var freq = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
@@ -174,7 +188,7 @@ public sealed class WorldmapFile
         foreach (Match cm in CondRx.Matches(v))
             conditions.Add(ParseCondition(cm));
 
-        return new EncounterEntry(chance, counter, map, spawns, situation, conditions);
+        return new EncounterEntry(chance, map, spawns, situation, conditions) { Counter = counter };
     }
 
     private static EncCondition ParseCondition(Match cm)
@@ -254,11 +268,15 @@ public sealed record Subtile(string Terrain, string EncTable, int MorningChance,
 
 public sealed record EncounterTable(string LookupName, IReadOnlyList<string> Maps, IReadOnlyList<EncounterEntry> Entries);
 
-/// <summary>A weighted candidate: Chance weight, one-shot Counter (-1 = unlimited),
-/// an optional special Map override, the spawn groups, the situation, and the If
-/// conditions that must all pass.</summary>
-public sealed record EncounterEntry(int Chance, int Counter, string? Map,
-    IReadOnlyList<EncounterSpawn> Spawns, string Situation, IReadOnlyList<EncCondition> Conditions);
+/// <summary>A weighted candidate: Chance weight, an optional special Map override,
+/// the spawn groups, the situation, and the If conditions that must all pass.</summary>
+public sealed record EncounterEntry(int Chance, string? Map,
+    IReadOnlyList<EncounterSpawn> Spawns, string Situation, IReadOnlyList<EncCondition> Conditions)
+{
+    /// <summary>One-shot budget (-1 = unlimited); decremented on selection and
+    /// persisted in the save (phase-10 M2). Mutable runtime state.</summary>
+    public int Counter { get; set; } = -1;
+}
 
 public sealed record EncounterSpawn(int Min, int Max, string Group);
 
