@@ -175,23 +175,8 @@ public sealed class CombatEngine
         ProtoInfo? weaponProto, MapObject? weaponItem, int distance, int crittersInPath,
         bool attackerIsDude)
     {
-        int chance;
         bool isGun = weaponProto?.Weapon is { } w && w.IsGun(weaponProto.ExtendedFlags);
-        if (isGun)
-        {
-            AmmoProtoStats? ammo = weaponItem is null ? null : _host.LoadedAmmo(weaponProto!, weaponItem);
-            chance = RangedMath.ToHitChance(
-                attacker.SmallGunsSkill, distance,
-                attacker.Stat(CritterStat.Perception), attackerIsDude,
-                defender.ArmorClass, ammo?.AcModifier ?? 0,
-                weaponProto!.Weapon!.MinStrength, attacker.Stat(CritterStat.Strength),
-                crittersInPath);
-        }
-        else
-        {
-            int skill = weaponProto is null ? attacker.UnarmedSkill : attacker.MeleeWeaponsSkill;
-            chance = CombatMath.ToHitChance(skill, defender);
-        }
+        int chance = ComputeToHit(attacker, defender, weaponProto, weaponItem, distance, crittersInPath, attackerIsDude);
 
         bool hit = CombatMath.RollHit(_rng, chance);
         int damage = 0;
@@ -213,6 +198,25 @@ public sealed class CombatEngine
         }
 
         return (chance, hit, damage);
+    }
+
+    /// <summary>The to-hit % only (no roll) — for AI min_to_hit decisions and the
+    /// RollAttack chance. Guns fall off with distance + crowd; melee is
+    /// position-independent (skill − AC).</summary>
+    private int ComputeToHit(CritterState attacker, CritterState defender,
+        ProtoInfo? weaponProto, MapObject? weaponItem, int distance, int crittersInPath, bool attackerIsDude)
+    {
+        if (weaponProto?.Weapon is { } w && w.IsGun(weaponProto.ExtendedFlags))
+        {
+            AmmoProtoStats? ammo = weaponItem is null ? null : _host.LoadedAmmo(weaponProto, weaponItem);
+            return RangedMath.ToHitChance(
+                attacker.SmallGunsSkill, distance,
+                attacker.Stat(CritterStat.Perception), attackerIsDude,
+                defender.ArmorClass, ammo?.AcModifier ?? 0,
+                w.MinStrength, attacker.Stat(CritterStat.Strength), crittersInPath);
+        }
+        int skill = weaponProto is null ? attacker.UnarmedSkill : attacker.MeleeWeaponsSkill;
+        return CombatMath.ToHitChance(skill, defender);
     }
 
     /// <summary>Damage-on-completion + corpse conversion, polled every frame
@@ -459,6 +463,11 @@ public sealed class CombatEngine
             return;
         }
 
+        // Disengage hostiles that have fled beyond sight of the whole team — they
+        // have escaped, so combat can end (the engine's flee/should-end behaviour;
+        // without this, an M1 flee that the dude doesn't chase never resolves).
+        PruneEscapedHostiles();
+
         if (CombatShouldEnd())
         {
             EndCombat();
@@ -467,6 +476,26 @@ public sealed class CombatEngine
 
         if (_phase == CombatPhase.EnemyTurn)
             StepEnemyTurn();
+    }
+
+    /// <summary>Remove living hostiles farther than sight range from every member
+    /// of the dude's team (they have disengaged). All hostiles START within sight
+    /// (AddJoiners), so this only drops critters that actually fled away.</summary>
+    private void PruneEscapedHostiles()
+    {
+        MapObject? dude = _host.Dude;
+        if (dude is null)
+            return;
+        _hostiles.RemoveWhere(h => !h.IsDead && DistanceToTeam(h, dude) > CombatRules.SightRangeHexes);
+    }
+
+    private int DistanceToTeam(MapObject from, MapObject dude)
+    {
+        int best = HexGrid.Distance(from.HexTile, dude.HexTile);
+        foreach (MapObject ally in _host.PartyMembers)
+            if (!ally.IsDead)
+                best = Math.Min(best, HexGrid.Distance(from.HexTile, ally.HexTile));
+        return best;
     }
 
     private void StepEnemyTurn()
@@ -543,6 +572,12 @@ public sealed class CombatEngine
         }
 
         int dudeTile = defenderObj.HexTile;
+        AiPacket? ai = _host.GetAiPacket(enemy);
+
+        // min_hp flee (RAW current HP, combat_ai.cc:3077): too wounded to fight.
+        if (ai is { MinHp: > 0 } && (_host.GetCritterState(enemy)?.CurrentHp ?? int.MaxValue) < ai.MinHp)
+            return TryFlee(enemy, dudeTile);
+
         (ProtoInfo? enemyWeapon, MapObject? enemyWeaponItem) = _host.EquippedWeapon(enemy);
         bool enemyGun = enemyWeapon?.Weapon is { } ew && ew.IsGun(enemyWeapon.ExtendedFlags);
         int enemyDistance = HexGrid.Distance(enemy.HexTile, dudeTile);
@@ -565,6 +600,16 @@ public sealed class CombatEngine
         int attackRange = enemyGun ? enemyWeapon!.Weapon!.MaxRange1
             : Math.Min(enemyWeapon?.Weapon?.MaxRange1 ?? 1, 2);
         int attackCost = enemyWeapon?.Weapon?.ApCost ?? CombatMath.PunchApCost;
+        int minToHit = ai?.MinToHit ?? 0;
+        CritterState? self = _host.GetCritterState(enemy);
+        CritterState? def = _host.GetCritterState(defenderObj);
+
+        // Can it EVER clear min_to_hit (best case: point-blank, no crowd)? If not,
+        // it can never land a shot — flee rather than flail (combat_ai.cc:2812).
+        if (minToHit > 0 && self is not null && def is not null
+            && ComputeToHit(self, def, enemyWeapon, enemyWeaponItem, 1, 0, false) < minToHit)
+            return TryFlee(enemy, dudeTile);
+
         int enemyCritters = 0;
         bool shotBlocked = false;
         if (enemyGun && enemyDistance <= attackRange)
@@ -576,11 +621,20 @@ public sealed class CombatEngine
 
         if (enemyDistance <= attackRange && !shotBlocked)
         {
-            if (_actingEnemyAp < attackCost)
-                return false;
-            _actingEnemyAp -= attackCost;
-            EnemyAttack(enemy, defenderObj, enemyWeapon, enemyWeaponItem, enemyDistance, enemyCritters);
-            return true;
+            int toHit = self is not null && def is not null
+                ? ComputeToHit(self, def, enemyWeapon, enemyWeaponItem, enemyDistance, enemyCritters, false)
+                : 0;
+            if (toHit >= minToHit)
+            {
+                if (_actingEnemyAp < attackCost)
+                    return false;
+                _actingEnemyAp -= attackCost;
+                EnemyAttack(enemy, defenderObj, enemyWeapon, enemyWeaponItem, enemyDistance, enemyCritters);
+                return true;
+            }
+            // In range but accuracy below min_to_hit → close the gap (fall through
+            // to the approach, re-evaluated next turn). The slice has no snipers,
+            // so closing toward is the right move (combat_ai.cc:2845 simplified).
         }
 
         if (_actingEnemyAp < 1)
@@ -595,6 +649,47 @@ public sealed class CombatEngine
         for (int i = 0; i < steps; i++)
             targetTile = HexGrid.TileInDirection(targetTile, path[i]);
         return _host.StartWalk(enemy, targetTile);
+    }
+
+    /// <summary>Run away from a threat tile: greedily step to the unblocked
+    /// neighbour that most increases distance, up to the AP budget (the engine's
+    /// _ai_run_away, combat_ai.cc:2812 — our greedy hex-distance approximation).
+    /// Returns false (and takes no turn) if hemmed in.</summary>
+    private bool TryFlee(MapObject critter, int threatTile)
+    {
+        if (_actingEnemyAp < 1)
+            return false;
+
+        int fromTile = critter.HexTile;
+        int target = fromTile;
+        int moved = 0;
+        for (int step = 0; step < _actingEnemyAp; step++)
+        {
+            int best = -1;
+            int bestDist = HexGrid.Distance(target, threatTile);
+            for (int dir = 0; dir < 6; dir++)
+            {
+                int n = HexGrid.TileInDirection(target, dir);
+                int d = HexGrid.Distance(n, threatTile);
+                if (d > bestDist && !_host.IsBlocked(n))
+                {
+                    best = n;
+                    bestDist = d;
+                }
+            }
+            if (best < 0)
+                break; // no neighbour increases distance — hemmed in
+            target = best;
+            moved++;
+        }
+
+        if (moved == 0)
+            return false;
+
+        _actingEnemyAp -= moved;
+        _host.Log($"The {_host.ObjectName(critter)} tries to back away.");
+        _host.Transcript($"flee: {_host.ObjectName(critter)}@{fromTile} -> {target}");
+        return _host.StartWalk(critter, target);
     }
 
     /// <summary>A companion's action: punch/shoot the nearest living hostile, else

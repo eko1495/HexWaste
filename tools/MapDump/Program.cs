@@ -62,6 +62,19 @@ for (int elevation = 0; elevation < MapFile.ElevationCount; elevation++)
     Console.WriteLine($"  elevation {elevation}: {floorTiles} floor tiles, {roofTiles} roof tiles, "
         + $"{elev.Objects.Count} objects ({string.Join(", ", byType)})");
 
+    var critters = elev.Objects.Where(o => Fid.Type(o.Fid) == ObjectType.Critter).ToList();
+    if (critters.Count > 0)
+    {
+        Console.WriteLine($"    critters x{critters.Count}:");
+        foreach (var c in critters.OrderBy(c => c.HexTile))
+        {
+            int pkt = c.AiPacket;
+            if (pkt == 0)
+                try { pkt = protos.Get(c.Pid).Critter?.AiPacket ?? 0; } catch { /* unknown proto */ }
+            Console.WriteLine($"      hex {c.HexTile} pid 0x{c.Pid:X} aiPacket {pkt} hp {c.CurrentHp}");
+        }
+    }
+
     var doors = elev.Objects.Where(o =>
         Fid.Type(o.Fid) == ObjectType.Scenery
         && Fid.PidType(o.Pid) == (int)ObjectType.Scenery

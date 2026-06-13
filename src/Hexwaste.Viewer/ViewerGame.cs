@@ -2436,6 +2436,38 @@ public sealed class ViewerGame : Game, Formats.Combat.ICombatHost
 
     public MapObject? Dude => _dude?.Dude;
     public void StopDude() => _dude?.Stop();
+
+    private Formats.Combat.AiPacketTable? _aiPackets;
+    private bool _aiPacketsLoaded;
+
+    /// <summary>Resolve a critter's ai.txt packet: instance aiPacket first, proto
+    /// fallback (the engine's order); null if 0 or ai.txt is absent.</summary>
+    public Formats.Combat.AiPacket? GetAiPacket(MapObject critter)
+    {
+        if (!_aiPacketsLoaded)
+        {
+            _aiPacketsLoaded = true;
+            try
+            {
+                _aiPackets = Formats.Combat.AiPacketTable.Parse(
+                    System.Text.Encoding.Latin1.GetString(_vfs.ReadAllBytes(@"data\ai.txt")));
+            }
+            catch (Exception ex) when (ex is FileNotFoundException or InvalidDataException)
+            {
+                _aiPackets = null; // no ai.txt → no packets → pre-M1 behaviour
+            }
+        }
+        if (_aiPackets is null)
+            return null;
+
+        int packet = critter.AiPacket;
+        if (packet == 0)
+        {
+            try { packet = _protos.Get(critter.Pid).Critter?.AiPacket ?? 0; }
+            catch (Exception ex) when (ex is FileNotFoundException or InvalidDataException) { }
+        }
+        return _aiPackets.Get(packet);
+    }
     public bool IsBlocked(int tile) => _blockedTiles.Contains(tile);
     public bool IsAnimating(MapObject critter) => _animator.TryGetState(critter, out _);
     public bool IsFallInProgress(MapObject critter) =>

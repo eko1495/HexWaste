@@ -26,6 +26,7 @@ SCENARIOS=(
   "arcaves-fight-7-win|--map arcaves.map --fight 20529 --rng-seed 7"
   "arcaves-fight-combat-1|--character combat --map arcaves.map --fight 20529 --rng-seed 1"
   "arcaves-attack-42|--map arcaves.map --attack 20529 --rng-seed 42"
+  "denbus2-fight-flee|--character combat --map denbus2.map --fight 11670 --rng-seed 3"
 )
 
 echo "Building viewer..."

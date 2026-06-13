@@ -30,6 +30,9 @@ public interface ICombatHost
 
     // --- Critter / weapon data resolution --------------------------------
     CritterState? GetCritterState(MapObject critter);                    // :1410
+    /// <summary>The critter's ai.txt behaviour packet (instance aiPacket, proto
+    /// fallback), or null if none / ai.txt absent. Drives min_to_hit + min_hp.</summary>
+    AiPacket? GetAiPacket(MapObject critter);
     (ProtoInfo? Proto, MapObject? Item) EquippedWeapon(MapObject critter); // :2305
     int WeaponAmmo(ProtoInfo weaponProto, MapObject item);              // :2326
     AmmoProtoStats? LoadedAmmo(ProtoInfo weaponProto, MapObject item);  // :2333

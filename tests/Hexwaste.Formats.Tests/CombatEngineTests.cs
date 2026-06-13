@@ -17,8 +17,8 @@ public class CombatEngineTests
     public void DamageAppliesOnAnimationCompletionAndXpPaysAtCombatEnd()
     {
         var host = new FakeCombatHost();
-        MapObject dude = host.SetDude(NewCritter(tile: 100, hp: 30, ap: 10));
-        int enemyTile = HexGrid.TileInDirection(100, 0);
+        MapObject dude = host.SetDude(NewCritter(tile: 20100, hp: 30, ap: 10));
+        int enemyTile = HexGrid.TileInDirection(20100, 0);
         MapObject enemy = host.AddCritter(NewCritter(tile: enemyTile, hp: 1, exp: 50));
         var engine = new CombatEngine(host, new MinRng());
 
@@ -49,8 +49,8 @@ public class CombatEngineTests
     public void ScriptedAmbushResetsDudeApAndOpensOnEnemyTurn()
     {
         var host = new FakeCombatHost();
-        MapObject dude = host.SetDude(NewCritter(tile: 100, hp: 30, ap: 10));
-        MapObject attacker = host.AddCritter(NewCritter(tile: HexGrid.TileInDirection(100, 0), hp: 30));
+        MapObject dude = host.SetDude(NewCritter(tile: 20100, hp: 30, ap: 10));
+        MapObject attacker = host.AddCritter(NewCritter(tile: HexGrid.TileInDirection(20100, 0), hp: 30));
         var engine = new CombatEngine(host, new MinRng());
 
         engine.BeginScriptAggro(attacker, dude);
@@ -64,8 +64,8 @@ public class CombatEngineTests
     public void RoundRolloverResetsDudeApAndEnemyRetaliates()
     {
         var host = new FakeCombatHost();
-        MapObject dude = host.SetDude(NewCritter(tile: 100, hp: 30, ap: 10));
-        MapObject enemy = host.AddCritter(NewCritter(tile: HexGrid.TileInDirection(100, 0), hp: 30, ap: 10));
+        MapObject dude = host.SetDude(NewCritter(tile: 20100, hp: 30, ap: 10));
+        MapObject enemy = host.AddCritter(NewCritter(tile: HexGrid.TileInDirection(20100, 0), hp: 30, ap: 10));
         var engine = new CombatEngine(host, new MinRng());
 
         Assert.True(engine.TryAttack(enemy));     // open combat
@@ -86,6 +86,59 @@ public class CombatEngineTests
         Assert.Equal(10, engine.DudeAp);          // §A: new round resets AP to max
         Assert.True(dude.CurrentHp < 30);         // the enemy hit back
         Assert.False(dude.IsDead);
+    }
+
+    [Fact]
+    public void WoundedEnemyBelowMinHpFleesInsteadOfAttacking()
+    {
+        var host = new FakeCombatHost();
+        MapObject dude = host.SetDude(NewCritter(tile: 20100, hp: 30, ap: 10));
+        int eTile = HexGrid.TileInDirection(20100, 0);
+        MapObject enemy = host.AddCritter(NewCritter(tile: eTile, hp: 5, ap: 10));
+        host.AiPackets[enemy] = new AiPacket(13, "Thug", MinToHit: 0, MinHp: 10, 0, "", "");
+        var engine = new CombatEngine(host, new MinRng());
+
+        engine.BeginScriptAggro(enemy, dude); // opens on the enemy's turn
+        engine.Step();
+
+        Assert.Contains(host.Transcripts, t => t.StartsWith("flee:"));
+        Assert.True(HexGrid.Distance(enemy.HexTile, dude.HexTile) > 1); // backed away
+        Assert.Equal(30, dude.CurrentHp);                               // did not attack
+    }
+
+    [Fact]
+    public void EnemyThatCanNeverClearMinToHitFlees()
+    {
+        var host = new FakeCombatHost();
+        MapObject dude = host.SetDude(NewCritter(tile: 20100, hp: 30, ap: 10));
+        MapObject enemy = host.AddCritter(NewCritter(tile: HexGrid.TileInDirection(20100, 0), hp: 30, ap: 10));
+        host.AiPackets[enemy] = new AiPacket(99, "Hopeless", MinToHit: 99, MinHp: 0, 0, "", "");
+        var engine = new CombatEngine(host, new MinRng());
+
+        engine.BeginScriptAggro(enemy, dude);
+        engine.Step();
+
+        // unarmed to-hit (50) can never reach 99 → flee, never swing.
+        Assert.Contains(host.Transcripts, t => t.StartsWith("flee:"));
+        Assert.DoesNotContain(host.Transcripts, t => t.StartsWith("enemy-attack"));
+        Assert.Equal(30, dude.CurrentHp);
+    }
+
+    [Fact]
+    public void EnemyWithAchievableMinToHitStillAttacks()
+    {
+        var host = new FakeCombatHost();
+        MapObject dude = host.SetDude(NewCritter(tile: 20100, hp: 30, ap: 10));
+        MapObject enemy = host.AddCritter(NewCritter(tile: HexGrid.TileInDirection(20100, 0), hp: 30, ap: 10));
+        host.AiPackets[enemy] = new AiPacket(12, "Guard", MinToHit: 40, MinHp: 0, 0, "", "");
+        var engine = new CombatEngine(host, new MinRng());
+
+        engine.BeginScriptAggro(enemy, dude);
+        engine.Step();
+
+        // unarmed 50 ≥ 40 → attacks (rolled, not yet applied), no flee.
+        Assert.Contains(host.Transcripts, t => t.StartsWith("enemy-attack"));
+        Assert.DoesNotContain(host.Transcripts, t => t.StartsWith("flee:"));
     }
 
     // --- helpers ---------------------------------------------------------
@@ -142,7 +195,9 @@ public class CombatEngineTests
             return c.Obj;
         }
 
+        public readonly Dictionary<MapObject, AiPacket> AiPackets = [];
         public CritterState? GetCritterState(MapObject critter) => _states.GetValueOrDefault(critter);
+        public AiPacket? GetAiPacket(MapObject critter) => AiPackets.GetValueOrDefault(critter);
         public (ProtoInfo? Proto, MapObject? Item) EquippedWeapon(MapObject critter) => (null, null);
         public int WeaponAmmo(ProtoInfo weaponProto, MapObject item) => 0;
         public AmmoProtoStats? LoadedAmmo(ProtoInfo weaponProto, MapObject item) => null;

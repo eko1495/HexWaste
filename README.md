@@ -49,8 +49,10 @@ Prebuilt self-contained builds (Linux x64 / Windows x64) are produced by
   budgets, melee weapons and armor (equip flags straight from the MAP
   files — enemies use their own spears), healing items, death falls and
   lootable corpses that stay dead across map travel, AI turns, same-team
-  joiners, and script-driven aggro — temple ants jump you on sight. Kills
-  pay XP at combat end; levels raise your HP. Lose, and F9 puts you back.
+  joiners, and script-driven aggro — temple ants jump you on sight. Enemies
+  read their `ai.txt` packets: they close to a viable shot and flee when badly
+  wounded, instead of fighting to the last hit point. Kills pay XP at combat
+  end; levels raise your HP. Lose, and F9 puts you back.
 - **Character**: create your own (SPECIAL, gender, tagged skills) or pick a
   premade; level-ups grant skill points you spend on the character sheet (C),
   and stat-gated dialog runs the right branches. Rest (Z) heals over time.
