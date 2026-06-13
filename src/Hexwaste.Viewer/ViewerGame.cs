@@ -10,7 +10,7 @@ using Microsoft.Xna.Framework.Input;
 
 namespace Hexwaste.Viewer;
 
-public sealed class ViewerGame : Game
+public sealed class ViewerGame : Game, Formats.Combat.ICombatHost
 {
     private readonly string _gameDir;
     private readonly string _mapName;
@@ -86,42 +86,16 @@ public sealed class ViewerGame : Game
     public string? CharacterName { get; set; }
     private Formats.Combat.ICombatRng _combatRng = new Formats.Combat.SystemCombatRng();
 
-    /// <summary>The rolled-but-not-applied attack: damage lands when the punch
-    /// animation completes (engine: _apply_damage in _combat_anim_finished).</summary>
-    private sealed record PendingAttack(MapObject Attacker, MapObject Target, int Chance, bool Hit, int Damage);
-    private PendingAttack? _pendingAttack;
-
-    /// <summary>Critters playing their death fall; value = death anim (20/21).</summary>
-    private readonly Dictionary<MapObject, int> _fallingCritters = [];
-    private int _dudeAp;
-
-    /// <summary>The engine's blocking _combat_turn loop flattened into a state
-    /// machine stepped from Update (phase advances only when no action plays).</summary>
-    private enum CombatPhase
-    {
-        Idle,
-        PlayerTurn,
-        EnemyTurn,
-        GameOver,
-    }
-
-    private CombatPhase _combatPhase = CombatPhase.Idle;
-    private readonly HashSet<MapObject> _hostiles = [];
-    private readonly Queue<MapObject> _enemyQueue = new();
-    private MapObject? _actingEnemy;
-    private int _actingEnemyAp;
-    private int _combatRound;
-    private bool _gameOver;
+    /// <summary>The turn machine (phase-9 M0). Owns combat state + orchestration;
+    /// this ViewerGame is its ICombatHost. Created in LoadContent once the seeded
+    /// RNG is known.</summary>
+    private Formats.Combat.CombatEngine _combat = null!;
 
     /// <summary>critter_p_proc round-robin (the engine's _script_chk_critters
     /// ticker runs ONE critter script per frame; we pump at the 10 Hz game
     /// tick instead of our 60 Hz frame rate).</summary>
     private double _critterProcTimerMs;
     private int _critterProcIndex;
-
-    /// <summary>Kill XP accrued this combat, paid at combat end like the
-    /// engine's _combat_exps → _combat_give_exps (combat.cc:2816).</summary>
-    private int _combatXpPending;
 
     /// <summary>Main-menu front door (v0.6): Title → character pick → play.
     /// Headless/test flags skip it entirely.</summary>
@@ -147,9 +121,6 @@ public sealed class ViewerGame : Game
     /// <summary>scripts.lst index per party member — their follow script gets
     /// re-bound on every map (fresh sid via AllocateSid).</summary>
     private readonly Dictionary<MapObject, int> _partyScriptIndex = [];
-    private readonly Queue<MapObject> _allyQueue = new();
-    private MapObject? _actingAlly;
-    private int _actingAllyAp;
 
     /// <summary>Armed "use item on object": the next click applies the item.</summary>
     private MapObject? _pendingUseItem;
@@ -335,6 +306,7 @@ public sealed class ViewerGame : Game
         _palette = Palette.Load(_vfs.ReadAllBytes("color.pal"));
         if (RngSeed is { } seed)
             _combatRng = new Formats.Combat.SystemCombatRng(seed);
+        _combat = new Formats.Combat.CombatEngine(this, _combatRng);
 
         _protos = new ProtoDatabase(_vfs);
         _cycler = new PaletteCycler(_palette);
@@ -386,7 +358,7 @@ public sealed class ViewerGame : Game
                         Console.Error.WriteLine(name);
                 },
                 StatsResolver = obj => obj == _dude?.Dude ? _dudeGcd?.Stats : null,
-                AttackRequested = (attacker, target) => OnScriptAttack(attacker, target),
+                AttackRequested = (attacker, target) => _combat.BeginScriptAggro(attacker, target),
                 ExpAwarded = amount => AwardXp(amount),
                 MapStartOverridden = (tile, elevation, rotation) => OverrideDudeStart(tile, elevation, rotation),
                 MoviePlayed = movieId => ShowMovieCard(movieId),
@@ -564,19 +536,19 @@ public sealed class ViewerGame : Game
                     _camera.SetCenter(attackHex);
                     if (_dude is not null) // teleport adjacent (test plumbing, like use-hex)
                         _dude.Dude.HexTile = Formats.Hex.HexGrid.TileInDirection(attackHex, 3);
-                    TryAttack(target);
+                    _combat.TryAttack(target);
 
                     // Run the choreography to completion so transcripts and
                     // follow-up actions see the resolved world.
-                    for (int guard = 0; guard < 3000 && (_pendingAttack is not null || _fallingCritters.Count > 0); guard++)
+                    for (int guard = 0; guard < 3000 && _combat.IsResolving; guard++)
                     {
                         _animator.Update(10);
-                        ProcessCombatAnimations();
+                        _combat.ProcessAnimations();
                     }
 
                     // --attack is a free-swing test primitive; --fight runs
                     // the real turn loop with retaliation.
-                    ResetCombatState();
+                    _combat.Reset();
                     Console.WriteLine($"attack-result: hp={target.CurrentHp} dead={target.IsDead}");
                     break;
                 }
@@ -596,21 +568,20 @@ public sealed class ViewerGame : Game
 
                     // Autoplay: punch any adjacent hostile while AP lasts,
                     // end turn, let the AI move — until someone wins.
-                    for (int guard = 0; guard < 200_000 && !_gameOver; guard++)
+                    for (int guard = 0; guard < 200_000 && !_combat.IsGameOver; guard++)
                     {
-                        bool animating = _pendingAttack is not null || _fallingCritters.Count > 0
-                            || _npcWalkers.Values.Any(w => w.Moving);
+                        bool animating = _combat.IsBusy;
                         if (!animating)
                         {
-                            if (_combatPhase == CombatPhase.Idle)
+                            if (_combat.Phase == Formats.Combat.CombatPhase.Idle)
                             {
                                 if (target.IsDead || _dude is null)
                                     break;
-                                TryAttack(target);
-                                if (_pendingAttack is null && _combatPhase == CombatPhase.Idle)
+                                _combat.TryAttack(target);
+                                if (!_combat.HasPendingAttack && _combat.Phase == Formats.Combat.CombatPhase.Idle)
                                     break; // could not engage
                             }
-                            else if (_combatPhase == CombatPhase.PlayerTurn)
+                            else if (_combat.Phase == Formats.Combat.CombatPhase.PlayerTurn)
                             {
                                 // Heal when hurt, then swing at anything in
                                 // reach, then end the turn.
@@ -623,27 +594,26 @@ public sealed class ViewerGame : Game
                                 int reach = fightGun ? fightWeapon!.Weapon!.MaxRange1
                                     : Math.Min(fightWeapon?.Weapon?.MaxRange1 ?? 1, 2);
                                 int swingCost = fightWeapon?.Weapon?.ApCost ?? Formats.Combat.CombatMath.PunchApCost;
-                                MapObject? victim = _hostiles.FirstOrDefault(h => !h.IsDead
+                                MapObject? victim = _combat.Hostiles.FirstOrDefault(h => !h.IsDead
                                     && Formats.Hex.HexGrid.Distance(_dude!.Dude.HexTile, h.HexTile) <= reach);
-                                if (stimpak >= 0 && _dudeAp >= 2)
+                                if (stimpak >= 0 && _combat.DudeAp >= 2)
                                     UseInventoryItem(stimpak);
-                                else if (victim is not null && _dudeAp >= swingCost)
-                                    TryAttack(victim);
+                                else if (victim is not null && _combat.DudeAp >= swingCost)
+                                    _combat.TryAttack(victim);
                                 else
-                                    EndPlayerTurn();
+                                    _combat.EndPlayerTurn();
                             }
                         }
 
                         _animator.Update(10);
-                        ProcessCombatAnimations();
-                        UpdateCombat();
+                        _combat.Step();
                         foreach (DudeController walker in _npcWalkers.Values)
                             walker.Update(10);
                     }
 
-                    Console.WriteLine($"fight-result: rounds={_combatRound} dudeHp={_dude?.Dude.CurrentHp}"
-                        + $" gameOver={_gameOver} targetDead={target.IsDead}"
-                        + $" hostilesLeft={_hostiles.Count(h => !h.IsDead)}");
+                    Console.WriteLine($"fight-result: rounds={_combat.Round} dudeHp={_dude?.Dude.CurrentHp}"
+                        + $" gameOver={_combat.IsGameOver} targetDead={target.IsDead}"
+                        + $" hostilesLeft={_combat.Hostiles.Count(h => !h.IsDead)}");
                     break;
                 }
                 case StartupAction.Give(var givePid, var giveCount):
@@ -791,8 +761,7 @@ public sealed class ViewerGame : Game
         {
             _cycler.Update(10);
             _animator.Update(10);
-            ProcessCombatAnimations();
-            UpdateCombat();
+            _combat.Step();
             _dude?.Update(10);
             UpdateAmbientLife(10);
             UpdateClock(10);
@@ -849,7 +818,7 @@ public sealed class ViewerGame : Game
         _animator = new ObjectAnimator(_frmCache);
         _scriptHost?.ClearTimers();
         _scriptHost?.ResetHandles();
-        ResetCombatState();
+        _combat.Reset();
         _walkMode = false;
         _hoveredObject = null;
         _dude = null;
@@ -985,7 +954,7 @@ public sealed class ViewerGame : Game
         }
 
         // Game over: the world freezes; load, restart or quit.
-        if (_gameOver)
+        if (_combat.IsGameOver)
         {
             if (IsKeyPressed(keyboard, Keys.F9))
                 LoadGame();
@@ -1223,29 +1192,16 @@ public sealed class ViewerGame : Game
 
         // F: punch the hovered critter (A is take-all in loot mode).
         if (IsKeyPressed(keyboard, Keys.F) && _hoveredObject is { } attackTarget)
-            TryAttack(attackTarget);
+            _combat.TryAttack(attackTarget);
 
         // Space ends the player's combat turn.
         if (IsKeyPressed(keyboard, Keys.Space))
-            EndPlayerTurn();
+            _combat.EndPlayerTurn();
 
         // R reloads the equipped gun (2 AP during your combat turn);
         // roofs moved to F4.
-        if (IsKeyPressed(keyboard, Keys.R)
-            && _dude is not null && EquippedWeapon(_dude.Dude) is (not null, not null) equipped
-            && equipped.Proto!.Weapon is { AmmoCapacity: > 0 })
-        {
-            if (_combatPhase == CombatPhase.PlayerTurn)
-            {
-                if (_dudeAp >= Formats.Combat.RangedMath.ReloadApCost
-                    && TryReload(_dude.Dude, equipped.Proto, equipped.Item!))
-                    _dudeAp -= Formats.Combat.RangedMath.ReloadApCost;
-            }
-            else if (_combatPhase == CombatPhase.Idle)
-            {
-                TryReload(_dude.Dude, equipped.Proto, equipped.Item!);
-            }
-        }
+        if (IsKeyPressed(keyboard, Keys.R))
+            _combat.ReloadEquippedWeapon();
 
         // [ and ] adjust ambient light (day/night preview).
         if (IsKeyPressed(keyboard, Keys.OemOpenBrackets) || IsKeyPressed(keyboard, Keys.OemCloseBrackets))
@@ -1258,8 +1214,7 @@ public sealed class ViewerGame : Game
         }
 
         _animator.Update(gameTime.ElapsedGameTime.TotalMilliseconds);
-        ProcessCombatAnimations();
-        UpdateCombat();
+        _combat.Step();
         _dude?.Update(gameTime.ElapsedGameTime.TotalMilliseconds);
         UpdateAmbientLife(gameTime.ElapsedGameTime.TotalMilliseconds);
 
@@ -1411,7 +1366,7 @@ public sealed class ViewerGame : Game
         if (stats is not null)
         {
             dude.CurrentHp = stats.MaxHp;
-            _dudeAp = stats.MaxActionPoints;
+            _combat.SetDudeAp(stats.MaxActionPoints);
         }
 
         // Carry the bag over and alias it to the new dude object so scripts
@@ -1565,7 +1520,7 @@ public sealed class ViewerGame : Game
                 _npcWalkers.Remove(npc);
 
         // No wandering or fidgeting while combat owns the choreography.
-        if (_combatPhase != CombatPhase.Idle)
+        if (_combat.Phase != Formats.Combat.CombatPhase.Idle)
             return;
 
         Rectangle viewport = GraphicsDevice.Viewport.Bounds;
@@ -1851,20 +1806,8 @@ public sealed class ViewerGame : Game
 
     private void UseDrug(MapObject item, DrugProtoStats drug)
     {
-        if (_combatPhase == CombatPhase.PlayerTurn)
-        {
-            const int useApCost = 2; // engine item-use cost in combat
-            if (_dudeAp < useApCost)
-            {
-                Log("Not enough action points.");
-                return;
-            }
-            _dudeAp -= useApCost;
-        }
-        else if (_combatPhase != CombatPhase.Idle)
-        {
+        if (!_combat.TryUseActionPoints(2))
             return;
-        }
 
         // _perform_drug_effect: stats[0] == -2 → amounts[0..1] are a random
         // range for stats[1] (the stimpak heal roll); 35 = current HP.
@@ -2159,151 +2102,9 @@ public sealed class ViewerGame : Game
             to.Add(item);
     }
 
-    /// <summary>
-    /// Punches an adjacent critter. The outcome is rolled HERE, before any
-    /// animation — damage waits for the punch to finish (ported from
-    /// fallout2-ce src/combat.cc _combat_attack() / combatAttemptAttack()).
-    /// </summary>
-    private void TryAttack(MapObject target)
-    {
-        if (_dude is null || _pendingAttack is not null || target == _dude.Dude)
-            return;
-        if (Fid.Type(target.Fid) is not ObjectType.Critter || target.IsDead)
-            return;
-        if (GetCritterState(_dude.Dude) is not { } attacker || GetCritterState(target) is not { } defender)
-            return;
-
-        (ProtoInfo? weaponProto, MapObject? weaponItem) = EquippedWeapon(_dude.Dude);
-        bool isGun = weaponProto?.Weapon is { } wstats && wstats.IsGun(weaponProto.ExtendedFlags);
-        int range = isGun ? weaponProto!.Weapon!.MaxRange1
-            : Math.Min(weaponProto?.Weapon?.MaxRange1 ?? 1, 2); // throwers melee-capped until rung (a)
-        int apCost = weaponProto?.Weapon?.ApCost ?? Formats.Combat.CombatMath.PunchApCost;
-        int distance = Formats.Hex.HexGrid.Distance(_dude.Dude.HexTile, target.HexTile);
-        if (distance > range)
-        {
-            Log("Too far away.");
-            return;
-        }
-
-        int crittersInPath = 0;
-        if (isGun)
-        {
-            // _combat_check_bad_shot gates: empty mag, then line of fire.
-            if (WeaponAmmo(weaponProto!, weaponItem!) <= 0)
-            {
-                if (_combatPhase == CombatPhase.PlayerTurn
-                    && _dudeAp >= Formats.Combat.RangedMath.ReloadApCost
-                    && TryReload(_dude.Dude, weaponProto!, weaponItem!))
-                {
-                    _dudeAp -= Formats.Combat.RangedMath.ReloadApCost;
-                    return; // reloading is its own action
-                }
-                if (_combatPhase != CombatPhase.PlayerTurn && TryReload(_dude.Dude, weaponProto!, weaponItem!))
-                    return;
-                Log("Out of ammo.");
-                return;
-            }
-
-            (MapObject? blocker, crittersInPath) = Formats.Combat.LineOfFire.Trace(
-                _dude.Dude.HexTile, target.HexTile, tile => ShootBlockerAt(tile, _dude.Dude, target));
-            if (blocker is not null)
-            {
-                Log($"Your shot is blocked by the {ObjectName(blocker)}.");
-                return;
-            }
-        }
-
-        // AP: in combat the round budget rules; the first swing opens combat
-        // with a fresh budget.
-        switch (_combatPhase)
-        {
-            case CombatPhase.PlayerTurn when _dudeAp < apCost:
-                Log("Not enough action points.");
-                return;
-            case CombatPhase.EnemyTurn or CombatPhase.GameOver:
-                return;
-            case CombatPhase.Idle:
-                _dudeAp = attacker.MaxActionPoints;
-                break;
-        }
-        _dudeAp -= apCost;
-
-        // The engine reg_anim_clear()s both parties before choreographing.
-        _animator.Remove(target);
-        if (_npcWalkers.TryGetValue(target, out DudeController? walker))
-        {
-            walker.Stop();
-            _npcWalkers.Remove(target);
-        }
-        _dude.Dude.Rotation = Formats.Hex.HexGrid.RotationTo(_dude.Dude.HexTile, target.HexTile);
-
-        (int chance, bool hit, int damage) = RollAttack(attacker, defender, weaponProto, weaponItem,
-            distance, crittersInPath, attackerIsDude: true);
-        if (isGun)
-            weaponItem!.AmmoQuantity = WeaponAmmo(weaponProto!, weaponItem) - 1;
-        _pendingAttack = new PendingAttack(_dude.Dude, target, chance, hit, damage);
-        Console.WriteLine($"attack {ObjectName(target)}@{target.HexTile}"
-            + $"{(weaponProto is null ? "" : $" [{ObjectNameByPid(weaponProto.Pid)}{(isGun ? $" {weaponItem!.AmmoQuantity}rnd d{distance}" : "")}]")}: chance={chance}% hit={hit} damage={damage}");
-
-        PlayWeaponSfx(weaponProto);
-        StartAttackAnimation(_dude.Dude, weaponProto);
-
-        if (_combatPhase == CombatPhase.Idle)
-            BeginCombat(target);
-    }
-
-    /// <summary>Roll an attack with the equipped weapon (or fists). Guns use
-    /// the ranged to-hit (distance/PE, ammo AC mod, min-ST, crowd) and ammo
-    /// damage mods; melee keeps the phase-6 path.</summary>
-    private (int Chance, bool Hit, int Damage) RollAttack(
-        Formats.Combat.CritterState attacker, Formats.Combat.CritterState defender,
-        ProtoInfo? weaponProto, MapObject? weaponItem, int distance, int crittersInPath,
-        bool attackerIsDude)
-    {
-        int chance;
-        bool isGun = weaponProto?.Weapon is { } w && w.IsGun(weaponProto.ExtendedFlags);
-        if (isGun)
-        {
-            AmmoProtoStats? ammo = weaponItem is null ? null : LoadedAmmo(weaponProto!, weaponItem);
-            chance = Formats.Combat.RangedMath.ToHitChance(
-                attacker.SmallGunsSkill, distance,
-                attacker.Stat(Formats.Combat.CritterStat.Perception), attackerIsDude,
-                defender.ArmorClass, ammo?.AcModifier ?? 0,
-                weaponProto!.Weapon!.MinStrength, attacker.Stat(Formats.Combat.CritterStat.Strength),
-                crittersInPath);
-        }
-        else
-        {
-            int skill = weaponProto is null ? attacker.UnarmedSkill : attacker.MeleeWeaponsSkill;
-            chance = Formats.Combat.CombatMath.ToHitChance(skill, defender);
-        }
-
-        bool hit = Formats.Combat.CombatMath.RollHit(_combatRng, chance);
-        int damage = 0;
-        if (hit)
-        {
-            if (isGun)
-            {
-                AmmoProtoStats? ammo = weaponItem is null ? null : LoadedAmmo(weaponProto!, weaponItem);
-                damage = Formats.Combat.RangedMath.RollDamage(_combatRng,
-                    weaponProto!.Weapon!.MinDamage, weaponProto.Weapon.MaxDamage, defender,
-                    ammo?.DrModifier ?? 0, ammo?.DamageMultiplier ?? 1, ammo?.DamageDivisor ?? 1);
-            }
-            else
-            {
-                damage = weaponProto?.Weapon is { } weapon
-                    ? Formats.Combat.CombatMath.RollWeaponDamage(_combatRng, attacker, defender,
-                        weapon.MinDamage, weapon.MaxDamage)
-                    : Formats.Combat.CombatMath.RollDamage(_combatRng, attacker, defender);
-            }
-        }
-
-        return (chance, hit, damage);
-    }
-
     /// <summary>The critter's in-hand weapon proto + item; the dude's bag is
     /// the separate _dudeInventory list.</summary>
-    private (ProtoInfo? Proto, MapObject? Item) EquippedWeapon(MapObject critter)
+    public (ProtoInfo? Proto, MapObject? Item) EquippedWeapon(MapObject critter)
     {
         List<MapObject> bag = critter == _dude?.Dude ? _dudeInventory : critter.Inventory;
         foreach (MapObject item in bag.Where(i => i.IsInHand))
@@ -2324,14 +2125,14 @@ public sealed class ViewerGame : Game
 
     /// <summary>Loaded rounds; -1 sentinel hydrates from the proto capacity
     /// (fresh items, protoItemDataDefaults).</summary>
-    private static int WeaponAmmo(ProtoInfo weaponProto, MapObject item)
+    public int WeaponAmmo(ProtoInfo weaponProto, MapObject item)
     {
         if (item.AmmoQuantity == -1)
             item.AmmoQuantity = weaponProto.Weapon?.AmmoCapacity ?? 0;
         return item.AmmoQuantity;
     }
 
-    private AmmoProtoStats? LoadedAmmo(ProtoInfo weaponProto, MapObject item)
+    public AmmoProtoStats? LoadedAmmo(ProtoInfo weaponProto, MapObject item)
     {
         int pid = item.AmmoTypePid != -1 ? item.AmmoTypePid : weaponProto.Weapon?.AmmoTypePid ?? -1;
         if (pid <= 0)
@@ -2348,7 +2149,7 @@ public sealed class ViewerGame : Game
 
     /// <summary>_obj_shoot_blocking_at subset: walls/scenery/living critters on
     /// the tile, skipping hidden, NO_BLOCK (open doors) and SHOOT_THRU.</summary>
-    private MapObject? ShootBlockerAt(int tile, MapObject shooter, MapObject target)
+    public MapObject? ShootBlockerAt(int tile, MapObject shooter, MapObject target)
     {
         const int noBlock = 0x10;
         const uint shootThru = 0x80000000;
@@ -2361,7 +2162,7 @@ public sealed class ViewerGame : Game
 
     /// <summary>Reload from a matching-caliber ammo item: partial fills, no
     /// mixed mags (item.cc weaponCanBeReloadedWith/weaponReload).</summary>
-    private bool TryReload(MapObject holder, ProtoInfo weaponProto, MapObject weaponItem)
+    public bool TryReload(MapObject holder, ProtoInfo weaponProto, MapObject weaponItem)
     {
         if (weaponProto.Weapon is not { } weapon || weapon.AmmoCapacity <= 0)
             return false;
@@ -2440,139 +2241,12 @@ public sealed class ViewerGame : Game
             _animator.PlayActionOnce(attacker, fid);
     }
 
-    private string ObjectNameByPid(int pid) =>
+    public string ObjectNameByPid(int pid) =>
         _protoMessages.GetName(pid) ?? $"0x{pid:X8}";
-
-    private static int RotationToAdjacent(int from, int to)
-    {
-        for (int rotation = 0; rotation < 6; rotation++)
-            if (Formats.Hex.HexGrid.TileInDirection(from, rotation) == to)
-                return rotation;
-        return -1;
-    }
-
-    /// <summary>Damage-on-completion + corpse conversion, polled every frame
-    /// (the engine's _combat_anim_finished callback chain).</summary>
-    private void ProcessCombatAnimations()
-    {
-        if (_pendingAttack is { } attack && !_animator.TryGetState(attack.Attacker, out _))
-        {
-            _pendingAttack = null;
-            ResolveAttack(attack);
-        }
-
-        if (_fallingCritters.Count > 0)
-        {
-            foreach ((MapObject critter, int deathAnim) in _fallingCritters.ToArray())
-            {
-                if (_animator.TryGetState(critter, out AnimationState state) && !state.Finished)
-                    continue;
-                _fallingCritters.Remove(critter);
-                FinishCorpse(critter, deathAnim);
-            }
-        }
-    }
-
-    private void ResolveAttack(PendingAttack attack)
-    {
-        bool byDude = attack.Attacker == _dude?.Dude;
-        string targetName = ObjectName(attack.Target);
-        string attackerName = ObjectName(attack.Attacker);
-
-        if (!attack.Hit)
-        {
-            Log(byDude ? $"You missed the {targetName}." : $"The {attackerName} misses you.");
-            return;
-        }
-
-        attack.Target.CurrentHp -= attack.Damage;
-        Log(byDude
-            ? $"You hit the {targetName} for {attack.Damage} damage."
-            : $"The {attackerName} hits you for {attack.Damage} damage.");
-
-        // damage_p_proc runs as damage applies, fixedParam = amount, source =
-        // attacker (combat.cc:4850-4851; party-on-party skip is moot here).
-        if (attack.Target != _dude?.Dude && attack.Target.Sid != -1)
-        {
-            var scripted = _scriptHost?.RunObjectProc(attack.Target, _map, attack.Attacker,
-                fixedParam: attack.Damage, actionBeingUsed: -1, "damage_p_proc");
-            if (scripted is not null)
-                foreach (string line in scripted.Messages)
-                    Log(line);
-        }
-
-        if (attack.Target.CurrentHp <= 0)
-        {
-            if (attack.Target == _dude?.Dude)
-                GameOver();
-            else
-                KillCritter(attack.Target, attack.Attacker);
-            return;
-        }
-
-        const int animHitFromFront = 14;
-        int hitFid = Fid.Build(ObjectType.Critter, Fid.Index(attack.Target.Fid), animHitFromFront,
-            Fid.WeaponCode(attack.Target.Fid));
-        if (attack.Target != _dude?.Dude && _vfs.Exists(_artIndex.GetFrmPath(hitFid)))
-            _animator.PlayActionOnce(attack.Target, hitFid);
-    }
-
-    private void KillCritter(MapObject critter, MapObject? killer = null)
-    {
-        // Engine death order (combat.cc:4850-4876): destroy_p_proc with
-        // source = killer, then proto XP accrues for the dude's kills unless
-        // the script called script_overrides, then the script is removed.
-        bool xpOverridden = false;
-        if (critter.Sid != -1)
-        {
-            var scripted = _scriptHost?.RunObjectProc(critter, _map, killer ?? _dude?.Dude, "destroy_p_proc");
-            if (scripted is not null)
-            {
-                foreach (string line in scripted.Messages)
-                    Log(line);
-                xpOverridden = scripted.Overridden;
-            }
-        }
-
-        // Engine: kills by the dude OR his team accrue XP (combat.cc:4860).
-        bool dudeTeamKill = killer == _dude?.Dude || (killer is not null && killer.Team == 0);
-        if (!xpOverridden && dudeTeamKill && GetCritterState(critter) is { } stats)
-            _combatXpPending += stats.Proto.Experience;
-
-        if (_scriptHost?.PartyMembers.Remove(critter) == true)
-        {
-            _partyScriptIndex.Remove(critter);
-            Log($"{ObjectName(critter)} has fallen.");
-        }
-
-        critter.CombatResults |= 0x80; // DAM_DEAD
-        critter.Sid = -1; // the engine removes the script on death (combat.cc:4876)
-        _npcWalkers.Remove(critter);
-        _homeTiles.Remove(critter);
-        Log($"The {ObjectName(critter)} dies.");
-
-        int deathAnim = PickDeathAnim(critter);
-        // Gender from the critter's art base name (2nd char 'm'/'f' — the
-        // engine's sfxBuildCharName convention); the dude uses his gcd.
-        bool female = critter == _dude?.Dude
-            ? _dudeGcd?.Stats.BaseStats[34] == 1
-            : _artIndex.CritterBaseName(critter.Fid) is { Length: > 1 } n && char.ToLowerInvariant(n[1]) == 'f';
-        _audio?.PlaySfx(Formats.Sound.SfxName.HumanDeath(female, deathAnim));
-        int fallFid = Fid.Build(ObjectType.Critter, Fid.Index(critter.Fid), deathAnim, 0);
-        if (_vfs.Exists(_artIndex.GetFrmPath(fallFid)))
-        {
-            _animator.PlayFall(critter, fallFid);
-            _fallingCritters[critter] = deathAnim;
-        }
-        else
-        {
-            FinishCorpse(critter, deathAnim);
-        }
-    }
 
     /// <summary>FALL_BACK first, FALL_FRONT when that art doesn't ship (the
     /// engine's behind-check flip is out of PoC scope).</summary>
-    private int PickDeathAnim(MapObject critter)
+    public int PickDeathAnim(MapObject critter)
     {
         const int animFallBack = 20;
         const int animFallFront = 21;
@@ -2583,7 +2257,7 @@ public sealed class ViewerGame : Game
     /// <summary>ported from fallout2-ce src/critter.cc critterKill(): the
     /// corpse is the single-frame art at death anim + 28, NO_BLOCK, and drawn
     /// flat — which also makes the existing loot panel reachable.</summary>
-    private void FinishCorpse(MapObject critter, int deathAnim)
+    public void ConvertToCorpse(MapObject critter, int deathAnim)
     {
         _animator.Remove(critter);
 
@@ -2602,65 +2276,12 @@ public sealed class ViewerGame : Game
         RebuildBlockedTiles(_dude?.Dude);
     }
 
-    private void BeginCombat(MapObject target)
-    {
-        _combatPhase = CombatPhase.PlayerTurn;
-        _combatRound = 1;
-        _hostiles.Clear();
-        _enemyQueue.Clear();
-        _actingEnemy = null;
-        _hostiles.Add(target);
-        AddJoiners();
-        Log($"Combat begins — round 1, your turn (AP {_dudeAp}).");
-    }
-
-    /// <summary>Scriptless hostility, the engine's combat_ai team rule: living
-    /// same-team critters within sight range join the fight at round start.</summary>
-    private void AddJoiners()
-    {
-        if (_dude is null)
-            return;
-        foreach (MapObject critter in _solidObjects[_elevation].Where(o =>
-            Fid.Type(o.Fid) is ObjectType.Critter
-            && o != _dude.Dude && !_hostiles.Contains(o)
-            && Formats.Combat.CombatRules.ShouldJoin(o, _hostiles, _dude.Dude.HexTile)).ToList())
-        {
-            _hostiles.Add(critter);
-            critter.WhoHitMeCid = -1; // marks the dude as the aggressor
-            Log($"The {ObjectName(critter)} joins the fight!");
-            Console.WriteLine($"joins: {ObjectName(critter)}@{critter.HexTile} (team {critter.Team})");
-        }
-    }
-
-    private void EndPlayerTurn()
-    {
-        if (_combatPhase != CombatPhase.PlayerTurn || _pendingAttack is not null)
-            return;
-
-        _combatPhase = CombatPhase.EnemyTurn;
-        BuildEnemyQueue();
-    }
-
-    private void BuildEnemyQueue()
-    {
-        _enemyQueue.Clear();
-        _actingEnemy = null;
-        foreach (MapObject hostile in _hostiles.Where(h => !h.IsDead)
-            .OrderByDescending(h => GetCritterState(h)?.Sequence ?? 0))
-            _enemyQueue.Enqueue(hostile);
-
-        _allyQueue.Clear();
-        _actingAlly = null;
-        foreach (MapObject ally in (_scriptHost?.PartyMembers ?? []).Where(m => !m.IsDead))
-            _allyQueue.Enqueue(ally);
-    }
-
     /// <summary>One critter_p_proc per game tick, round-robin — the flattened
     /// _script_chk_critters ticker (scripts.cc:705), gated like the engine's
     /// !dialog && !combat && !movie check.</summary>
     private void PumpCritterProcs(double elapsedMs)
     {
-        if (_scriptHost is null || _combatPhase != CombatPhase.Idle || _gameOver
+        if (_scriptHost is null || _combat.Phase != Formats.Combat.CombatPhase.Idle || _combat.IsGameOver
             || _dialog is not null || _lootContainer is not null || _worldmapOpen)
             return;
 
@@ -2683,62 +2304,9 @@ public sealed class ViewerGame : Game
                 Log($"{ObjectName(critter)}: {line}");
     }
 
-    /// <summary>A script's attack external fired (scripted aggro). The
-    /// aggressor gets the opening turn, like scriptsRequestCombat starting
-    /// combat with the script's self as attacker.</summary>
-    private void OnScriptAttack(MapObject attacker, MapObject target)
-    {
-        if (_dude is null || _gameOver)
-            return;
-        if (target != _dude.Dude || attacker == _dude.Dude)
-            return; // NPC-vs-NPC fights are out of PoC scope
-
-        if (_combatPhase == CombatPhase.Idle)
-        {
-            _dude.Stop(); // ambush interrupts the walk
-            _combatRound = 1;
-            _hostiles.Clear();
-            _hostiles.Add(attacker);
-            attacker.WhoHitMeCid = -1;
-            AddJoiners();
-            if (GetCritterState(_dude.Dude) is { } stats)
-                _dudeAp = stats.MaxActionPoints;
-            _combatPhase = CombatPhase.EnemyTurn;
-            BuildEnemyQueue();
-            Log($"The {ObjectName(attacker)} attacks you!");
-            Console.WriteLine($"scripted-aggro: {ObjectName(attacker)}@{attacker.HexTile} starts combat");
-        }
-        else if (_hostiles.Add(attacker))
-        {
-            attacker.WhoHitMeCid = -1;
-            Log($"The {ObjectName(attacker)} joins the fight!");
-        }
-    }
-
-    /// <summary>ported from fallout2-ce src/combat.cc _combat_should_end():
-    /// combat is over when nothing hostile is left standing.</summary>
-    private bool CombatShouldEnd() => !_hostiles.Any(h => !h.IsDead);
-
-    private void EndCombat()
-    {
-        _combatPhase = CombatPhase.Idle;
-        _hostiles.Clear();
-        _enemyQueue.Clear();
-        _actingEnemy = null;
-        if (_dude is not null && GetCritterState(_dude.Dude) is { } stats)
-            _dudeAp = stats.MaxActionPoints;
-        Log("Combat ends.");
-
-        if (_combatXpPending > 0)
-        {
-            AwardXp(_combatXpPending);
-            _combatXpPending = 0;
-        }
-    }
-
     /// <summary>pcAddExperience: add XP, level up while thresholds pass —
     /// each level adds EN/2+2 bonus max HP and heals the gain (stat.cc:771).</summary>
-    private void AwardXp(int amount)
+    public void AwardXp(int amount)
     {
         if (amount <= 0)
             return;
@@ -2807,7 +2375,7 @@ public sealed class ViewerGame : Game
     {
         if (_dude is null)
             return;
-        if (_combatPhase != CombatPhase.Idle)
+        if (_combat.Phase != Formats.Combat.CombatPhase.Idle)
         {
             Log("You can't rest during a fight.");
             Console.WriteLine("rest: refused (in combat)");
@@ -2854,285 +2422,115 @@ public sealed class ViewerGame : Game
         Console.WriteLine($"rest: +{hours}h, healed {sleepers.Count} to full (hour {_clock.Hour / 100:00})");
     }
 
-    private void GameOver()
-    {
-        _combatPhase = CombatPhase.GameOver;
-        _gameOver = true;
-        Log("You have died. F9 loads the last save.");
-        Console.WriteLine("GAME OVER");
-    }
-
-    /// <summary>Steps the turn machine once nothing is animating — the
-    /// flattened _combat_turn_run loop (its counter over running sequences
-    /// becomes "wait until no pending attack / fall / walker").</summary>
-    private void UpdateCombat()
-    {
-        if (_combatPhase is CombatPhase.Idle or CombatPhase.GameOver)
-            return;
-        if (_pendingAttack is not null || _fallingCritters.Count > 0)
-            return;
-        if (_actingEnemy is { } moving && _npcWalkers.TryGetValue(moving, out DudeController? movingWalker)
-            && movingWalker.Moving)
-            return;
-        if (_actingAlly is { } movingAlly && _npcWalkers.TryGetValue(movingAlly, out DudeController? allyWalker)
-            && allyWalker.Moving)
-            return;
-
-        if (_dude is { } dude && dude.Dude.CurrentHp <= 0)
-        {
-            GameOver();
-            return;
-        }
-
-        if (CombatShouldEnd())
-        {
-            EndCombat();
-            return;
-        }
-
-        if (_combatPhase == CombatPhase.EnemyTurn)
-            StepEnemyTurn();
-    }
-
-    private void StepEnemyTurn()
-    {
-        if (_actingEnemy is { } acting && !acting.IsDead)
-        {
-            if (TryEnemyAction(acting))
-                return;
-            _actingEnemy = null;
-        }
-
-        while (_enemyQueue.Count > 0)
-        {
-            MapObject enemy = _enemyQueue.Dequeue();
-            if (enemy.IsDead)
-                continue;
-            _actingEnemy = enemy;
-            _actingEnemyAp = GetCritterState(enemy)?.MaxActionPoints ?? 5;
-            if (TryEnemyAction(enemy))
-                return;
-            _actingEnemy = null;
-        }
-
-        // Companions take their swings after the hostiles.
-        if (_actingAlly is { } actingAlly && !actingAlly.IsDead)
-        {
-            if (TryAllyAction(actingAlly))
-                return;
-            _actingAlly = null;
-        }
-
-        while (_allyQueue.Count > 0)
-        {
-            MapObject ally = _allyQueue.Dequeue();
-            if (ally.IsDead)
-                continue;
-            _actingAlly = ally;
-            _actingAllyAp = GetCritterState(ally)?.MaxActionPoints ?? 5;
-            if (TryAllyAction(ally))
-                return;
-            _actingAlly = null;
-        }
-
-        // Everyone acted: next round.
-        _combatRound++;
-        AddJoiners();
-        if (_dude is not null && GetCritterState(_dude.Dude) is { } stats)
-            _dudeAp = stats.MaxActionPoints;
-        _combatPhase = CombatPhase.PlayerTurn;
-        Log($"Round {_combatRound} — your turn (AP {_dudeAp}).");
-    }
-
-    /// <summary>One AI action: punch when adjacent, else an AP-budgeted
-    /// approach at 1 AP per hex (the engine's combat_ai movement budget).</summary>
-    private bool TryEnemyAction(MapObject enemy)
-    {
-        if (_dude is null)
-            return false;
-
-        // Enemies pick the nearest of the dude and his living companions.
-        MapObject defenderObj = _dude.Dude;
-        int bestDistance = Formats.Hex.HexGrid.Distance(enemy.HexTile, _dude.Dude.HexTile);
-        foreach (MapObject ally in _scriptHost?.PartyMembers ?? [])
-        {
-            if (ally.IsDead)
-                continue;
-            int d = Formats.Hex.HexGrid.Distance(enemy.HexTile, ally.HexTile);
-            if (d < bestDistance)
-            {
-                bestDistance = d;
-                defenderObj = ally;
-            }
-        }
-
-        int dudeTile = defenderObj.HexTile;
-        (ProtoInfo? enemyWeapon, MapObject? enemyWeaponItem) = EquippedWeapon(enemy);
-        bool enemyGun = enemyWeapon?.Weapon is { } ew && ew.IsGun(enemyWeapon.ExtendedFlags);
-        int enemyDistance = Formats.Hex.HexGrid.Distance(enemy.HexTile, dudeTile);
-
-        // _ai_try_attack shape: reload-if-empty, approach if blocked/far,
-        // else stand and shoot; melee fallback when dry.
-        if (enemyGun && WeaponAmmo(enemyWeapon!, enemyWeaponItem!) <= 0)
-        {
-            if (_actingEnemyAp >= Formats.Combat.RangedMath.ReloadApCost
-                && TryReload(enemy, enemyWeapon!, enemyWeaponItem!))
-            {
-                _actingEnemyAp -= Formats.Combat.RangedMath.ReloadApCost;
-                return true;
-            }
-            enemyWeapon = null; // dry and no ammo: fists
-            enemyWeaponItem = null;
-            enemyGun = false;
-        }
-
-        int attackRange = enemyGun ? enemyWeapon!.Weapon!.MaxRange1
-            : Math.Min(enemyWeapon?.Weapon?.MaxRange1 ?? 1, 2);
-        int attackCost = enemyWeapon?.Weapon?.ApCost ?? Formats.Combat.CombatMath.PunchApCost;
-        int enemyCritters = 0;
-        bool shotBlocked = false;
-        if (enemyGun && enemyDistance <= attackRange)
-        {
-            (MapObject? blocker, enemyCritters) = Formats.Combat.LineOfFire.Trace(
-                enemy.HexTile, dudeTile, tile => ShootBlockerAt(tile, enemy, defenderObj));
-            shotBlocked = blocker is not null;
-        }
-
-        if (enemyDistance <= attackRange && !shotBlocked)
-        {
-            if (_actingEnemyAp < attackCost)
-                return false;
-            _actingEnemyAp -= attackCost;
-            EnemyAttack(enemy, defenderObj, enemyWeapon, enemyWeaponItem, enemyDistance, enemyCritters);
-            return true;
-        }
-
-        if (_actingEnemyAp < 1)
-            return false;
-        byte[]? path = Formats.Hex.Pathfinder.FindPath(enemy.HexTile, dudeTile,
-            tile => _blockedTiles.Contains(tile));
-        if (path is null || path.Length <= 1)
-            return false;
-
-        int steps = Math.Min(path.Length - 1, _actingEnemyAp); // stop adjacent
-        _actingEnemyAp -= steps;
-        int targetTile = enemy.HexTile;
-        for (int i = 0; i < steps; i++)
-            targetTile = Formats.Hex.HexGrid.TileInDirection(targetTile, path[i]);
-        return StartNpcWalk(enemy, targetTile);
-    }
-
-    /// <summary>A companion's action: punch/shoot the nearest living hostile,
-    /// else approach it — the same minimal AI the enemies run.</summary>
-    private bool TryAllyAction(MapObject ally)
-    {
-        MapObject? target = _hostiles.Where(h => !h.IsDead)
-            .OrderBy(h => Formats.Hex.HexGrid.Distance(ally.HexTile, h.HexTile))
-            .FirstOrDefault();
-        if (target is null)
-            return false;
-
-        (ProtoInfo? weaponProto, MapObject? weaponItem) = EquippedWeapon(ally);
-        bool isGun = weaponProto?.Weapon is { } w && w.IsGun(weaponProto.ExtendedFlags);
-        int distance = Formats.Hex.HexGrid.Distance(ally.HexTile, target.HexTile);
-
-        if (isGun && WeaponAmmo(weaponProto!, weaponItem!) <= 0)
-        {
-            if (_actingAllyAp >= Formats.Combat.RangedMath.ReloadApCost
-                && TryReload(ally, weaponProto!, weaponItem!))
-            {
-                _actingAllyAp -= Formats.Combat.RangedMath.ReloadApCost;
-                return true;
-            }
-            weaponProto = null;
-            weaponItem = null;
-            isGun = false;
-        }
-
-        int range = isGun ? weaponProto!.Weapon!.MaxRange1
-            : Math.Min(weaponProto?.Weapon?.MaxRange1 ?? 1, 2);
-        int apCost = weaponProto?.Weapon?.ApCost ?? Formats.Combat.CombatMath.PunchApCost;
-        int crittersInPath = 0;
-        bool blocked = false;
-        if (isGun && distance <= range)
-        {
-            (MapObject? blocker, crittersInPath) = Formats.Combat.LineOfFire.Trace(
-                ally.HexTile, target.HexTile, tile => ShootBlockerAt(tile, ally, target));
-            blocked = blocker is not null;
-        }
-
-        if (distance <= range && !blocked)
-        {
-            if (_actingAllyAp < apCost)
-                return false;
-            _actingAllyAp -= apCost;
-            if (GetCritterState(ally) is not { } attacker || GetCritterState(target) is not { } defender)
-                return false;
-            ally.Rotation = Formats.Hex.HexGrid.RotationTo(ally.HexTile, target.HexTile);
-            (int chance, bool hit, int damage) = RollAttack(attacker, defender, weaponProto, weaponItem,
-                distance, crittersInPath, attackerIsDude: false);
-            if (isGun && weaponItem is not null)
-                weaponItem.AmmoQuantity = WeaponAmmo(weaponProto!, weaponItem) - 1;
-            _pendingAttack = new PendingAttack(ally, target, chance, hit, damage);
-            Console.WriteLine($"ally-attack {ObjectName(ally)} -> {ObjectName(target)}@{target.HexTile}"
-                + $"{(weaponProto is null ? "" : $" [{ObjectNameByPid(weaponProto.Pid)}]")}: chance={chance}% hit={hit} damage={damage}");
-            PlayWeaponSfx(weaponProto);
-            StartAttackAnimation(ally, weaponProto);
-            return true;
-        }
-
-        if (_actingAllyAp < 1)
-            return false;
-        byte[]? path = Formats.Hex.Pathfinder.FindPath(ally.HexTile, target.HexTile,
-            tile => _blockedTiles.Contains(tile));
-        if (path is null || path.Length <= 1)
-            return false;
-        int steps = Math.Min(path.Length - 1, _actingAllyAp);
-        _actingAllyAp -= steps;
-        int walkTarget = ally.HexTile;
-        for (int i = 0; i < steps; i++)
-            walkTarget = Formats.Hex.HexGrid.TileInDirection(walkTarget, path[i]);
-        return StartNpcWalk(ally, walkTarget);
-    }
-
-    private void EnemyAttack(MapObject enemy, MapObject defenderObj, ProtoInfo? weaponProto,
-        MapObject? weaponItem, int distance, int crittersInPath)
-    {
-        if (_dude is null || GetCritterState(enemy) is not { } attacker
-            || GetCritterState(defenderObj) is not { } defender)
-            return;
-
-        enemy.Rotation = Formats.Hex.HexGrid.RotationTo(enemy.HexTile, defenderObj.HexTile);
-
-        bool isGun = weaponProto?.Weapon is { } w && w.IsGun(weaponProto.ExtendedFlags);
-        (int chance, bool hit, int damage) = RollAttack(attacker, defender, weaponProto, weaponItem,
-            distance, crittersInPath, attackerIsDude: false);
-        if (isGun && weaponItem is not null)
-            weaponItem.AmmoQuantity = WeaponAmmo(weaponProto!, weaponItem) - 1;
-        _pendingAttack = new PendingAttack(enemy, defenderObj, chance, hit, damage);
-        Console.WriteLine($"enemy-attack {ObjectName(enemy)}@{enemy.HexTile}"
-            + $"{(weaponProto is null ? "" : $" [{ObjectNameByPid(weaponProto.Pid)}{(isGun ? $" d{distance}" : "")}]")}: chance={chance}% hit={hit} damage={damage}");
-
-        PlayWeaponSfx(weaponProto);
-        StartAttackAnimation(enemy, weaponProto);
-    }
-
     private void PlayWeaponSfx(ProtoInfo? weaponProto)
     {
         if (weaponProto?.Weapon is { SoundCode: > 0 } weapon)
             _audio?.PlaySfx(Formats.Sound.SfxName.WeaponAttack(weapon.SoundCode));
     }
 
-    private void ResetCombatState()
+    // ===================================================================
+    //  ICombatHost — the rest of the seam to CombatEngine (phase-9 M0).
+    //  The viewer keeps single ownership of the animator, walkers, draw
+    //  lists and blocking; the engine reaches them through these methods.
+    // ===================================================================
+
+    public MapObject? Dude => _dude?.Dude;
+    public void StopDude() => _dude?.Stop();
+    public bool IsBlocked(int tile) => _blockedTiles.Contains(tile);
+    public bool IsAnimating(MapObject critter) => _animator.TryGetState(critter, out _);
+    public bool IsFallInProgress(MapObject critter) =>
+        _animator.TryGetState(critter, out AnimationState state) && !state.Finished;
+    public bool IsAnyWalkerMoving() => _npcWalkers.Values.Any(w => w.Moving);
+    public bool IsWalkerMoving(MapObject critter) =>
+        _npcWalkers.TryGetValue(critter, out DudeController? w) && w.Moving;
+    public bool StartWalk(MapObject critter, int targetTile) => StartNpcWalk(critter, targetTile);
+    public void Transcript(string line) => Console.WriteLine(line);
+
+    public IReadOnlyCollection<MapObject> PartyMembers =>
+        (IReadOnlyCollection<MapObject>?)_scriptHost?.PartyMembers ?? [];
+
+    public IEnumerable<MapObject> CombatCritters =>
+        _dude is null ? [] : _solidObjects[_elevation].Where(o =>
+            Fid.Type(o.Fid) is ObjectType.Critter && o != _dude.Dude);
+
+    /// <summary>reg_anim_clear: drop a pending animation + stop/forget a walker.</summary>
+    public void ClearAnimation(MapObject critter)
     {
-        _combatPhase = CombatPhase.Idle;
-        _hostiles.Clear();
-        _enemyQueue.Clear();
-        _actingEnemy = null;
-        _pendingAttack = null;
-        _fallingCritters.Clear();
-        _gameOver = false;
+        _animator.Remove(critter);
+        if (_npcWalkers.TryGetValue(critter, out DudeController? walker))
+        {
+            walker.Stop();
+            _npcWalkers.Remove(critter);
+        }
     }
+
+    public void OnAttackStarted(MapObject attacker, ProtoInfo? weaponProto)
+    {
+        PlayWeaponSfx(weaponProto);
+        StartAttackAnimation(attacker, weaponProto);
+    }
+
+    /// <summary>Hit-react FRM (anim 14) on a surviving, non-dude target.</summary>
+    public void OnTargetHit(MapObject target)
+    {
+        const int animHitFromFront = 14;
+        int hitFid = Fid.Build(ObjectType.Critter, Fid.Index(target.Fid), animHitFromFront,
+            Fid.WeaponCode(target.Fid));
+        if (target != _dude?.Dude && _vfs.Exists(_artIndex.GetFrmPath(hitFid)))
+            _animator.PlayActionOnce(target, hitFid);
+    }
+
+    /// <summary>Death scream + start the fall; true if a fall is playing (caller
+    /// waits), false if no fall art (corpse converted immediately).</summary>
+    public bool StartDeathFall(MapObject critter, int deathAnim)
+    {
+        // Gender from the critter's art base name (2nd char 'm'/'f' — the engine's
+        // sfxBuildCharName convention); the dude uses his gcd.
+        bool female = critter == _dude?.Dude
+            ? _dudeGcd?.Stats.BaseStats[34] == 1
+            : _artIndex.CritterBaseName(critter.Fid) is { Length: > 1 } n && char.ToLowerInvariant(n[1]) == 'f';
+        _audio?.PlaySfx(Formats.Sound.SfxName.HumanDeath(female, deathAnim));
+
+        int fallFid = Fid.Build(ObjectType.Critter, Fid.Index(critter.Fid), deathAnim, 0);
+        if (_vfs.Exists(_artIndex.GetFrmPath(fallFid)))
+        {
+            _animator.PlayFall(critter, fallFid);
+            return true;
+        }
+
+        ConvertToCorpse(critter, deathAnim);
+        return false;
+    }
+
+    /// <summary>Forget bookkeeping for a dead critter (walker + home tile).</summary>
+    public void OnCritterRemoved(MapObject critter)
+    {
+        _npcWalkers.Remove(critter);
+        _homeTiles.Remove(critter);
+    }
+
+    public IReadOnlyList<string> RunDamageProc(MapObject target, MapObject? source, int damage) =>
+        _scriptHost?.RunObjectProc(target, _map, source, fixedParam: damage, actionBeingUsed: -1,
+            "damage_p_proc")?.Messages?.ToList() ?? [];
+
+    public (IReadOnlyList<string> Lines, bool Overridden) RunDestroyProc(MapObject critter, MapObject? killer)
+    {
+        var scripted = _scriptHost?.RunObjectProc(critter, _map, killer, "destroy_p_proc");
+        return scripted is null ? ([], false) : (scripted.Messages.ToList(), scripted.Overridden);
+    }
+
+    public void RemovePartyMember(MapObject critter)
+    {
+        if (_scriptHost?.PartyMembers.Remove(critter) == true)
+        {
+            _partyScriptIndex.Remove(critter);
+            Log($"{ObjectName(critter)} has fallen.");
+        }
+    }
+
+    /// <summary>Death-screen monitor line; the engine sets state + prints the
+    /// "GAME OVER" transcript line and shows the screen via _combat.IsGameOver.</summary>
+    public void GameOver() => Log("You have died. F9 loads the last save.");
 
     private void InteractWith(MapObject obj)
     {
@@ -3782,14 +3180,14 @@ public sealed class ViewerGame : Game
         return null;
     }
 
-    private string ObjectName(MapObject obj) =>
+    public string ObjectName(MapObject obj) =>
         _protoMessages.GetName(obj.Pid) ?? $"object 0x{obj.Pid:X8}";
 
     private string ObjectDescription(MapObject obj) =>
         _protoMessages.GetDescription(obj.Pid)
         ?? "You see nothing out of the ordinary."; // the game's default examine line
 
-    private void Log(string message)
+    public void Log(string message)
     {
         _messageLog.Add(message);
         if (_messageLog.Count > 5)
@@ -3817,7 +3215,7 @@ public sealed class ViewerGame : Game
 
     /// <summary>Effective combat stats for critters with parsed protos; null
     /// for non-critters and broken pids. The dude uses his gcd sheet.</summary>
-    private Formats.Combat.CritterState? GetCritterState(MapObject obj)
+    public Formats.Combat.CritterState? GetCritterState(MapObject obj)
     {
         if (obj == _dude?.Dude && _dudeGcd is not null)
             return new Formats.Combat.CritterState(obj, _dudeGcd.Stats, _dudeGcd.TaggedSkills);
@@ -4149,16 +3547,16 @@ public sealed class ViewerGame : Game
         // AP/HP text HUD above the message log.
         if (_dude is not null && GetCritterState(_dude.Dude) is { } dudeStats)
         {
-            string hud = $"HP {dudeStats.CurrentHp}/{dudeStats.MaxHp}  AP {_dudeAp}/{dudeStats.MaxActionPoints}"
+            string hud = $"HP {dudeStats.CurrentHp}/{dudeStats.MaxHp}  AP {_combat.DudeAp}/{dudeStats.MaxActionPoints}"
                 + $"  L{_dudeLevel} XP {_dudeXp}";
-            if (_combatPhase != CombatPhase.Idle)
-                hud += $"  |  round {_combatRound}: "
-                    + (_combatPhase == CombatPhase.PlayerTurn ? "your turn (F attack, Space end turn)" : "enemy turn");
+            if (_combat.Phase != Formats.Combat.CombatPhase.Idle)
+                hud += $"  |  round {_combat.Round}: "
+                    + (_combat.Phase == Formats.Combat.CombatPhase.PlayerTurn ? "your turn (F attack, Space end turn)" : "enemy turn");
             int hudY = GraphicsDevice.Viewport.Height - 8 - (_messageLog.Count + 1) * _fontRenderer.LineHeight - 4;
             _fontRenderer.Draw(_spriteBatch, hud, new Vector2(8, hudY), new Color(252, 252, 84));
         }
 
-        if (_gameOver)
+        if (_combat.IsGameOver)
         {
             _panelPixel ??= CreatePixel();
             _spriteBatch.Draw(_panelPixel,
@@ -4485,7 +3883,7 @@ public sealed class ViewerGame : Game
                 continue;
             MapObject dead = _ordinalObjects[ordinal];
             if (Fid.AnimType(dead.Fid) == 0) // not yet converted
-                FinishCorpse(dead, PickDeathAnim(dead));
+                ConvertToCorpse(dead, PickDeathAnim(dead));
         }
 
         // A script-stocked merchant container restocks from pristine data once
@@ -4708,7 +4106,7 @@ public sealed class ViewerGame : Game
         {
             critter.Team = 0; // the dude's team (scripts also critter_add_trait it)
             critter.WhoHitMeCid = 0;
-            _hostiles.Remove(critter);
+            _combat.RemoveHostile(critter);
             if (critter.Sid != -1 && _map.ScriptsBySid.TryGetValue(critter.Sid, out MapScriptRecord? record))
                 _partyScriptIndex[critter] = record.ScriptListIndex;
             Log($"{ObjectName(critter)} joins you.");
@@ -4793,9 +4191,9 @@ public sealed class ViewerGame : Game
         if (victim.CurrentHp <= 0)
         {
             if (victim == _dude?.Dude)
-                GameOver();
+                _combat.GameOver();
             else
-                KillCritter(victim);
+                _combat.Kill(victim);
         }
     }
 
@@ -4869,7 +4267,7 @@ public sealed class ViewerGame : Game
         _skillAllocOpen = false;
         _dudeInventory = [];
         _visitedMaps.Clear();
-        _gameOver = false;
+        _combat.Reset();
         _clock.Ticks = 302400; // engine boot time
         _lastAmbientHour = -1;
         if (_scriptHost is not null)
