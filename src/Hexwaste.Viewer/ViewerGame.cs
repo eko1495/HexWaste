@@ -204,6 +204,7 @@ public sealed class ViewerGame : Game, Formats.Combat.ICombatHost
         public sealed record ExamineCritter(int Hex) : StartupAction;
         public sealed record Attack(int Hex) : StartupAction;
         public sealed record Explode(int Hex) : StartupAction;
+        public sealed record Throw(int Hex) : StartupAction;
         public sealed record Fight(int Hex) : StartupAction;
         public sealed record Give(int Pid, int Count) : StartupAction;
         public sealed record UseItemByPid(int Pid) : StartupAction;
@@ -530,6 +531,20 @@ public sealed class ViewerGame : Game, Formats.Combat.ICombatHost
                         + $" (proto {state.Proto.AiPacket}) results=0x{critter.CombatResults:X} dead={state.IsDead}");
                     Console.WriteLine($"  dt={state.DamageThreshold} dr={state.DamageResistance} exp={state.Proto.Experience}"
                         + $" killType={state.Proto.KillType} bodyType={state.Proto.BodyType} damageType={state.Proto.DamageType}");
+                    break;
+                }
+                case StartupAction.Throw(var throwHex):
+                {
+                    if (_dude is not null) // teleport into throw range (test plumbing)
+                        _dude.Dude.HexTile = Formats.Hex.HexGrid.TileInDirection(throwHex, 3);
+                    _combat.TryThrow(throwHex);
+                    for (int guard = 0; guard < 3000 && _combat.IsResolving; guard++)
+                    {
+                        _animator.Update(10);
+                        _combat.ProcessAnimations();
+                    }
+                    _combat.Reset();
+                    Console.WriteLine($"throw-result: hex={throwHex}");
                     break;
                 }
                 case StartupAction.Explode(var explodeHex):
@@ -2512,6 +2527,58 @@ public sealed class ViewerGame : Game, Formats.Combat.ICombatHost
     public bool IsWalkerMoving(MapObject critter) =>
         _npcWalkers.TryGetValue(critter, out DudeController? w) && w.Moving;
     public bool StartWalk(MapObject critter, int targetTile) => StartNpcWalk(critter, targetTile);
+
+    public void OnThrowStarted(MapObject thrower, int targetTile, ProtoInfo weaponProto)
+    {
+        const int animThrow = 18; // ANIM_THROW_ANIM (item.cc _attack_anim[5])
+        int code = weaponProto.Weapon?.AnimationCode ?? 0;
+        int fid = Fid.Build(ObjectType.Critter, Fid.Index(thrower.Fid), animThrow, code);
+        if (!_vfs.Exists(_artIndex.GetFrmPath(fid)))
+            fid = Fid.Build(ObjectType.Critter, Fid.Index(thrower.Fid), animThrow, 0);
+        if (_vfs.Exists(_artIndex.GetFrmPath(fid)))
+            _animator.PlayActionOnce(thrower, fid);
+        PlayWeaponSfx(weaponProto);
+    }
+
+    public void RemoveFromHand(MapObject thrower, MapObject item)
+    {
+        List<MapObject> bag = thrower == _dude?.Dude ? _dudeInventory : thrower.Inventory;
+        item.StackCount--;
+        if (item.StackCount <= 0)
+            bag.Remove(item);
+    }
+
+    /// <summary>Land a thrown non-explosive weapon on the ground (a fresh Item-type
+    /// object, so the existing pickup recovers it).</summary>
+    public void DropThrownWeapon(MapObject item, int tile)
+    {
+        if (RebuildObject(item.Pid, 1) is not { } dropped)
+            return;
+        dropped.HexTile = tile;
+        dropped.Flags |= 0x08; // flat: rests on the ground
+        InsertSorted(_flatObjects[_elevation], dropped);
+    }
+
+    /// <summary>Spawn the misc-10 explosion marker and broadcast damage_p_proc to
+    /// scripted objects in radius 3 with it as the source — so the temple door's
+    /// script sees metarule(49) == EXPLOSION and opens (_scr_explode_scenery).</summary>
+    public void SpawnExplosionMarker(int tile)
+    {
+        var marker = new MapObject
+        {
+            Id = -7, HexTile = tile, X = 0, Y = 0, Frame = 0, Rotation = 0,
+            Fid = Fid.Build(ObjectType.Misc, 10, 0, 0), Flags = 0x08 | 0x10, Pid = 0x05000010, Sid = -1,
+        };
+        foreach (MapObject obj in _solidObjects[_elevation]
+            .Where(o => o.Sid != -1 && Formats.Hex.HexGrid.Distance(o.HexTile, tile) <= 3).ToList())
+        {
+            var scripted = _scriptHost?.RunObjectProc(obj, _map, marker, fixedParam: 20, actionBeingUsed: -1,
+                "damage_p_proc");
+            if (scripted is not null)
+                foreach (string line in scripted.Messages)
+                    Log(line);
+        }
+    }
 
     /// <summary>Knockback relocation: move a critter to a tile with no walk
     /// animation, re-sorting the draw list + blocking (and tripping any spatial

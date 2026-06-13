@@ -56,8 +56,9 @@ Prebuilt self-contained builds (Linux x64 / Windows x64) are produced by
   armor bypass, the occasional instant kill; aim a called shot (V) at eyes/head/
   legs to trade accuracy for a far better critical. Big melee blows knock the
   target sprawling back along the hex line; a crit leaves it prone (+40 to hit,
-  3 AP to stand). Area explosions deal blast damage with falloff and knockback.
-  Kills pay XP at combat end;
+  3 AP to stand). Throw a spear or rock (Throwing skill, range scaled by
+  Strength) — it lands recoverable on the ground — or lob a grenade for an
+  area blast with falloff and knockback. Kills pay XP at combat end;
   levels raise your HP. Lose, and F9 puts you back.
 - **Character**: create your own (SPECIAL, gender, tagged skills) or pick a
   premade; level-ups grant skill points you spend on the character sheet (C),

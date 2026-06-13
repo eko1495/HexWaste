@@ -63,6 +63,19 @@ public interface ICombatHost
     /// <summary>Instantly relocate a critter (knockback shove): set its tile and
     /// re-sort the draw list + blocking. No animation.</summary>
     void PlaceCritter(MapObject critter, int tile);
+
+    // --- Throwing (M4) ----------------------------------------------------
+    /// <summary>Play the thrower's throw animation + the projectile flight to the
+    /// tile. IsAnimating(thrower) gates the landing, like a melee swing.</summary>
+    void OnThrowStarted(MapObject thrower, int targetTile, ProtoInfo weaponProto);
+    /// <summary>Remove the thrown weapon from the thrower's hand (it has left).</summary>
+    void RemoveFromHand(MapObject thrower, MapObject item);
+    /// <summary>Drop a non-explosive thrown weapon on the ground at a tile,
+    /// recoverable (reuses the created-object delta machinery).</summary>
+    void DropThrownWeapon(MapObject item, int tile);
+    /// <summary>Spawn the misc-10 explosion marker at a tile so metarule(49) and
+    /// nearby damage_p_proc see an EXPLOSION source (the temple-door path).</summary>
+    void SpawnExplosionMarker(int tile);
     /// <summary>reg_anim_clear: drop a pending animation + stop/forget a walker. :2231-2236</summary>
     void ClearAnimation(MapObject critter);
 

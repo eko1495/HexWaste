@@ -793,9 +793,15 @@ public sealed class ScriptHost(GameFileSystem vfs, ScriptList scripts, Hexwaste.
         }
 
         // metarule: 14 FIRST_RUN (host tracks revisits); 22 IS_LOADGAME = 0;
-        // everything else 0.
-        public int Metarule(int rule, int argument) =>
-            rule == 14 ? (_host.IsFirstRun(_map) ? 1 : 0) : 0;
+        // 49 WEAPON_DAMAGE_TYPE (the misc-10 explosion marker → EXPLOSION, for the
+        // temple-door damage_p_proc); everything else 0.
+        public int Metarule(int rule, int argument) => rule switch
+        {
+            14 => _host.IsFirstRun(_map) ? 1 : 0,
+            49 => _host.ObjectOf(argument) is { } o
+                  && o.Fid == Fid.Build(ObjectType.Misc, 10, 0, 0) ? 6 /* DAMAGE_TYPE_EXPLOSION */ : 0,
+            _ => 0,
+        };
 
         public int GameTime() => (int)(_host.ClockTicks?.Invoke() ?? 302400);
 

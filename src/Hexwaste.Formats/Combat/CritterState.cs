@@ -59,6 +59,7 @@ public sealed class CritterState(MapObject critter, CritterProtoStats proto, int
     public int UnarmedSkill => SkillValue(3);
     public int MeleeWeaponsSkill => SkillValue(4);
     public int SmallGunsSkill => SkillValue(0);
+    public int ThrowingSkill => SkillValue(5);
     public int BarterSkill => SkillValue(15);
 
     public bool IsDead => critter.IsDead;

@@ -318,6 +318,73 @@ public class CombatEngineTests
         return tile;
     }
 
+    /// <summary>A throwable weapon proto+item: ext 0x50 = secondary THROW (spear),
+    /// 0x05 = primary THROW (grenade); dmgType 6 = explosion.</summary>
+    private static (ProtoInfo Proto, MapObject Item) MakeThrowWeapon(
+        int pid, int ext, int dmgType, int r1, int r2, int min, int max)
+    {
+        var w = new WeaponProtoStats(0, min, max, dmgType, r1, r2, 0, 0, 4, 4, 0, 0, -1, 0, 0);
+        var proto = new ProtoInfo(pid, 0, 0x06000000, 0, ext, 3, Weapon: w); // SubType 3 = weapon
+        var item = new MapObject
+        {
+            Id = 7, HexTile = 0, X = 0, Y = 0, Frame = 0, Rotation = 0,
+            Fid = 0x06000000, Flags = 0, Pid = pid, Sid = -1,
+        };
+        return (proto, item);
+    }
+
+    [Fact]
+    public void ThrownSpearLandsRecoverable()
+    {
+        var host = new FakeCombatHost();
+        host.SetDude(NewCritter(20100, hp: 30, ap: 10));
+        int targetTile = Step(20100, 0, 3); // within throw range 8
+        host.AddCritter(NewCritter(targetTile, hp: 100));
+        host.Equipped = MakeThrowWeapon(pid: 0x07, ext: 0x50, dmgType: 0, r1: 2, r2: 8, min: 3, max: 10);
+        var engine = new CombatEngine(host, new MinRng());
+
+        Assert.True(engine.TryThrow(targetTile));
+        host.Animating.Clear();
+        engine.ProcessAnimations();
+
+        Assert.Contains(host.Transcripts, t => t.StartsWith("throw "));
+        Assert.Contains(host.Dropped, d => d.Pid == 0x07 && d.Tile == targetTile); // recoverable
+        Assert.Equal(0, host.ExplosionMarkers);
+    }
+
+    [Fact]
+    public void ThrownGrenadeExplodesAtLandingTileWithAoe()
+    {
+        var host = new FakeCombatHost();
+        host.SetDude(NewCritter(20100, hp: 30, ap: 10));
+        int targetTile = Step(20100, 0, 6);
+        MapObject a = host.AddCritter(NewCritter(targetTile, hp: 100));
+        MapObject b = host.AddCritter(NewCritter(Step(targetTile, 1, 1), hp: 100));
+        host.Equipped = MakeThrowWeapon(pid: 0x19, ext: 0x05, dmgType: 6, r1: 15, r2: 0, min: 20, max: 35);
+        var engine = new CombatEngine(host, new MinRng());
+
+        Assert.True(engine.TryThrow(targetTile));
+        host.Animating.Clear();
+        engine.ProcessAnimations();
+
+        Assert.Equal(1, host.ExplosionMarkers);   // misc-10 marker (metarule(49) path)
+        Assert.True(a.CurrentHp < 100);            // AoE at landing
+        Assert.True(b.CurrentHp < 100);            // AoE radius
+        Assert.DoesNotContain(host.Dropped, d => d.Pid == 0x19); // explosive consumed
+    }
+
+    [Fact]
+    public void ThrowBeyondRangeIsRefused()
+    {
+        var host = new FakeCombatHost();
+        host.SetDude(NewCritter(20100, hp: 30, ap: 10));
+        int targetTile = Step(20100, 0, 12); // spear range is 8
+        host.Equipped = MakeThrowWeapon(pid: 0x07, ext: 0x50, dmgType: 0, r1: 2, r2: 8, min: 3, max: 10);
+        var engine = new CombatEngine(host, new MinRng());
+
+        Assert.False(engine.TryThrow(targetTile));
+    }
+
     // --- helpers ---------------------------------------------------------
 
     /// <summary>STR/AG 5 ⇒ unarmed skill 50, so a MinRng roll always connects.</summary>
@@ -387,7 +454,8 @@ public class CombatEngineTests
         public bool CriticalsEnabled { get; set; }
         public CritterState? GetCritterState(MapObject critter) => _states.GetValueOrDefault(critter);
         public AiPacket? GetAiPacket(MapObject critter) => AiPackets.GetValueOrDefault(critter);
-        public (ProtoInfo? Proto, MapObject? Item) EquippedWeapon(MapObject critter) => (null, null);
+        public (ProtoInfo? Proto, MapObject? Item) Equipped = (null, null);
+        public (ProtoInfo? Proto, MapObject? Item) EquippedWeapon(MapObject critter) => Equipped;
         public int WeaponAmmo(ProtoInfo weaponProto, MapObject item) => 0;
         public AmmoProtoStats? LoadedAmmo(ProtoInfo weaponProto, MapObject item) => null;
         public bool TryReload(MapObject holder, ProtoInfo weaponProto, MapObject item) => false;
@@ -402,6 +470,12 @@ public class CombatEngineTests
         public void StopDude() { }
         public void ClearAnimation(MapObject critter) => Animating.Remove(critter);
         public void OnAttackStarted(MapObject attacker, ProtoInfo? weaponProto) => Animating.Add(attacker);
+        public void OnThrowStarted(MapObject thrower, int targetTile, ProtoInfo weaponProto) => Animating.Add(thrower);
+        public void RemoveFromHand(MapObject thrower, MapObject item) { }
+        public readonly List<(int Pid, int Tile)> Dropped = [];
+        public void DropThrownWeapon(MapObject item, int tile) => Dropped.Add((item.Pid, tile));
+        public int ExplosionMarkers;
+        public void SpawnExplosionMarker(int tile) => ExplosionMarkers++;
         public void OnTargetHit(MapObject target) { }
         public int PickDeathAnim(MapObject critter) => 20;
         public bool StartDeathFall(MapObject critter, int deathAnim) => false; // no fall art → corpse now

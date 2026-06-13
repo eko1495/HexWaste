@@ -34,6 +34,13 @@ public sealed class CombatEngine
     private sealed record PendingAttack(MapObject Attacker, MapObject Target, int Chance, bool Hit, int Damage, int CritFlags, bool CanKnockback);
     private PendingAttack? _pendingAttack;
 
+    /// <summary>A thrown weapon in flight: lands when the throw animation finishes —
+    /// an explosive detonates (AoE), a spear/rock damages the target and drops
+    /// recoverable on the ground.</summary>
+    private sealed record PendingThrow(MapObject Thrower, MapObject? Target, int TargetTile,
+        bool Hit, int Damage, bool Explosive, int MinDamage, int MaxDamage, ProtoInfo Proto, MapObject Item);
+    private PendingThrow? _pendingThrow;
+
     /// <summary>Critters playing their death fall; value = death anim (20/21).</summary>
     private readonly Dictionary<MapObject, int> _fallingCritters = [];
 
@@ -74,7 +81,7 @@ public sealed class CombatEngine
     public bool IsGameOver => _gameOver;
     public bool HasPendingAttack => _pendingAttack is not null;
     /// <summary>An attack or death-fall is resolving (independent of walkers).</summary>
-    public bool IsResolving => _pendingAttack is not null || _fallingCritters.Count > 0;
+    public bool IsResolving => _pendingAttack is not null || _pendingThrow is not null || _fallingCritters.Count > 0;
     /// <summary>Resolving OR an NPC walker is mid-move — the engine is "busy".</summary>
     public bool IsBusy => IsResolving || _host.IsAnyWalkerMoving();
     public IReadOnlyCollection<MapObject> Hostiles => _hostiles;
@@ -174,6 +181,128 @@ public sealed class CombatEngine
         if (_phase == CombatPhase.Idle)
             BeginCombat(target);
         return true;
+    }
+
+    /// <summary>HIT_LOCATION nibble for a THROW attack mode (item.cc _attack_anim).</summary>
+    private const int ThrowAnim = 5;
+
+    /// <summary>The equipped weapon can be thrown (primary or secondary attack mode
+    /// is THROW), with the throw range (primary→MaxRange1, secondary→MaxRange2).</summary>
+    private static bool IsThrowable(ProtoInfo proto, out bool primaryThrow, out int rangeMax, out int apCost)
+    {
+        primaryThrow = (proto.ExtendedFlags & 0xF) == ThrowAnim;
+        bool secondaryThrow = ((proto.ExtendedFlags >> 4) & 0xF) == ThrowAnim;
+        var w = proto.Weapon!;
+        rangeMax = primaryThrow ? w.MaxRange1 : w.MaxRange2;
+        apCost = primaryThrow ? w.ApCost : w.ApCost2;
+        return primaryThrow || secondaryThrow;
+    }
+
+    /// <summary>Throw the equipped weapon at a tile (item.cc weaponGetRange = min(
+    /// maxRange, 3×ST); Throwing skill). Explosives detonate at the landing tile;
+    /// other thrown weapons damage the critter there and drop recoverable. The
+    /// outcome lands when the throw animation finishes (like a melee swing).</summary>
+    public bool TryThrow(int targetTile)
+    {
+        MapObject? dude = _host.Dude;
+        if (dude is null || _pendingAttack is not null || _pendingThrow is not null)
+            return false;
+        if (_host.GetCritterState(dude) is not { } attacker)
+            return false;
+
+        (ProtoInfo? weaponProto, MapObject? weaponItem) = _host.EquippedWeapon(dude);
+        if (weaponProto?.Weapon is null || weaponItem is null
+            || !IsThrowable(weaponProto, out _, out int rangeMax, out int apCost))
+        {
+            _host.Log("You have nothing to throw.");
+            return false;
+        }
+
+        int strength = attacker.Stat(CritterStat.Strength);
+        int range = Math.Min(rangeMax, 3 * strength); // item.cc:1611 weaponGetRange
+        int distance = HexGrid.Distance(dude.HexTile, targetTile);
+        if (distance > range)
+        {
+            _host.Log("Too far to throw.");
+            return false;
+        }
+
+        if (apCost <= 0)
+            apCost = 4; // throw default
+        switch (_phase)
+        {
+            case CombatPhase.PlayerTurn when _dudeAp < apCost:
+                _host.Log("Not enough action points.");
+                return false;
+            case CombatPhase.EnemyTurn or CombatPhase.GameOver:
+                return false;
+            case CombatPhase.Idle:
+                _dudeAp = attacker.MaxActionPoints;
+                break;
+        }
+        _dudeAp -= apCost;
+
+        MapObject? targetCritter = _host.CombatCritters
+            .FirstOrDefault(c => !c.IsDead && c.HexTile == targetTile);
+        bool explosive = weaponProto.Weapon.DamageType == 6; // DAMAGE_TYPE_EXPLOSION
+
+        // Ranged-style to-hit with the Throwing skill; no crit (PoC simplification).
+        int defenderAc = targetCritter is not null && _host.GetCritterState(targetCritter) is { } ds ? ds.ArmorClass : 0;
+        int chance = RangedMath.ToHitChance(attacker.ThrowingSkill, distance,
+            attacker.Stat(CritterStat.Perception), attackerIsDude: true,
+            defenderAc, 0, weaponProto.Weapon.MinStrength, strength, crittersInPath: 0);
+        bool hit = CombatMath.RollHit(_rng, chance);
+        int damage = hit && targetCritter is not null && _host.GetCritterState(targetCritter) is { } td
+            ? RangedMath.RollDamage(_rng, weaponProto.Weapon.MinDamage, weaponProto.Weapon.MaxDamage, td, 0, 1, 1)
+            : 0;
+
+        dude.Rotation = HexGrid.RotationTo(dude.HexTile, targetTile);
+        _host.RemoveFromHand(dude, weaponItem); // leaves the hand at throw time
+        _pendingThrow = new PendingThrow(dude, targetCritter, targetTile, hit, damage, explosive,
+            weaponProto.Weapon.MinDamage, weaponProto.Weapon.MaxDamage, weaponProto, weaponItem);
+        _host.Transcript($"throw {_host.ObjectNameByPid(weaponProto.Pid)} -> @{targetTile}"
+            + $": chance={chance}% hit={hit}{(explosive ? " explosive" : $" damage={damage}")}");
+        _host.OnThrowStarted(dude, targetTile, weaponProto);
+
+        if (_phase == CombatPhase.Idle && targetCritter is not null)
+            BeginCombat(targetCritter);
+        return true;
+    }
+
+    private void ResolveThrow(PendingThrow t)
+    {
+        if (t.Explosive)
+        {
+            // Grenade/molotov: detonate at the landing tile (wires the M3 AoE +,
+            // via the misc-10 marker, the metarule(49) door path).
+            _host.Log($"The {_host.ObjectNameByPid(t.Proto.Pid)} explodes!");
+            _host.SpawnExplosionMarker(t.TargetTile);
+            Explode(t.TargetTile, t.Thrower, t.MinDamage, t.MaxDamage, radius: 3);
+            return;
+        }
+
+        if (t.Hit && t.Target is { IsDead: false })
+        {
+            t.Target.CurrentHp -= t.Damage;
+            bool byDude = t.Thrower == _host.Dude;
+            _host.Log(byDude
+                ? $"You hit the {_host.ObjectName(t.Target)} for {t.Damage} damage."
+                : $"The {_host.ObjectName(t.Thrower)} hits you for {t.Damage} damage.");
+            if (t.Target.CurrentHp <= 0)
+            {
+                if (t.Target == _host.Dude)
+                    GameOver();
+                else
+                    KillCritter(t.Target, t.Thrower);
+            }
+        }
+        else
+        {
+            _host.Log($"The {_host.ObjectNameByPid(t.Proto.Pid)} misses.");
+        }
+
+        // Recoverable: the weapon drops on the ground at the landing tile.
+        _host.DropThrownWeapon(t.Item, t.TargetTile);
     }
 
     /// <summary>Roll an attack with the equipped weapon (or fists). Guns use the
@@ -286,6 +415,12 @@ public sealed class CombatEngine
         {
             _pendingAttack = null;
             ResolveAttack(attack);
+        }
+
+        if (_pendingThrow is { } thrown && !_host.IsAnimating(thrown.Thrower))
+        {
+            _pendingThrow = null;
+            ResolveThrow(thrown);
         }
 
         if (_fallingCritters.Count > 0)
@@ -1039,6 +1174,7 @@ public sealed class CombatEngine
         _enemyQueue.Clear();
         _actingEnemy = null;
         _pendingAttack = null;
+        _pendingThrow = null;
         _fallingCritters.Clear();
         _knockedDown.Clear();
         _gameOver = false;
