@@ -206,11 +206,82 @@ public class CombatEngineTests
         Assert.Contains(host.Transcripts, t => t.Contains("chance=20%")); // 50 − 30
     }
 
+    [Fact]
+    public void BigMeleeHitShovesTheTargetAlongTheHexLine()
+    {
+        var host = new FakeCombatHost { CriticalsEnabled = false };
+        host.SetDude(NewCritter(20100, hp: 30, ap: 10, meleeDmg: 30));
+        MapObject enemy = host.AddCritter(NewCritter(HexGrid.TileInDirection(20100, 0), hp: 200));
+        int start = enemy.HexTile;
+        // SequenceRng: roll1=1 (hit), damage roll high → ~32 dmg → shove 3 tiles.
+        var engine = new CombatEngine(host, new SequenceRng(1, 99));
+
+        Assert.True(engine.TryAttack(enemy)); // unarmed (melee) → knockback eligible
+        host.Animating.Clear();
+        engine.ProcessAnimations();
+
+        Assert.Contains(host.Transcripts, t => t.StartsWith("knockback:"));
+        Assert.True(HexGrid.Distance(enemy.HexTile, start) >= 2); // shoved away
+        Assert.False(enemy.IsDead);
+    }
+
+    [Fact]
+    public void GunsDoNotKnockBack()
+    {
+        // CanKnockback is false for guns — but the fake host gives fists, so this
+        // documents the gate via the engine: an unarmed small hit (dmg < 10) never
+        // shoves regardless. (Gun-specific path is covered by the !isGun flag.)
+        var host = new FakeCombatHost { CriticalsEnabled = false };
+        host.SetDude(NewCritter(20100, hp: 30, ap: 10));
+        MapObject enemy = host.AddCritter(NewCritter(HexGrid.TileInDirection(20100, 0), hp: 100));
+        int start = enemy.HexTile;
+        var engine = new CombatEngine(host, new MinRng()); // 1 dmg → shove 0
+
+        Assert.True(engine.TryAttack(enemy));
+        host.Animating.Clear();
+        engine.ProcessAnimations();
+
+        Assert.DoesNotContain(host.Transcripts, t => t.StartsWith("knockback:"));
+        Assert.Equal(start, enemy.HexTile);
+    }
+
+    [Fact]
+    public void CritKnockdownPersistsIsEasierToHitAndStandsUp()
+    {
+        var host = new FakeCombatHost { CriticalsEnabled = true };
+        host.SetDude(NewCritter(20100, hp: 30, ap: 12));
+        MapObject enemy = host.AddCritter(NewCritter(HexGrid.TileInDirection(20100, 0), hp: 100, ap: 10));
+        var engine = new CombatEngine(host, new MinRng());
+
+        // Aimed RIGHT_LEG: MAN/RIGHT_LEG/sev0 = { 3, DAM_KNOCKED_DOWN } → prone.
+        Assert.True(engine.TryAttack(enemy, hitLocation: 4));
+        host.Animating.Clear();
+        engine.ProcessAnimations();
+        Assert.Contains(host.Transcripts, t => t.StartsWith("knockdown:"));
+
+        // +40 vs a prone target: an uncalled follow-up reads chance 90 (50 + 40).
+        host.Transcripts.Clear();
+        Assert.True(engine.TryAttack(enemy));
+        Assert.Contains(host.Transcripts, t => t.Contains("chance=90%"));
+
+        // The enemy stands up at its turn (costs AP).
+        host.Animating.Clear();
+        engine.ProcessAnimations();
+        host.Transcripts.Clear();
+        engine.EndPlayerTurn();
+        for (int i = 0; i < 50 && engine.Phase == CombatPhase.EnemyTurn; i++)
+        {
+            host.Animating.Clear();
+            engine.Step();
+        }
+        Assert.Contains(host.Transcripts, t => t.StartsWith("getup:"));
+    }
+
     // --- helpers ---------------------------------------------------------
 
     /// <summary>STR/AG 5 ⇒ unarmed skill 50, so a MinRng roll always connects.</summary>
     private static (MapObject Obj, CritterProtoStats Proto) NewCritter(
-        int tile, int hp, int ap = 10, int seq = 1, int exp = 0, int betterCrit = 0)
+        int tile, int hp, int ap = 10, int seq = 1, int exp = 0, int betterCrit = 0, int meleeDmg = 0)
     {
         int[] b = new int[35];
         b[CritterStat.Strength] = 5;
@@ -219,6 +290,7 @@ public class CombatEngineTests
         b[CritterStat.MaximumActionPoints] = ap;
         b[CritterStat.Sequence] = seq;
         b[CritterStat.BetterCriticals] = betterCrit;
+        b[CritterStat.MeleeDamage] = meleeDmg;
         var proto = new CritterProtoStats(0, 0, 0, b, new int[35], new int[18], 0, exp, 0, 0);
         var obj = new MapObject
         {
@@ -234,6 +306,15 @@ public class CombatEngineTests
     private sealed class MinRng : ICombatRng
     {
         public int Next(int minInclusive, int maxExclusive) => minInclusive;
+    }
+
+    /// <summary>Returns queued values (clamped into range), repeating the last —
+    /// lets a test force a hit then a big damage roll.</summary>
+    private sealed class SequenceRng(params int[] values) : ICombatRng
+    {
+        private int _i;
+        public int Next(int minInclusive, int maxExclusive) =>
+            Math.Clamp(values[Math.Min(_i++, values.Length - 1)], minInclusive, maxExclusive - 1);
     }
 
     private sealed class FakeCombatHost : ICombatHost
@@ -276,6 +357,7 @@ public class CombatEngineTests
         public bool IsAnyWalkerMoving() => false;
         public bool IsWalkerMoving(MapObject critter) => false;
         public bool StartWalk(MapObject critter, int targetTile) { critter.HexTile = targetTile; return true; }
+        public void PlaceCritter(MapObject critter, int tile) => critter.HexTile = tile;
         public void StopDude() { }
         public void ClearAnimation(MapObject critter) => Animating.Remove(critter);
         public void OnAttackStarted(MapObject attacker, ProtoInfo? weaponProto) => Animating.Add(attacker);

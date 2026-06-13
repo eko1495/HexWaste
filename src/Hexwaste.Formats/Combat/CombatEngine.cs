@@ -31,11 +31,19 @@ public sealed class CombatEngine
 
     /// <summary>The rolled-but-not-applied attack: damage lands when the punch
     /// animation completes (engine: _apply_damage in _combat_anim_finished).</summary>
-    private sealed record PendingAttack(MapObject Attacker, MapObject Target, int Chance, bool Hit, int Damage, int CritFlags);
+    private sealed record PendingAttack(MapObject Attacker, MapObject Target, int Chance, bool Hit, int Damage, int CritFlags, bool CanKnockback);
     private PendingAttack? _pendingAttack;
 
     /// <summary>Critters playing their death fall; value = death anim (20/21).</summary>
     private readonly Dictionary<MapObject, int> _fallingCritters = [];
+
+    /// <summary>Critters knocked prone by a crit (DAM_KNOCKED_DOWN) — they stand up
+    /// (3 AP) at their next turn and are +40 to hit while down. Combat-scoped
+    /// (cleared on Reset); never saved (the engine can't save mid-combat).</summary>
+    private readonly HashSet<MapObject> _knockedDown = [];
+    private const int OBJECT_MULTIHEX = 0x800;
+    private const int CRITTER_NO_KNOCKBACK = 0x4000;
+    private const int StandUpApCost = 3; // _combat_standup (combat.cc:5391)
 
     private CombatPhase _phase = CombatPhase.Idle;
     private readonly HashSet<MapObject> _hostiles = [];
@@ -157,7 +165,7 @@ public sealed class CombatEngine
             distance, crittersInPath, attackerIsDude: true, defenderIsDude: target == dude, hitLocation);
         if (isGun)
             weaponItem!.AmmoQuantity = _host.WeaponAmmo(weaponProto!, weaponItem) - 1;
-        _pendingAttack = new PendingAttack(dude, target, chance, hit, damage, critFlags);
+        _pendingAttack = new PendingAttack(dude, target, chance, hit, damage, critFlags, CanKnockback: !isGun);
         _host.Transcript($"attack {_host.ObjectName(target)}@{target.HexTile}"
             + $"{(weaponProto is null ? "" : $" [{_host.ObjectNameByPid(weaponProto.Pid)}{(isGun ? $" {weaponItem!.AmmoQuantity}rnd d{distance}" : "")}]")}: chance={chance}% hit={hit} damage={damage}{CritTag(critFlags)}");
 
@@ -248,17 +256,26 @@ public sealed class CombatEngine
     private int ComputeToHit(CritterState attacker, CritterState defender,
         ProtoInfo? weaponProto, MapObject? weaponItem, int distance, int crittersInPath, bool attackerIsDude)
     {
+        int toHit;
         if (weaponProto?.Weapon is { } w && w.IsGun(weaponProto.ExtendedFlags))
         {
             AmmoProtoStats? ammo = weaponItem is null ? null : _host.LoadedAmmo(weaponProto, weaponItem);
-            return RangedMath.ToHitChance(
+            toHit = RangedMath.ToHitChance(
                 attacker.SmallGunsSkill, distance,
                 attacker.Stat(CritterStat.Perception), attackerIsDude,
                 defender.ArmorClass, ammo?.AcModifier ?? 0,
                 w.MinStrength, attacker.Stat(CritterStat.Strength), crittersInPath);
         }
-        int skill = weaponProto is null ? attacker.UnarmedSkill : attacker.MeleeWeaponsSkill;
-        return CombatMath.ToHitChance(skill, defender);
+        else
+        {
+            int skill = weaponProto is null ? attacker.UnarmedSkill : attacker.MeleeWeaponsSkill;
+            toHit = CombatMath.ToHitChance(skill, defender);
+        }
+
+        // +40 to hit a prone target (combat.cc:4474).
+        if (_knockedDown.Contains(defender.Critter))
+            toHit = Math.Min(toHit + 40, 95);
+        return toHit;
     }
 
     /// <summary>Damage-on-completion + corpse conversion, polled every frame
@@ -321,6 +338,59 @@ public sealed class CombatEngine
 
         if (attack.Target != dude)
             _host.OnTargetHit(attack.Target);
+
+        ApplyKnockback(attack);
+    }
+
+    /// <summary>Knockback shove (melee/unarmed/explosion, never guns) + persisting
+    /// prone from a crit. The shove is damage/10 tiles along the hex line, stopping
+    /// before a blocked tile (combat.cc:4633 gate + actions.cc:102 geometry); a pure
+    /// shove just moves, only a crit DAM_KNOCKED_DOWN leaves the target prone.</summary>
+    private void ApplyKnockback(PendingAttack attack)
+    {
+        MapObject target = attack.Target;
+        bool eligible = attack.CanKnockback
+            && (target.Flags & OBJECT_MULTIHEX) == 0
+            && (_host.GetCritterState(target)?.Proto.CritterFlags & CRITTER_NO_KNOCKBACK) == 0;
+        if (!eligible)
+            return;
+
+        int distance = Math.Min(attack.Damage / 10, 20); // dmg/10, MAX_KNOCKDOWN_DISTANCE
+        if (distance > 0)
+        {
+            int rotation = HexGrid.RotationTo(attack.Attacker.HexTile, target.HexTile);
+            int tile = target.HexTile;
+            for (int i = 0; i < distance; i++)
+            {
+                int next = HexGrid.TileInDirection(tile, rotation);
+                if (_host.IsBlocked(next)) // blocked by an occupied tile — stop short
+                    break;
+                tile = next;
+            }
+            if (tile != target.HexTile)
+            {
+                int from = target.HexTile;
+                _host.PlaceCritter(target, tile);
+                _host.Transcript($"knockback: {_host.ObjectName(target)}@{from} -> {tile}");
+            }
+        }
+
+        // Persisting prone only from a crit (a pure shove bounces back up).
+        if ((attack.CritFlags & CriticalTables.DamKnockedDown) != 0 && _knockedDown.Add(target))
+        {
+            _host.Log($"The {_host.ObjectName(target)} is knocked down!");
+            _host.Transcript($"knockdown: {_host.ObjectName(target)}@{target.HexTile}");
+        }
+    }
+
+    /// <summary>A prone critter stands at its turn (3 AP); returns the AP left, or
+    /// -1 if it wasn't prone. Removes the flag.</summary>
+    private int StandUpIfProne(MapObject critter, int ap)
+    {
+        if (!_knockedDown.Remove(critter))
+            return -1;
+        _host.Transcript($"getup: {_host.ObjectName(critter)} (-{StandUpApCost} AP)");
+        return Math.Max(ap - StandUpApCost, 0);
     }
 
     private void KillCritter(MapObject critter, MapObject? killer = null)
@@ -346,6 +416,7 @@ public sealed class CombatEngine
 
         critter.CombatResults |= 0x80; // DAM_DEAD
         critter.Sid = -1; // the engine removes the script on death (combat.cc:4876)
+        _knockedDown.Remove(critter);
         _host.OnCritterRemoved(critter);
         _host.Log($"The {_host.ObjectName(critter)} dies.");
 
@@ -588,7 +659,11 @@ public sealed class CombatEngine
         _round++;
         AddJoiners();
         if (_host.Dude is { } dude && _host.GetCritterState(dude) is { } stats)
+        {
             _dudeAp = stats.MaxActionPoints;
+            if (StandUpIfProne(dude, _dudeAp) is var afterStand && afterStand >= 0)
+                _dudeAp = afterStand; // the dude stands at the cost of 3 AP
+        }
         _phase = CombatPhase.PlayerTurn;
         _host.Log($"Round {_round} — your turn (AP {_dudeAp}).");
     }
@@ -600,6 +675,14 @@ public sealed class CombatEngine
         MapObject? dude = _host.Dude;
         if (dude is null)
             return false;
+
+        // Stand up first if prone (3 AP), then act with what's left.
+        if (StandUpIfProne(enemy, _actingEnemyAp) is var stood && stood >= 0)
+        {
+            _actingEnemyAp = stood;
+            if (_actingEnemyAp < 1)
+                return false; // standing used the whole turn
+        }
 
         // Enemies pick the nearest of the dude and his living companions.
         MapObject defenderObj = dude;
@@ -741,6 +824,13 @@ public sealed class CombatEngine
     /// approach it — the same minimal AI the enemies run.</summary>
     private bool TryAllyAction(MapObject ally)
     {
+        if (StandUpIfProne(ally, _actingAllyAp) is var stood && stood >= 0)
+        {
+            _actingAllyAp = stood;
+            if (_actingAllyAp < 1)
+                return false;
+        }
+
         MapObject? target = _hostiles.Where(h => !h.IsDead)
             .OrderBy(h => HexGrid.Distance(ally.HexTile, h.HexTile))
             .FirstOrDefault();
@@ -788,7 +878,7 @@ public sealed class CombatEngine
                 distance, crittersInPath, attackerIsDude: false, defenderIsDude: false, CriticalTables.LocationUncalled);
             if (isGun && weaponItem is not null)
                 weaponItem.AmmoQuantity = _host.WeaponAmmo(weaponProto!, weaponItem) - 1;
-            _pendingAttack = new PendingAttack(ally, target, chance, hit, damage, critFlags);
+            _pendingAttack = new PendingAttack(ally, target, chance, hit, damage, critFlags, CanKnockback: !isGun);
             _host.Transcript($"ally-attack {_host.ObjectName(ally)} -> {_host.ObjectName(target)}@{target.HexTile}"
                 + $"{(weaponProto is null ? "" : $" [{_host.ObjectNameByPid(weaponProto.Pid)}]")}: chance={chance}% hit={hit} damage={damage}{CritTag(critFlags)}");
             _host.OnAttackStarted(ally, weaponProto);
@@ -823,7 +913,7 @@ public sealed class CombatEngine
             CriticalTables.LocationUncalled);
         if (isGun && weaponItem is not null)
             weaponItem.AmmoQuantity = _host.WeaponAmmo(weaponProto!, weaponItem) - 1;
-        _pendingAttack = new PendingAttack(enemy, defenderObj, chance, hit, damage, critFlags);
+        _pendingAttack = new PendingAttack(enemy, defenderObj, chance, hit, damage, critFlags, CanKnockback: !isGun);
         _host.Transcript($"enemy-attack {_host.ObjectName(enemy)}@{enemy.HexTile}"
             + $"{(weaponProto is null ? "" : $" [{_host.ObjectNameByPid(weaponProto.Pid)}{(isGun ? $" d{distance}" : "")}]")}: chance={chance}% hit={hit} damage={damage}{CritTag(critFlags)}");
 
@@ -883,6 +973,7 @@ public sealed class CombatEngine
         _actingEnemy = null;
         _pendingAttack = null;
         _fallingCritters.Clear();
+        _knockedDown.Clear();
         _gameOver = false;
     }
 }

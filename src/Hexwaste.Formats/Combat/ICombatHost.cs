@@ -60,6 +60,9 @@ public interface ICombatHost
 
     // --- Movement (StartNpcWalk + its draw-list/blocking closure stay here) ---
     bool StartWalk(MapObject critter, int targetTile);                  // :1616 StartNpcWalk
+    /// <summary>Instantly relocate a critter (knockback shove): set its tile and
+    /// re-sort the draw list + blocking. No animation.</summary>
+    void PlaceCritter(MapObject critter, int tile);
     /// <summary>reg_anim_clear: drop a pending animation + stop/forget a walker. :2231-2236</summary>
     void ClearAnimation(MapObject critter);
 

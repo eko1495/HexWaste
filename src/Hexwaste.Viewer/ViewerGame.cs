@@ -2497,6 +2497,19 @@ public sealed class ViewerGame : Game, Formats.Combat.ICombatHost
     public bool IsWalkerMoving(MapObject critter) =>
         _npcWalkers.TryGetValue(critter, out DudeController? w) && w.Moving;
     public bool StartWalk(MapObject critter, int targetTile) => StartNpcWalk(critter, targetTile);
+
+    /// <summary>Knockback relocation: move a critter to a tile with no walk
+    /// animation, re-sorting the draw list + blocking (and tripping any spatial
+    /// at the landing tile, like a step would).</summary>
+    public void PlaceCritter(MapObject critter, int tile)
+    {
+        critter.HexTile = tile;
+        List<MapObject> solids = _solidObjects[_elevation];
+        if (solids.Remove(critter))
+            InsertSorted(solids, critter);
+        RebuildBlockedTiles(_dude?.Dude);
+        _scriptHost?.RunSpatialsAt(_map, tile, _elevation, critter);
+    }
     public void Transcript(string line) => Console.WriteLine(line);
 
     public IReadOnlyCollection<MapObject> PartyMembers =>
