@@ -106,6 +106,13 @@ public sealed class ScriptHost(GameFileSystem vfs, ScriptList scripts, Hexwaste.
     /// across maps.</summary>
     public List<MapObject> PartyMembers { get; } = [];
 
+    /// <summary>metarule(16) PARTY_COUNT, ported from _getPartyMemberCount
+    /// (party_member.cc:900): slot 0 = the dude (always +1), plus each LIVE, VISIBLE,
+    /// recruited critter (dead/hidden/non-critter members don't count). Static so the
+    /// roster-count logic is unit-testable without a VM.</summary>
+    public static int PartyMemberCount(IReadOnlyList<MapObject> members) =>
+        1 + members.Count(m => Fid.PidType(m.Pid) == (int)ObjectType.Critter && !m.IsDead && !m.IsHidden);
+
     /// <summary>A script recruited (true) or dismissed (false) this critter.</summary>
     public Action<MapObject, bool>? PartyChanged { get; set; }
 
@@ -792,12 +799,16 @@ public sealed class ScriptHost(GameFileSystem vfs, ScriptList scripts, Hexwaste.
                 _map.GlobalVariables[index] = value;
         }
 
-        // metarule: 14 FIRST_RUN (host tracks revisits); 22 IS_LOADGAME = 0;
-        // 49 WEAPON_DAMAGE_TYPE (the misc-10 explosion marker → EXPLOSION, for the
-        // temple-door damage_p_proc); everything else 0.
+        // metarule: 14 FIRST_RUN (host tracks revisits); 16 PARTY_COUNT; 22
+        // IS_LOADGAME = 0; 49 WEAPON_DAMAGE_TYPE (the misc-10 explosion marker →
+        // EXPLOSION, for the temple-door damage_p_proc); everything else 0.
         public int Metarule(int rule, int argument) => rule switch
         {
             14 => _host.IsFirstRun(_map) ? 1 : 0,
+            // METARULE_PARTY_COUNT (16) — _getPartyMemberCount (party_member.cc:900):
+            // slot 0 is the dude (always counted), plus each live, visible, recruited
+            // critter. dcVic gates the join on metarule(16)-1 >= floor(CHA/2)+trait(98).
+            16 => PartyMemberCount(_host.PartyMembers),
             49 => _host.ObjectOf(argument) is { } o
                   && o.Fid == Fid.Build(ObjectType.Misc, 10, 0, 0) ? 6 /* DAMAGE_TYPE_EXPLOSION */ : 0,
             _ => 0,
