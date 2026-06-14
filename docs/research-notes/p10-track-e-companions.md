@@ -187,6 +187,11 @@ runs; these nodes are reachable once the hub options are bound) and resolving
 the **partymbr.msg file id 14** strings (ids 10001-10010 — "wait here", "stay
 close", "follow at medium/long range", etc.) or the follow-option text renders
 blank (soft blocker, p8-track-b.md:114).
+**CORRECTED (#8, verified 2026-06):** the partymbr.msg "soft blocker" was a MYTH.
+`partymbr.msg` does not exist in the game data, "partymbr" is absent from the
+fallout2-ce source, and list 14 = `generic.msg`. The shipped hub uses English
+fallback labels and performs no list-14 lookup, so there is no blank-text risk.
+See the "UNVERIFIED / honest flags" section below for the resolution.
 
 ---
 
@@ -300,6 +305,9 @@ lifecycle, so it does not belong in this fold-in.)
   - Bind the dismiss/rejoin/wait/follow-distance gsay hub options (Node1002 /
     Node800 / Node1007 family for Sulik; Node1002 / Node994 / Node1007 for Vic).
     Resolve **partymbr.msg id 14** (ids 10001-10010) for option text.
+    <!-- CORRECTED (#8): partymbr.msg / list 14 does not exist; hub uses English
+    fallback labels, no message_str(14,…) lookup. See the UNVERIFIED-flags resolution. -->
+
   - **Audit (test, not code):** verify the wait LVAR (Sulik [11], Vic [5]) and
     `GVAR[398]` halt/resume the follow loop across a critter_p_proc tick AND a map
     transition (party LVAR carry). All follow externals are already real — this is
@@ -331,12 +339,25 @@ fold-in (radio's two are explicitly deferred with the radio rescue). This fits
 
 ## UNVERIFIED / honest flags
 
-- **UNVERIFIED: partymbr.msg id 14 string ids (10001-10010) not extracted to the
-  byte here.** The follow-option `message_str(14, 1000N)` calls are confirmed in
-  the disassembly (kcsulik Node1002 0x99e2, Node1007 0xa762/0xa7ba/0xa818/0xa87c),
-  but I did not extract `text\english\dialog\partymbr.msg` (or the script-msg list
-  id 14 mapping) to confirm the exact strings. If those ids render blank in-app,
-  the cause is the unresolved message file, not the dialog logic.
+- **RESOLVED (#8, 2026-06) — the partymbr.msg id-14 premise was WRONG.** Empirically
+  verified against this game data + the fallout2-ce source:
+  - `dotnet run --project tools/DatDump -- extract "text\english\dialog\partymbr.msg"`
+    → "not found in any mounted base" (also not under `text\english\game\`). The file
+    does not exist in the slice.
+  - `grep -rin partymbr reference/fallout2-ce` → ZERO matches. The engine has no
+    `partymbr` symbol or file at all.
+  - `scripts.lst` line 14 = `Generic.int` → message list 14 resolves (via the
+    project's index+1 rule) to `generic.msg`, the generic-dialog file, which carries
+    no 10001-10010 party strings. The engine's party-control window text comes from
+    `gProtoMessageList`/`gMiscMessageList` (proto.msg / misc.msg @ 9000+), not a
+    partymbr file.
+  Conclusion: the `message_str(14, 1000N)` reading was an unconfirmed guess (flagged
+  honest at the time). The engine's real wait/follow/dismiss path is plain
+  `party_add`/`party_remove` from a companion's own `talk_p_proc` reply procedure —
+  no shared partymbr message file. The shipped viewer hub uses English fallback
+  labels and reproduces those exact party side effects, so there is no blank-text
+  risk and no list-14 lookup. Issue #8 ("partymbr.msg list-14 routing") was closed as
+  a documentation correction.
 - **UNVERIFIED: that our party LVAR carry preserves the wait/distance LVARs across
   a map transition for a recruited member.** p7-track-b.md:223 designed party-LVAR
   carry (firstRun semantics must NOT re-init member scripts on revisit), but I did

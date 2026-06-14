@@ -226,9 +226,20 @@ _visitedMaps writer — guard transient + party there since SaveGame bypasses
 LoadMap's ExtractPartyFromMap), M4 companion lifecycle (metarule(16)
 PARTY_COUNT = 1+live-visible-critters; a VIEWER-side control hub —
 wait/follow [PumpCritterProcs skip], dismiss [party_remove + restore saved
-team + clear sid], rejoin [alive-gated] — chosen over the engine's
-per-companion dialog-node + partymbr.msg routing for robustness/reuse; the
-follow loop stays 100% script-side), M5 1:1 trade panel (the loot panel
+team + clear sid], rejoin [alive-gated] — chosen over per-companion dialog
+nodes for robustness/reuse; the engine has NO dedicated wait/follow/dismiss
+UI: recruit/dismiss are plain party_add/party_remove (interpreter_extra.cc
+:3943/3956 → party_member.cc:375/426) called from a companion's own
+talk_p_proc reply procedure (game_dialog.cc:2080 _gdProcessChoice →
+_executeProcedure), and our hub reproduces those exact side effects. The
+"partymbr.msg list-14" claim in the phase-10 research notes was UNVERIFIED
+and is WRONG for this slice — partymbr.msg does not exist in the game data,
+"partymbr" appears nowhere in the fallout2-ce source, and message list 14
+resolves to Generic.int/generic.msg (no party strings); the only dedicated
+party UI is the AI-disposition combat-control window (game_dialog.cc:3354),
+which reads proto.msg/misc.msg and is out of scope. The follow loop stays
+100% script-side. (#8: as-written infeasible — no partymbr artifact exists —
+so closed as a documentation correction.), M5 1:1 trade panel (the loot panel
 pointed at the follower, flat barter-modifier-0 — bypasses priced barter;
 GiveToFollower is the only new transfer; UnequipForTransfer reverses the
 worn-armor bonus before any give/drop). GOTCHA: companions travel OUTSIDE

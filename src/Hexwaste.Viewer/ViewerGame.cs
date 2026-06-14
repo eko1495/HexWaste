@@ -869,7 +869,10 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
                     Pick(CompanionCmd.Follow);
                     Console.WriteLine($"  follow: heartbeatEligible={HeartbeatEligible()}");
                     Pick(CompanionCmd.Dismiss);
-                    Console.WriteLine($"  dismiss: partyCount={Count()} team={m.Team} (orig {originalTeam}) sid={(m.Sid == -1 ? "none" : "bound")}");
+                    // heartbeatEligible drops because the dismissed body stays on the map but
+                    // with Sid=-1 — proving its critter_p_proc no longer runs (the engine's
+                    // party_remove side effect; closes the partymbr "UNVERIFIED" research flag).
+                    Console.WriteLine($"  dismiss: partyCount={Count()} team={m.Team} (orig {originalTeam}) sid={(m.Sid == -1 ? "none" : "bound")} heartbeatEligible={HeartbeatEligible()}");
                     Pick(CompanionCmd.Rejoin);
                     Console.WriteLine($"  rejoin: partyCount={Count()} sid={(m.Sid == -1 ? "none" : "bound")}");
                     break;

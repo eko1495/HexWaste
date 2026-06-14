@@ -553,6 +553,19 @@ options onto the in-party gsay hub + resolve **partymbr.msg id 14** (ids
 10001-10010 "wait here"/"follow at medium range"/etc.) or the option text renders
 blank.
 
+> **CORRECTION (phase-10 implementation / #8, verified 2026-06):** The
+> "partymbr.msg id 14" string source is a MYTH and was never validated.
+> `partymbr.msg` does not exist anywhere in the game data (DatDump:
+> "not found in any mounted base"), the string "partymbr" appears NOWHERE in
+> the fallout2-ce source, and message list 14 resolves via the standard
+> scripts.lst path to `Generic.int`/`generic.msg` (generic dialog — no party
+> strings). The engine has no `partymbr.msg`-routed wait/follow/dismiss layer:
+> recruit/dismiss are plain `party_add`/`party_remove` inside a companion's own
+> `talk_p_proc` reply procedure; the only dedicated party UI is the
+> AI-disposition control window (`game_dialog.cc:3354`), reading proto.msg.
+> The shipped viewer hub uses English fallback labels and reproduces the real
+> `party_add`/`party_remove` side effects — no list-14 lookup is performed.
+
 **The one real follow-loop risk is a TEST, not a feature:** verify the wait LVAR
 (Sulik [11] / Vic [5]) and `GVAR[398]` halt/resume the follow loop across a
 critter_p_proc tick AND a map transition (party LVAR carry, phase-7 M4). A
@@ -677,6 +690,9 @@ under `--rng-seed`). "DEFER if absent" gates are explicit.
   with the spawn +2 gate.
 - **Dismiss/rejoin/wait** dialog-hub binding (Sulik Node800/1002, Vic Node994/1002;
   team 25 for Vic) + resolve partymbr.msg id 14. Zero new externals.
+  <!-- CORRECTED (#8): no partymbr.msg id-14 resolve — that file/list does not
+  exist; the hub uses English fallback labels. See the CORRECTION block above. -->
+
 - **The follow-loop audit fixture** (the one companion risk): wait LVAR + GVAR[398]
   halt/resume across a tick AND a map transition.
 - **Demo/headless:** recruit → "wait here" (stops) → "follow me" (resumes) →
@@ -752,6 +768,11 @@ under `--rng-seed`). "DEFER if absent" gates are explicit.
   are confirmed in the disassembly, but the strings were not extracted to the byte.
   If they render blank in-app, the cause is the unresolved message file, not the
   dialog logic.
+  **CORRECTED (#8):** resolved — `partymbr.msg` does not exist in the game data and
+  list 14 = `generic.msg`, so the byte was never extractable. Whatever the
+  disassembled companion scripts pass to `message_str`, the shipped viewer hub does
+  NOT route option text through list 14; it uses English fallback labels. The myth
+  is retired (no blank-text risk, because no list-14 lookup happens).
 - **Party LVAR carry for a WAITING companion across a map transition** — the
   follow externals are all real, but a save/transition probe of a waiting
   companion's wait/distance LVAR was not run. This is the M4 audit fixture and the
