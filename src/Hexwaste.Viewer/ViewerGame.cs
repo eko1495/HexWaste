@@ -817,9 +817,7 @@ public sealed class ViewerGame : Game, Formats.Combat.ICombatHost
                     }
 
                     int Count() => Formats.Int.ScriptHost.PartyMemberCount(_scriptHost.PartyMembers);
-                    int HeartbeatEligible() => _solidObjects[_elevation].Count(o =>
-                        Fid.Type(o.Fid) is ObjectType.Critter && o != _dude?.Dude
-                        && !o.IsDead && o.Sid != -1 && !_waitingCompanions.Contains(o));
+                    int HeartbeatEligible() => _solidObjects[_elevation].Count(IsHeartbeatEligible);
                     void Pick(CompanionCmd cmd)
                     {
                         OpenCompanionHub(m);
@@ -2742,6 +2740,13 @@ public sealed class ViewerGame : Game, Formats.Combat.ICombatHost
         RebuildBlockedTiles(_dude?.Dude);
     }
 
+    /// <summary>Does this object get a critter_p_proc this tick: a live, scripted,
+    /// non-dude critter that isn't a "wait here" companion (phase-10 M4). The single
+    /// source of truth for both the heartbeat pump and the --companion diagnostic.</summary>
+    private bool IsHeartbeatEligible(MapObject o) =>
+        Fid.Type(o.Fid) is ObjectType.Critter && o != _dude?.Dude
+        && !o.IsDead && o.Sid != -1 && !_waitingCompanions.Contains(o);
+
     /// <summary>One critter_p_proc per game tick, round-robin — the flattened
     /// _script_chk_critters ticker (scripts.cc:705), gated like the engine's
     /// !dialog && !combat && !movie check.</summary>
@@ -2758,9 +2763,7 @@ public sealed class ViewerGame : Game, Formats.Combat.ICombatHost
 
         // A "wait here" companion is skipped, so its follow critter_p_proc never runs
         // and it holds position until told to follow again (phase-10 M4).
-        List<MapObject> scripted = [.. _solidObjects[_elevation].Where(o =>
-            Fid.Type(o.Fid) is ObjectType.Critter && o != _dude?.Dude
-            && !o.IsDead && o.Sid != -1 && !_waitingCompanions.Contains(o))];
+        List<MapObject> scripted = [.. _solidObjects[_elevation].Where(IsHeartbeatEligible)];
         if (scripted.Count == 0)
             return;
 
@@ -4501,7 +4504,7 @@ public sealed class ViewerGame : Game, Formats.Combat.ICombatHost
         else // CreateTags
         {
             Row(center.X - 200, center.Y - 130, $"TAG 3 SKILLS — {_createTags.Count}/3 chosen", gold);
-            int cols = 2, perCol = 9;
+            int perCol = 9;
             for (int i = 0; i < Formats.Combat.SkillSet.SkillCount; i++)
             {
                 bool sel = i == _skillAllocIndex;
@@ -4784,7 +4787,7 @@ public sealed class ViewerGame : Game, Formats.Combat.ICombatHost
         {
             case MenuState.Title:
                 MoveMenu(k, 2);
-                if (Activated(k))
+                if (MenuActivated(k))
                 {
                     if (_menuIndex == 0) { _menu = MenuState.CharacterPick; _menuIndex = 0; }
                     else Exit();
@@ -4796,7 +4799,7 @@ public sealed class ViewerGame : Game, Formats.Combat.ICombatHost
             {
                 int n = _premadeGcds.Count + 1; // index 0 = "Create your own"
                 MoveMenu(k, n);
-                if (Activated(k))
+                if (MenuActivated(k))
                 {
                     if (_menuIndex == 0) EnterCreation();
                     else PickPremade(_menuIndex - 1);
@@ -4842,7 +4845,7 @@ public sealed class ViewerGame : Game, Formats.Combat.ICombatHost
             if (IsKeyPressed(k, Keys.D1 + i)) _menuIndex = i;
     }
 
-    private bool Activated(KeyboardState k) =>
+    private bool MenuActivated(KeyboardState k) =>
         IsKeyPressed(k, Keys.Enter) || Enumerable.Range(0, 9).Any(i => IsKeyPressed(k, Keys.D1 + i));
 
     private void PickPremade(int idx)
