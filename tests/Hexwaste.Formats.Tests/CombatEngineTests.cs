@@ -469,7 +469,7 @@ public class CombatEngineTests
         public void PlaceCritter(MapObject critter, int tile) => critter.HexTile = tile;
         public void StopDude() { }
         public void ClearAnimation(MapObject critter) => Animating.Remove(critter);
-        public void OnAttackStarted(MapObject attacker, ProtoInfo? weaponProto) => Animating.Add(attacker);
+        public void OnAttackStarted(MapObject attacker, MapObject target, ProtoInfo? weaponProto) => Animating.Add(attacker);
         public void OnThrowStarted(MapObject thrower, int targetTile, ProtoInfo weaponProto) => Animating.Add(thrower);
         public void RemoveFromHand(MapObject thrower, MapObject item) { }
         public readonly List<(int Pid, int Tile)> Dropped = [];

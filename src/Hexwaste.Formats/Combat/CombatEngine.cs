@@ -176,7 +176,7 @@ public sealed class CombatEngine
         _host.Transcript($"attack {_host.ObjectName(target)}@{target.HexTile}"
             + $"{(weaponProto is null ? "" : $" [{_host.ObjectNameByPid(weaponProto.Pid)}{(isGun ? $" {weaponItem!.AmmoQuantity}rnd d{distance}" : "")}]")}: chance={chance}% hit={hit} damage={damage}{CritTag(critFlags)}");
 
-        _host.OnAttackStarted(dude, weaponProto);
+        _host.OnAttackStarted(dude, target, weaponProto);
 
         if (_phase == CombatPhase.Idle)
             BeginCombat(target);
@@ -1083,7 +1083,7 @@ public sealed class CombatEngine
             _pendingAttack = new PendingAttack(ally, target, chance, hit, damage, critFlags, CanKnockback: !isGun);
             _host.Transcript($"ally-attack {_host.ObjectName(ally)} -> {_host.ObjectName(target)}@{target.HexTile}"
                 + $"{(weaponProto is null ? "" : $" [{_host.ObjectNameByPid(weaponProto.Pid)}]")}: chance={chance}% hit={hit} damage={damage}{CritTag(critFlags)}");
-            _host.OnAttackStarted(ally, weaponProto);
+            _host.OnAttackStarted(ally, target, weaponProto);
             return true;
         }
 
@@ -1119,7 +1119,7 @@ public sealed class CombatEngine
         _host.Transcript($"enemy-attack {_host.ObjectName(enemy)}@{enemy.HexTile}"
             + $"{(weaponProto is null ? "" : $" [{_host.ObjectNameByPid(weaponProto.Pid)}{(isGun ? $" d{distance}" : "")}]")}: chance={chance}% hit={hit} damage={damage}{CritTag(critFlags)}");
 
-        _host.OnAttackStarted(enemy, weaponProto);
+        _host.OnAttackStarted(enemy, defenderObj, weaponProto);
     }
 
     // ====================================================================

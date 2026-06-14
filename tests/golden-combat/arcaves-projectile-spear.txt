@@ -1,0 +1,6 @@
+dude sheet: None (gender 0), SPECIAL 5/5/5/5/5/5/5, tags []
+animating 2 multi-frame scenery/misc object(s)
+equip: Spear readied
+throw Spear -> @20529: chance=21% hit=False damage=0
+joins: Radscorpion@21729 (team 4)
+projectile: launched=1 fid=0x0500000D dist=5 dur=120

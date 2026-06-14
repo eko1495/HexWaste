@@ -153,6 +153,11 @@ for (int i = 0; i < args.Length; i++)
         case "--rng-seed" when i + 1 < args.Length:
             rngSeed = int.Parse(args[++i]);
             break;
+        case "--projectile" when i + 1 < args.Length:
+            // --projectile <hex>: throw a spear from range and report the launched
+            // flying projectile (phase-10 #11).
+            actions.Add(new ViewerGame.StartupAction.ProjectileCheck(int.Parse(args[++i])));
+            break;
         case "--difficulty" when i + 1 < args.Length:
             difficulty = args[++i].ToLowerInvariant() switch
             {

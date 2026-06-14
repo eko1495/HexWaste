@@ -80,8 +80,9 @@ public interface ICombatHost
     void ClearAnimation(MapObject critter);
 
     // --- Attack choreography ---------------------------------------------
-    /// <summary>Muzzle/punch FRM + weapon sfx (PlayWeaponSfx + StartAttackAnimation). :2247-2248</summary>
-    void OnAttackStarted(MapObject attacker, ProtoInfo? weaponProto);
+    /// <summary>Muzzle/punch FRM + weapon sfx (PlayWeaponSfx + StartAttackAnimation),
+    /// and a flying projectile attacker→target for ranged/thrown shots (phase-10 #11).</summary>
+    void OnAttackStarted(MapObject attacker, MapObject target, ProtoInfo? weaponProto);
     /// <summary>Hit-react FRM (anim 14) on a surviving target. :2494-2498</summary>
     void OnTargetHit(MapObject target);
 

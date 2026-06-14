@@ -245,6 +245,7 @@ public sealed class ViewerGame : Game, Formats.Combat.ICombatHost
         public sealed record Attack(int Hex) : StartupAction;
         public sealed record Explode(int Hex) : StartupAction;
         public sealed record Throw(int Hex) : StartupAction;
+        public sealed record ProjectileCheck(int Hex) : StartupAction;
         public sealed record LoadTransient(string Map) : StartupAction;
         public sealed record EncounterWalk(int X0, int Y0, int X1, int Y1, int Steps) : StartupAction;
         public sealed record EncounterSpawnAt(string Map, string Group, int Count) : StartupAction;
@@ -651,6 +652,29 @@ public sealed class ViewerGame : Game, Formats.Combat.ICombatHost
                     string outcome = _currentMapTransient ? "encounter" : "arrived";
                     Console.WriteLine($"travel-from: ({tx},{ty})->area{ai} {outcome} map={_currentMapName}"
                         + $" worldPos=({_worldPosX},{_worldPosY}) spawned={spawnedCount}");
+                    break;
+                }
+                case StartupAction.ProjectileCheck(var projHex):
+                {
+                    // Phase-10 #11: ready a spear, stand 5 hexes off, throw — and report
+                    // the launched projectile (deterministic; the screen-lerp is visual).
+                    if (_dude is null)
+                        break;
+                    if (RebuildObject(7, 1) is { } spear)
+                    {
+                        AddToDudeInventory(spear);
+                        int idx = _dudeInventory.FindIndex(i => i.Pid == 7);
+                        if (idx >= 0)
+                            UseInventoryItem(idx); // ready it in hand
+                    }
+                    _dude.Dude.HexTile = Formats.Hex.HexGrid.TileInDirection(projHex, 0, 5);
+                    _projectiles.Clear();
+                    _combat.TryThrow(projHex);
+                    Projectile? p = _projectiles.FirstOrDefault();
+                    Console.WriteLine($"projectile: launched={_projectiles.Count}"
+                        + $" fid={(p is null ? "none" : $"0x{p.Fid:X8}")}"
+                        + $" dist={(p is null ? 0 : Formats.Hex.HexGrid.Distance(p.FromTile, p.ToTile))} dur={p?.DurationMs ?? 0}");
+                    _combat.Reset();
                     break;
                 }
                 case StartupAction.LoadTransient(var tmap):
@@ -1143,6 +1167,7 @@ public sealed class ViewerGame : Game, Formats.Combat.ICombatHost
         _openDoors.Clear();
         _npcWalkers.Clear();
         _homeTiles.Clear();
+        _projectiles.Clear();
         _fidgetTimerMs = 0;
         _wanderTimerMs = 0;
 
@@ -1590,6 +1615,7 @@ public sealed class ViewerGame : Game, Formats.Combat.ICombatHost
         }
 
         _animator.Update(gameTime.ElapsedGameTime.TotalMilliseconds);
+        AdvanceProjectiles(gameTime.ElapsedGameTime.TotalMilliseconds);
         _combat.Step();
         _dude?.Update(gameTime.ElapsedGameTime.TotalMilliseconds);
         UpdateAmbientLife(gameTime.ElapsedGameTime.TotalMilliseconds);
@@ -3047,6 +3073,7 @@ public sealed class ViewerGame : Game, Formats.Combat.ICombatHost
         if (_vfs.Exists(_artIndex.GetFrmPath(fid)))
             _animator.PlayActionOnce(thrower, fid);
         PlayWeaponSfx(weaponProto);
+        LaunchProjectile(thrower.HexTile, targetTile, weaponProto); // the thrown item flies (phase-10 #11)
     }
 
     public void RemoveFromHand(MapObject thrower, MapObject item)
@@ -3121,10 +3148,98 @@ public sealed class ViewerGame : Game, Formats.Combat.ICombatHost
         }
     }
 
-    public void OnAttackStarted(MapObject attacker, ProtoInfo? weaponProto)
+    public void OnAttackStarted(MapObject attacker, MapObject target, ProtoInfo? weaponProto)
     {
         PlayWeaponSfx(weaponProto);
         StartAttackAnimation(attacker, weaponProto);
+        LaunchProjectile(attacker, target, weaponProto);
+    }
+
+    // A projectile sprite flying attacker→target over its travel time — a purely
+    // visual overlay (phase-10 #11): it doesn't gate combat or emit transcript, so
+    // headless runs + the golden harnesses are unaffected.
+    private sealed class Projectile
+    {
+        public required int Fid;
+        public required int Rotation;
+        public required int FromTile;
+        public required int ToTile;
+        public required double DurationMs;
+        public double ElapsedMs;
+    }
+    private readonly List<Projectile> _projectiles = [];
+
+    private void LaunchProjectile(MapObject attacker, MapObject target, ProtoInfo? weaponProto) =>
+        LaunchProjectile(attacker.HexTile, target.HexTile, weaponProto);
+
+    /// <summary>Send a projectile sprite from one tile to another for a ranged or thrown
+    /// shot (melee — adjacent — gets none). Art: the weapon's ProjectilePid, else the
+    /// weapon item itself (thrown). Resolves nothing → no projectile (phase-10 #11).</summary>
+    private void LaunchProjectile(int fromTile, int toTile, ProtoInfo? weaponProto)
+    {
+        if (weaponProto?.Weapon is not { } weapon)
+            return; // unarmed/melee-proto: no projectile
+        int distance = Formats.Hex.HexGrid.Distance(fromTile, toTile);
+        if (distance <= 1)
+            return; // adjacent = melee swing, no flight
+
+        int projectileFid;
+        try
+        {
+            projectileFid = weapon.ProjectilePid > 0 ? _protos.Get(weapon.ProjectilePid).Fid : weaponProto.Fid;
+            _ = _frmCache.GetFrm(projectileFid); // ensure the art loads, else skip
+        }
+        catch (Exception ex) when (ex is FileNotFoundException or InvalidDataException or NotSupportedException)
+        {
+            return;
+        }
+
+        _projectiles.Add(new Projectile
+        {
+            Fid = projectileFid,
+            Rotation = Formats.Hex.HexGrid.RotationTo(fromTile, toTile),
+            FromTile = fromTile,
+            ToTile = toTile,
+            DurationMs = Math.Max(120, distance * 24), // ~24 ms per hex of flight
+        });
+    }
+
+    private void AdvanceProjectiles(double elapsedMs)
+    {
+        if (_projectiles.Count == 0)
+            return;
+        for (int i = _projectiles.Count - 1; i >= 0; i--)
+        {
+            _projectiles[i].ElapsedMs += elapsedMs;
+            if (_projectiles[i].ElapsedMs >= _projectiles[i].DurationMs)
+                _projectiles.RemoveAt(i);
+        }
+    }
+
+    /// <summary>Draw each in-flight projectile at its lerped screen position between the
+    /// from/to tile centers (phase-10 #11).</summary>
+    private void DrawProjectiles()
+    {
+        foreach (Projectile p in _projectiles)
+        {
+            Formats.Frm.FrmFrame frame;
+            Texture2D texture;
+            try
+            {
+                frame = _frmCache.GetFrm(p.Fid).GetFrame(0, p.Rotation);
+                texture = _frmCache.GetTexture(p.Fid, 0, p.Rotation);
+            }
+            catch (Exception ex) when (ex is FileNotFoundException or InvalidDataException or NotSupportedException)
+            {
+                continue;
+            }
+            (int fx, int fy) = _camera.HexToScreen(p.FromTile);
+            (int tx, int ty) = _camera.HexToScreen(p.ToTile);
+            float t = (float)Math.Clamp(p.ElapsedMs / p.DurationMs, 0, 1);
+            float x = fx + (tx - fx) * t - frame.Width / 2f;
+            float y = fy + (ty - fy) * t - frame.Height / 2f;
+            _spriteBatch.Draw(texture, new Vector2(x, y), LightTint(p.ToTile));
+        }
     }
 
     /// <summary>Hit-react FRM (anim 14) on a surviving, non-dude target.</summary>
@@ -3786,6 +3901,7 @@ public sealed class ViewerGame : Game, Formats.Combat.ICombatHost
         {
             DrawObjects(_flatObjects[_elevation]);
             DrawObjects(_solidObjects[_elevation]);
+            DrawProjectiles();
             if (_roofsVisible)
                 DrawRoofs();
             DrawTextOverlay();
