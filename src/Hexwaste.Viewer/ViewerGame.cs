@@ -179,6 +179,10 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
     private int _stepCounter;
     private WorldmapScreen? _worldmapScreen;
     private bool _worldmapOpen;
+    private InterfaceBar? _interfaceBar;
+    /// <summary>The bar's screen footprint this frame (0-height when hidden) so the
+    /// message log + HUD text lift above it instead of colliding (P11 M0).</summary>
+    private int _hudBarHeight;
     private WorldArea? _hoveredArea;
 
     /// <summary>The dude's last worldmap position + area, persisted across saves
@@ -460,6 +464,7 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
         LoadMap(_mapName, spawnAt: null);
 
         _worldmapScreen = new WorldmapScreen(GraphicsDevice, _vfs, _palette, _cities, _fontRenderer);
+        _interfaceBar = new InterfaceBar(GraphicsDevice, _vfs, _palette); // P11 HUD bar
         if (StartInMenu)
         {
             _menu = MenuState.Title;
@@ -3793,6 +3798,7 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
             DrawProjectiles();
             if (_roofsVisible)
                 DrawRoofs();
+            DrawInterfaceBar();
             DrawTextOverlay();
             DrawDialogPanel();
             DrawItemPanels();
@@ -4441,6 +4447,23 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
         return pixel;
     }
 
+    /// <summary>The authentic bottom HUD bar (P11): the iface.frm panel pinned
+    /// bottom-centre at native scale, with live readouts composed on top. Sets
+    /// <see cref="_hudBarHeight"/> so the message log + HUD text lift above it.</summary>
+    private void DrawInterfaceBar()
+    {
+        if (_interfaceBar is not { Loaded: true } bar || _worldmapOpen)
+        {
+            _hudBarHeight = 0;
+            return;
+        }
+
+        Rectangle viewport = GraphicsDevice.Viewport.Bounds;
+        _hudBarHeight = InterfaceBar.Height;
+        bar.Draw(_spriteBatch, viewport);
+        // M1 (readouts) + M2 (weapon slot) compose here.
+    }
+
     /// <summary>Hover name near the cursor + the message log, bottom-left, in Fallout green.</summary>
     private void DrawTextOverlay()
     {
@@ -4466,7 +4489,7 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
             if (_combat.Phase != Formats.Combat.CombatPhase.Idle)
                 hud += $"  |  round {_combat.Round}: "
                     + (_combat.Phase == Formats.Combat.CombatPhase.PlayerTurn ? "your turn (F attack, Space end turn)" : "enemy turn");
-            int hudY = GraphicsDevice.Viewport.Height - 8 - (_messageLog.Count + 1) * _fontRenderer.LineHeight - 4;
+            int hudY = GraphicsDevice.Viewport.Height - _hudBarHeight - 8 - (_messageLog.Count + 1) * _fontRenderer.LineHeight - 4;
             _fontRenderer.Draw(_spriteBatch, hud, new Vector2(8, hudY), new Color(252, 252, 84));
         }
 
@@ -4556,7 +4579,7 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
             }
         }
 
-        int y = GraphicsDevice.Viewport.Height - 8 - _messageLog.Count * _fontRenderer.LineHeight;
+        int y = GraphicsDevice.Viewport.Height - _hudBarHeight - 8 - _messageLog.Count * _fontRenderer.LineHeight;
         foreach (string message in _messageLog)
         {
             _fontRenderer.Draw(_spriteBatch, message, new Vector2(8, y), green);
@@ -5404,6 +5427,7 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
     {
         _audio?.Dispose();
         _worldmapScreen?.Dispose();
+        _interfaceBar?.Dispose();
         _fontRenderer?.Dispose();
         _frmCache.Dispose();
         _vfs.Dispose();
