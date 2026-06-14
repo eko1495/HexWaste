@@ -40,7 +40,7 @@
 
 ### 4. Ship-first audit (track D)
 
-- Release pipeline **proven**: `scripts/release.sh` ran end-to-end (exit 0), artifacts carry LICENSE/NOTICE/README, exec bit survives tar, zero game assets (grepped). README quick-start + controls verified against code. Hygiene caught and FIXED in-tree: tracked `__pycache__/*.pyc`, hardcoded `/home/eko` path in int_analyze.py. Remaining cosmetic: `/home/eko`//tmp paths inside docs/research-notes (publish-audit item per RELEASING.md), .pdb files in artifacts.
+- Release pipeline **proven**: `scripts/release.sh` ran end-to-end (exit 0), artifacts carry LICENSE/NOTICE/README, exec bit survives tar, zero game assets (grepped). README quick-start + controls verified against code. Hygiene caught and FIXED in-tree: tracked `__pycache__/*.pyc`, a hardcoded absolute path in int_analyze.py. Remaining cosmetic: machine-local (`$HOME`/`/tmp`) paths inside docs/research-notes (publish-audit item per RELEASING.md), .pdb files in artifacts.
 - Missing for a stranger: README **screenshots** (common, tolerated practice — devilutionX ships them; never a takedown trigger) + a GIF, a CHANGELOG, a v0.6.0 tag, and a front door (main menu S/M, death screen S, premade-gcd picker S — GcdFile already parses everything).
 - Web (mid-2026): fallout2-ce alive at v1.3/SUL unchanged, #428 closed unanswered/#476 dormant; **no DMCA/C&D against any Fallout engine re-implementation 2025–26** (MS/Bethesda demonstrably fan-friendly — FOLON hires); MonoGame 3.8.5 still preview → **keep the 3.8.4.1 pin**; .NET 10 LTS fine to Nov 2028.
 - First-impression ranking: main menu > death screen > gcd picker > SPECIAL screen (M, defer) > auto-spent skill points (invisible, defer) > perks (scope creep, **skip**).

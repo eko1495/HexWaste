@@ -3,7 +3,7 @@
 Scope: the **spine** of random worldmap encounters — every `worldmap.txt`
 section's exact grammar (parsed from the real 4047-line file in the repo) and
 the fallout2-ce roll/pick/condition chain (cited `src/worldmap.cc:LINE`). All
-table values are quoted from `/home/eko/dev/FPOC/worldmap.txt`; all engine claims
+table values are quoted from the local `worldmap.txt`; all engine claims
 cite `reference/fallout2-ce/src/<file>.cc:LINE`; the EC*.int external census was
 run against the **real extracted scripts** (DatDump + the int_analyze
 disassembler), not from memory. Where a detail could not be confirmed it is
