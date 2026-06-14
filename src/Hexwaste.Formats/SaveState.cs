@@ -97,8 +97,11 @@ public sealed class SaveState
 
     /// <summary>A recruited companion traveling with the dude (additive V2
     /// field; absent in older saves → empty roster).</summary>
+    /// <summary>Waiting = the "wait here" flag (P10-M5 review fix; default false);
+    /// OriginalTeam = the pre-recruit team to restore on dismiss (-1 = none, derive
+    /// from current). Both additive within V2 — old saves default.</summary>
     public sealed record PartyMemberState(int Pid, int ScriptListIndex, int Hp, int Team,
-        int AiPacket, List<SavedItem> Inventory);
+        int AiPacket, List<SavedItem> Inventory, bool Waiting = false, int OriginalTeam = -1);
 
     public sealed class MapDelta
     {

@@ -1,0 +1,6 @@
+party: Radscorpion joined (script 19)
+companion-persist: pre-save waiting=true origTeam=4
+companion-persist: reloaded inParty=True waiting=True
+party: Radscorpion left
+companion: Radscorpion dismissed team=4 count=1
+companion-persist: after-dismiss team=4 (orig 4, restored=True)

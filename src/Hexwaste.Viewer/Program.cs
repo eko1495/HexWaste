@@ -182,6 +182,11 @@ for (int i = 0; i < args.Length; i++)
             actions.Add(new ViewerGame.StartupAction.TradeWith(int.Parse(args[i + 1]), int.Parse(args[i + 2])));
             i += 2;
             break;
+        case "--companion-persist" when i + 1 < args.Length:
+            // --companion-persist <hex>: recruit + wait, save/load round-trip, assert
+            // the wait flag + original team survived (phase-10 #2).
+            actions.Add(new ViewerGame.StartupAction.CompanionPersist(int.Parse(args[++i])));
+            break;
         case "--recruit" when i + 1 < args.Length:
             actions.Add(new ViewerGame.StartupAction.Recruit(int.Parse(args[++i])));
             break;

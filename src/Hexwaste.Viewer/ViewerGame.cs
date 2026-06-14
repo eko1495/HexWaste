@@ -247,6 +247,7 @@ public sealed class ViewerGame : Game, Formats.Combat.ICombatHost
         public sealed record Recruit(int Hex) : StartupAction;
         public sealed record CompanionLifecycle(int Hex) : StartupAction;
         public sealed record TradeWith(int Hex, int Pid) : StartupAction;
+        public sealed record CompanionPersist(int Hex) : StartupAction;
         public sealed record Buy(int Pid) : StartupAction;
         public sealed record Sell(int Pid) : StartupAction;
         public sealed record EndBarter : StartupAction;
@@ -864,6 +865,40 @@ public sealed class ViewerGame : Game, Formats.Combat.ICombatHost
                     Console.WriteLine($"trade: took it back -> yours={_dudeInventory.Count} theirs={tp.Inventory.Count} (dudeHas={back is not null} stack={back?.StackCount} flags=0x{back?.Flags ?? 0:X})");
                     Console.WriteLine($"trade: caps {capsBefore}->{DudeCaps()} (flat, unchanged={capsBefore == DudeCaps()})"
                         + $" backToStart={_dudeInventory.Count == dudeBefore && tp.Inventory.Count == theirsBefore && back?.StackCount == 1 && (back?.Flags ?? 0) == 0}");
+                    break;
+                }
+                case StartupAction.CompanionPersist(var persistHex):
+                {
+                    MapObject? m = _solidObjects[_elevation].FirstOrDefault(o =>
+                        o.HexTile == persistHex && Fid.Type(o.Fid) is ObjectType.Critter && !o.IsDead);
+                    if (m is null || _scriptHost is null)
+                    {
+                        Console.Error.WriteLine($"companion-persist: no critter at {persistHex}");
+                        break;
+                    }
+                    int origTeam = m.Team;
+                    _scriptHost.PartyMembers.Add(m);
+                    OnPartyChanged(m, joined: true);
+                    _waitingCompanions.Add(m); // "wait here"
+                    Console.WriteLine($"companion-persist: pre-save waiting=true origTeam={origTeam}");
+
+                    // Round-trip through save/load in-process via a temp slot.
+                    string realPath = SavePath;
+                    SavePath = Path.Combine(Path.GetTempPath(), "hexwaste-persist-test.json");
+                    SaveGame();
+                    LoadGame();
+                    if (File.Exists(SavePath))
+                        File.Delete(SavePath);
+                    SavePath = realPath;
+
+                    MapObject? r = _scriptHost.PartyMembers.FirstOrDefault(p => p.Pid == m.Pid);
+                    bool waiting = r is not null && _waitingCompanions.Contains(r);
+                    Console.WriteLine($"companion-persist: reloaded inParty={r is not null} waiting={waiting}");
+                    if (r is not null)
+                    {
+                        DismissCompanion(r);
+                        Console.WriteLine($"companion-persist: after-dismiss team={r.Team} (orig {origTeam}, restored={r.Team == origTeam})");
+                    }
                     break;
                 }
                 case StartupAction.UseOn(var usePid2, var useHex2):
@@ -5172,7 +5207,9 @@ public sealed class ViewerGame : Game, Formats.Combat.ICombatHost
                 m.Pid, _partyScriptIndex.GetValueOrDefault(m, -1), m.CurrentHp, m.Team, m.AiPacket,
                 m.Inventory.Select(i => new SaveState.SavedItem(i.Pid, Math.Max(i.StackCount, 1),
                     i.Flags & (MapObject.FlagInLeftHand | MapObject.FlagInRightHand | MapObject.FlagWorn),
-                    i.AmmoQuantity, i.AmmoTypePid)).ToList()))],
+                    i.AmmoQuantity, i.AmmoTypePid)).ToList(),
+                Waiting: _waitingCompanions.Contains(m),
+                OriginalTeam: _originalTeam.GetValueOrDefault(m, m.Team)))],
             WorldPosX = _worldPosX,
             WorldPosY = _worldPosY,
             CurrentAreaId = _currentAreaId,
@@ -5341,6 +5378,12 @@ public sealed class ViewerGame : Game, Formats.Combat.ICombatHost
                 _scriptHost.PartyMembers.Add(member);
                 if (saved.ScriptListIndex >= 0)
                     _partyScriptIndex[member] = saved.ScriptListIndex;
+                // Restore the companion control state (phase-10 #2): the "wait here"
+                // flag and the pre-recruit team so a later dismiss restores it (not 0).
+                if (saved.Waiting)
+                    _waitingCompanions.Add(member);
+                if (saved.OriginalTeam >= 0)
+                    _originalTeam[member] = saved.OriginalTeam;
             }
             InjectPartyMembers();
         }

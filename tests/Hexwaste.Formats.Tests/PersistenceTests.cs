@@ -82,6 +82,27 @@ public class SaveStateRoundTripTests
     }
 
     [Fact]
+    public void PartyMemberWaitAndOriginalTeamRoundTrip()
+    {
+        var state = new SaveState
+        {
+            Version = SaveState.CurrentVersion,
+            Party = { new SaveState.PartyMemberState(0x1000005, 18, 30, 0, -1, [], Waiting: true, OriginalTeam: 4) },
+        };
+
+        SaveState.PartyMemberState m = Assert.Single(SaveState.FromJson(state.ToJson())!.Party);
+        Assert.True(m.Waiting);
+        Assert.Equal(4, m.OriginalTeam);
+
+        // Additive within V2: a pre-#2 member (no Waiting/OriginalTeam keys) defaults.
+        SaveState legacy = SaveState.FromJson(
+            """{"Version":2,"Party":[{"Pid":1,"ScriptListIndex":-1,"Hp":10,"Team":0,"AiPacket":0,"Inventory":[]}]}""")!;
+        SaveState.PartyMemberState lm = Assert.Single(legacy.Party);
+        Assert.False(lm.Waiting);
+        Assert.Equal(-1, lm.OriginalTeam);
+    }
+
+    [Fact]
     public void WorldmapFieldsAreAdditiveWithinV2()
     {
         // Additive within V2 (no version bump): a save written before P10-M2 has
