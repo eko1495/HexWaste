@@ -17,7 +17,11 @@ filing an issue.
   trees), examine, locks/lockpick, use / use-on-object, pickup, timers, spatial
   traps, the critter heartbeat, ~70 real engine externals.
 - **Simulation**: A* movement, mouse picking, doors/stairs/exit grids, worldmap
-  click-to-travel, ambient NPC life, sound (music/sfx/footsteps/combat).
+  click-to-travel with random encounters (`worldmap.txt` tables → transient
+  encounter maps, groups spawned in formation), ambient NPC life, sound
+  (music/sfx/footsteps/combat).
+- **Companions**: recruit, a wait/follow/dismiss/rejoin control hub, and a flat
+  1:1 inventory trade panel.
 - **Gameplay**: turn-based melee + gun combat with the engine's depth — to-hit /
   line-of-fire / ammo+reload, AI behaviour packets (close-or-flee), critical hits
   + aimed called shots, knockback + persisting knockdown, area explosions, and
@@ -30,12 +34,11 @@ filing an issue.
 
 - **Burst fire** — single-shot (and aimed/thrown) only; no burst-capable weapon
   reaches the player in the shippable slice (see `docs/phase9-research-report.md`).
-- **Random worldmap encounters** — designed; in progress (phase 10).
 - **Most quest chains** — the opening hour (Arroyo → Temple → Klamath/Den) is
-  the target; deeper quests, reputation/karma badges, and the slave-run path
-  are not wired.
-- **Full companion management** — recruit/follow/fight/dismiss work; companion
-  inventory trading and level-up proto swaps do not.
+  the target; deeper quests (incl. Vic's radio rescue), reputation/karma badges,
+  and the slave-run path are not wired.
+- **Companion depth** — recruit/follow/fight/dismiss/rejoin/wait and 1:1 trade
+  work (phase 10); level-up proto swaps and per-companion quest banter do not.
 - **Perks, traits, skill points beyond the gated skills**, the full character
   editor, and worldmap car travel.
 - **Anything needing assets we can't ship** — Hexwaste requires *your own* legal

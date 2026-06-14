@@ -65,7 +65,12 @@ Prebuilt self-contained builds (Linux x64 / Windows x64) are produced by
   and stat-gated dialog runs the right branches. Rest (Z) heals over time.
 - **Barter**: real shopkeeper trade (Tubby's stock box and all) at the
   engine's price formula.
-- **Worldmap**: click-to-travel between areas (`maps.txt`/`city.txt`).
+- **Worldmap**: click-to-travel between areas (`maps.txt`/`city.txt`); the
+  wasteland bites — travel rolls random encounters (`worldmap.txt` tables) and
+  drops you onto a transient encounter map with the group spawned in formation
+  (rats, scorpions, war parties, slavers). Walk off the edge to head back.
+- **Companions**: recruit, then a control hub (talk to them) — wait here /
+  follow / trade / dismiss / rejoin; a 1:1 flat item trade to gear them up.
 
 ## Controls
 

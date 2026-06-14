@@ -206,6 +206,38 @@ burst weapons in the shippable slice), random encounters, Vic's rescue +
 companion management, the projectile tween + recoverable persistence +
 the verified door beat.
 
+Phase 10 (DONE, per docs/phase10-research-report.md — "The Wasteland
+Bites Back"): M0 persistence pre-stage (the net: MapList saved=No /
+random_start_point parse + IsTransient; the 3-clause transient guards as
+LoadMap plumbing — no behavior change yet), M1 WorldmapFile parser +
+wmRndEncounterOccurred/Pick roll chain (Δ3 gate, daypart freq, weighted
+pick, AND-only If conditions; --encounter-walk demo), M2 save+counters
+(additive-V2 WorldPosX/Y/CurrentAreaId + SPARSE EncounterCounters keyed by
+table; F9 must null _worldmap so a live-consumed one-shot doesn't leak
+into a save that left it pristine), M3 transient-map encounter spawn
+(EncounterSpawner.Plan = the pure wmSetupCritterObjs port — formations
+surrounding/line/wedge/cone/huddle, ratio/single, Dead corpse, items,
+placed-tile dedup, 25-retry A*-reachable gate; SURROUNDING distance is the
+PER-MEMBER field — group-level Distance: is dead data in the engine;
+spawned after map_enter so the critter_p_proc heartbeat aggros AMBUSH for
+free; live worldmap travel rolls along the Bresenham path → loads the
+encounter map, re-click resumes; GOTCHA: CaptureMapDelta is the single
+_visitedMaps writer — guard transient + party there since SaveGame bypasses
+LoadMap's ExtractPartyFromMap), M4 companion lifecycle (metarule(16)
+PARTY_COUNT = 1+live-visible-critters; a VIEWER-side control hub —
+wait/follow [PumpCritterProcs skip], dismiss [party_remove + restore saved
+team + clear sid], rejoin [alive-gated] — chosen over the engine's
+per-companion dialog-node + partymbr.msg routing for robustness/reuse; the
+follow loop stays 100% script-side), M5 1:1 trade panel (the loot panel
+pointed at the follower, flat barter-modifier-0 — bypasses priced barter;
+GiveToFollower is the only new transfer; UnequipForTransfer reverses the
+worn-armor bonus before any give/drop). GOTCHA: companions travel OUTSIDE
+map deltas — exclude PartyMembers from EVERY CaptureMapDelta loop (mark
+in-place recruits Taken) or an F5 duplicates them on load. Documented v1
+cuts: wait/dismiss state is viewer-side not saved; per-member encounter
+If()/distance overrides, X FIGHTING Y combat-lock, Vic's radio quest, the
+projectile screen-tween.
+
 After each milestone: run tests, run the app if possible, update README progress checklist, conventional commit.
 
 ## Critical gotchas

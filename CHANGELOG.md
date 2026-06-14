@@ -1,5 +1,28 @@
 # Changelog
 
+## v0.10.0 — 2026-06-14
+
+The wasteland bites back — random encounters and companions.
+
+- **Random encounters**: travelling the worldmap now rolls encounters along
+  the way (the real `worldmap.txt` tables, the engine's Δ3 / daypart-frequency /
+  weighted-pick chain). When the wasteland bites, an encounter map loads with
+  the group spawned in formation — rats and scorpions huddled, a war party in a
+  wedge with wielded spears, slavers, bounty hunters — and they aggro on sight.
+  Walk off the map edge to return to the worldmap and carry on; re-clicking
+  resumes the trip.
+- **One-shot encounters persist**: consumed special encounters and your
+  worldmap position round-trip through save/load (additive within the V2 save).
+- **Companions**: recruit a follower, then talk to them for a control hub —
+  *wait here* / *follow me* / *trade* / *dismiss* / *rejoin* (and *talk* for
+  their own dialog). Dismiss restores their original team and leaves them put;
+  rejoin (if they're alive) brings them back.
+- **Companion trade**: a flat 1:1 inventory swap (no caps, no haggling) to hand
+  your companion better gear — and giving away worn armour correctly takes its
+  bonus off you first.
+- **Fixes**: party members no longer duplicate across an F5 save; the encounter
+  spawn, travel, and companion lifecycle are all deterministic under `--rng-seed`.
+
 ## v0.9.0 — 2026-06-13
 
 Combat depth II — the fight gets tactical.
