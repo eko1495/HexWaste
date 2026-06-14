@@ -1,3 +1,2 @@
-set-global: GVAR446 = 4194304
 party: Vic joined (script 49)
 party-count: members=2 caps=1000 [Vic]

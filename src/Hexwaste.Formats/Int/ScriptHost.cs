@@ -1233,6 +1233,12 @@ public sealed class ScriptHost(GameFileSystem vfs, ScriptList scripts, Hexwaste.
 
         public int ObjPid(int objectHandle) => _host.ObjectOf(objectHandle)?.Pid ?? -1;
 
+        public int ObjIsCarryingPid(int objectHandle, int pid) =>
+            _host.ObjectOf(objectHandle) is { } owner ? InventoryScan.CountByPid(owner, pid) : 0;
+
+        public int ObjCarryingPidObj(int objectHandle, int pid) =>
+            _host.HandleOf(_host.ObjectOf(objectHandle) is { } owner ? InventoryScan.FindByPid(owner, pid) : null);
+
         public int TileContainsPidObj(int tile, int elevation, int pid)
         {
             if (elevation is < 0 or >= MapFile.ElevationCount || _map.Elevations[elevation] is not { } elev)

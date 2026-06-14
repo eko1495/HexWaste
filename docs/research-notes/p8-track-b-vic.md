@@ -54,11 +54,22 @@ Flow: `talk_p_proc` (line 1018) → Node002 → Node005 job hub → Vic sub-tree
 > content) is a **prerequisite** for the cash recruit, not optional flavor. The
 > affordability gate below is real but is the SECOND gate; the radio bit is the first.
 > The recruit SPINE is proven end-to-end (M0 dialog fix → talk Vic → pay → party_add
-> via the VM, caps 2000→1000), exercised by the `vic-recruit` golden fixture which
-> satisfies the radio gate with `--set-global 446 0x400000` (documented test plumbing
-> pending the radio quest). Also corrected: both Metzger AND Vic are on **denbus2**
-> (Metzger hex 15278 script 45, Vic hex 17070 script 49) — a single-map flow, no
-> cross-map GVAR carry needed.
+> via the VM, caps 2000→1000), exercised by the `vic-recruit` golden fixture. Also
+> corrected: both Metzger AND Vic are on **denbus2** (Metzger hex 15278 script 45,
+> Vic hex 17070 script 49) — a single-map flow, no cross-map GVAR carry needed.
+>
+> **UPDATE (#10 M-radio, 2026-06):** the radio gate is now satisfied LEGITIMATELY by
+> the VM — no `--set-global` cheat. The 3 inventory externals are implemented
+> (obj_is_carrying_obj 0x80BA = quantity-by-pid; obj_carrying_pid_obj 0x810D = first
+> carried item handle by pid; rm_obj_from_inven 0x80D9 was already wired). With pid
+> 266 ("Vic's Radio") in the bag, dcVic Node004 surfaces "Can you use this radio I
+> found?" → Node005 runs rm_obj_from_inven(dude, radio) + set_global_var(446,
+> |0x400000), and Metzger's $1000 buy then unlocks → full plumbing-free recruit. The
+> `vic-recruit` golden fixture now does `--give 266` (the item) instead of
+> `--set-global` (the flag). **Residual content gap:** pid 266 has no in-slice source
+> (it's a multi-step Klamath-quest item), so the recruit needs ONE item-give — strictly
+> better than the prior GVAR cheat; the only thing between this and a zero-injection
+> recruit is shippable Klamath radio-parts content.
 
 - Price = `1000 / (1 + ((GVAR446 & 0x20000)!=0))` → **GVAR29** (0x46fc-0x472a). Bit 0x20000 = slaver-jacket/guild discount → 500; **never written in dcmetzge** (set by another script). Fresh player default GVAR446=0 → full **$1000**.
 - Affordability gate (0x47de-0x4812): buy option (msg 498, proc-index 39 → Node025) offered ONLY if `item_caps_total(dude) >= GVAR29` (0x4806/0x4810).

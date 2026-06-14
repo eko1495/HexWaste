@@ -206,6 +206,14 @@ public interface IVmExternals
     /// <summary>obj_pid.</summary>
     int ObjPid(int objectHandle) => -1;
 
+    /// <summary>obj_is_carrying_obj_pid (interpreter_extra.cc:1040): the quantity of
+    /// <paramref name="pid"/> the critter carries (recursive into nested containers).</summary>
+    int ObjIsCarryingPid(int objectHandle, int pid) => 0;
+
+    /// <summary>obj_carrying_pid_obj (interpreter_extra.cc:3438): the handle of the
+    /// FIRST carried item with <paramref name="pid"/> (depth-first), or 0 if none.</summary>
+    int ObjCarryingPidObj(int objectHandle, int pid) => 0;
+
     /// <summary>tile_contains_pid_obj — handle of a matching object, or 0.</summary>
     int TileContainsPidObj(int tile, int elevation, int pid) => 0;
 
@@ -1197,6 +1205,18 @@ public sealed class IntVm
                 int quantity = PopInt();
                 int item = PopInt();
                 PushInt(_externals.RemoveFromInventory(PopInt(), item, quantity));
+                break;
+            }
+            case 0x80BA: // obj_is_carrying_obj (pops pid, critter) -> quantity carried
+            {                // ported from fallout2-ce src/interpreter_extra.cc:1040
+                int pid = PopInt();
+                PushInt(_externals.ObjIsCarryingPid(PopInt(), pid));
+                break;
+            }
+            case 0x810D: // obj_carrying_pid_obj (pops pid, critter) -> item handle (or 0)
+            {                // ported from fallout2-ce src/interpreter_extra.cc:3438
+                int pid = PopInt();
+                PushInt(_externals.ObjCarryingPidObj(PopInt(), pid));
                 break;
             }
             case 0x80B6: // move_to (pops elevation, tile, obj) -> new tile

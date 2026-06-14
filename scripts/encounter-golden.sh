@@ -30,11 +30,13 @@ SCENARIOS=(
   "trade-roundtrip|--map arcaves.map --trade 20529 7 --rng-seed 1"
   "companion-persist|--map arcaves.map --companion-persist 20529 --rng-seed 1"
   "companion-dismiss-persist|--map arcaves.map --dismiss-persist 20529 --rng-seed 1"
-  # Legitimate Vic recruit (#10 M1) — denbus2: meet Vic, pay Metzger 1000 caps,
-  # Vic joins via his real talk_p_proc party_add (NOT the force-recruit harness).
-  # --set-global 446 0x400000 satisfies the radio-fixed gate (the cash buy is
-  # radio-quest-gated, contra the p8 note); that sub-quest is the documented prereq.
-  "vic-recruit|--map denbus2.map --give 41:2000 --set-global 446 4194304 --talk-seq 17070 1 --talk-seq 15278 2,2,1,1 --talk-seq 17070 2,1 --party-count --rng-seed 1"
+  # Legitimate Vic recruit (#10 M1 + M-radio) — denbus2, fully VM-driven, no GVAR
+  # cheat: give Vic the radio (pid 266), his dialog runs the real inventory externals
+  # (obj_is_carrying_obj / obj_carrying_pid_obj / rm_obj_from_inven) to set the
+  # radio-fixed bit GVAR446|0x400000; that unlocks Metzger's $1000 buy (free-bit
+  # GVAR445 handshake); then Vic's talk_p_proc party_add recruits him. The radio
+  # ITEM (--give 266) is the one documented content gap — it has no in-slice source.
+  "vic-recruit|--map denbus2.map --give 41:2000 --give 266:1 --talk-seq 17070 1,1,1 --talk-seq 15278 2,2,1,1 --talk-seq 17070 2,1 --party-count --rng-seed 1"
 )
 
 # Keep only the deterministic transcript lines (drop map-load / animate / stub /

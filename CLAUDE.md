@@ -257,8 +257,20 @@ bit via --set-global (test plumbing) pending the radio sub-quest (the 3 stubbed
 inventory externals + Vic's radio-parts content are a PREREQUISITE, not optional).
 New harness: --talk-seq (composable GVAR-persistent talk+choose), --set-global,
 --party-count; MapDump now prints per-critter script index; HEXWASTE_DIALOG_DEBUG=1
-traces Choose. Remaining for a no-plumbing recruit: the radio sub-quest (M-radio),
-then M2 light up level-up/hub, M3 save a scripted recruit.
+traces Choose.
+M-radio (DONE): the cash buy's radio gate is now VM-set, not faked. Implemented the
+3 inventory externals — obj_is_carrying_obj (0x80BA = quantity-by-pid, recursive into
+nested containers per inventory.cc objectGetCarriedQuantityByPid), obj_carrying_pid_obj
+(0x810D = handle of the first carried item by pid, objectGetCarriedObjectByPid),
+rm_obj_from_inven (0x80D9 was already wired). Pop order pid-then-critter (top-first);
+object handles are ScriptHost ints (HandleOf/ObjectOf), not engine void*. Recursive
+scan extracted to Formats.Map.InventoryScan (CountByPid/FindByPid, unit-tested). With
+pid 266 "Vic's Radio" in the bag, dcVic Node004 ("Can you use this radio I found?") →
+Node005 rm radio + set_global_var(446,|0x400000) → Metzger's $1000 buy unlocks → FULL
+plumbing-free recruit (vic-recruit fixture now --give 266, NO --set-global). GOTCHA:
+pid 266 has no in-slice source (multi-step Klamath quest item) — the recruit needs
+ONE item-give, the documented residual content gap. Remaining: M2 light up
+level-up/hub on the real recruit, M3 save a scripted recruit.
 
 Phase 10 (DONE, per docs/phase10-research-report.md — "The Wasteland
 Bites Back"): M0 persistence pre-stage (the net: MapList saved=No /
