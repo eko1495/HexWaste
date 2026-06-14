@@ -2117,10 +2117,10 @@ public sealed class ViewerGame : Game, Formats.Combat.ICombatHost
         if (_scriptHost is null)
             return;
 
-        // A recruited or dismissed companion opens the control hub, not scripted
-        // dialog (phase-10 M4) — their scripted dialog is still reachable from the
-        // hub's "Talk to them" option.
-        if (_scriptHost.PartyMembers.Contains(npc) || _dismissedCompanions.ContainsKey(npc))
+        // A live recruited or dismissed companion opens the control hub, not scripted
+        // dialog (phase-10 M4) — their scripted dialog is still reachable from the hub's
+        // "Talk to them" option. A dead one falls through (its corpse is lootable).
+        if (!npc.IsDead && (_scriptHost.PartyMembers.Contains(npc) || _dismissedCompanions.ContainsKey(npc)))
         {
             OpenCompanionHub(npc);
             return;
@@ -2758,6 +2758,7 @@ public sealed class ViewerGame : Game, Formats.Combat.ICombatHost
         bool danger = _solidObjects[_elevation].Any(o =>
             Fid.Type(o.Fid) is ObjectType.Critter && o != _dude.Dude && !o.IsDead
             && (_scriptHost is null || !_scriptHost.PartyMembers.Contains(o))
+            && !_dismissedCompanions.ContainsKey(o) // a companion you just dismissed isn't a threat
             && Formats.Hex.HexGrid.Distance(o.HexTile, _dude.Dude.HexTile)
                 <= Formats.Combat.CombatRules.SightRangeHexes);
         if (danger)
@@ -3146,7 +3147,9 @@ public sealed class ViewerGame : Game, Formats.Combat.ICombatHost
             return;
 
         int perception = GetCritterState(_dude.Dude)?.Stat(Formats.Combat.CritterStat.Perception) ?? 5;
-        int partyCount = (_scriptHost?.PartyMembers.Count ?? 0) + 1; // dude + companions
+        // The same live-visible tally metarule(16) uses (the report ties the spawn +2
+        // bonus to _getPartyMemberCount — one definition, both tracks).
+        int partyCount = _scriptHost is not null ? Formats.Int.ScriptHost.PartyMemberCount(_scriptHost.PartyMembers) : 1;
         IReadOnlyList<int> startTiles = [.. _mapList.GetRandomStartPoints(_currentMapName).Select(p => p.Tile)];
 
         bool IsBlocked(int t) => _blockedTiles.Contains(t);
@@ -4461,7 +4464,12 @@ public sealed class ViewerGame : Game, Formats.Combat.ICombatHost
         {
             foreach (MapObject obj in _map.Elevations[elevation]?.Objects ?? [])
             {
-                if (!_objectOrdinals.ContainsKey(obj) && obj != _dude?.Dude)
+                // Party members are injected after the ordinal build (so they're not in
+                // _objectOrdinals) and travel OUTSIDE map deltas via state.Party — exclude
+                // them like the dude, else an F5 save (no ExtractPartyFromMap first)
+                // captures each companion as a Created object and load duplicates them.
+                if (!_objectOrdinals.ContainsKey(obj) && obj != _dude?.Dude
+                    && !(_scriptHost?.PartyMembers.Contains(obj) ?? false))
                     delta.Created.Add(new SaveState.CreatedObject(
                         obj.Pid, obj.HexTile, elevation, Math.Max(obj.StackCount, 1)));
                 if (IsDoor(obj))
@@ -4810,6 +4818,19 @@ public sealed class ViewerGame : Game, Formats.Combat.ICombatHost
 
     /// <summary>Recruit/dismiss bookkeeping: remember the follow script's
     /// list index so transitions can re-bind it on the next map.</summary>
+    /// <summary>Clear the whole roster + companion viewer-state — on new game and
+    /// before a load rebuilds it. These collections key on MapObject identity, so old
+    /// entries would dangle after the party is rebuilt with fresh instances (phase-10 M4).</summary>
+    private void ResetParty()
+    {
+        _scriptHost?.PartyMembers.Clear();
+        _partyScriptIndex.Clear();
+        _waitingCompanions.Clear();
+        _dismissedCompanions.Clear();
+        _originalTeam.Clear();
+        _companionHub = null;
+    }
+
     private void OnPartyChanged(MapObject critter, bool joined)
     {
         if (joined)
@@ -4846,6 +4867,9 @@ public sealed class ViewerGame : Game, Formats.Combat.ICombatHost
                 list.Remove(member);
             _npcWalkers.Remove(member);
             _homeTiles.Remove(member);
+            // "Wait here" is per-map: a member that travels with you resumes following
+            // on the new map rather than freezing where InjectPartyMembers drops it.
+            _waitingCompanions.Remove(member);
         }
     }
 
@@ -4995,6 +5019,7 @@ public sealed class ViewerGame : Game, Formats.Combat.ICombatHost
             _scriptHost.ClearAllLocalVars();
             _scriptHost.ExternalVars.Clear();
         }
+        ResetParty();
 
         LoadMap(_mapName, spawnAt: null, captureOutgoing: false);
         Log($"Welcome to the wasteland{(_dudeGcd is { Name.Length: > 0 } g && g.Name != "None" ? $", {g.Name}" : "")}.");
@@ -5096,8 +5121,7 @@ public sealed class ViewerGame : Game, Formats.Combat.ICombatHost
         if (state.EncounterCounters.Count > 0)
             Worldmap.ImportCounters(state.EncounterCounters);
 
-        _scriptHost?.PartyMembers.Clear();
-        _partyScriptIndex.Clear();
+        ResetParty();
 
         // captureOutgoing: false — the pre-load world must not leak into the
         // freshly imported VisitedMaps. transient: a saved=No map (a save taken
