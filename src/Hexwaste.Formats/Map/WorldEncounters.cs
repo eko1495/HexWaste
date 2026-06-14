@@ -79,7 +79,7 @@ public sealed class WorldEncounters
     {
         var candidates = table.Entries
             .Where(e => e.Chance > 0 && e.Counter != 0
-                && e.Conditions.All(c => Evaluate(c, getGlobal, playerLevel, hhmm, daysPlayed)))
+                && EncounterConditions.All(e.Conditions, _rng, getGlobal, playerLevel, hhmm, daysPlayed, 0))
             .ToList();
         int total = candidates.Sum(e => e.Chance);
         if (total <= 0)
@@ -97,31 +97,5 @@ public sealed class WorldEncounters
             }
         }
         return candidates[^1]; // float-safety fallthrough
-    }
-
-    /// <summary>One If(Type(Param) Op Value) condition (worldmap.cc:4096-4169);
-    /// operators == != &lt; &gt; only; AND-only across an entry's conditions.</summary>
-    private bool Evaluate(EncCondition c, Func<int, int> getGlobal, int playerLevel, int hhmm, int daysPlayed)
-    {
-        // Rand(N%) is a probability gate with no operator.
-        if (c.Type.Equals("Rand", StringComparison.OrdinalIgnoreCase))
-            return _rng.Next(1, 101) <= c.Param;
-
-        int lhs = c.Type.ToLowerInvariant() switch
-        {
-            "global" => getGlobal(c.Param),
-            "player" => playerLevel,         // Player(Level)
-            "time_of_day" => hhmm,
-            "days_played" => daysPlayed,
-            _ => 0,
-        };
-        return c.Op switch
-        {
-            "==" => lhs == c.Value,
-            "!=" => lhs != c.Value,
-            "<" => lhs < c.Value,
-            ">" => lhs > c.Value,
-            _ => true,                       // unknown/empty operator → permissive
-        };
     }
 }

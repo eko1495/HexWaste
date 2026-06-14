@@ -1,4 +1,5 @@
 using System.Text.RegularExpressions;
+using Hexwaste.Formats.Combat;
 
 namespace Hexwaste.Formats.Map;
 
@@ -271,7 +272,15 @@ public sealed class WorldmapFile
                     flag.Contains("wielded", StringComparison.OrdinalIgnoreCase),
                     flag.Contains("worn", StringComparison.OrdinalIgnoreCase)));
             }
-            members.Add(new GroupMember(ratio, single, dead, pid, scriptIndex, items));
+            // Per-member overrides (phase-10 #7): a surrounding distance, a tilenum
+            // placement, and trailing If() conditions that gate the member's spawn.
+            int memberDistance = ReadInt(v, @"[Dd]istance:\s*(\d+)", 0);
+            int memberTile = ReadInt(v, @"[Tt]ilenum:\s*(\d+)", -1);
+            var memberConds = new List<EncCondition>();
+            foreach (Match cm in CondRx.Matches(v))
+                memberConds.Add(ParseCondition(cm));
+            members.Add(new GroupMember(ratio, single, dead, pid, scriptIndex, items,
+                memberDistance, memberTile, memberConds));
         }
 
         string formation = "surrounding";
@@ -325,10 +334,57 @@ public sealed record EncounterSpawn(int Min, int Max, string Group);
 /// an empty Op.</summary>
 public sealed record EncCondition(string Type, int Param, string Op, int Value);
 
+/// <summary>The If() condition evaluator shared by the encounter pick (entry
+/// conditions) and the group spawn (per-member conditions), ported from
+/// wmEvalConditional (worldmap.cc:4096-4169): AND-only across sub-conditions,
+/// operators == != &lt; &gt; only, Rand(N%) draws the rng, enctr(num_critters)
+/// compares the spawn's rolled count.</summary>
+public static class EncounterConditions
+{
+    public static bool All(IReadOnlyList<EncCondition> conditions, ICombatRng rng,
+        Func<int, int> getGlobal, int playerLevel, int hhmm, int daysPlayed, int critterCount)
+    {
+        foreach (EncCondition c in conditions)
+            if (!Evaluate(c, rng, getGlobal, playerLevel, hhmm, daysPlayed, critterCount))
+                return false;
+        return true;
+    }
+
+    private static bool Evaluate(EncCondition c, ICombatRng rng, Func<int, int> getGlobal,
+        int playerLevel, int hhmm, int daysPlayed, int critterCount)
+    {
+        // Rand(N%) is a probability gate with no operator.
+        if (c.Type.Equals("Rand", StringComparison.OrdinalIgnoreCase))
+            return rng.Next(1, 101) <= c.Param;
+
+        int lhs = c.Type.ToLowerInvariant() switch
+        {
+            "global" => getGlobal(c.Param),
+            "player" => playerLevel,         // Player(Level)
+            "time_of_day" => hhmm,
+            "days_played" => daysPlayed,
+            "enctr" => critterCount,         // enctr(num_critters)
+            _ => 0,
+        };
+        return c.Op switch
+        {
+            "==" => lhs == c.Value,
+            "!=" => lhs != c.Value,
+            "<" => lhs < c.Value,
+            ">" => lhs > c.Value,
+            _ => true,                       // unknown/empty operator → permissive
+        };
+    }
+}
+
 public sealed record EncounterGroup(string Name, IReadOnlyList<GroupMember> Members,
     string Formation, int Spacing, int Distance);
 
+/// <summary>Distance (per-member surrounding-ring radius; 0 = use Perception±2),
+/// Tile (per-member placement override; -1 = none), Conditions (the trailing If()
+/// that gate whether this member spawns) — all phase-10 #7.</summary>
 public sealed record GroupMember(int Ratio, bool Single, bool Dead, int Pid, int ScriptIndex,
-    IReadOnlyList<EncItem> Items);
+    IReadOnlyList<EncItem> Items, int Distance = 0, int Tile = -1,
+    IReadOnlyList<EncCondition>? Conditions = null);
 
 public sealed record EncItem(int Min, int Max, int Pid, bool Wielded, bool Worn);

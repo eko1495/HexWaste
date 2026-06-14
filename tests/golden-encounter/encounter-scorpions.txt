@@ -1,6 +1,6 @@
-encounter-spawn: ARRO_Sm_Scorpions planned=6 placed=6 on desert1.map
+encounter-spawn: ARRO_Sm_Scorpions planned=4 placed=4 on desert1.map
   spawn pid=0x01000005 tile=22295 rot=4 hp=10 team=1 sid=bound items=0
   spawn pid=0x01000005 tile=22691 rot=4 hp=10 team=1 sid=bound items=0
   spawn pid=0x01000005 tile=22699 rot=5 hp=10 team=1 sid=bound items=0
   spawn pid=0x01000005 tile=23491 rot=4 hp=10 team=1 sid=bound items=0
-encounter: map=desert1.map group=ARRO_Sm_Scorpions requested=4 critters=4 corpses=2
+encounter: map=desert1.map group=ARRO_Sm_Scorpions requested=4 critters=4 corpses=0

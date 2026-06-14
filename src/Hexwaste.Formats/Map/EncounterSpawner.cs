@@ -38,8 +38,10 @@ public static class EncounterSpawner
 
     public static IReadOnlyList<SpawnInstruction> Plan(EncounterResult encounter, WorldmapFile world,
         ICombatRng rng, int dudeTile, int dudePerception, int partyCount,
-        IReadOnlyList<int> startTiles, Func<int, bool> isBlocked, Func<int, int, bool> reachable)
+        IReadOnlyList<int> startTiles, Func<int, bool> isBlocked, Func<int, int, bool> reachable,
+        Func<int, int>? getGlobal = null, int playerLevel = 1, int hhmm = 1200, int daysPlayed = 0)
     {
+        getGlobal ??= _ => 0;
         var result = new List<SpawnInstruction>();
 
         // wmRndIndex is a module-global the engine resets ONCE (program start), never
@@ -60,7 +62,7 @@ public static class EncounterSpawner
 
             if (world.Group(sub.Group) is { } group)
                 SpawnGroup(group, critterCount, rng, dudeTile, dudePerception, startTiles,
-                    isBlocked, reachable, result, sharedIndex);
+                    isBlocked, reachable, result, sharedIndex, getGlobal, playerLevel, hhmm, daysPlayed);
         }
 
         return result;
@@ -70,7 +72,7 @@ public static class EncounterSpawner
     private static void SpawnGroup(EncounterGroup group, int critterCount, ICombatRng rng,
         int dudeTile, int dudePerception, IReadOnlyList<int> startTiles,
         Func<int, bool> isBlocked, Func<int, int, bool> reachable, List<SpawnInstruction> output,
-        int[] sharedIndex)
+        int[] sharedIndex, Func<int, int> getGlobal, int playerLevel, int hhmm, int daysPlayed)
     {
         var f = new Formation(group.Formation, rng, dudeTile, startTiles, sharedIndex);
 
@@ -85,6 +87,11 @@ public static class EncounterSpawner
             if (member.Pid <= 0) // pid -1 (and our parse's 0 for a pid-less member, e.g. Special1) = nothing
                 continue;
 
+            // Per-member If() gate (phase-10 #7): wmEvalConditional skips the member if it
+            // fails (e.g. ARRO_Rats' Xander-root carrier behind If(Rand(5%))).
+            if (!EncounterConditions.All(member.Conditions ?? [], rng, getGlobal, playerLevel, hhmm, daysPlayed, critterCount))
+                continue;
+
             // USE_RATIO: ratio*group/100; SINGLE (omitted ratio): exactly 1. Clamp ≥1.
             int count = member.Single ? 1 : member.Ratio * critterCount / 100;
             if (count < 1)
@@ -92,7 +99,7 @@ public static class EncounterSpawner
 
             for (int i = 0; i < count; i++)
             {
-                if (f.NextTile(group, dudePerception, t => isBlocked(t) || placed.Contains(t), reachable) is not { } tile)
+                if (f.NextTile(group, member, dudePerception, t => isBlocked(t) || placed.Contains(t), reachable) is not { } tile)
                     continue; // 25-retry exhausted: skip this critter (engine continues)
                 placed.Add(tile);
 
@@ -151,12 +158,12 @@ public static class EncounterSpawner
 
         /// <summary>The next placement tile, or null when 25 retries can't find an
         /// unblocked, reachable hex.</summary>
-        public int? NextTile(EncounterGroup group, int dudePerception,
+        public int? NextTile(EncounterGroup group, GroupMember member, int dudePerception,
             Func<int, bool> isBlocked, Func<int, int, bool> reachable)
         {
             for (int attempt = 0; ; attempt++)
             {
-                int tile = Step(group, dudePerception);
+                int tile = Step(group, member, dudePerception);
                 _callCount++;
 
                 if (!isBlocked(tile) && reachable(_dudeTile, tile))
@@ -166,7 +173,7 @@ public static class EncounterSpawner
             }
         }
 
-        private int Step(EncounterGroup group, int dudePerception)
+        private int Step(EncounterGroup group, GroupMember member, int dudePerception)
         {
             int spacing = group.Spacing;
             int idx = _index[0];
@@ -174,12 +181,15 @@ public static class EncounterSpawner
             {
                 case "surrounding":
                 {
-                    // The engine's distance is the PER-MEMBER encounterEntry->distance
-                    // (default 0 → the Perception path). That field isn't parsed in v1, so
-                    // every member rings at Perception±2 (worldmap.cc:3981-3987); the
-                    // group-level Distance: is DEAD in the engine and deliberately ignored.
-                    int distance = Math.Max(0, Between(_rng, -2, 2) + dudePerception);
-                    int origin = HexGrid.TileInDirection(_dudeTile, _tileDirs[0], distance);
+                    // Per-member distance (phase-10 #7): a non-zero member Distance pins the
+                    // ring radius (and skips the −2..2 draw); else the engine's Perception±2
+                    // (worldmap.cc:3978-3987). A member Tile overrides the ring origin.
+                    int distance = member.Distance != 0
+                        ? member.Distance
+                        : Math.Max(0, Between(_rng, -2, 2) + dudePerception);
+                    int origin = member.Tile != -1
+                        ? member.Tile
+                        : HexGrid.TileInDirection(_dudeTile, _tileDirs[0], distance);
                     _tileDirs[0] = (_tileDirs[0] + 1) % HexGrid.RotationCount;
                     int rDist = Between(_rng, 0, distance / 2);
                     int rRot = Between(_rng, 0, HexGrid.RotationCount - 1);

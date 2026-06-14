@@ -31,9 +31,10 @@ public class EncounterSpawnerTests
 
     private static IReadOnlyList<SpawnInstruction> Plan(Scenario s, int partyCount = 1,
         IReadOnlyList<int>? startTiles = null, Func<int, bool>? isBlocked = null,
-        Func<int, int, bool>? reachable = null) =>
+        Func<int, int, bool>? reachable = null, Func<int, int>? getGlobal = null) =>
         EncounterSpawner.Plan(s.Result, s.World, s.Rng, DudeTile, dudePerception: 5, partyCount,
-            startTiles ?? [DudeTile], isBlocked ?? (_ => false), reachable ?? ((_, _) => true));
+            startTiles ?? [DudeTile], isBlocked ?? (_ => false), reachable ?? ((_, _) => true),
+            getGlobal);
 
     [Fact]
     public void RatioAndSingleMembersScaleWithGroupSize()
@@ -212,6 +213,37 @@ public class EncounterSpawnerTests
             position=Surrounding, distance:9
             """, "Enc:(1-1) RING AMBUSH Player"));
         Assert.Equal(3, HexGrid.Distance(DudeTile, Assert.Single(plan).Tile)); // 3, not the group distance:9
+    }
+
+    [Fact]
+    public void MemberIfConditionGatesTheSpawn()
+    {
+        // type_01 only spawns when Global(5) > 0 (phase-10 #7); type_00 is unconditional.
+        const string g = """
+            [Encounter: GRP]
+            type_00=ratio:100%, pid:100
+            type_01=ratio:100%, pid:101, If(Global(5) > 0)
+            position=huddle
+            """;
+        const string enc = "Enc:(1-1) GRP AMBUSH Player";
+
+        // Global(5)=0 → the gated member is skipped (only pid 100).
+        Assert.DoesNotContain(Plan(Setup(g, enc), getGlobal: _ => 0), s => s.Pid == 101);
+        // Global(5)=1 → it spawns.
+        Assert.Contains(Plan(Setup(g, enc), getGlobal: x => x == 5 ? 1 : 0), s => s.Pid == 101);
+    }
+
+    [Fact]
+    public void PerMemberDistanceOverridesThePerceptionRing()
+    {
+        // A member Distance pins the surrounding ring radius (2), instead of the
+        // Perception±2 default (which MinRng would make 3) — phase-10 #7.
+        IReadOnlyList<SpawnInstruction> plan = Plan(Setup("""
+            [Encounter: RING]
+            type_00=ratio:100%, pid:50, Distance:2
+            position=Surrounding
+            """, "Enc:(1-1) RING AMBUSH Player"));
+        Assert.Equal(2, HexGrid.Distance(DudeTile, Assert.Single(plan).Tile));
     }
 
     [Fact]

@@ -3337,9 +3337,10 @@ public sealed class ViewerGame : Game, Formats.Combat.ICombatHost
         // spawns VARY per encounter and per playthrough — a fresh fixed seed here made
         // every wasteland fight identical.
         _wmRng ??= new Formats.Combat.SystemCombatRng(RngSeed ?? Environment.TickCount);
+        int getGlobal(int g) => _scriptHost?.GlobalVars.GetValueOrDefault(g, 0) ?? 0;
         IReadOnlyList<Formats.Map.SpawnInstruction> plan = Formats.Map.EncounterSpawner.Plan(
             encounter, Worldmap, _wmRng, _dude.Dude.HexTile, perception, partyCount, startTiles,
-            IsBlocked, Reachable);
+            IsBlocked, Reachable, getGlobal, _dudeLevel, _clock.Hour, _clock.Day);
 
         int placed = 0;
         foreach (Formats.Map.SpawnInstruction si in plan)
