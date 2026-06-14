@@ -862,8 +862,10 @@ public sealed class ViewerGame : Game, Formats.Combat.ICombatHost
                     Console.WriteLine($"trade: gave 0x{tradePid:X8} -> yours={_dudeInventory.Count} theirs={tp.Inventory.Count} (dudeHas={_dudeInventory.Any(i => i.Pid == tradePid)} theyHave={tp.Inventory.Any(i => i.Pid == tradePid)})");
 
                     TakeFromContainer(tp.Inventory.FindIndex(i => i.Pid == tradePid));
-                    Console.WriteLine($"trade: took it back -> yours={_dudeInventory.Count} theirs={tp.Inventory.Count} (dudeHas={_dudeInventory.Any(i => i.Pid == tradePid)})");
-                    Console.WriteLine($"trade: caps {capsBefore}->{DudeCaps()} (flat, unchanged={capsBefore == DudeCaps()}) backToStart={_dudeInventory.Count == dudeBefore && tp.Inventory.Count == theirsBefore}");
+                    MapObject? back = _dudeInventory.FirstOrDefault(i => i.Pid == tradePid);
+                    Console.WriteLine($"trade: took it back -> yours={_dudeInventory.Count} theirs={tp.Inventory.Count} (dudeHas={back is not null} stack={back?.StackCount} flags=0x{back?.Flags ?? 0:X})");
+                    Console.WriteLine($"trade: caps {capsBefore}->{DudeCaps()} (flat, unchanged={capsBefore == DudeCaps()})"
+                        + $" backToStart={_dudeInventory.Count == dudeBefore && tp.Inventory.Count == theirsBefore && back?.StackCount == 1 && (back?.Flags ?? 0) == 0}");
                     break;
                 }
                 case StartupAction.UseOn(var usePid2, var useHex2):
@@ -2006,10 +2008,31 @@ public sealed class ViewerGame : Game, Formats.Combat.ICombatHost
             return;
         MapObject item = _dudeInventory[index];
         _dudeInventory.RemoveAt(index);
+        UnequipForTransfer(item);
         item.HexTile = _dude.Dude.HexTile;
         _map.Elevations[_elevation]?.Objects.Add(item);
         OnScriptObjectPlaced(item);
         Log($"You drop: {ObjectName(item)}.");
+    }
+
+    /// <summary>Undo any equip an item carried before it leaves the dude's bag (give /
+    /// drop): reverse the worn-armor AC/DT/DR bonus and clear the equip flags, so the
+    /// dude can't keep the protection of armor they no longer hold (phase-10 M5 review).
+    /// Mirrors the UseInventoryItem take-off path + the barter TransferOne flag strip.</summary>
+    private void UnequipForTransfer(MapObject item)
+    {
+        if (item.IsWorn)
+        {
+            try
+            {
+                if (_protos.Get(item.Pid).Armor is { } armor)
+                    ApplyArmorBonus(armor, -1);
+            }
+            catch (Exception ex) when (ex is FileNotFoundException or InvalidDataException)
+            {
+            }
+        }
+        item.Flags &= ~(MapObject.FlagInLeftHand | MapObject.FlagInRightHand | MapObject.FlagWorn);
     }
 
     /// <summary>Open the 1:1 companion trade panel (phase-10 M5): the loot panel
@@ -2035,7 +2058,12 @@ public sealed class ViewerGame : Game, Formats.Combat.ICombatHost
             return;
         MapObject item = _dudeInventory[index];
         _dudeInventory.RemoveAt(index);
-        _tradePartner.Inventory.Add(item);
+        UnequipForTransfer(item); // don't leave the worn-armor bonus on the dude
+        // Merge same-Pid stacks like every other inbound add (AddToDudeInventory/itemAdd).
+        if (_tradePartner.Inventory.FirstOrDefault(i => i.Pid == item.Pid) is { } existing)
+            existing.StackCount += Math.Max(item.StackCount, 1);
+        else
+            _tradePartner.Inventory.Add(item);
         Log($"You give {ObjectName(item)}{(item.StackCount > 1 ? $" x{item.StackCount}" : "")} to {ObjectName(_tradePartner)}.");
     }
 
@@ -4527,9 +4555,18 @@ public sealed class ViewerGame : Game, Formats.Combat.ICombatHost
             if (elev is not null)
                 present.UnionWith(elev.Objects);
 
+        // Party members travel via state.Party, OUTSIDE map deltas. The map-exit path
+        // pulls them first (ExtractPartyFromMap → not present → taken), but an F5 save
+        // calls this directly. So mark a still-on-map party member's pristine ordinal
+        // TAKEN too, and skip them in the Moved/Container loops below — otherwise a
+        // companion recruited in place (then F5'd before leaving) is restored twice on
+        // load: the pristine map copy + the state.Party copy.
+        var party = _scriptHost?.PartyMembers is { Count: > 0 } pm ? new HashSet<MapObject>(pm) : [];
+
         for (int ordinal = 0; ordinal < _ordinalObjects.Length; ordinal++)
         {
-            if (!present.Contains(_ordinalObjects[ordinal]))
+            MapObject o = _ordinalObjects[ordinal];
+            if (!present.Contains(o) || party.Contains(o))
                 delta.TakenOrdinals.Add(ordinal);
         }
 
@@ -4559,8 +4596,8 @@ public sealed class ViewerGame : Game, Formats.Combat.ICombatHost
         for (int ordinal = 0; ordinal < _ordinalObjects.Length; ordinal++)
         {
             MapObject obj = _ordinalObjects[ordinal];
-            if (!elevationOf.TryGetValue(obj, out int currentElevation))
-                continue;
+            if (party.Contains(obj) || !elevationOf.TryGetValue(obj, out int currentElevation))
+                continue; // party members are taken above, not drifted
             (int tile, int rotation, int elevation0) = _pristinePositions[ordinal];
             if (obj.HexTile != tile || obj.Rotation != rotation || currentElevation != elevation0)
                 delta.MovedOrdinals.Add(new SaveState.MovedObject(
@@ -4572,8 +4609,8 @@ public sealed class ViewerGame : Game, Formats.Combat.ICombatHost
         // Corpses count as containers (their loot must not resurrect).
         foreach ((MapObject obj, int ordinal) in _objectOrdinals)
         {
-            if (!present.Contains(obj))
-                continue;
+            if (!present.Contains(obj) || party.Contains(obj))
+                continue; // party members carry their own inventory in state.Party
             if (obj.IsDead && Fid.PidType(obj.Pid) == (int)ObjectType.Critter)
                 delta.DeadOrdinals.Add(ordinal);
             if (obj.Inventory.Count > 0 || _stockedOrdinals.Contains(ordinal)
@@ -4902,6 +4939,9 @@ public sealed class ViewerGame : Game, Formats.Combat.ICombatHost
         _dismissedCompanions.Clear();
         _originalTeam.Clear();
         _companionHub = null;
+        if (_tradePartner is not null) // a trade panel pointed at a follower we're clearing
+            _lootContainer = null;
+        _tradePartner = null;
     }
 
     private void OnPartyChanged(MapObject critter, bool joined)
