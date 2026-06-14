@@ -176,6 +176,12 @@ for (int i = 0; i < args.Length; i++)
             // control lifecycle (wait/follow/dismiss/rejoin) and print a transcript.
             actions.Add(new ViewerGame.StartupAction.CompanionLifecycle(int.Parse(args[++i])));
             break;
+        case "--trade" when i + 2 < args.Length:
+            // --trade <hex> <pid>: recruit the critter at hex, give the dude <pid>,
+            // then trade it to the follower and back (asserts flat 1:1, no caps).
+            actions.Add(new ViewerGame.StartupAction.TradeWith(int.Parse(args[i + 1]), int.Parse(args[i + 2])));
+            i += 2;
+            break;
         case "--recruit" when i + 1 < args.Length:
             actions.Add(new ViewerGame.StartupAction.Recruit(int.Parse(args[++i])));
             break;

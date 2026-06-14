@@ -141,8 +141,12 @@ public sealed class ViewerGame : Game, Formats.Combat.ICombatHost
 
     // Companion control hub (phase-10 M4): talking to a recruited (or dismissed)
     // member opens a wait/follow/dismiss/rejoin hub instead of scripted dialog.
-    private enum CompanionCmd { Talk, Wait, Follow, Dismiss, Rejoin, Cancel }
+    private enum CompanionCmd { Talk, Trade, Wait, Follow, Dismiss, Rejoin, Cancel }
     private MapObject? _companionHub;
+    /// <summary>The companion whose inventory the trade panel is pointed at (phase-10
+    /// M5). Non-null = the loot panel is in TRADE mode: a flat 1:1 item move (no caps,
+    /// no barter price), with Shift+1-9 giving to the follower.</summary>
+    private MapObject? _tradePartner;
     private readonly List<(string Label, CompanionCmd Cmd)> _hubOptions = [];
     /// <summary>Party members told to "wait here" — PumpCritterProcs skips them, so
     /// their follow critter_p_proc stops and they hold position.</summary>
@@ -242,6 +246,7 @@ public sealed class ViewerGame : Game, Formats.Combat.ICombatHost
         public sealed record UseOn(int Pid, int Hex) : StartupAction;
         public sealed record Recruit(int Hex) : StartupAction;
         public sealed record CompanionLifecycle(int Hex) : StartupAction;
+        public sealed record TradeWith(int Hex, int Pid) : StartupAction;
         public sealed record Buy(int Pid) : StartupAction;
         public sealed record Sell(int Pid) : StartupAction;
         public sealed record EndBarter : StartupAction;
@@ -836,6 +841,31 @@ public sealed class ViewerGame : Game, Formats.Combat.ICombatHost
                     Console.WriteLine($"  rejoin: partyCount={Count()} sid={(m.Sid == -1 ? "none" : "bound")}");
                     break;
                 }
+                case StartupAction.TradeWith(var tradeHex, var tradePid):
+                {
+                    MapObject? tp = _solidObjects[_elevation].FirstOrDefault(o =>
+                        o.HexTile == tradeHex && Fid.Type(o.Fid) is ObjectType.Critter && !o.IsDead);
+                    if (tp is null || _scriptHost is null || RebuildObject(tradePid, 1) is not { } gift)
+                    {
+                        Console.Error.WriteLine($"trade: no critter at {tradeHex} or bad pid 0x{tradePid:X8}");
+                        break;
+                    }
+                    _scriptHost.PartyMembers.Add(tp);
+                    OnPartyChanged(tp, joined: true);
+                    AddToDudeInventory(gift);
+
+                    int capsBefore = DudeCaps();
+                    int dudeBefore = _dudeInventory.Count, theirsBefore = tp.Inventory.Count;
+                    OpenTrade(tp);
+
+                    GiveToFollower(_dudeInventory.FindIndex(i => i.Pid == tradePid));
+                    Console.WriteLine($"trade: gave 0x{tradePid:X8} -> yours={_dudeInventory.Count} theirs={tp.Inventory.Count} (dudeHas={_dudeInventory.Any(i => i.Pid == tradePid)} theyHave={tp.Inventory.Any(i => i.Pid == tradePid)})");
+
+                    TakeFromContainer(tp.Inventory.FindIndex(i => i.Pid == tradePid));
+                    Console.WriteLine($"trade: took it back -> yours={_dudeInventory.Count} theirs={tp.Inventory.Count} (dudeHas={_dudeInventory.Any(i => i.Pid == tradePid)})");
+                    Console.WriteLine($"trade: caps {capsBefore}->{DudeCaps()} (flat, unchanged={capsBefore == DudeCaps()}) backToStart={_dudeInventory.Count == dudeBefore && tp.Inventory.Count == theirsBefore}");
+                    break;
+                }
                 case StartupAction.UseOn(var usePid2, var useHex2):
                 {
                     MapObject? item = _dudeInventory.FirstOrDefault(i => i.Pid == usePid2);
@@ -1253,11 +1283,16 @@ public sealed class ViewerGame : Game, Formats.Combat.ICombatHost
             {
                 if (IsKeyPressed(keyboard, Keys.D1 + i) || IsKeyPressed(keyboard, Keys.NumPad1 + i))
                 {
-                    if (_lootContainer is not null)
+                    bool shiftHeld = keyboard.IsKeyDown(Keys.LeftShift) || keyboard.IsKeyDown(Keys.RightShift);
+                    if (_tradePartner is not null && shiftHeld)
+                    {
+                        GiveToFollower(i); // trade give-side: Shift+1-9 → the follower
+                    }
+                    else if (_lootContainer is not null)
                     {
                         TakeFromContainer(i);
                     }
-                    else if (keyboard.IsKeyDown(Keys.LeftShift) || keyboard.IsKeyDown(Keys.RightShift))
+                    else if (shiftHeld)
                     {
                         DropFromInventory(i);
                     }
@@ -1287,6 +1322,7 @@ public sealed class ViewerGame : Game, Formats.Combat.ICombatHost
             {
                 _lootContainer = null;
                 _inventoryOpen = false;
+                _tradePartner = null;
             }
 
             _previousMouse = mouse;
@@ -1976,6 +2012,33 @@ public sealed class ViewerGame : Game, Formats.Combat.ICombatHost
         Log($"You drop: {ObjectName(item)}.");
     }
 
+    /// <summary>Open the 1:1 companion trade panel (phase-10 M5): the loot panel
+    /// pointed at the follower's inventory, in TRADE mode. Engine party-member trade is
+    /// a flat move at barter-modifier 0 (game_dialog.cc:3757) — no caps, no price — so
+    /// this deliberately bypasses the priced-barter path entirely.</summary>
+    private void OpenTrade(MapObject follower)
+    {
+        _companionHub = null;
+        _tradePartner = follower;
+        _lootContainer = follower; // reuse the loot panel's take path (TakeFromContainer)
+        PrewarmItemTextures(follower.Inventory);
+        PrewarmItemTextures(_dudeInventory);
+        Log($"Trading with {ObjectName(follower)}.");
+        Console.WriteLine($"trade: open with {ObjectName(follower)} (theirs={follower.Inventory.Count} yours={_dudeInventory.Count})");
+    }
+
+    /// <summary>Trade give-side: move one stack from the dude to the follower, flat (no
+    /// caps) — the only transfer the loot panel didn't already have (phase-10 M5).</summary>
+    private void GiveToFollower(int index)
+    {
+        if (_tradePartner is null || index < 0 || index >= _dudeInventory.Count)
+            return;
+        MapObject item = _dudeInventory[index];
+        _dudeInventory.RemoveAt(index);
+        _tradePartner.Inventory.Add(item);
+        Log($"You give {ObjectName(item)}{(item.StackCount > 1 ? $" x{item.StackCount}" : "")} to {ObjectName(_tradePartner)}.");
+    }
+
     /// <summary>Inventory "use": weapons toggle the right hand, armor toggles
     /// worn (equip-time bonus-stat mutation — inventory.cc _adjust_ac), drugs
     /// are consumed (_perform_drug_effect's HP path).</summary>
@@ -2173,6 +2236,7 @@ public sealed class ViewerGame : Game, Formats.Combat.ICombatHost
         if (_scriptHost?.PartyMembers.Contains(member) ?? false)
         {
             _hubOptions.Add(("Talk to them.", CompanionCmd.Talk));
+            _hubOptions.Add(("Let's trade.", CompanionCmd.Trade));
             _hubOptions.Add(_waitingCompanions.Contains(member)
                 ? ("Let's go. (follow me)", CompanionCmd.Follow)
                 : ("Wait here.", CompanionCmd.Wait));
@@ -2198,6 +2262,9 @@ public sealed class ViewerGame : Game, Formats.Combat.ICombatHost
         {
             case CompanionCmd.Talk:
                 OpenScriptedDialog(member); // companion quest/banter dialog
+                break;
+            case CompanionCmd.Trade:
+                OpenTrade(member);
                 break;
             case CompanionCmd.Wait:
                 _waitingCompanions.Add(member);
@@ -4141,6 +4208,12 @@ public sealed class ViewerGame : Game, Formats.Combat.ICombatHost
                 BarterStock(), 40, BarterBuyPrice);
             DrawItemList($"You sell (caps {DudeCaps()}) - Shift+1-9 sell, Esc done",
                 BarterGoods(), 420, BarterSellPrice);
+        }
+        else if (_tradePartner is { } follower)
+        {
+            DrawItemList($"Trading with {ObjectName(follower)} - 1-9 take, A take all",
+                follower.Inventory, 40);
+            DrawItemList("You carry - Shift+1-9 give, Esc done", _dudeInventory, 420);
         }
         else if (_lootContainer is { } container)
         {
