@@ -1,0 +1,16 @@
+party: Radscorpion joined (script 19)
+companion-lifecycle: recruited partyCount=2 heartbeatEligible=10
+companion-hub: Radscorpion options=[Talk to them. | Let's trade. | Wait here. | It's time for us to part ways. (dismiss) | Never mind.]
+companion: Radscorpion waiting
+  wait: heartbeatEligible=9 (member held)
+companion-hub: Radscorpion options=[Talk to them. | Let's trade. | Let's go. (follow me) | It's time for us to part ways. (dismiss) | Never mind.]
+companion: Radscorpion following
+  follow: heartbeatEligible=10
+companion-hub: Radscorpion options=[Talk to them. | Let's trade. | Wait here. | It's time for us to part ways. (dismiss) | Never mind.]
+party: Radscorpion left
+companion: Radscorpion dismissed team=4 count=1
+  dismiss: partyCount=1 team=4 (orig 4) sid=none
+companion-hub: Radscorpion options=[Join me again. | Never mind.]
+party: Radscorpion joined (script 19)
+companion: Radscorpion rejoined count=2
+  rejoin: partyCount=2 sid=bound

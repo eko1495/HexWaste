@@ -1,0 +1,5 @@
+party: Radscorpion joined (script 19)
+trade: open with Radscorpion (theirs=0 yours=1)
+trade: gave 0x00000007 -> yours=0 theirs=1 (dudeHas=False theyHave=True)
+trade: took it back -> yours=1 theirs=0 (dudeHas=True stack=1 flags=0x0)
+trade: caps 0->0 (flat, unchanged=True) backToStart=True
