@@ -81,6 +81,10 @@ public sealed class ViewerGame : Game, Formats.Combat.ICombatHost
     /// <summary>Deterministic combat rolls for headless transcripts (--rng-seed).</summary>
     public int? RngSeed { get; set; }
 
+    /// <summary>Game difficulty — skews the encounter occurrence frequency and the
+    /// weighted pick (phase-10 #12). Set via --difficulty; default Normal.</summary>
+    public Formats.Map.GameDifficulty Difficulty { get; set; } = Formats.Map.GameDifficulty.Normal;
+
     /// <summary>The dude's called-shot location for attacks (V cycles it; --aim sets
     /// it headlessly). UNCALLED = no aiming. See Formats.Combat.CriticalTables.</summary>
     public int AimLocation { get; set; } = Formats.Combat.CriticalTables.LocationUncalled;
@@ -3589,6 +3593,17 @@ public sealed class ViewerGame : Game, Formats.Combat.ICombatHost
     /// fresh wasteland each playthrough (phase-10 M3).</summary>
     private Formats.Combat.ICombatRng? _wmRng;
 
+    /// <summary>The best Outdoorsman skill across the dude + companions (party_get_best_
+    /// skill_value), feeding the encounter detect-and-avoid roll (phase-10 #12). 17 =
+    /// SKILL_OUTDOORSMAN.</summary>
+    private int PartyBestOutdoorsman()
+    {
+        int best = (_dude is not null ? GetCritterState(_dude.Dude)?.SkillValue(17) : 0) ?? 0;
+        foreach (MapObject m in _scriptHost?.PartyMembers ?? [])
+            best = Math.Max(best, GetCritterState(m)?.SkillValue(17) ?? 0);
+        return best;
+    }
+
     /// <summary>Walk the worldmap straight line from worldPos to the destination,
     /// rolling an encounter per pixel-step (+30 game-min). On the first hit, load the
     /// encounter map (transient, group spawned) and return true; on a clean arrival
@@ -3598,6 +3613,10 @@ public sealed class ViewerGame : Game, Formats.Combat.ICombatHost
         _wmRng ??= new Formats.Combat.SystemCombatRng(RngSeed ?? Environment.TickCount);
         var enc = new Formats.Map.WorldEncounters(Worldmap, _wmRng, _worldPosX, _worldPosY);
         int getGlobal(int g) => _scriptHost?.GlobalVars.GetValueOrDefault(g, 0) ?? 0;
+        // Luck shifts the pick; party-best Outdoorsman can detect + avoid (phase-10 #12).
+        Formats.Combat.CritterState? dudeStats = _dude is not null ? GetCritterState(_dude.Dude) : null;
+        int luck = dudeStats?.Stat(Formats.Combat.CritterStat.Luck) ?? 5;
+        int outdoorsman = _dude is not null ? PartyBestOutdoorsman() : 0;
 
         int x = _worldPosX, y = _worldPosY, x1 = area.WorldX, y1 = area.WorldY;
         int dx = Math.Abs(x1 - x), dy = Math.Abs(y1 - y), sx = x < x1 ? 1 : -1, sy = y < y1 ? 1 : -1, err = dx - dy;
@@ -3609,7 +3628,7 @@ public sealed class ViewerGame : Game, Formats.Combat.ICombatHost
             _clock.Ticks += 18000; // 30 game-minutes per pixel-step
             if (IsNearKnownArea(x, y)) // known-area suppression (worldmap.cc:3340-3343)
                 continue;
-            if (enc.Roll(x, y, _clock.Hour, getGlobal, _dudeLevel, _clock.Day) is { } r)
+            if (enc.Roll(x, y, _clock.Hour, getGlobal, _dudeLevel, _clock.Day, luck, outdoorsman, Difficulty) is { } r)
             {
                 _worldPosX = x;
                 _worldPosY = y;

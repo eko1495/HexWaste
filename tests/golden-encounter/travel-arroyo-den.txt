@@ -1,3 +1,3 @@
-encounter while travelling: ARRO_Rats -> mountn1.map
-encounter-spawn: ARRO_Rats planned=6 placed=6 on mountn1.map
-travel-from: (184,133)->area1 encounter map=mountn1.map worldPos=(204,143) spawned=6
+encounter while travelling: ARRO_Spore_Plants -> mountn4.map
+encounter-spawn: ARRO_Spore_Plants planned=4 placed=4 on mountn4.map
+travel-from: (184,133)->area1 encounter map=mountn4.map worldPos=(210,146) spawned=3

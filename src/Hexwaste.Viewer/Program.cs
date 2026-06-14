@@ -13,6 +13,7 @@ Microsoft.Xna.Framework.Point? talk = null;
 int[] choose = [];
 int? talkHex = null;
 int? rngSeed = null;
+var difficulty = Hexwaste.Formats.Map.GameDifficulty.Normal;
 int aimLocation = 8; // HIT_LOCATION_UNCALLED
 string? characterName = null;
 List<ViewerGame.StartupAction> actions = [];
@@ -151,6 +152,14 @@ for (int i = 0; i < args.Length; i++)
             break;
         case "--rng-seed" when i + 1 < args.Length:
             rngSeed = int.Parse(args[++i]);
+            break;
+        case "--difficulty" when i + 1 < args.Length:
+            difficulty = args[++i].ToLowerInvariant() switch
+            {
+                "easy" => Hexwaste.Formats.Map.GameDifficulty.Easy,
+                "hard" => Hexwaste.Formats.Map.GameDifficulty.Hard,
+                _ => Hexwaste.Formats.Map.GameDifficulty.Normal,
+            };
             break;
         case "--aim" when i + 1 < args.Length:
             aimLocation = args[++i].ToLowerInvariant() switch
@@ -336,6 +345,7 @@ using var game = new ViewerGame(gameDir!, mapName, screenshot, roofs)
     TalkAtHex = talkHex,
     StartupActions = actions,
     RngSeed = rngSeed,
+    Difficulty = difficulty,
     AimLocation = aimLocation,
     CharacterName = characterName,
     AutoChoose = choose,

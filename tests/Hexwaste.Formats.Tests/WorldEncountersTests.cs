@@ -159,6 +159,59 @@ public class WorldEncountersTests
     }
 
     [Fact]
+    public void HighOutdoorsmanDetectsAndAvoidsTheEncounter()
+    {
+        // A forced cell still rolls a group, but a high Outdoorsman steers around it
+        // (phase-10 #12). MinRng: the avoid roll (1) < detect (min(outdoorsman,95)).
+        EncounterResult? Run(int outdoorsman) =>
+            new WorldEncounters(World0(), new MinRng(), 0, 0)
+                .Roll(110, 110, 1200, _ => 0, playerLevel: 1, daysPlayed: 0, outdoorsman: outdoorsman);
+        Assert.NotNull(Run(0));   // no skill → walks into it
+        Assert.Null(Run(100));    // capped to 95 → detected → avoided
+    }
+
+    [Fact]
+    public void LuckShiftsTheWeightedPick()
+    {
+        const string w = """
+            [Data]
+            Forced=100%
+            [Tile 0]
+            2_2=Desert,_,Forced,Forced,Forced,T
+            [Encounter Table 0]
+            lookup_name=T
+            enc_00=Chance:50%,Enc:(1-1) A AMBUSH Player
+            enc_01=Chance:50%,Enc:(1-1) B AMBUSH Player
+            """;
+        // occ 0 (fires), pick 48, avoid-roll 1. Luck 5 → 48 → A; Luck 10 → 53 → B.
+        string? Run(int luck) =>
+            new WorldEncounters(WorldmapFile.Parse(w), new SequenceRng(0, 48, 1), 0, 0)
+                .Roll(110, 110, 1200, _ => 0, 1, 0, luck: luck)?.Entry.Spawns.Single().Group;
+        Assert.Equal("A", Run(5));
+        Assert.Equal("B", Run(10));
+    }
+
+    [Fact]
+    public void HardDifficultyRaisesEncounterFrequency()
+    {
+        const string w = """
+            [Data]
+            Test=30%
+            [Tile 0]
+            2_2=Desert,_,Test,Test,Test,T
+            [Encounter Table 0]
+            lookup_name=T
+            enc_00=Chance:100%,Enc:(1-1) A AMBUSH Player
+            """;
+        // occ roll 31: Normal freq 30 (31≥30 → none); Hard freq 30+30/15=32 (31<32 → fires).
+        EncounterResult? Run(GameDifficulty d) =>
+            new WorldEncounters(WorldmapFile.Parse(w), new SequenceRng(31, 0, 1), 0, 0)
+                .Roll(110, 110, 1200, _ => 0, 1, 0, difficulty: d);
+        Assert.Null(Run(GameDifficulty.Normal));
+        Assert.NotNull(Run(GameDifficulty.Hard));
+    }
+
+    [Fact]
     public void DeterministicUnderSeed()
     {
         EncounterResult? Run() =>

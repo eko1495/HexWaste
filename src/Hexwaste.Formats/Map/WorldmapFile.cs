@@ -83,6 +83,12 @@ public sealed class WorldmapFile
                     table.Entries[i].Counter = counters[i];
     }
 
+    /// <summary>The encounter_difficulty modifier of the tile under a worldmap pixel
+    /// (worldmap.cc tile->encounterDifficultyModifier) — added to the Outdoorsman
+    /// detect roll (phase-10 #12). 0 when off the grid / unset.</summary>
+    public int TileDifficultyAt(int worldX, int worldY) =>
+        Tiles.FirstOrDefault(t => t.Index == worldY / 300 * 4 + worldX / 350)?.Difficulty ?? 0;
+
     /// <summary>The subtile under a worldmap pixel position. The map is 4 tiles wide
     /// (×350) × 5 tall (×300); each tile is a 7×6 grid of 50px subtiles indexed
     /// [row=(x%350)/50][col=(y%300)/50] (worldmap.cc:3533-3543).</summary>

@@ -7,6 +7,10 @@ namespace Hexwaste.Formats.Map;
 /// random-map pool to pick a terrain map from).</summary>
 public sealed record EncounterResult(EncounterTable Table, EncounterEntry Entry);
 
+/// <summary>Game difficulty — skews the encounter occurrence frequency and the
+/// weighted pick (phase-10 #12). Normal is the no-op default.</summary>
+public enum GameDifficulty { Easy, Normal, Hard }
+
 /// <summary>
 /// The random-encounter roll/pick chain, ported from fallout2-ce
 /// src/worldmap.cc (wmRndEncounterOccurred :3322 / wmRndEncounterPick :3557 /
@@ -43,9 +47,13 @@ public sealed class WorldEncounters
 
     /// <summary>Roll one travel step at a worldmap pixel position. Returns the chosen
     /// encounter, or null for none. <paramref name="getGlobal"/> reads a GVAR;
-    /// <paramref name="playerLevel"/>/<paramref name="daysPlayed"/> feed conditions.</summary>
+    /// <paramref name="playerLevel"/>/<paramref name="daysPlayed"/> feed conditions.
+    /// <paramref name="luck"/> shifts the weighted pick (Luck 5 = none), the difficulty
+    /// skews the occurrence frequency, and <paramref name="outdoorsman"/> can detect +
+    /// avoid the encounter — phase-10 #12 (defaults are no-op: Luck 5, Normal, 0).</summary>
     public EncounterResult? Roll(int worldX, int worldY, int hhmm, Func<int, int> getGlobal,
-        int playerLevel, int daysPlayed)
+        int playerLevel, int daysPlayed, int luck = 5, int outdoorsman = 0,
+        GameDifficulty difficulty = GameDifficulty.Normal)
     {
         // Δ3 gate: no encounter until the party has moved ≥3 subtiles in BOTH axes
         // since the last encounter (two separate early returns in the engine).
@@ -55,27 +63,51 @@ public sealed class WorldEncounters
         if (_world.SubtileAt(worldX, worldY) is not { } subtile)
             return null;
 
-        int chance = DaypartChance(subtile, hhmm);
-        if (chance <= 0 || _rng.Next(0, 101) >= chance) // randomBetween(0,100) < frequency
+        // Difficulty skew on the occurrence frequency (worldmap.cc:3404-3414): Easy makes
+        // encounters rarer, Hard more common, by freq/15. Normal = unchanged.
+        int frequency = DaypartChance(subtile, hhmm);
+        if (frequency is > 0 and < 100)
+        {
+            int modifier = frequency / 15;
+            frequency += difficulty switch
+            {
+                GameDifficulty.Easy => -modifier,
+                GameDifficulty.Hard => modifier,
+                _ => 0,
+            };
+        }
+
+        int chance = _rng.Next(0, 101); // randomBetween(0,100)
+        if (frequency <= 0 || chance >= frequency)
             return null;
 
         if (_world.Table(subtile.EncTable) is not { } table)
             return null;
 
-        EncounterEntry? picked = Pick(table, getGlobal, playerLevel, hhmm, daysPlayed);
+        EncounterEntry? picked = Pick(table, getGlobal, playerLevel, hhmm, daysPlayed, luck, difficulty);
         if (picked is null)
             return null;
 
+        // Outdoorsman-avoid (worldmap.cc:3454-3519): a high-Outdoorsman party detects the
+        // encounter ahead and steers around it. The engine pops a yes/no dialog on detect;
+        // here detect == avoid (XP + motion-sensor skipped). The Δ3 anchor still resets on
+        // an avoided encounter, exactly like the engine (:3501-3502), so the next step
+        // doesn't immediately re-roll.
         _lastX = worldX;
         _lastY = worldY;
+        int detect = Math.Min(outdoorsman, 95) + _world.TileDifficultyAt(worldX, worldY);
+        if (_rng.Next(1, 101) < detect)
+            return null;
+
         return new EncounterResult(table, picked);
     }
 
-    /// <summary>Weighted pick over the candidates that pass their conditions and have
-    /// a non-zero counter — a uniform roll over the SUM of Chance weights, walked
-    /// down (worldmap.cc:3557-3654; Luck shift skipped v1).</summary>
+    /// <summary>Weighted pick over the candidates that pass their conditions and have a
+    /// non-zero counter — a uniform roll over the SUM of Chance weights plus the Luck-5
+    /// shift and the ±5 difficulty nudge (clamped), walked down (worldmap.cc:3557-3654;
+    /// perks skipped — no perk system).</summary>
     private EncounterEntry? Pick(EncounterTable table, Func<int, int> getGlobal,
-        int playerLevel, int hhmm, int daysPlayed)
+        int playerLevel, int hhmm, int daysPlayed, int luck, GameDifficulty difficulty)
     {
         var candidates = table.Entries
             .Where(e => e.Chance > 0 && e.Counter != 0
@@ -85,7 +117,9 @@ public sealed class WorldEncounters
         if (total <= 0)
             return null;
 
-        int roll = _rng.Next(0, total);
+        int roll = _rng.Next(0, total) + (luck - 5);
+        roll += difficulty switch { GameDifficulty.Easy => 5, GameDifficulty.Hard => -5, _ => 0 };
+        roll = Math.Clamp(roll, 0, total);
         foreach (EncounterEntry e in candidates)
         {
             roll -= e.Chance;
