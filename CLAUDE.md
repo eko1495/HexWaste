@@ -206,6 +206,24 @@ burst weapons in the shippable slice), random encounters, Vic's rescue +
 companion management, the projectile tween + recoverable persistence +
 the verified door beat.
 
+Post-phase-10 backlog (GitHub issues): #9 burst fire (DONE — the phase-9
+"ZERO burst weapons" claim was wrong: newr1.map carries 3 lootable burst
+guns — 10mm SMG/Tommy Gun/Combat Shotgun — exercised via --give). Ported
+combat.cc _compute_spray: rounds = min(loaded, weapon.Rounds); ONE day-gated
+inception crit roll (crit-FAIL aborts, crit-SUCCESS +20, bullets still
+spent); per-round hit = plain d100≤acc, rounds never crit; fresh damage roll
+per hit summed; ammo decremented in ONE batch at resolve (combat.cc:5349),
+NOT eagerly like single-shot; AP = secondary ApCost2; burst can't be aimed.
+DOCUMENTED DIVERGENCE (like the LoF greedy-hex one): the left/right cone
+lines + up-to-6 collateral "extras" are not modelled — only the center line
+fires at the target (exposure = max(centerRounds, mainTargetRounds), ~3 of
+10 for an SMG in a duel); collateral is the named deferred upgrade. CombatEngine
+.TryBurst behind a B keybind + --burst harness flag + 2 golden fixtures.
+GOTCHA (review-caught): EndPlayerTurn/UpdateCombat gated only _pendingAttack —
+a pending burst/throw could flip to the enemy turn mid-animation (the B+Space
+race; the throw half was a latent p9 bug); both now block on all three pending
+actions.
+
 Phase 10 (DONE, per docs/phase10-research-report.md — "The Wasteland
 Bites Back"): M0 persistence pre-stage (the net: MapList saved=No /
 random_start_point parse + IsTransient; the 3-clause transient guards as

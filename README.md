@@ -52,7 +52,10 @@ Prebuilt self-contained builds (Linux x64 / Windows x64) are produced by
   target sprawling back along the hex line; a crit leaves it prone (+40 to hit,
   3 AP to stand). Throw a spear or rock (Throwing skill, range scaled by
   Strength) — it lands recoverable on the ground — or lob a grenade for an
-  area blast with falloff and knockback. Kills pay XP at combat end;
+  area blast with falloff and knockback. With a burst gun (10mm SMG, Tommy
+  Gun, combat shotgun) hold the trigger (B): the magazine sprays a cone of
+  rounds — in a duel a few find the target and the rest chew up the scenery,
+  the same spread the engine rolls. Kills pay XP at combat end;
   levels raise your HP. Lose, and F9 puts you back.
 - **Character**: create your own (SPECIAL, gender, tagged skills) or pick a
   premade; level-ups grant skill points you spend on the character sheet (C),
@@ -76,6 +79,7 @@ Prebuilt self-contained builds (Linux x64 / Windows x64) are produced by
 | click a critter | talk (real scripted dialog, 1–9 to choose; shopkeepers open a barter panel) |
 | right-click | examine (critters show HP/AC) |
 | F | attack the hovered critter (starts combat) |
+| B | spray a burst at the hovered critter (needs a burst gun: SMG/Tommy/combat shotgun) |
 | V | cycle the called-shot location (aimed shot) |
 | Space | end combat turn |
 | L | lockpick the hovered door |

@@ -115,6 +115,11 @@ for (int i = 0; i < args.Length; i++)
         case "--attack" when i + 1 < args.Length:
             actions.Add(new ViewerGame.StartupAction.Attack(int.Parse(args[++i])));
             break;
+        case "--burst" when i + 1 < args.Length:
+            // --burst <hex>: fire a burst at the critter at hex with the equipped
+            // burst weapon (e.g. --give 9 --use-item 9 --burst <hex> for the 10mm SMG).
+            actions.Add(new ViewerGame.StartupAction.Burst(int.Parse(args[++i])));
+            break;
         case "--explode" when i + 1 < args.Length:
             actions.Add(new ViewerGame.StartupAction.Explode(int.Parse(args[++i])));
             break;

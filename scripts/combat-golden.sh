@@ -34,6 +34,8 @@ SCENARIOS=(
   "arcaves-throw-spear|--map arcaves.map --give 7 --use-item 7 --throw 20529 --rng-seed 1"
   "arcaves-throw-grenade|--map arcaves.map --give 25 --use-item 25 --throw 20529 --rng-seed 1"
   "arcaves-projectile-spear|--map arcaves.map --projectile 20529 --rng-seed 1"
+  "arcaves-burst-smg|--map arcaves.map --give 9 --use-item 9 --burst 20529 --rng-seed 1"
+  "arcaves-burst-shotgun|--map arcaves.map --give 242 --use-item 242 --burst 20529 --rng-seed 1"
 )
 
 echo "Building viewer..."

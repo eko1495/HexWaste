@@ -243,6 +243,7 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
         public sealed record UseHex(int Hex, bool Lockpick) : StartupAction;
         public sealed record ExamineCritter(int Hex) : StartupAction;
         public sealed record Attack(int Hex) : StartupAction;
+        public sealed record Burst(int Hex) : StartupAction;
         public sealed record Explode(int Hex) : StartupAction;
         public sealed record Throw(int Hex) : StartupAction;
         public sealed record ProjectileCheck(int Hex) : StartupAction;
@@ -703,6 +704,31 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
                     }
                     _combat.Reset();
                     Console.WriteLine($"throw-result: hex={throwHex}");
+                    break;
+                }
+                case StartupAction.Burst(var burstHex):
+                {
+                    MapObject? target = _solidObjects[_elevation]
+                        .FirstOrDefault(o => o.HexTile == burstHex && Fid.Type(o.Fid) is ObjectType.Critter);
+                    if (target is null)
+                    {
+                        Console.Error.WriteLine($"no critter at hex {burstHex}");
+                        break;
+                    }
+
+                    _camera.SetCenter(burstHex);
+                    if (_dude is not null) // teleport adjacent (test plumbing, like --attack)
+                        _dude.Dude.HexTile = Formats.Hex.HexGrid.TileInDirection(burstHex, 3);
+                    _combat.TryBurst(target);
+
+                    for (int guard = 0; guard < 3000 && _combat.IsResolving; guard++)
+                    {
+                        _animator.Update(10);
+                        _combat.ProcessAnimations();
+                    }
+
+                    _combat.Reset();
+                    Console.WriteLine($"burst-result: hp={target.CurrentHp} dead={target.IsDead}");
                     break;
                 }
                 case StartupAction.Explode(var explodeHex):
@@ -1597,6 +1623,11 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
         // F: attack the hovered critter at the current aim location (A is take-all in loot mode).
         if (IsKeyPressed(keyboard, Keys.F) && _hoveredObject is { } attackTarget)
             _combat.TryAttack(attackTarget, AimLocation);
+
+        // B: spray a burst at the hovered critter (only fires if a burst-capable gun
+        // is equipped — the SMG/Tommy Gun/Combat Shotgun; #9).
+        if (IsKeyPressed(keyboard, Keys.B) && _hoveredObject is { } burstTarget)
+            _combat.TryBurst(burstTarget);
 
         // Space ends the player's combat turn.
         if (IsKeyPressed(keyboard, Keys.Space))

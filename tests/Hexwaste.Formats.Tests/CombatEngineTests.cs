@@ -388,6 +388,153 @@ public class CombatEngineTests
     // --- helpers ---------------------------------------------------------
 
     /// <summary>STR/AG 5 ⇒ unarmed skill 50, so a MinRng roll always connects.</summary>
+    // ====================================================================
+    //  Burst fire (#9) — _compute_spray port. ext 0x76 = primary SINGLE(6),
+    //  secondary BURST(7); IsGun true (nibble >= 6), IsBurstWeapon true.
+    // ====================================================================
+    private static (ProtoInfo Proto, MapObject Item) MakeBurstWeapon(
+        int rounds, int apCost2, int minDmg = 10, int maxDmg = 10, int minStr = 0, int maxRange = 40)
+    {
+        var w = new WeaponProtoStats(0, minDmg, maxDmg, 0, maxRange, maxRange, 0, minStr, 5, apCost2, rounds, 0, -1, 30, 0);
+        var proto = new ProtoInfo(0x09, 0, 0x06000000, 0, 0x76, 3, Weapon: w);
+        var item = new MapObject
+        {
+            Id = 9, HexTile = 0, X = 0, Y = 0, Frame = 0, Rotation = 0,
+            Fid = 0x06000000, Flags = 0, Pid = 0x09, Sid = -1, AmmoQuantity = -1,
+        };
+        return (proto, item);
+    }
+
+    [Fact]
+    public void BurstFiresAtMostTheLoadedAmmoOrWeaponRounds()
+    {
+        var host = new FakeCombatHost { CriticalsEnabled = false, LoadedAmmoCount = 6 };
+        host.SetDude(NewCritter(20100, hp: 30, ap: 12));
+        MapObject enemy = host.AddCritter(NewCritter(HexGrid.TileInDirection(20100, 0), hp: 500));
+        host.Equipped = MakeBurstWeapon(rounds: 10, apCost2: 6); // mag (6) < burst rounds (10)
+        var engine = new CombatEngine(host, new MinRng());
+
+        Assert.True(engine.TryBurst(enemy));
+        // rounds=6: capped by the loaded magazine, not the weapon's 10-round burst.
+        Assert.Contains(host.Transcripts, t => t.StartsWith("burst ") && t.Contains("rounds=6"));
+    }
+
+    [Fact]
+    public void BurstConsumesTheWholeMagazineOnResolveNotOnRoll()
+    {
+        var host = new FakeCombatHost { CriticalsEnabled = false, LoadedAmmoCount = 10 };
+        host.SetDude(NewCritter(20100, hp: 30, ap: 12));
+        MapObject enemy = host.AddCritter(NewCritter(HexGrid.TileInDirection(20100, 0), hp: 500));
+        (ProtoInfo proto, MapObject item) = MakeBurstWeapon(rounds: 10, apCost2: 6);
+        item.AmmoQuantity = 10;
+        host.Equipped = (proto, item);
+        var engine = new CombatEngine(host, new MinRng());
+
+        Assert.True(engine.TryBurst(enemy));
+        Assert.Equal(10, item.AmmoQuantity);     // deferred: not decremented at roll time
+        host.Animating.Clear();
+        engine.ProcessAnimations();
+        Assert.Equal(0, item.AmmoQuantity);       // single batch decrement at resolve (10 − 10)
+    }
+
+    [Fact]
+    public void BurstCostsTheSecondaryApOnceRegardlessOfRoundCount()
+    {
+        var host = new FakeCombatHost { CriticalsEnabled = false, LoadedAmmoCount = 10 };
+        host.SetDude(NewCritter(20100, hp: 30, ap: 12));
+        MapObject enemy = host.AddCritter(NewCritter(HexGrid.TileInDirection(20100, 0), hp: 500));
+        host.Equipped = MakeBurstWeapon(rounds: 10, apCost2: 6);
+        var engine = new CombatEngine(host, new MinRng());
+
+        Assert.True(engine.TryBurst(enemy));
+        Assert.Equal(6, engine.DudeAp); // 12 MaxAP − ApCost2(6), paid once for the whole burst
+    }
+
+    [Fact]
+    public void BurstAccumulatesDamageAcrossEveryHitRound()
+    {
+        var host = new FakeCombatHost { CriticalsEnabled = false, LoadedAmmoCount = 10 };
+        host.SetDude(NewCritter(20100, hp: 30, ap: 12));
+        MapObject enemy = host.AddCritter(NewCritter(HexGrid.TileInDirection(20100, 0), hp: 500));
+        host.Equipped = MakeBurstWeapon(rounds: 10, apCost2: 6, minDmg: 10, maxDmg: 10);
+        var engine = new CombatEngine(host, new MinRng()); // every exposed round hits for 10
+
+        Assert.True(engine.TryBurst(enemy));
+        host.Animating.Clear();
+        engine.ProcessAnimations();
+
+        // n=10 → centerRounds=3, mainTargetRounds=1 → center-line exposure = 3.
+        // 3 hits × 10 dmg = 30 accumulated; left/right cone rounds are collateral (dropped v1).
+        Assert.Contains(host.Transcripts, t => t.Contains("hit=3 damage=30"));
+        Assert.Equal(470, enemy.CurrentHp);
+    }
+
+    [Fact]
+    public void BurstCriticalFailureAbortsAllRoundsButStillSpendsApAndAmmo()
+    {
+        var host = new FakeCombatHost { CriticalsEnabled = true, LoadedAmmoCount = 10 };
+        host.SetDude(NewCritter(20100, hp: 30, ap: 12));
+        MapObject enemy = host.AddCritter(NewCritter(HexGrid.TileInDirection(20100, 0), hp: 500));
+        (ProtoInfo proto, MapObject item) = MakeBurstWeapon(rounds: 10, apCost2: 6);
+        item.AmmoQuantity = 10;
+        host.Equipped = (proto, item);
+        // Inception roll: d100=100 (a miss vs ~5% accuracy), then 1 ≤ -delta/10 → CRITICAL_FAILURE.
+        var engine = new CombatEngine(host, new SequenceRng(100, 1));
+
+        Assert.True(engine.TryBurst(enemy));        // the action still happened
+        Assert.Equal(6, engine.DudeAp);             // AP spent
+        host.Animating.Clear();
+        engine.ProcessAnimations();
+
+        Assert.Contains(host.Transcripts, t => t.Contains("hit=0 damage=0"));
+        Assert.Equal(500, enemy.CurrentHp);          // no rounds connected
+        Assert.Equal(0, item.AmmoQuantity);          // bullets still left the barrel (10 − 10)
+    }
+
+    [Fact]
+    public void EndPlayerTurnWaitsForAPendingBurstToResolve()
+    {
+        // #9 review (HIGH): the turn must not hand over to the enemy while the dude's
+        // burst animation is still in flight (the B-key + Space race).
+        var host = new FakeCombatHost { CriticalsEnabled = false, LoadedAmmoCount = 10 };
+        host.SetDude(NewCritter(20100, hp: 30, ap: 12));
+        MapObject enemy = host.AddCritter(NewCritter(HexGrid.TileInDirection(20100, 0), hp: 500));
+        host.Equipped = MakeBurstWeapon(rounds: 10, apCost2: 6);
+        var engine = new CombatEngine(host, new MinRng());
+
+        Assert.True(engine.TryBurst(enemy));                  // opens combat, _pendingBurst in flight
+        Assert.Equal(CombatPhase.PlayerTurn, engine.Phase);
+        engine.EndPlayerTurn();                               // must be a no-op while the burst resolves
+        Assert.Equal(CombatPhase.PlayerTurn, engine.Phase);
+
+        host.Animating.Clear();
+        engine.ProcessAnimations();                           // burst lands
+        engine.EndPlayerTurn();                               // now the turn can end
+        Assert.Equal(CombatPhase.EnemyTurn, engine.Phase);
+    }
+
+    [Fact]
+    public void NonBurstWeaponRefusesToBurst()
+    {
+        var host = new FakeCombatHost { CriticalsEnabled = false, LoadedAmmoCount = 10 };
+        host.SetDude(NewCritter(20100, hp: 30, ap: 12));
+        MapObject enemy = host.AddCritter(NewCritter(HexGrid.TileInDirection(20100, 0), hp: 500));
+        // ext 0x06 = primary SINGLE only (a pistol): a gun, but not burst-capable.
+        var w = new WeaponProtoStats(0, 5, 12, 0, 40, 0, 0, 0, 5, 0, 0, 0, -1, 12, 0);
+        host.Equipped = (new ProtoInfo(0x08, 0, 0x06000000, 0, 0x06, 3, Weapon: w),
+            new MapObject
+            {
+                Id = 8, HexTile = 0, X = 0, Y = 0, Frame = 0, Rotation = 0,
+                Fid = 0x06000000, Flags = 0, Pid = 0x08, Sid = -1, AmmoQuantity = -1,
+            });
+        var engine = new CombatEngine(host, new MinRng());
+
+        Assert.False(engine.TryBurst(enemy));
+        Assert.Equal(CombatPhase.Idle, engine.Phase); // refused before combat opened
+        Assert.DoesNotContain(host.Transcripts, t => t.StartsWith("burst "));
+        Assert.Contains(host.Logs, l => l.Contains("can't fire a burst"));
+    }
+
     private static (MapObject Obj, CritterProtoStats Proto) NewCritter(
         int tile, int hp, int ap = 10, int seq = 1, int exp = 0, int betterCrit = 0, int meleeDmg = 0)
     {
@@ -456,7 +603,8 @@ public class CombatEngineTests
         public AiPacket? GetAiPacket(MapObject critter) => AiPackets.GetValueOrDefault(critter);
         public (ProtoInfo? Proto, MapObject? Item) Equipped = (null, null);
         public (ProtoInfo? Proto, MapObject? Item) EquippedWeapon(MapObject critter) => Equipped;
-        public int WeaponAmmo(ProtoInfo weaponProto, MapObject item) => 0;
+        public int LoadedAmmoCount; // settable magazine for burst/gun tests
+        public int WeaponAmmo(ProtoInfo weaponProto, MapObject item) => LoadedAmmoCount;
         public AmmoProtoStats? LoadedAmmo(ProtoInfo weaponProto, MapObject item) => null;
         public bool TryReload(MapObject holder, ProtoInfo weaponProto, MapObject item) => false;
         public MapObject? ShootBlockerAt(int tile, MapObject shooter, MapObject target) => null;

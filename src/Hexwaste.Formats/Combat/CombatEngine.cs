@@ -41,6 +41,14 @@ public sealed class CombatEngine
         bool Hit, int Damage, bool Explosive, int MinDamage, int MaxDamage, ProtoInfo Proto, MapObject Item);
     private PendingThrow? _pendingThrow;
 
+    /// <summary>A burst in flight: every round is rolled up front; the accumulated
+    /// damage lands and the magazine is decremented (in one batch, combat.cc:5349)
+    /// when the single muzzle-flash animation completes. AmmoBefore − RoundsFired is
+    /// the post-burst magazine; RoundsHit of the center-line rounds connected.</summary>
+    private sealed record PendingBurst(MapObject Attacker, MapObject Target, ProtoInfo WeaponProto,
+        MapObject WeaponItem, int AmmoBefore, int RoundsFired, int RoundsHit, int TotalDamage);
+    private PendingBurst? _pendingBurst;
+
     /// <summary>Critters playing their death fall; value = death anim (20/21).</summary>
     private readonly Dictionary<MapObject, int> _fallingCritters = [];
 
@@ -81,7 +89,7 @@ public sealed class CombatEngine
     public bool IsGameOver => _gameOver;
     public bool HasPendingAttack => _pendingAttack is not null;
     /// <summary>An attack or death-fall is resolving (independent of walkers).</summary>
-    public bool IsResolving => _pendingAttack is not null || _pendingThrow is not null || _fallingCritters.Count > 0;
+    public bool IsResolving => _pendingAttack is not null || _pendingThrow is not null || _pendingBurst is not null || _fallingCritters.Count > 0;
     /// <summary>Resolving OR an NPC walker is mid-move — the engine is "busy".</summary>
     public bool IsBusy => IsResolving || _host.IsAnyWalkerMoving();
     public IReadOnlyCollection<MapObject> Hostiles => _hostiles;
@@ -101,7 +109,7 @@ public sealed class CombatEngine
     public bool TryAttack(MapObject target, int hitLocation = CriticalTables.LocationUncalled)
     {
         MapObject? dude = _host.Dude;
-        if (dude is null || _pendingAttack is not null || target == dude)
+        if (dude is null || _pendingAttack is not null || _pendingBurst is not null || target == dude)
             return false;
         if (Fid.Type(target.Fid) is not ObjectType.Critter || target.IsDead)
             return false;
@@ -183,6 +191,180 @@ public sealed class CombatEngine
         return true;
     }
 
+    /// <summary>ANIM_FIRE_BURST attack-mode nibble (item.cc _attack_subtype[7]).</summary>
+    private const int BurstAnim = 7;
+
+    /// <summary>The equipped weapon can fire a burst: its primary or secondary attack
+    /// mode is BURST (extendedFlags nibble == 7; item.cc:131-141 + 1148-1165). The 3
+    /// shippable burst guns are SINGLE/BURST (10mm SMG, Tommy Gun, Combat Shotgun).</summary>
+    public static bool IsBurstWeapon(ProtoInfo? proto) =>
+        proto?.Weapon is not null
+        && (((proto.ExtendedFlags >> 4) & 0xF) == BurstAnim || (proto.ExtendedFlags & 0xF) == BurstAnim);
+
+    /// <summary>
+    /// Fire a burst at a critter (combat.cc _compute_spray, ANIM_FIRE_BURST). The
+    /// round count is min(loaded ammo, weapon burst-rounds); the engine splits those
+    /// rounds across a center/left/right cone. The outcome is rolled HERE; damage and
+    /// the magazine decrement land when the muzzle-flash animation finishes.
+    ///
+    /// DOCUMENTED DIVERGENCE (same class as the LineOfFire greedy-hex deviation): the
+    /// left/right cone lines (rotation±1, combat.cc:3769-3784) spray empty hexes in a
+    /// 1-on-1 and the up-to-6 collateral "extras" (_shoot_along_path) are NOT modelled
+    /// in v1 — only the center line through the target is fired, so the target is
+    /// exposed to ~centerRounds of the burst (3 of 10 for an SMG), exactly as the
+    /// engine would in a duel. Collateral damage to other critters standing in the
+    /// cone is the named deferred upgrade.
+    /// </summary>
+    public bool TryBurst(MapObject target)
+    {
+        MapObject? dude = _host.Dude;
+        if (dude is null || _pendingAttack is not null || _pendingBurst is not null || _pendingThrow is not null || target == dude)
+            return false;
+        if (Fid.Type(target.Fid) is not ObjectType.Critter || target.IsDead)
+            return false;
+        if (_host.GetCritterState(dude) is not { } attacker || _host.GetCritterState(target) is not { } defender)
+            return false;
+
+        (ProtoInfo? weaponProto, MapObject? weaponItem) = _host.EquippedWeapon(dude);
+        if (!IsBurstWeapon(weaponProto) || weaponItem is null)
+        {
+            _host.Log("This weapon can't fire a burst.");
+            return false;
+        }
+
+        int distance = HexGrid.Distance(dude.HexTile, target.HexTile);
+        if (distance > weaponProto!.Weapon!.MaxRange1)
+        {
+            _host.Log("Too far away.");
+            return false;
+        }
+
+        // _combat_check_bad_shot: empty mag (auto-reload, its own action), then LoF.
+        if (_host.WeaponAmmo(weaponProto, weaponItem) <= 0)
+        {
+            if (_phase == CombatPhase.PlayerTurn
+                && _dudeAp >= RangedMath.ReloadApCost
+                && _host.TryReload(dude, weaponProto, weaponItem))
+            {
+                _dudeAp -= RangedMath.ReloadApCost;
+                return true;
+            }
+            if (_phase != CombatPhase.PlayerTurn && _host.TryReload(dude, weaponProto, weaponItem))
+                return true;
+            _host.Log("Out of ammo.");
+            return false;
+        }
+
+        (MapObject? blocker, int crittersInPath) = LineOfFire.Trace(
+            dude.HexTile, target.HexTile, tile => _host.ShootBlockerAt(tile, dude, target));
+        if (blocker is not null)
+        {
+            _host.Log($"Your shot is blocked by the {_host.ObjectName(blocker)}.");
+            return false;
+        }
+
+        // Burst is the weapon's SECONDARY action-point cost (item.cc:1943); burst
+        // can't be aimed (item.cc:1830), so there is no aimed +1.
+        int apCost = weaponProto.Weapon.ApCost2 > 0 ? weaponProto.Weapon.ApCost2 : weaponProto.Weapon.ApCost;
+        switch (_phase)
+        {
+            case CombatPhase.PlayerTurn when _dudeAp < apCost:
+                _host.Log("Not enough action points.");
+                return false;
+            case CombatPhase.EnemyTurn or CombatPhase.GameOver:
+                return false;
+            case CombatPhase.Idle:
+                _dudeAp = attacker.MaxActionPoints;
+                break;
+        }
+        _dudeAp -= apCost;
+
+        _host.ClearAnimation(target);
+        dude.Rotation = HexGrid.RotationTo(dude.HexTile, target.HexTile);
+
+        int ammoBefore = _host.WeaponAmmo(weaponProto, weaponItem);
+        (int accuracy, int roundsFired, int roundsHit, int totalDamage) =
+            RollBurst(attacker, defender, weaponProto, weaponItem, distance, crittersInPath, ammoBefore);
+
+        // Ammo is consumed in a single batch AT RESOLVE (after damage, combat.cc:5349)
+        // — burst deliberately differs from the single-shot eager decrement in TryAttack.
+        _pendingBurst = new PendingBurst(dude, target, weaponProto, weaponItem,
+            ammoBefore, roundsFired, roundsHit, totalDamage);
+        _host.Transcript($"burst {_host.ObjectName(target)}@{target.HexTile}"
+            + $" [{_host.ObjectNameByPid(weaponProto.Pid)} {ammoBefore}rnd d{distance}]:"
+            + $" chance={accuracy}% rounds={roundsFired} hit={roundsHit} damage={totalDamage}");
+
+        _host.OnAttackStarted(dude, target, weaponProto);
+
+        if (_phase == CombatPhase.Idle)
+            BeginCombat(target);
+        return true;
+    }
+
+    /// <summary>Roll a whole burst (combat.cc:3703 _compute_spray). One inception
+    /// critical roll (day-gated): a critical FAILURE aborts the burst (no hits), a
+    /// critical SUCCESS adds +20 accuracy to every round. Individual rounds never
+    /// crit (combat.cc:3654-3657) — each is a plain d100 ≤ accuracy hit. Damage is a
+    /// fresh roll per hit round, summed (combat.cc:4589-4615). Returns the bullets
+    /// fired (always n — they leave the barrel even on an abort), the rounds that
+    /// connected, and the accumulated damage.</summary>
+    private (int Accuracy, int RoundsFired, int RoundsHit, int TotalDamage) RollBurst(
+        CritterState attacker, CritterState defender, ProtoInfo weaponProto, MapObject weaponItem,
+        int distance, int crittersInPath, int loadedAmmo)
+    {
+        int accuracy = Math.Clamp(
+            ComputeToHit(attacker, defender, weaponProto, weaponItem, distance, crittersInPath, attackerIsDude: true),
+            0, 95);
+
+        int n = Math.Min(loadedAmmo, weaponProto.Weapon!.Rounds);
+
+        // Inception roll = randomRoll(accuracy, critChance) (random.cc:85-131). The
+        // d100 is ALWAYS drawn; the crit upgrade/abort only fires from day 2
+        // (_host.CriticalsEnabled), so day-1 fixtures take no extra draws and never abort.
+        int delta = accuracy - _rng.Next(1, 101);
+        if (_host.CriticalsEnabled)
+        {
+            if (delta < 0)
+            {
+                if (_rng.Next(1, 101) <= -delta / 10)
+                    return (accuracy, n, 0, 0); // CRITICAL_FAILURE: burst aborts, bullets still spent
+            }
+            else if (_rng.Next(1, 101) <= delta / 10 + attacker.Stat(CritterStat.CriticalChance))
+            {
+                accuracy = Math.Min(accuracy + 20, 95); // CRITICAL_SUCCESS
+            }
+        }
+
+        // Cone split (combat.cc:3735-3746), exact integer truncation.
+        int centerRounds = n / 3;
+        if (centerRounds == 0)
+            centerRounds = 1;
+        int mainTargetRounds = centerRounds / 2;
+        if (mainTargetRounds == 0)
+        {
+            mainTargetRounds = 1;
+            centerRounds -= 1;
+        }
+        // The center line passes through the target; its full budget can hit it
+        // (direct mainTargetRounds + the _shoot_along_path remainder). left/right
+        // rounds are collateral, dropped in v1 (see TryBurst divergence note).
+        int mainTargetExposure = Math.Max(centerRounds, mainTargetRounds);
+
+        AmmoProtoStats? ammo = _host.LoadedAmmo(weaponProto, weaponItem);
+        int roundsHit = 0, totalDamage = 0;
+        for (int i = 0; i < mainTargetExposure; i++)
+        {
+            if (_rng.Next(1, 101) <= accuracy) // plain per-round hit (combat.cc:3654)
+            {
+                roundsHit++;
+                totalDamage += RangedMath.RollDamage(_rng,
+                    weaponProto.Weapon.MinDamage, weaponProto.Weapon.MaxDamage, defender,
+                    ammo?.DrModifier ?? 0, ammo?.DamageMultiplier ?? 1, ammo?.DamageDivisor ?? 1);
+            }
+        }
+        return (accuracy, n, roundsHit, totalDamage);
+    }
+
     /// <summary>HIT_LOCATION nibble for a THROW attack mode (item.cc _attack_anim).</summary>
     private const int ThrowAnim = 5;
 
@@ -205,7 +387,7 @@ public sealed class CombatEngine
     public bool TryThrow(int targetTile)
     {
         MapObject? dude = _host.Dude;
-        if (dude is null || _pendingAttack is not null || _pendingThrow is not null)
+        if (dude is null || _pendingAttack is not null || _pendingThrow is not null || _pendingBurst is not null)
             return false;
         if (_host.GetCritterState(dude) is not { } attacker)
             return false;
@@ -303,6 +485,48 @@ public sealed class CombatEngine
 
         // Recoverable: the weapon drops on the ground at the landing tile.
         _host.DropThrownWeapon(t.Item, t.TargetTile);
+    }
+
+    /// <summary>Damage + magazine decrement when the burst's muzzle-flash animation
+    /// finishes. Ammo is consumed in one batch here (after damage, combat.cc:5349),
+    /// unlike the single-shot eager decrement. Guns never knock back, so there is no
+    /// ApplyKnockback (mirrors ResolveAttack otherwise).</summary>
+    private void ResolveBurst(PendingBurst b)
+    {
+        MapObject? dude = _host.Dude;
+        bool byDude = b.Attacker == dude;
+        string targetName = _host.ObjectName(b.Target);
+        string attackerName = _host.ObjectName(b.Attacker);
+
+        // Single-batch magazine decrement (the bullets left the barrel regardless of hits).
+        b.WeaponItem.AmmoQuantity = Math.Max(0, b.AmmoBefore - b.RoundsFired);
+
+        if (b.RoundsHit == 0 || b.TotalDamage <= 0)
+        {
+            _host.Log(byDude ? $"Your burst misses the {targetName}." : $"The {attackerName}'s burst misses you.");
+            return;
+        }
+
+        b.Target.CurrentHp -= b.TotalDamage;
+        _host.Log(byDude
+            ? $"You riddle the {targetName} with {b.RoundsHit} rounds for {b.TotalDamage} damage."
+            : $"The {attackerName} riddles you with {b.RoundsHit} rounds for {b.TotalDamage} damage.");
+
+        if (b.Target != dude && b.Target.Sid != -1)
+            foreach (string line in _host.RunDamageProc(b.Target, b.Attacker, b.TotalDamage))
+                _host.Log(line);
+
+        if (b.Target.CurrentHp <= 0)
+        {
+            if (b.Target == dude)
+                GameOver();
+            else
+                KillCritter(b.Target, b.Attacker);
+            return;
+        }
+
+        if (b.Target != dude)
+            _host.OnTargetHit(b.Target);
     }
 
     /// <summary>Roll an attack with the equipped weapon (or fists). Guns use the
@@ -421,6 +645,12 @@ public sealed class CombatEngine
         {
             _pendingThrow = null;
             ResolveThrow(thrown);
+        }
+
+        if (_pendingBurst is { } burst && !_host.IsAnimating(burst.Attacker))
+        {
+            _pendingBurst = null;
+            ResolveBurst(burst);
         }
 
         if (_fallingCritters.Count > 0)
@@ -662,7 +892,11 @@ public sealed class CombatEngine
 
     public void EndPlayerTurn()
     {
-        if (_phase != CombatPhase.PlayerTurn || _pendingAttack is not null)
+        // Don't hand the turn over while ANY of the dude's actions is still in
+        // flight — a burst or a throw blocks the turn-end just like a melee/shot
+        // swing (the engine's blocking _combat_turn_run; #9 review).
+        if (_phase != CombatPhase.PlayerTurn
+            || _pendingAttack is not null || _pendingBurst is not null || _pendingThrow is not null)
             return;
 
         _phase = CombatPhase.EnemyTurn;
@@ -768,7 +1002,10 @@ public sealed class CombatEngine
     {
         if (_phase is CombatPhase.Idle or CombatPhase.GameOver)
             return;
-        if (_pendingAttack is not null || _fallingCritters.Count > 0)
+        // Stall the turn machine while any of the dude's actions resolves — a pending
+        // burst/throw must not let the enemy step mid-animation (#9 review).
+        if (_pendingAttack is not null || _pendingBurst is not null || _pendingThrow is not null
+            || _fallingCritters.Count > 0)
             return;
         if (_actingEnemy is { } moving && _host.IsWalkerMoving(moving))
             return;
@@ -1175,6 +1412,7 @@ public sealed class CombatEngine
         _actingEnemy = null;
         _pendingAttack = null;
         _pendingThrow = null;
+        _pendingBurst = null;
         _fallingCritters.Clear();
         _knockedDown.Clear();
         _gameOver = false;
