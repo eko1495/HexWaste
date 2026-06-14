@@ -658,6 +658,8 @@ public sealed class ScriptHost(GameFileSystem vfs, ScriptList scripts, Hexwaste.
                 return false;
             }
 
+            if (Environment.GetEnvironmentVariable("HEXWASTE_DIALOG_DEBUG") == "1")
+                Console.Error.WriteLine($"[dlg] opt={optionIndex} proc={procedureIndex} -> reply='{(_context.DialogReplyText.Length > 50 ? _context.DialogReplyText[..50] : _context.DialogReplyText)}' opts={_context.DialogOptions.Count} ended={_context.SessionEnded}");
             if (_context.DialogOptions.Count == 0 || _context.SessionEnded)
                 Active = false;
             return Active;
@@ -995,6 +997,15 @@ public sealed class ScriptHost(GameFileSystem vfs, ScriptList scripts, Hexwaste.
             DialogReplyText = "";
             DialogOptions.Clear();
             Messages.Clear();
+            // Clear the sticky end-of-dialogue flag before running the next option's
+            // proc. In the engine, gsay_end BLOCKS and runs the whole conversation, so
+            // talk_p_proc's trailing `end_dialogue` only fires once the player is done;
+            // our gsay_end is non-blocking, so that trailing end_dialogue sets
+            // SessionEnded eagerly during StartDialog. Without clearing it here, the
+            // first Choose would see the stale flag and kill an otherwise-valid round
+            // (the real multi-round dialog blocker — #10 M0). A genuine "goodbye" node
+            // re-sets it by calling end_dialogue from inside the proc we run next.
+            SessionEnded = false;
         }
 
         public void DialogStart()

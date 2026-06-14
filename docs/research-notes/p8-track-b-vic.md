@@ -44,6 +44,22 @@ The radio is handed over **through the dialog tree, not `use_obj_on_p_proc`** (t
 ### The $1000 Metzger purchase (dcMetzge — the actual rescue)
 Flow: `talk_p_proc` (line 1018) → Node002 → Node005 job hub → Vic sub-tree Node020 → Node023 → **Node024 [0x46fa] price node** → **Node025 [0x489a] payment node**.
 
+> **CORRECTION (#10 M1, verified in-app 2026-06):** the cash buy is NOT "caps-only,
+> shortest path, zero externals" as claimed below — it is **gated on the radio being
+> fixed**. Empirically (denbus2, `--talk-seq`): Metzger only offers "Maybe some money
+> might help clear things up?" → "$1000" → "Okay. Here." AFTER `GVAR446 & 0x400000`
+> ("radio delivered") is set; before that he says {456} "He needs to fix something
+> first. After that we'll see." So the RADIO sub-quest (the 3 stubbed externals
+> obj_carrying_pid_obj / obj_is_carrying_obj / rm_obj_from_inven + Vic's radio-parts
+> content) is a **prerequisite** for the cash recruit, not optional flavor. The
+> affordability gate below is real but is the SECOND gate; the radio bit is the first.
+> The recruit SPINE is proven end-to-end (M0 dialog fix → talk Vic → pay → party_add
+> via the VM, caps 2000→1000), exercised by the `vic-recruit` golden fixture which
+> satisfies the radio gate with `--set-global 446 0x400000` (documented test plumbing
+> pending the radio quest). Also corrected: both Metzger AND Vic are on **denbus2**
+> (Metzger hex 15278 script 45, Vic hex 17070 script 49) — a single-map flow, no
+> cross-map GVAR carry needed.
+
 - Price = `1000 / (1 + ((GVAR446 & 0x20000)!=0))` → **GVAR29** (0x46fc-0x472a). Bit 0x20000 = slaver-jacket/guild discount → 500; **never written in dcmetzge** (set by another script). Fresh player default GVAR446=0 → full **$1000**.
 - Affordability gate (0x47de-0x4812): buy option (msg 498, proc-index 39 → Node025) offered ONLY if `item_caps_total(dude) >= GVAR29` (0x4806/0x4810).
 - **Node025 payment/freed** (msg 510 "Okay, he's yours"): `item_caps_adjust(dude,-GVAR29)` (0x489c), `set_global_var(457,2)` → **GVAR457 DEN_SEE_VIC := 2** (the bought marker, 0x48ac), `GVAR100 := 2` if <2 (0x48ba), and **`GVAR445 DEN_FLAG_1 |= 0x8000000`** (0x48e0) = "already paid for Vic" (locks the re-offer).
@@ -77,7 +93,7 @@ Per-map re-bind in `map_enter_p_proc [0x210a]`: `critter_add_trait(self,1,6,25)`
 | `obj_being_used_with` / `item_subtype` (weapon bark) | stub to 0 — cosmetic |
 | GVAR445 0x8000000 free bit set by Metzger | **must verify** our dcMetzge slice writes it (it does, Node025 0x48e0) |
 
-**Bottom line:** the **cash purchase path needs ZERO new externals**; the **join needs only metarule rule 16** to refuse-when-full correctly (and even default-0 still presents the join). The **radio flavor branch** is the only part needing 3 new inventory-query externals, and it is optional to the rescue. No nonzero GVAR initials are required (all Den flags init :=0 correctly; only Metzger sets the free bit). Buying Vic awards **no give_exp_points in dcmetzge**; rescue XP/quest credit is Vic-side / V13-worldmap (out of this slice).
+**Bottom line:** ~~the **cash purchase path needs ZERO new externals**~~ **[CORRECTED #10 M1 — see the block above: the cash buy is RADIO-GATED, so the 3 radio externals are a PREREQUISITE, not optional. The purchase opcodes themselves (item_caps_adjust etc.) are real, but you cannot reach the buy option until the radio is fixed.]** the **join needs only metarule rule 16** to refuse-when-full correctly (and even default-0 still presents the join). The **radio flavor branch** is ~~the only part needing 3 new inventory-query externals, and it is optional to the rescue~~ **required first**. No nonzero GVAR initials are required (all Den flags init :=0 correctly; only Metzger sets the free bit). Buying Vic awards **no give_exp_points in dcmetzge**; rescue XP/quest credit is Vic-side / V13-worldmap (out of this slice).
 
 ## Q3: Ranked break-list
 

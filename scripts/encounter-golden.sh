@@ -30,10 +30,16 @@ SCENARIOS=(
   "trade-roundtrip|--map arcaves.map --trade 20529 7 --rng-seed 1"
   "companion-persist|--map arcaves.map --companion-persist 20529 --rng-seed 1"
   "companion-dismiss-persist|--map arcaves.map --dismiss-persist 20529 --rng-seed 1"
+  # Legitimate Vic recruit (#10 M1) — denbus2: meet Vic, pay Metzger 1000 caps,
+  # Vic joins via his real talk_p_proc party_add (NOT the force-recruit harness).
+  # --set-global 446 0x400000 satisfies the radio-fixed gate (the cash buy is
+  # radio-quest-gated, contra the p8 note); that sub-quest is the documented prereq.
+  "vic-recruit|--map denbus2.map --give 41:2000 --set-global 446 4194304 --talk-seq 17070 1 --talk-seq 15278 2,2,1,1 --talk-seq 17070 2,1 --party-count --rng-seed 1"
 )
 
-# Keep only the deterministic transcript lines (drop map-load / animate / stub noise).
-FILTER='^(encounter|travel-from|companion|dismiss-persist|trade:|party:|  spawn|  wait:|  follow:|  dismiss:|  rejoin:)'
+# Keep only the deterministic transcript lines (drop map-load / animate / stub /
+# dialog-text noise — NEVER capture REPLY/OPTION game-asset strings).
+FILTER='^(encounter|travel-from|companion|dismiss-persist|trade:|party:|party-count:|set-global:|  spawn|  wait:|  follow:|  dismiss:|  rejoin:)'
 
 echo "Building viewer..."
 dotnet build src/Hexwaste.Viewer -c Debug >/dev/null || { echo "build failed"; exit 2; }

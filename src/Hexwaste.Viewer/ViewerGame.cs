@@ -244,6 +244,15 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
         public sealed record ExamineCritter(int Hex) : StartupAction;
         public sealed record Attack(int Hex) : StartupAction;
         public sealed record Burst(int Hex) : StartupAction;
+        /// <summary>Talk to the critter at Hex and auto-pick Choices (1-based), printing
+        /// each round. Composable: several in one run share the session GVAR dict, so a
+        /// gated chain (talk Vic → talk Metzger → talk Vic) works (#10 M0/M1).</summary>
+        public sealed record TalkChoose(int Hex, int[] Choices) : StartupAction;
+        /// <summary>Test plumbing: force a global var (probe GVAR-gated dialog branches).</summary>
+        public sealed record SetGlobal(int Id, int Value) : StartupAction;
+        /// <summary>Print party size + dude caps as a state-only transcript line (no
+        /// dialog text) — the assertion target for the legitimate-recruit fixture.</summary>
+        public sealed record PartyCount : StartupAction;
         public sealed record Explode(int Hex) : StartupAction;
         public sealed record Throw(int Hex) : StartupAction;
         public sealed record ProjectileCheck(int Hex) : StartupAction;
@@ -704,6 +713,48 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
                     }
                     _combat.Reset();
                     Console.WriteLine($"throw-result: hex={throwHex}");
+                    break;
+                }
+                case StartupAction.PartyCount:
+                {
+                    int members = _scriptHost is null ? 0
+                        : Formats.Int.ScriptHost.PartyMemberCount(_scriptHost.PartyMembers);
+                    int caps = _dudeInventory.Where(i => i.Pid == 41).Sum(i => Math.Max(i.StackCount, 1));
+                    string names = _scriptHost is null ? ""
+                        : string.Join(",", _scriptHost.PartyMembers.Select(ObjectName));
+                    Console.WriteLine($"party-count: members={members} caps={caps} [{names}]");
+                    break;
+                }
+                case StartupAction.SetGlobal(var gid, var gval):
+                    if (_scriptHost is not null)
+                    {
+                        _scriptHost.GlobalVars[gid] = gval;
+                        Console.WriteLine($"set-global: GVAR{gid} = {gval}");
+                    }
+                    break;
+                case StartupAction.TalkChoose(var tcHex, var tcChoices):
+                {
+                    MapObject? npc = _solidObjects[_elevation]
+                        .FirstOrDefault(o => o.HexTile == tcHex && Fid.Type(o.Fid) is ObjectType.Critter);
+                    if (npc is null)
+                    {
+                        Console.Error.WriteLine($"talk-seq: no critter at hex {tcHex}");
+                        break;
+                    }
+                    _camera.SetCenter(tcHex);
+                    Console.WriteLine($"talk-seq: {ObjectName(npc)}@{tcHex}");
+                    TalkTo(npc);
+                    if (_dialog is not null)
+                        PrintDialogRound();
+                    foreach (int choice in tcChoices)
+                    {
+                        if (_dialog is null)
+                            break;
+                        Console.WriteLine($"CHOOSE: {choice}");
+                        ChooseDialogOption(choice - 1);
+                    }
+                    // Close any lingering dialog so the next talk-seq starts clean.
+                    _dialog = null;
                     break;
                 }
                 case StartupAction.Burst(var burstHex):

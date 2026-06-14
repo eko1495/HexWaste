@@ -120,6 +120,23 @@ for (int i = 0; i < args.Length; i++)
             // burst weapon (e.g. --give 9 --use-item 9 --burst <hex> for the 10mm SMG).
             actions.Add(new ViewerGame.StartupAction.Burst(int.Parse(args[++i])));
             break;
+        case "--party-count":
+            actions.Add(new ViewerGame.StartupAction.PartyCount());
+            break;
+        case "--set-global" when i + 2 < args.Length:
+            // --set-global <id> <value>: force a session GVAR (probe gated dialog).
+            actions.Add(new ViewerGame.StartupAction.SetGlobal(int.Parse(args[i + 1]), int.Parse(args[i + 2])));
+            i += 2;
+            break;
+        case "--talk-seq" when i + 2 < args.Length:
+            // --talk-seq <hex> <c1,c2,...>: talk to the critter at hex, auto-pick the
+            // 1-based choices. Repeatable; multiple share the session GVAR dict so a
+            // gated chain works (e.g. talk Vic, then Metzger offers to sell him).
+            actions.Add(new ViewerGame.StartupAction.TalkChoose(
+                int.Parse(args[i + 1]),
+                args[i + 2] == "-" ? [] : args[i + 2].Split(',').Select(int.Parse).ToArray()));
+            i += 2;
+            break;
         case "--explode" when i + 1 < args.Length:
             actions.Add(new ViewerGame.StartupAction.Explode(int.Parse(args[++i])));
             break;

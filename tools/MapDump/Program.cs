@@ -71,7 +71,9 @@ for (int elevation = 0; elevation < MapFile.ElevationCount; elevation++)
             int pkt = c.AiPacket;
             if (pkt == 0)
                 try { pkt = protos.Get(c.Pid).Critter?.AiPacket ?? 0; } catch { /* unknown proto */ }
-            Console.WriteLine($"      hex {c.HexTile} pid 0x{c.Pid:X} aiPacket {pkt} hp {c.CurrentHp}");
+            int scriptIndex = c.Sid != -1 && map.ScriptsBySid.TryGetValue(c.Sid, out MapScriptRecord? rec)
+                ? rec.ScriptListIndex : -1;
+            Console.WriteLine($"      hex {c.HexTile} pid 0x{c.Pid:X} aiPacket {pkt} hp {c.CurrentHp} script {scriptIndex}");
         }
     }
 

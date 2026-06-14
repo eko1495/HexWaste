@@ -241,6 +241,24 @@ all dialog externals; it's 100% companion-script content gated on the out-of-
 scope Sulik/Vic recruitment quests, same blocker as #10) — SCOPE.md clarified,
 no code. 9 unit tests (incl. a GameDataFact real-party.txt parse + the full
 Sulik 6-stage cycle + the inverted-roll both-branches).
+#10 Vic rescue (M0 DONE + M1 spine PROVEN): M0 fixed the real multi-round dialog
+blocker — a non-blocking gsay_end means talk_p_proc's trailing end_dialogue set a
+STICKY SessionEnded that killed the first Choose (every option ended the convo);
+fix = clear SessionEnded in ResetDialogRound (a real goodbye node re-sets it). The
+prior "debunk" was wrong — DialogRealGameDataTests only asserted TERMINATION (1
+round passes), never continuation. M1 spine proven end-to-end on denbus2 (BOTH
+Metzger hex 15278 script 45 AND Vic hex 17070 script 49 live there — single map):
+talk Vic → pay Metzger 1000 caps (item_caps_adjust, caps 2000→1000) → free-bit
+GVAR445|0x8000000 handshake → Vic "Come with me"/"Great let's go" → party_add via
+the REAL talk_p_proc VM (not the force-recruit harness) → party-count members=2.
+GOTCHA (contradicts the p8 note): the cash buy is RADIO-GATED — Metzger only offers
+it after GVAR446|0x400000 ("radio fixed"); the vic-recruit golden fixture sets that
+bit via --set-global (test plumbing) pending the radio sub-quest (the 3 stubbed
+inventory externals + Vic's radio-parts content are a PREREQUISITE, not optional).
+New harness: --talk-seq (composable GVAR-persistent talk+choose), --set-global,
+--party-count; MapDump now prints per-critter script index; HEXWASTE_DIALOG_DEBUG=1
+traces Choose. Remaining for a no-plumbing recruit: the radio sub-quest (M-radio),
+then M2 light up level-up/hub, M3 save a scripted recruit.
 
 Phase 10 (DONE, per docs/phase10-research-report.md — "The Wasteland
 Bites Back"): M0 persistence pre-stage (the net: MapList saved=No /
