@@ -38,7 +38,14 @@ filing an issue.
   the target; deeper quests (incl. Vic's radio rescue), reputation/karma badges,
   and the slave-run path are not wired.
 - **Companion depth** — recruit/follow/fight/dismiss/rejoin/wait and 1:1 trade
-  work (phase 10); level-up proto swaps and per-companion quest banter do not.
+  work (phase 10). The level-up proto-swap *logic* is now ported and unit-tested
+  (`Hexwaste.Formats.Party`, from `party.txt` + `party_member.cc`
+  `_partyMemberIncLevels`), but it is not wired into the viewer because **no
+  shippable map recruits a `party.txt` companion** (Sulik/Marcus/etc. need their
+  out-of-scope recruitment quests) — it lights up for free once one does (#13).
+  Per-companion quest *banter* is 100% companion-script content gated on those
+  same recruitment quests (it already runs via `talk_p_proc` when present), so
+  there is no engine work to do — blocked on content like Vic's rescue (#10).
 - **Perks, traits, skill points beyond the gated skills**, the full character
   editor, and worldmap car travel.
 - **Anything needing assets we can't ship** — Hexwaste requires *your own* legal

@@ -223,6 +223,24 @@ GOTCHA (review-caught): EndPlayerTurn/UpdateCombat gated only _pendingAttack —
 a pending burst/throw could flip to the enemy turn mid-animation (the B+Space
 race; the throw half was a latent p9 bug); both now block on all three pending
 actions.
+#13 companion depth (PARTIAL — level-up FOUNDATION only; banter closed-with-
+docs): party.txt EXISTS (data\party.txt; Sulik pid 16777313 section 4,
+level_minimum 6, level_up_every 3, 6 stage pids). Ported the PURE logic into
+Hexwaste.Formats.Party — PartyTable (party.txt parse) + PartyLevelUp.IncLevel
+(party_member.cc:1487-1539 _partyMemberIncLevels decision math: level_up_every
+==0 never; pcLevel<level_minimum gate; cap at level_pids_num; numLevelUps%every
+levelMod; isEarly skip-until-cycle-boundary; the INVERTED roll randomBetween
+(0,100) > 100*levelMod/every = DO NOT advance). DIVERGENCE: engine indexes
+level_pids[level] AFTER level++ (skips [0], reads OOB on the last stage — a real
+quirk, copyLevelInfo only ever runs here); we apply level_pids in order capped
+at the count. NO viewer wiring / save field / harness — no shippable map
+recruits a party.txt companion (the Radscorpion test critter pid 0x1000005 is
+NOT in party.txt), so wiring would be inert; the logic lights up for free when
+a real recruitment lands. Banter = ZERO engine work (talk_p_proc already runs
+all dialog externals; it's 100% companion-script content gated on the out-of-
+scope Sulik/Vic recruitment quests, same blocker as #10) — SCOPE.md clarified,
+no code. 9 unit tests (incl. a GameDataFact real-party.txt parse + the full
+Sulik 6-stage cycle + the inverted-roll both-branches).
 
 Phase 10 (DONE, per docs/phase10-research-report.md — "The Wasteland
 Bites Back"): M0 persistence pre-stage (the net: MapList saved=No /
