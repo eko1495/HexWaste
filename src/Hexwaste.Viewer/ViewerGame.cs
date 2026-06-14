@@ -3700,14 +3700,39 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
     /// <summary>Travels to a worldmap area: first usable entrance, resolved via maps.txt lookup names.</summary>
     private void TravelTo(WorldArea area)
     {
-        // Phase-10 M3: roll for encounters along the way. If the wasteland bites, the
-        // encounter map loads instead of the town — re-clicking the destination
-        // resumes travel from the encounter spot (the engine's isWalking auto-resume
-        // is a documented v1 simplification). The very first travel of a game (no
-        // worldPos yet) skips the roll and just arrives.
+        // Phase-10 M3: roll for encounters along the way. The pure walk + roll + map
+        // pick lives in Formats.Map.WorldmapTravel.ResolveLeg (#14); the viewer only
+        // does the I/O (advance the real clock, load the map). If the wasteland bites,
+        // the encounter map loads instead of the town — re-clicking the destination
+        // resumes travel from the encounter spot (the engine's isWalking auto-resume is
+        // a documented v1 simplification). The very first travel of a game (no worldPos
+        // yet) skips the roll and just arrives.
         bool rolled = _worldPosX >= 0 && _worldPosY >= 0;
-        if (rolled && RollTravelPath(area))
-            return;
+        if (rolled)
+        {
+            _wmRng ??= new Formats.Combat.SystemCombatRng(RngSeed ?? Environment.TickCount);
+            int getGlobal(int g) => _scriptHost?.GlobalVars.GetValueOrDefault(g, 0) ?? 0;
+            Formats.Combat.CritterState? dudeStats = _dude is not null ? GetCritterState(_dude.Dude) : null;
+            int luck = dudeStats?.Stat(Formats.Combat.CritterStat.Luck) ?? 5;
+            int outdoorsman = _dude is not null ? PartyBestOutdoorsman() : 0;
+
+            Formats.Map.WorldmapTravel.LegOutcome leg = Formats.Map.WorldmapTravel.ResolveLeg(
+                Worldmap, _cities.Areas, _mapList, _worldPosX, _worldPosY, area.WorldX, area.WorldY,
+                _clock.Ticks, _wmRng, getGlobal, _dudeLevel, luck, outdoorsman, Difficulty);
+
+            _clock.Ticks += leg.ClockTicksAdded; // the per-step travel time across the leg
+            _worldPosX = leg.FinalWorldX;
+            _worldPosY = leg.FinalWorldY;
+            if (leg.Encounter is { } r)
+            {
+                _pendingEncounter = r;
+                _worldmapOpen = false;
+                Console.WriteLine($"encounter while travelling: {r.Entry.Spawns.FirstOrDefault()?.Group ?? "?"} -> {leg.EncounterMap}");
+                Log("Ambush! The wasteland bites.");
+                LoadMap(leg.EncounterMap!, null, transient: true);
+                return;
+            }
+        }
 
         // ported behavior from fallout2-ce src/worldmap.cc
         // wmAreaFindFirstValidMap(): first enabled entrance, else force the first.
@@ -3722,9 +3747,9 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
         }
 
         _worldmapOpen = false;
-        // RollTravelPath already advanced the clock per pixel-step across the whole
-        // leg; only the first travel of a game (no prior worldPos → no roll) needs the
-        // flat estimate, else the clock double-counts the trip.
+        // ResolveLeg already advanced the clock per pixel-step across the whole leg;
+        // only the first travel of a game (no prior worldPos → no roll) needs the flat
+        // estimate, else the clock double-counts the trip.
         if (!rolled)
             _clock.AdvanceHours(8);
         // Record the dude's worldmap whereabouts so a save round-trips it
@@ -3753,94 +3778,6 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
         return best;
     }
 
-    /// <summary>Walk the worldmap straight line from worldPos to the destination,
-    /// rolling an encounter per pixel-step (+30 game-min). On the first hit, load the
-    /// encounter map (transient, group spawned) and return true; on a clean arrival
-    /// return false. Mirrors the --encounter-walk demo, but live and loading.</summary>
-    private bool RollTravelPath(WorldArea area)
-    {
-        _wmRng ??= new Formats.Combat.SystemCombatRng(RngSeed ?? Environment.TickCount);
-        var enc = new Formats.Map.WorldEncounters(Worldmap, _wmRng, _worldPosX, _worldPosY);
-        int getGlobal(int g) => _scriptHost?.GlobalVars.GetValueOrDefault(g, 0) ?? 0;
-        // Luck shifts the pick; party-best Outdoorsman can detect + avoid (phase-10 #12).
-        Formats.Combat.CritterState? dudeStats = _dude is not null ? GetCritterState(_dude.Dude) : null;
-        int luck = dudeStats?.Stat(Formats.Combat.CritterStat.Luck) ?? 5;
-        int outdoorsman = _dude is not null ? PartyBestOutdoorsman() : 0;
-
-        int x = _worldPosX, y = _worldPosY, x1 = area.WorldX, y1 = area.WorldY;
-        int dx = Math.Abs(x1 - x), dy = Math.Abs(y1 - y), sx = x < x1 ? 1 : -1, sy = y < y1 ? 1 : -1, err = dx - dy;
-        for (int guard = 0; (x != x1 || y != y1) && guard < 4000; guard++)
-        {
-            int e2 = 2 * err;
-            if (e2 > -dy) { err -= dy; x += sx; }
-            if (e2 < dx) { err += dx; y += sy; }
-            _clock.Ticks += 18000; // 30 game-minutes per pixel-step
-            if (IsNearKnownArea(x, y)) // known-area suppression (worldmap.cc:3340-3343)
-                continue;
-            if (enc.Roll(x, y, _clock.Hour, getGlobal, _dudeLevel, _clock.Day, luck, outdoorsman, Difficulty) is { } r)
-            {
-                _worldPosX = x;
-                _worldPosY = y;
-                LoadEncounter(r);
-                return true;
-            }
-        }
-        return false;
-    }
-
-    /// <summary>True when a worldmap pixel sits on/near a known city circle — the
-    /// engine never rolls an encounter there (worldmap.cc:3340-3343, the KEEP
-    /// decision in the phase-10 report). Suppresses ambushes at a town's doorstep.</summary>
-    private bool IsNearKnownArea(int worldX, int worldY)
-    {
-        const int radiusSq = 12 * 12; // ~ the engine's area circle in worldmap pixels
-        foreach (WorldArea a in _cities.Areas)
-        {
-            if (a.Entrances.Count == 0)
-                continue;
-            int dx = a.WorldX - worldX, dy = a.WorldY - worldY;
-            if (dx * dx + dy * dy <= radiusSq)
-                return true;
-        }
-        return false;
-    }
-
-    /// <summary>Load the rolled encounter's map as a transient map with its group
-    /// queued to spawn after map_enter (phase-10 M3).</summary>
-    private void LoadEncounter(Formats.Map.EncounterResult enc)
-    {
-        string map = ResolveEncounterMap(enc);
-        _pendingEncounter = enc;
-        _worldmapOpen = false;
-        Console.WriteLine($"encounter while travelling: {enc.Entry.Spawns.FirstOrDefault()?.Group ?? "?"} -> {map}");
-        Log("Ambush! The wasteland bites.");
-        LoadMap(map, null, transient: true);
-    }
-
-    /// <summary>Pick the encounter's transient map: the entry's Map override, else a
-    /// random map from the table's pool, falling back to desert1 — only ever a
-    /// saved=No map (phase-10 M3, wmRndEncounterPick map selection, simplified).</summary>
-    private string ResolveEncounterMap(Formats.Map.EncounterResult enc)
-    {
-        string? Resolve(string lookup)
-        {
-            int idx = _mapList.FindByLookupName(lookup);
-            string? file = idx >= 0 ? _mapList.GetMapFileName(idx) : null;
-            return file is not null && _mapList.IsTransient(file) ? file : null;
-        }
-
-        if (enc.Entry.Map is { Length: > 0 } m && Resolve(m) is { } mapped)
-            return mapped;
-        if (enc.Table.Maps.Count > 0)
-        {
-            _wmRng ??= new Formats.Combat.SystemCombatRng(RngSeed ?? Environment.TickCount);
-            // one shuffled pass so a non-transient/unresolvable entry doesn't loop forever
-            foreach (string lookup in enc.Table.Maps.OrderBy(_ => _wmRng.Next(0, enc.Table.Maps.Count)))
-                if (Resolve(lookup) is { } file)
-                    return file;
-        }
-        return "desert1.map"; // guaranteed transient fallback
-    }
 
     /// <summary>Queues the transition when the dude steps onto an exit grid.</summary>
     private void CheckExitGridAt(int tile)

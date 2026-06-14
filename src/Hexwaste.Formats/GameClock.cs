@@ -33,9 +33,17 @@ public sealed class GameClock
     public void AdvanceHours(int hours) => Ticks += (long)hours * TicksPerHour;
 
     /// <summary>ported from scripts.cc gameTimeGetHour(): military hhmm.</summary>
-    public int Hour => (int)(100 * (Ticks / 600 / 60 % 24) + Ticks / 600 % 60);
+    public int Hour => HourAt(Ticks);
 
-    public int Day => (int)(Ticks / TicksPerDay) + 1;
+    public int Day => DayAt(Ticks);
+
+    /// <summary>Military hhmm for an absolute tick count — the single source of truth
+    /// so callers that walk a tick total (e.g. worldmap travel) compute the same
+    /// hour the live clock would report.</summary>
+    public static int HourAt(long ticks) => (int)(100 * (ticks / 600 / 60 % 24) + ticks / 600 % 60);
+
+    /// <summary>1-based day number for an absolute tick count.</summary>
+    public static int DayAt(long ticks) => (int)(ticks / TicksPerDay) + 1;
 
     /// <summary>
     /// Ambient daylight fraction for an hour-of-day. The engine has no
