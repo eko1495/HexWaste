@@ -1,5 +1,14 @@
 # P11 — Authentic HUD bar (scoping)
 
+> **PROGRESS:** M0 (bar art + anchoring + log relocation) and M1+M2 (HP/AC via
+> NUMBERS.FRM over the blanked baked fields, lit AP dot row, equipped-weapon slot +
+> ammo) are DONE and screenshot-verified. Discovery during build: `iface.frm` ships
+> with BAKED placeholder digits ("036"/"-258"), mode labels (SINGLE/BURST) and an AP
+> dot row — so HP/AC needed the real `NUMBERS.FRM` digit blitter (not AAF text) over
+> a field-blank to `(32,32,32)`, which the scope had deferred; it's in now. Remaining:
+> M3 green monitor, M4 clickable buttons, M5 polish (dynamic mode-label highlight,
+> press art, the round combat buttons).
+
 Scope for the iconic Fallout 2 bottom interface bar (the metal panel: green
 message monitor on the left, equipped-weapon slot + AP dots + attack-mode in the
 centre, HP/AC readout, and the INV/OPT/SKILLDEX/MAP/CHA/PIP buttons). Research +

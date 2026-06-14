@@ -4461,7 +4461,82 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
         Rectangle viewport = GraphicsDevice.Viewport.Bounds;
         _hudBarHeight = InterfaceBar.Height;
         bar.Draw(_spriteBatch, viewport);
-        // M1 (readouts) + M2 (weapon slot) compose here.
+
+        if (_dude is null || GetCritterState(_dude.Dude) is not { } stats)
+            return;
+        Point o = bar.Origin(viewport); // bar-local coords (interface.cc) -> screen = o + coord
+
+        // --- M2: equipped-weapon slot (centre, bar-local 267,26 188x67; interface.cc:505,315) ---
+        (Formats.Proto.ProtoInfo? weaponProto, MapObject? weaponItem) = EquippedWeapon(_dude.Dude);
+        if (weaponItem is not null)
+        {
+            try
+            {
+                int fid = _protos.Get(weaponItem.Pid).InventoryFid;
+                if (fid != -1)
+                {
+                    Texture2D tex = _frmCache.GetTexture(fid);
+                    // native size, downscaled only if larger than the slot, centred
+                    float s = Math.Min(1f, Math.Min(188f / tex.Width, 67f / tex.Height));
+                    int dw = (int)(tex.Width * s), dh = (int)(tex.Height * s);
+                    _spriteBatch.Draw(tex, new Rectangle(o.X + 267 + (188 - dw) / 2, o.Y + 26 + (67 - dh) / 2, dw, dh), Color.White);
+                }
+            }
+            catch (Exception ex) when (ex is FileNotFoundException or InvalidDataException or NotSupportedException)
+            {
+            }
+        }
+        // Ammo count for guns, over the baked ammo bar (NUMBERS.FRM, white band).
+        if (weaponProto?.Weapon is { } w && w.IsGun(weaponProto.ExtendedFlags) && weaponItem is not null && bar.Numbers is { } numAmmo)
+            DrawCounter(numAmmo, WeaponAmmo(weaponProto, weaponItem), band: 0, xRight: o.X + 458, yTop: o.Y + 76);
+        // (The dynamic SINGLE/BURST/SWING mode-label highlight is an M5 upgrade — the
+        // baked labels stay as the panel art for this slice.)
+
+        // --- M1: HP/AC via NUMBERS.FRM. The bar has baked placeholder digits ("036"/
+        // "-258") in dark recessed fields; blank each field to its background colour
+        // first (the engine restores the field background before re-rendering), then
+        // draw the live value right-aligned over it.
+        if (bar.Numbers is { } numbers)
+        {
+            _panelPixel ??= CreatePixel();
+            var fieldBg = new Color(32, 32, 32); // the recessed digit-box interior colour
+            _spriteBatch.Draw(_panelPixel, new Rectangle(o.X + 474, o.Y + 40, 33, 17), fieldBg);  // HP box
+            _spriteBatch.Draw(_panelPixel, new Rectangle(o.X + 474, o.Y + 75, 33, 17), fieldBg);  // AC box
+            // HP: white band normal, yellow <50%, red <25% (interface.cc:889-894).
+            int hpBand = stats.CurrentHp * 4 <= stats.MaxHp ? 2 : stats.CurrentHp * 2 <= stats.MaxHp ? 1 : 0;
+            DrawCounter(numbers, stats.CurrentHp, hpBand, xRight: o.X + 505, yTop: o.Y + 40);
+            DrawCounter(numbers, stats.ArmorClass, band: 0, xRight: o.X + 505, yTop: o.Y + 75);
+        }
+
+        // AP: light the green dot sockets along the top (interface.cc:974,1001 — 10 dots,
+        // x=316 step 9, y=14). A bright-green pip per current action point.
+        _panelPixel ??= CreatePixel();
+        int ap = Math.Clamp(_combat.DudeAp, 0, 10);
+        for (int i = 0; i < ap; i++)
+            _spriteBatch.Draw(_panelPixel, new Rectangle(o.X + 316 + i * 9, o.Y + 13, 6, 6), new Color(0, 252, 0));
+    }
+
+    /// <summary>Blit a right-aligned integer from NUMBERS.FRM (the engine digit font):
+    /// 3 colour bands (band*120), digits 9px (src-x band*120+9*d), minus 6px (+108).
+    /// Ported from fallout2-ce src/interface.cc interfaceRenderCounter (:2049-2088).</summary>
+    private void DrawCounter(Texture2D numbers, int value, int band, int xRight, int yTop)
+    {
+        bool negative = value < 0;
+        string digits = Math.Abs(value).ToString();
+        int width = digits.Length * 9 + (negative ? 6 : 0);
+        int x = xRight - width;
+        int bandX = band * 120;
+        if (negative)
+        {
+            _spriteBatch.Draw(numbers, new Rectangle(x, yTop, 6, 17), new Rectangle(bandX + 108, 0, 6, 17), Color.White);
+            x += 6;
+        }
+        foreach (char c in digits)
+        {
+            int d = c - '0';
+            _spriteBatch.Draw(numbers, new Rectangle(x, yTop, 9, 17), new Rectangle(bandX + 9 * d, 0, 9, 17), Color.White);
+            x += 9;
+        }
     }
 
     /// <summary>Hover name near the cursor + the message log, bottom-left, in Fallout green.</summary>

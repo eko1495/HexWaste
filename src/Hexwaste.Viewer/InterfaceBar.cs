@@ -26,9 +26,15 @@ public sealed class InterfaceBar : IDisposable
     /// <summary>The bar background, or null if the art is missing (HUD then hidden).</summary>
     public Texture2D? Background { get; }
 
+    /// <summary>The 360x17 digit strip (numbers.frm): 3 colour bands (white/yellow/red,
+    /// 120px each), each with digits 0-9 (9px) + up/down arrows + minus (6px @ +108).
+    /// The engine blits these over the bar's baked placeholder digits.</summary>
+    public Texture2D? Numbers { get; }
+
     public InterfaceBar(GraphicsDevice graphicsDevice, GameFileSystem vfs, Palette palette)
     {
         Background = LoadFrm(graphicsDevice, vfs, palette, @"art\intrface\iface.frm");
+        Numbers = LoadFrm(graphicsDevice, vfs, palette, @"art\intrface\numbers.frm");
     }
 
     public bool Loaded => Background is not null;
@@ -66,5 +72,9 @@ public sealed class InterfaceBar : IDisposable
         spriteBatch.Draw(Background, new Vector2(origin.X, origin.Y), Color.White);
     }
 
-    public void Dispose() => Background?.Dispose();
+    public void Dispose()
+    {
+        Background?.Dispose();
+        Numbers?.Dispose();
+    }
 }
