@@ -1,0 +1,8 @@
+party: Radscorpion joined (script 19)
+party: Radscorpion left
+companion: Radscorpion dismissed team=4 count=1
+dismiss-persist: pre-save dismissedOnMap=1 baselineOfPid=5
+dismiss-persist: reloaded noDuplicate=True rejoinable=True inParty=False
+party: Radscorpion joined (script 19)
+companion: Radscorpion rejoined count=2
+dismiss-persist: after-rejoin inParty=True dismissedOnMap=0

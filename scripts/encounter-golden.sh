@@ -29,10 +29,11 @@ SCENARIOS=(
   "companion-lifecycle|--map arcaves.map --companion 20529 --rng-seed 1"
   "trade-roundtrip|--map arcaves.map --trade 20529 7 --rng-seed 1"
   "companion-persist|--map arcaves.map --companion-persist 20529 --rng-seed 1"
+  "companion-dismiss-persist|--map arcaves.map --dismiss-persist 20529 --rng-seed 1"
 )
 
 # Keep only the deterministic transcript lines (drop map-load / animate / stub noise).
-FILTER='^(encounter|travel-from|companion|trade:|party:|  spawn|  wait:|  follow:|  dismiss:|  rejoin:)'
+FILTER='^(encounter|travel-from|companion|dismiss-persist|trade:|party:|  spawn|  wait:|  follow:|  dismiss:|  rejoin:)'
 
 echo "Building viewer..."
 dotnet build src/Hexwaste.Viewer -c Debug >/dev/null || { echo "build failed"; exit 2; }

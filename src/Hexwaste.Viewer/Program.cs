@@ -187,6 +187,11 @@ for (int i = 0; i < args.Length; i++)
             // the wait flag + original team survived (phase-10 #2).
             actions.Add(new ViewerGame.StartupAction.CompanionPersist(int.Parse(args[++i])));
             break;
+        case "--dismiss-persist" when i + 1 < args.Length:
+            // --dismiss-persist <hex>: recruit + dismiss, save/load round-trip, assert
+            // the dismissed body persists on its map and is rejoinable (phase-10 #3).
+            actions.Add(new ViewerGame.StartupAction.DismissPersist(int.Parse(args[++i])));
+            break;
         case "--recruit" when i + 1 < args.Length:
             actions.Add(new ViewerGame.StartupAction.Recruit(int.Parse(args[++i])));
             break;

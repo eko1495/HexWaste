@@ -65,6 +65,11 @@ public sealed class SaveState
     /// <summary>The party roster (travels outside any map's delta).</summary>
     public List<PartyMemberState> Party { get; set; } = [];
 
+    /// <summary>Companions the player dismissed, kept by the map they were left on so
+    /// they persist across travel/reload and can be rejoined on return (P10 #3). Keyed
+    /// by header map name, like VisitedMaps; additive within V2 (absent = none).</summary>
+    public Dictionary<string, List<DismissedCompanion>> DismissedCompanions { get; set; } = [];
+
     /// <summary>Last worldmap pixel position (P10-M2; -1 = never left a town /
     /// no worldmap state). The engine saves worldPos but NOT a mid-walk
     /// destination, so a reload drops you back on the worldmap here, stopped.</summary>
@@ -102,6 +107,11 @@ public sealed class SaveState
     /// from current). Both additive within V2 — old saves default.</summary>
     public sealed record PartyMemberState(int Pid, int ScriptListIndex, int Hp, int Team,
         int AiPacket, List<SavedItem> Inventory, bool Waiting = false, int OriginalTeam = -1);
+
+    /// <summary>A dismissed companion left standing on a map: enough to recreate the
+    /// inert body and rejoin it (P10 #3).</summary>
+    public sealed record DismissedCompanion(int Pid, int ScriptListIndex, int Tile, int Elevation,
+        int Rotation, int Hp, int Team, List<SavedItem> Inventory);
 
     public sealed class MapDelta
     {

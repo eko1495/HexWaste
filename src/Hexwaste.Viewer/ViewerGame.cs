@@ -151,9 +151,14 @@ public sealed class ViewerGame : Game, Formats.Combat.ICombatHost
     /// <summary>Party members told to "wait here" — PumpCritterProcs skips them, so
     /// their follow critter_p_proc stops and they hold position.</summary>
     private readonly HashSet<MapObject> _waitingCompanions = [];
-    /// <summary>Dismissed former companions left standing on the map, by script index,
-    /// so talking to one offers "rejoin" (same session).</summary>
+    /// <summary>Dismissed former companions LIVE on the current map, by script index,
+    /// so talking to one offers "rejoin". Extracted into <see cref="_dismissedByMap"/>
+    /// on map exit / save, re-injected on entry.</summary>
     private readonly Dictionary<MapObject, int> _dismissedCompanions = [];
+    /// <summary>Dismissed companions kept by the map they were left on, so they persist
+    /// across travel + save/load and can be rejoined on return (P10 #3). Mirrors
+    /// SaveState.DismissedCompanions.</summary>
+    private readonly Dictionary<string, List<SaveState.DismissedCompanion>> _dismissedByMap = new(StringComparer.OrdinalIgnoreCase);
     /// <summary>The team a critter had before recruiting, restored on dismiss
     /// (e.g. Vic's team 25) — captured once, preserved across dismiss/rejoin.</summary>
     private readonly Dictionary<MapObject, int> _originalTeam = [];
@@ -248,6 +253,7 @@ public sealed class ViewerGame : Game, Formats.Combat.ICombatHost
         public sealed record CompanionLifecycle(int Hex) : StartupAction;
         public sealed record TradeWith(int Hex, int Pid) : StartupAction;
         public sealed record CompanionPersist(int Hex) : StartupAction;
+        public sealed record DismissPersist(int Hex) : StartupAction;
         public sealed record Buy(int Pid) : StartupAction;
         public sealed record Sell(int Pid) : StartupAction;
         public sealed record EndBarter : StartupAction;
@@ -901,6 +907,42 @@ public sealed class ViewerGame : Game, Formats.Combat.ICombatHost
                     }
                     break;
                 }
+                case StartupAction.DismissPersist(var dpHex):
+                {
+                    MapObject? m = _solidObjects[_elevation].FirstOrDefault(o =>
+                        o.HexTile == dpHex && Fid.Type(o.Fid) is ObjectType.Critter && !o.IsDead);
+                    if (m is null || _scriptHost is null)
+                    {
+                        Console.Error.WriteLine($"dismiss-persist: no critter at {dpHex}");
+                        break;
+                    }
+                    int pid = m.Pid;
+                    int baseline = _solidObjects[_elevation].Count(o => o.Pid == pid && Fid.Type(o.Fid) is ObjectType.Critter);
+                    _scriptHost.PartyMembers.Add(m);
+                    OnPartyChanged(m, joined: true);
+                    DismissCompanion(m); // body now stands on this map, in _dismissedCompanions
+                    Console.WriteLine($"dismiss-persist: pre-save dismissedOnMap={_dismissedCompanions.Count} baselineOfPid={baseline}");
+
+                    string realPath = SavePath;
+                    SavePath = Path.Combine(Path.GetTempPath(), "hexwaste-dismiss-test.json");
+                    SaveGame();
+                    LoadGame();
+                    if (File.Exists(SavePath))
+                        File.Delete(SavePath);
+                    SavePath = realPath;
+
+                    // After reload: exactly one body on the map (pristine copy was taken),
+                    // not in the party, rejoinable.
+                    int onMap = _solidObjects[_elevation].Count(o => o.Pid == pid && Fid.Type(o.Fid) is ObjectType.Critter);
+                    MapObject? body = _solidObjects[_elevation].FirstOrDefault(o => o.Pid == pid && _dismissedCompanions.ContainsKey(o));
+                    Console.WriteLine($"dismiss-persist: reloaded noDuplicate={onMap == baseline} rejoinable={body is not null} inParty={_scriptHost.PartyMembers.Any(p => p.Pid == pid)}");
+                    if (body is not null)
+                    {
+                        RejoinCompanion(body);
+                        Console.WriteLine($"dismiss-persist: after-rejoin inParty={_scriptHost.PartyMembers.Any(p => p.Pid == pid)} dismissedOnMap={_dismissedCompanions.Count}");
+                    }
+                    break;
+                }
                 case StartupAction.UseOn(var usePid2, var useHex2):
                 {
                     MapObject? item = _dudeInventory.FirstOrDefault(i => i.Pid == usePid2);
@@ -1069,8 +1111,10 @@ public sealed class ViewerGame : Game, Formats.Combat.ICombatHost
         if (captureOutgoing && _map is not null && !_currentMapTransient)
         {
             ExtractPartyFromMap();
+            ExtractDismissedFromMap(); // persist this map's dismissed bodies, pull them off it
             CaptureMapDelta();
         }
+        _dismissedCompanions.Clear(); // live dismissed set is rebuilt per map (transient ones vanish)
         _currentMapTransient = transient;
 
         if (_stubbedExternals.Count > 0)
@@ -1193,6 +1237,7 @@ public sealed class ViewerGame : Game, Formats.Combat.ICombatHost
         if (delta is not null)
             ApplyDeltaAfterScripts(delta);
         InjectPartyMembers();
+        InjectDismissedFromRoster(); // recreate this map's dismissed companions (P10 #3)
 
         // The engine order: map_enter runs, THEN wmSetupRandomEncounter spawns the
         // group (map.cc:974,978). On a transient encounter map the pending roll lays
@@ -4593,18 +4638,19 @@ public sealed class ViewerGame : Game, Formats.Combat.ICombatHost
             if (elev is not null)
                 present.UnionWith(elev.Objects);
 
-        // Party members travel via state.Party, OUTSIDE map deltas. The map-exit path
-        // pulls them first (ExtractPartyFromMap → not present → taken), but an F5 save
-        // calls this directly. So mark a still-on-map party member's pristine ordinal
-        // TAKEN too, and skip them in the Moved/Container loops below — otherwise a
-        // companion recruited in place (then F5'd before leaving) is restored twice on
-        // load: the pristine map copy + the state.Party copy.
-        var party = _scriptHost?.PartyMembers is { Count: > 0 } pm ? new HashSet<MapObject>(pm) : [];
+        // Party members AND live dismissed bodies travel via state.Party /
+        // state.DismissedCompanions, OUTSIDE map deltas. The map-exit path pulls them
+        // first (→ not present → taken), but an F5 save calls this directly. So mark a
+        // still-on-map managed critter's pristine ordinal TAKEN too, and skip them in
+        // the Created/Moved/Container loops — otherwise a companion recruited in place
+        // (then F5'd before leaving) is restored twice on load.
+        var managed = new HashSet<MapObject>(_scriptHost?.PartyMembers ?? []);
+        managed.UnionWith(_dismissedCompanions.Keys);
 
         for (int ordinal = 0; ordinal < _ordinalObjects.Length; ordinal++)
         {
             MapObject o = _ordinalObjects[ordinal];
-            if (!present.Contains(o) || party.Contains(o))
+            if (!present.Contains(o) || managed.Contains(o))
                 delta.TakenOrdinals.Add(ordinal);
         }
 
@@ -4616,8 +4662,7 @@ public sealed class ViewerGame : Game, Formats.Combat.ICombatHost
                 // _objectOrdinals) and travel OUTSIDE map deltas via state.Party — exclude
                 // them like the dude, else an F5 save (no ExtractPartyFromMap first)
                 // captures each companion as a Created object and load duplicates them.
-                if (!_objectOrdinals.ContainsKey(obj) && obj != _dude?.Dude
-                    && !(_scriptHost?.PartyMembers.Contains(obj) ?? false))
+                if (!_objectOrdinals.ContainsKey(obj) && obj != _dude?.Dude && !managed.Contains(obj))
                     delta.Created.Add(new SaveState.CreatedObject(
                         obj.Pid, obj.HexTile, elevation, Math.Max(obj.StackCount, 1)));
                 if (IsDoor(obj))
@@ -4634,8 +4679,8 @@ public sealed class ViewerGame : Game, Formats.Combat.ICombatHost
         for (int ordinal = 0; ordinal < _ordinalObjects.Length; ordinal++)
         {
             MapObject obj = _ordinalObjects[ordinal];
-            if (party.Contains(obj) || !elevationOf.TryGetValue(obj, out int currentElevation))
-                continue; // party members are taken above, not drifted
+            if (managed.Contains(obj) || !elevationOf.TryGetValue(obj, out int currentElevation))
+                continue; // party/dismissed are taken above, not drifted
             (int tile, int rotation, int elevation0) = _pristinePositions[ordinal];
             if (obj.HexTile != tile || obj.Rotation != rotation || currentElevation != elevation0)
                 delta.MovedOrdinals.Add(new SaveState.MovedObject(
@@ -4647,8 +4692,8 @@ public sealed class ViewerGame : Game, Formats.Combat.ICombatHost
         // Corpses count as containers (their loot must not resurrect).
         foreach ((MapObject obj, int ordinal) in _objectOrdinals)
         {
-            if (!present.Contains(obj) || party.Contains(obj))
-                continue; // party members carry their own inventory in state.Party
+            if (!present.Contains(obj) || managed.Contains(obj))
+                continue; // party/dismissed carry their own inventory outside the delta
             if (obj.IsDead && Fid.PidType(obj.Pid) == (int)ObjectType.Critter)
                 delta.DeadOrdinals.Add(ordinal);
             if (obj.Inventory.Count > 0 || _stockedOrdinals.Contains(ordinal)
@@ -4975,6 +5020,7 @@ public sealed class ViewerGame : Game, Formats.Combat.ICombatHost
         _partyScriptIndex.Clear();
         _waitingCompanions.Clear();
         _dismissedCompanions.Clear();
+        _dismissedByMap.Clear();
         _originalTeam.Clear();
         _companionHub = null;
         if (_tradePartner is not null) // a trade panel pointed at a follower we're clearing
@@ -5053,6 +5099,73 @@ public sealed class ViewerGame : Game, Formats.Combat.ICombatHost
 
         if (_scriptHost.PartyMembers.Count > 0)
             RebuildBlockedTiles(_dude.Dude);
+    }
+
+    private static SaveState.SavedItem ToSavedItem(MapObject i) =>
+        new(i.Pid, Math.Max(i.StackCount, 1),
+            i.Flags & (MapObject.FlagInLeftHand | MapObject.FlagInRightHand | MapObject.FlagWorn),
+            i.AmmoQuantity, i.AmmoTypePid);
+
+    /// <summary>Snapshot the current map's live dismissed bodies into the persisted
+    /// per-map roster (P10 #3) — so a save, or leaving the map, remembers them. Replaces
+    /// the map's entry (the live set IS the truth for this map right now).</summary>
+    private void SyncDismissedToRoster()
+    {
+        if (_dismissedCompanions.Count == 0)
+        {
+            _dismissedByMap.Remove(_map.Header.Name);
+            return;
+        }
+        _dismissedByMap[_map.Header.Name] = [.. _dismissedCompanions.Select(kv =>
+            new SaveState.DismissedCompanion(kv.Key.Pid, kv.Value, kv.Key.HexTile, _elevation,
+                kv.Key.Rotation, kv.Key.CurrentHp, kv.Key.Team, [.. kv.Key.Inventory.Select(ToSavedItem)]))];
+    }
+
+    /// <summary>On map exit: persist the dismissed bodies, then pull them off the live
+    /// map so they're not captured in the delta (re-injected on return).</summary>
+    private void ExtractDismissedFromMap()
+    {
+        SyncDismissedToRoster();
+        foreach (MapObject body in _dismissedCompanions.Keys)
+        {
+            foreach (MapElevation? elev in _map.Elevations)
+                elev?.Objects.Remove(body);
+            foreach (List<MapObject> list in _flatObjects.Concat(_solidObjects))
+                list.Remove(body);
+        }
+        _dismissedCompanions.Clear();
+    }
+
+    /// <summary>On map entry: recreate this map's dismissed companions as inert,
+    /// rejoinable bodies from the persisted roster (P10 #3).</summary>
+    private void InjectDismissedFromRoster()
+    {
+        if (_map.Elevations[_elevation] is not { } elev
+            || !_dismissedByMap.TryGetValue(_map.Header.Name, out List<SaveState.DismissedCompanion>? roster))
+            return;
+        foreach (SaveState.DismissedCompanion d in roster)
+        {
+            if (RebuildObject(d.Pid, 1) is not { } body)
+                continue;
+            body.HexTile = d.Tile;
+            body.Rotation = Math.Clamp(d.Rotation, 0, 5);
+            body.CurrentHp = d.Hp;
+            body.Team = d.Team;
+            body.Sid = -1; // inert until rejoined
+            foreach (SaveState.SavedItem it in d.Inventory)
+                if (RebuildObject(it.Pid, it.Count) is { } obj)
+                {
+                    obj.Flags |= it.Flags;
+                    obj.AmmoQuantity = it.AmmoQuantity;
+                    obj.AmmoTypePid = it.AmmoTypePid;
+                    body.Inventory.Add(obj);
+                }
+            elev.Objects.Add(body);
+            InsertSorted(_solidObjects[_elevation], body);
+            _dismissedCompanions[body] = d.ScriptListIndex;
+        }
+        if (roster.Count > 0 && _dude is not null)
+            RebuildBlockedTiles(_dude.Dude); // a dismissed body blocks its tile like any NPC
     }
 
     /// <summary>Script-inflicted damage (traps): armor applies unless the
@@ -5179,6 +5292,7 @@ public sealed class ViewerGame : Game, Formats.Combat.ICombatHost
     private void SaveGame()
     {
         CaptureMapDelta();
+        SyncDismissedToRoster(); // fold the current map's live dismissed bodies into the roster
         var state = new SaveState
         {
             Version = SaveState.CurrentVersion,
@@ -5198,6 +5312,7 @@ public sealed class ViewerGame : Game, Formats.Combat.ICombatHost
             GlobalVars = new Dictionary<int, int>(_scriptHost?.GlobalVars ?? []),
             DudeInventory = [.. _dudeInventory.Select(i => new SaveState.SavedItem(i.Pid, i.StackCount, i.Flags & (MapObject.FlagInLeftHand | MapObject.FlagInRightHand | MapObject.FlagWorn), i.AmmoQuantity, i.AmmoTypePid))],
             VisitedMaps = new Dictionary<string, SaveState.MapDelta>(_visitedMaps),
+            DismissedCompanions = _dismissedByMap.ToDictionary(kv => kv.Key, kv => new List<SaveState.DismissedCompanion>(kv.Value)),
             // Drop transient (saved=No) maps' LVAR slices: their sids are reallocated
             // fresh each visit, so saved slices would be orphaned dead weight (phase-10 M3).
             LocalVars = (_scriptHost?.ExportAllLocalVars() ?? [])
@@ -5275,6 +5390,11 @@ public sealed class ViewerGame : Game, Formats.Combat.ICombatHost
             Worldmap.ImportCounters(state.EncounterCounters);
 
         ResetParty();
+
+        // Dismissed companions (P10 #3): restore the per-map roster AFTER ResetParty
+        // (which cleared it) and BEFORE LoadMap, so the loaded map's are injected.
+        foreach ((string mapName, List<SaveState.DismissedCompanion> roster) in state.DismissedCompanions)
+            _dismissedByMap[mapName] = roster;
 
         // captureOutgoing: false — the pre-load world must not leak into the
         // freshly imported VisitedMaps. transient: a saved=No map (a save taken
