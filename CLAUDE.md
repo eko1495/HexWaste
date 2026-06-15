@@ -448,8 +448,16 @@ byte-identical); CritterState.Perception → PE-5 when blind (stat.cc:191); Comp
 the ×12 distance penalty (combat.cc:4383, only the positive-penalty branch). DEFERRED:
 the crippled-ARM weapon-gate (niche, needs a two-handed proto flag) — the bit is set +
 Doctor-healable (M5). 8 pure status tests; byte-identical (effects only fire on set
-bits, M4). Next: M4 the massive-crit secondary stat-roll (the ONE new RNG draw —
-isolated, re-records day-2 fixtures), M5 Skilldex Doctor limb-fix (NOT First-Aid).
+bits, M4). M4 massive-crit secondary stat-roll (DONE): MassiveUpgrade(eff, defender) — a FAILED
+d10 stat roll (_rng.Next(1,11) > defender.Stat(massiveStat)+statMod; combat.cc:4134
+statRoll) ORs in the massive flags; wired into BOTH RollAttack + TryThrow crit blocks,
+after the severity roll. The ONE new RNG draw — only on an actual crit on a row with
+massiveStat != -1, so day-1 (no crit) is byte-identical. Re-recorded 2 day-2 fixtures
+(aim-eyes-day2 now shows CRITICAL(blind) → the scorpion's enemy-attack drops 67→42 =
+the -25; the all-aimed-eyes run vs 2 scorpions deterministically loses on the shifted
+stream — RNG-divergence, not a bug; crit-day2 unchanged — its torso row has no massive
+stat). 2 SequenceRng tests (forced KO on fail / resisted on EN-10). Next: M5 Skilldex
+Doctor limb-fix (NOT First-Aid — engine-inaccurate premise).
 
 Phase 10 (DONE, per docs/phase10-research-report.md — "The Wasteland
 Bites Back"): M0 persistence pre-stage (the net: MapList saved=No /

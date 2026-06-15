@@ -22,9 +22,8 @@ attack Radscorpion@20729: chance=47% hit=False damage=0
 enemy-attack Radscorpion@20729: chance=67% hit=True damage=6 CRITICAL(knockdown)
 knockdown: Hero Male@20530
 getup: Hero Male (-3 AP)
-attack Radscorpion@20729: chance=47% hit=True damage=6 CRITICAL
-enemy-attack Radscorpion@20729: chance=67% hit=False damage=0
-attack Radscorpion@20729: chance=47% hit=True damage=1
+attack Radscorpion@20729: chance=47% hit=True damage=7 CRITICAL
+enemy-attack Radscorpion@20729: chance=67% hit=True damage=1
 attack Radscorpion@20729: chance=47% hit=True damage=4
 xp: +120 (total 120, level 1)
-fight-result: rounds=7 dudeHp=26 gameOver=False targetDead=True hostilesLeft=0
+fight-result: rounds=7 dudeHp=25 gameOver=False targetDead=True hostilesLeft=0

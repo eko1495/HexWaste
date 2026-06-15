@@ -89,6 +89,42 @@ public class CombatEngineTests
     }
 
     [Fact]
+    public void MassiveCriticalAppliesTheStatusOnAFailedDefenderRoll()
+    {
+        // P14-M4: a day-2 aimed HEAD crit (MAN sev1 = {4, BYPASS, EN, 0, KNOCKED_OUT}).
+        // The defender's EN is 0, so any d10 massive roll fails → KNOCKED_OUT applies.
+        // RNG order: to-hit(1) → crit-roll(1) → severity(30→sev1) → massive d10(10>0 fail).
+        var host = new FakeCombatHost { CriticalsEnabled = true };
+        host.SetDude(NewCritter(tile: 20100, hp: 30, ap: 10, skill: 100));
+        MapObject enemy = host.AddCritter(NewCritter(tile: HexGrid.TileInDirection(20100, 0), hp: 500, endurance: 0));
+        var engine = new CombatEngine(host, new SequenceRng(1, 1, 30, 10));
+
+        Assert.True(engine.TryAttack(enemy, hitLocation: 0)); // aim HEAD
+        host.Animating.Clear();
+        engine.ProcessAnimations();
+
+        Assert.True((enemy.CombatResults & CriticalTables.DamKnockedOut) != 0);
+        Assert.Contains(host.Transcripts, t => t.StartsWith("knockout:"));
+        Assert.False(enemy.IsDead); // KO'd, not killed (500 HP)
+    }
+
+    [Fact]
+    public void MassiveCriticalIsResistedByAHighStatDefender()
+    {
+        // Same crit, but EN 10 → the massive d10 (1) <= 10 → SUCCESS (resisted), no KO.
+        var host = new FakeCombatHost { CriticalsEnabled = true };
+        host.SetDude(NewCritter(tile: 20100, hp: 30, ap: 10, skill: 100));
+        MapObject enemy = host.AddCritter(NewCritter(tile: HexGrid.TileInDirection(20100, 0), hp: 500, endurance: 10));
+        var engine = new CombatEngine(host, new SequenceRng(1, 1, 30, 1)); // massive d10 = 1
+
+        Assert.True(engine.TryAttack(enemy, hitLocation: 0));
+        host.Animating.Clear();
+        engine.ProcessAnimations();
+
+        Assert.True((enemy.CombatResults & CriticalTables.DamKnockedOut) == 0); // resisted
+    }
+
+    [Fact]
     public void KnockedOutEnemyForfeitsItsTurn()
     {
         // P14-M2: a knocked-out enemy skips its turn (combat.cc:3231) and stays

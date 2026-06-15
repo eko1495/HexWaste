@@ -574,7 +574,7 @@ public sealed class CombatEngine
             CriticalEffect eff = CriticalTables.Lookup(critDef.Proto.KillType,
                 CriticalTables.LocationUncalled, severity, targetCritter == dude);
             critMultiplier = eff.DamageMultiplier;
-            critFlags = (eff.Flags & CriticalTables.HonoredFlags) | CriticalTables.DamCritical;
+            critFlags = (MassiveUpgrade(eff, critDef) & CriticalTables.HonoredFlags) | CriticalTables.DamCritical;
         }
 
         int damage = hit && targetCritter is not null && _host.GetCritterState(targetCritter) is { } td
@@ -747,7 +747,7 @@ public sealed class CombatEngine
                 int severity = CriticalTables.Severity(_rng.Next(1, 101) + attacker.Stat(CritterStat.BetterCriticals));
                 CriticalEffect eff = CriticalTables.Lookup(defender.Proto.KillType, hitLocation, severity, defenderIsDude);
                 critMultiplier = eff.DamageMultiplier;
-                critFlags = (eff.Flags & CriticalTables.HonoredFlags) | CriticalTables.DamCritical;
+                critFlags = (MassiveUpgrade(eff, defender) & CriticalTables.HonoredFlags) | CriticalTables.DamCritical;
             }
         }
 
@@ -772,6 +772,18 @@ public sealed class CombatEngine
         }
 
         return (accuracy, hit, damage, critFlags);
+    }
+
+    /// <summary>The crit's flags, plus the "massive critical" flags when the defender
+    /// FAILS a stat roll (d10 &gt; stat + mod; combat.cc:4134 statRoll, stat.cc:708) —
+    /// this is the source of most KNOCKED_OUT / BLIND / CRIP effects and the one new RNG
+    /// draw (P14-M4). It sits inside the crit branch, after the severity roll, so day-1
+    /// (no crit) takes no draw; a day-2 crit on a row with a massive stat takes one d10.</summary>
+    private int MassiveUpgrade(CriticalEffect eff, CritterState defender)
+    {
+        if (eff.MassiveStat != -1 && _rng.Next(1, 11) > defender.Stat(eff.MassiveStat) + eff.StatMod)
+            return eff.Flags | eff.MassiveFlags;
+        return eff.Flags;
     }
 
     /// <summary>Transcript suffix marking a critical (and its honoured effects, P14).</summary>
