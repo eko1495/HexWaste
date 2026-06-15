@@ -379,6 +379,10 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
         /// <summary>Pre-answer a detected encounter's avoid prompt (phase-16 M1):
         /// Engage=true engages, false avoids+continues. Must precede the travel action.</summary>
         public sealed record EncounterAnswer(bool Engage) : StartupAction;
+        /// <summary>Simulate leaving an encounter map mid-leg (phase-16 M2): set the in-
+        /// flight travel state at (X,Y) bound for AreaIndex, walk off the edge, and assert
+        /// travel auto-resumes toward the destination with no worldmap re-click.</summary>
+        public sealed record TravelResume(int X, int Y, int AreaIndex) : StartupAction;
         /// <summary>Override the party's best Outdoorsman skill (phase-16 M1 test plumbing)
         /// so the detect path fires deterministically regardless of the dude's build.</summary>
         public sealed record ForceOutdoorsman(int Value) : StartupAction;
@@ -768,6 +772,24 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
                 case StartupAction.EncounterAnswer(var engage):
                     _autoEncounterAnswer = engage; // phase-16 M1: pre-answer the avoid prompt
                     break;
+                case StartupAction.TravelResume(var rx, var ry, var ra):
+                {
+                    // Phase-16 M2: stand at (rx,ry) mid-leg bound for area ra, "on" the
+                    // encounter map; walk off the edge (Map<0) and confirm travel auto-
+                    // resumes toward the destination — no worldmap re-click.
+                    WorldArea? rdest = _cities.Areas.FirstOrDefault(a => a.Index == ra);
+                    if (rdest is null) { Console.Error.WriteLine($"travel-resume: no area {ra}"); break; }
+                    _autoEncounterAnswer ??= true; // engage any encounter on the resumed leg
+                    _worldPosX = rx; _worldPosY = ry;
+                    _travelDestination = rdest;
+                    _currentMapTransient = true;                          // pretend we're on the encounter map
+                    ApplyTransition(new MapDestination(-1, 0, 0, 0));     // walk off the edge → sets _resumeTravelDest
+                    if (_resumeTravelDest is { } d) { _resumeTravelDest = null; TravelTo(d); }
+                    int spawned = _solidObjects[_elevation].Count(o => o.Id == -3 && Fid.Type(o.Fid) is ObjectType.Critter);
+                    Console.WriteLine($"travel-resume: from ({rx},{ry})->area{ra} {(_currentMapTransient ? "encounter" : "arrived")}"
+                        + $" map={_currentMapName} worldPos=({_worldPosX},{_worldPosY}) spawned={spawned}");
+                    break;
+                }
                 case StartupAction.ForceOutdoorsman(var od):
                     _forceOutdoorsman = od;
                     break;
@@ -2092,6 +2114,14 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
         {
             _pendingTransition = null;
             ApplyTransition(transition);
+        }
+
+        // Phase-16 M2: leaving an encounter map mid-journey auto-resumes the leg toward
+        // the original destination (the engine's isWalking) — no worldmap re-click.
+        if (_resumeTravelDest is { } resume)
+        {
+            _resumeTravelDest = null;
+            TravelTo(resume);
         }
 
         if (_cycler.Update(gameTime.ElapsedGameTime.TotalMilliseconds))
@@ -4215,7 +4245,18 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
         if (destination.Map < 0)
         {
             _worldmapOpen = true;
-            Log("You head out to the wasteland.");
+            // Phase-16 M2: if we're leaving a transient encounter map with a leg still in
+            // progress, auto-resume travel toward the original destination instead of
+            // forcing a worldmap re-click (the engine's isWalking).
+            if (_currentMapTransient && _travelDestination is { } resumeDest)
+            {
+                _resumeTravelDest = resumeDest;
+                Console.WriteLine($"travel-resume: left encounter map -> continuing to {resumeDest.Name}");
+            }
+            else
+            {
+                Log("You head out to the wasteland.");
+            }
             return;
         }
 
@@ -4295,6 +4336,7 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
                     // engage → fall through to load the encounter map
                 }
 
+                _travelDestination = area; // remember the leg target so it auto-resumes (M2)
                 EngageEncounter(r, leg.EncounterMap!, name);
                 return;
             }
@@ -4323,6 +4365,7 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
         _currentAreaId = area.Index;
         _worldPosX = area.WorldX;
         _worldPosY = area.WorldY;
+        _travelDestination = null; // clean arrival — the leg is over, nothing to auto-resume
         Console.WriteLine($"travelling to {area.Name} -> {mapFile}");
         LoadMap(mapFile, new MapDestination(mapIndex, entrance.Tile, entrance.Elevation, entrance.Rotation));
         Log($"You arrive at {area.Name}.");
@@ -4331,6 +4374,14 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
     /// <summary>Pre-answer for a detected encounter in headless runs (phase-16 M1):
     /// true = engage, false = avoid. Null in live play → the interactive Y/N prompt.</summary>
     private bool? _autoEncounterAnswer;
+
+    /// <summary>The destination of an in-progress travel leg (phase-16 M2, the engine's
+    /// isWalking target): set when an engaged encounter interrupts the leg, cleared on a
+    /// clean arrival. Leaving the encounter map back to the worldmap auto-resumes toward it.</summary>
+    private WorldArea? _travelDestination;
+    /// <summary>Deferred auto-resume: set when leaving a transient map mid-leg, consumed
+    /// at the top of the next Update to continue travel without a re-click (phase-16 M2).</summary>
+    private WorldArea? _resumeTravelDest;
 
     /// <summary>A detected encounter awaiting the player's avoid choice in live play
     /// (phase-16 M1): the result, its transient map, display name, and the leg's

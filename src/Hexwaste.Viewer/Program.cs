@@ -199,6 +199,13 @@ for (int i = 0; i < args.Length; i++)
             actions.Add(new ViewerGame.StartupAction.EncounterAnswer(
                 args[++i] is "yes" or "y" or "engage" or "true" or "1"));
             break;
+        case "--travel-resume" when i + 3 < args.Length:
+            // --travel-resume <x> <y> <areaIndex>: leave an encounter map mid-leg and
+            // confirm travel auto-resumes toward the destination (phase-16 M2).
+            actions.Add(new ViewerGame.StartupAction.TravelResume(
+                int.Parse(args[i + 1]), int.Parse(args[i + 2]), int.Parse(args[i + 3])));
+            i += 3;
+            break;
         case "--force-outdoorsman" when i + 1 < args.Length:
             // --force-outdoorsman <n>: override the party's best Outdoorsman (test plumbing).
             actions.Add(new ViewerGame.StartupAction.ForceOutdoorsman(int.Parse(args[++i])));

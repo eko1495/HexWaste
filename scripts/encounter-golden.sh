@@ -30,6 +30,9 @@ SCENARIOS=(
   # variant declines -> travels on -> walks into the next (undetected) ambush.
   "travel-arroyo-den|--travel-from 184 133 1 --rng-seed 2"
   "travel-arroyo-avoid|--encounter-answer no --travel-from 184 133 1 --rng-seed 2"
+  # P16-M2: leaving an encounter map mid-leg auto-resumes travel toward the destination
+  # (the engine's isWalking) — no worldmap re-click; here the resumed leg rolls again.
+  "travel-resume|--travel-resume 204 143 1 --rng-seed 2"
   "companion-lifecycle|--map arcaves.map --companion 20529 --rng-seed 1"
   "trade-roundtrip|--map arcaves.map --trade 20529 7 --rng-seed 1"
   "companion-persist|--map arcaves.map --companion-persist 20529 --rng-seed 1"
@@ -77,7 +80,7 @@ SCENARIOS=(
 
 # Keep only the deterministic transcript lines (drop map-load / animate / stub /
 # dialog-text noise — NEVER capture REPLY/OPTION game-asset strings).
-FILTER='^(encounter|travel-from|companion|dismiss-persist|trade:|party:|party-count:|set-global:|hud-click:|use-skill:|hurt:|rest:|automap:|weapon-mode:|panel-click:|menu-click:|  spawn|  wait:|  follow:|  dismiss:|  rejoin:)'
+FILTER='^(encounter|travel-from|companion|dismiss-persist|trade:|party:|party-count:|set-global:|hud-click:|use-skill:|hurt:|rest:|automap:|weapon-mode:|panel-click:|menu-click:|travel-resume:|  spawn|  wait:|  follow:|  dismiss:|  rejoin:)'
 
 echo "Building viewer..."
 dotnet build src/Hexwaste.Viewer -c Debug >/dev/null || { echo "build failed"; exit 2; }
