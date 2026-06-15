@@ -123,6 +123,9 @@ for (int i = 0; i < args.Length; i++)
         case "--party-count":
             actions.Add(new ViewerGame.StartupAction.PartyCount());
             break;
+        case "--hud-click" when i + 1 < args.Length:
+            actions.Add(new ViewerGame.StartupAction.HudClick(args[++i]));
+            break;
         case "--set-global" when i + 2 < args.Length:
             // --set-global <id> <value>: force a session GVAR (probe gated dialog).
             actions.Add(new ViewerGame.StartupAction.SetGlobal(int.Parse(args[i + 1]), int.Parse(args[i + 2])));

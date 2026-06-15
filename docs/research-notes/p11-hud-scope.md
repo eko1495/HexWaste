@@ -8,6 +8,14 @@
 > a field-blank to `(32,32,32)`, which the scope had deferred; it's in now. Remaining:
 > M3 green monitor, M4 clickable buttons, M5 polish (dynamic mode-label highlight,
 > press art, the round combat buttons).
+>
+> **UPDATE:** M3 (green message monitor — the log rendered in the left screen via
+> font1.aaf tinted green, wrapped, top-anchored; bottom-left log kept only as the
+> bar-hidden fallback) and M4 (clickable INV/OPT/MAP/CHA/PIP/SKILLDEX buttons —
+> rects measured + alignment-verified via a HEXWASTE_HUD_DEBUG overlay, wired to the
+> same actions as the keyboard shortcuts, which still work) are DONE and
+> regression-locked (the hud-buttons golden fixture via the new --hud-click harness).
+> Only M5 polish remains.
 
 Scope for the iconic Fallout 2 bottom interface bar (the metal panel: green
 message monitor on the left, equipped-weapon slot + AP dots + attack-mode in the

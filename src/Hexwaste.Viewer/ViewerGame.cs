@@ -257,6 +257,9 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
         /// <summary>Print party size + dude caps as a state-only transcript line (no
         /// dialog text) — the assertion target for the legitimate-recruit fixture.</summary>
         public sealed record PartyCount : StartupAction;
+        /// <summary>Fire a HUD bar button by name (INV/OPT/MAP/CHA/PIP/SKILLDEX) and
+        /// report the resulting panel state — regression-proofs the M4 click wiring.</summary>
+        public sealed record HudClick(string Name) : StartupAction;
         public sealed record Explode(int Hex) : StartupAction;
         public sealed record Throw(int Hex) : StartupAction;
         public sealed record ProjectileCheck(int Hex) : StartupAction;
@@ -718,6 +721,18 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
                     }
                     _combat.Reset();
                     Console.WriteLine($"throw-result: hex={throwHex}");
+                    break;
+                }
+                case StartupAction.HudClick(var hudName):
+                {
+                    HudButton btn = HudButtons().FirstOrDefault(b => b.Name == hudName);
+                    if (btn.Name is null)
+                    {
+                        Console.Error.WriteLine($"hud-click: no button {hudName}");
+                        break;
+                    }
+                    btn.OnClick();
+                    Console.WriteLine($"hud-click: {hudName} -> inv={_inventoryOpen} skills={_skillAllocOpen} worldmap={_worldmapOpen}");
                     break;
                 }
                 case StartupAction.PartyCount:
@@ -1756,7 +1771,13 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
         // open ground walks.
         if (mouse.LeftButton == ButtonState.Pressed && _previousMouse.LeftButton == ButtonState.Released)
         {
-            if (_pendingUseItem is { } useItem && _hoveredObject is not null && _hoveredObject != _dude?.Dude)
+            // A click on a HUD bar button (INV/OPT/MAP/CHA/PIP/SKILLDEX) is consumed
+            // there and does not also walk/interact with the map underneath (#15 M4).
+            if (TryClickInterfaceBar(mouse.X, mouse.Y))
+            {
+                // handled by the bar
+            }
+            else if (_pendingUseItem is { } useItem && _hoveredObject is not null && _hoveredObject != _dude?.Dude)
                 UseItemOn(useItem, _hoveredObject);
             else if (_hoveredObject is not null && _hoveredObject != _dude?.Dude)
                 InteractWith(_hoveredObject);
@@ -4514,6 +4535,68 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
         int ap = Math.Clamp(_combat.DudeAp, 0, 10);
         for (int i = 0; i < ap; i++)
             _spriteBatch.Draw(_panelPixel, new Rectangle(o.X + 316 + i * 9, o.Y + 13, 6, 6), new Color(0, 252, 0));
+
+        // --- M3: the green message monitor (the left screen; bar-local 24,26 ~160x55,
+        // display_monitor.cc). Reuse font1.aaf (the engine's interface font) tinted
+        // green; wrap to the screen width, newest at the bottom, clipped to fit. The
+        // bottom-left fallback log only shows when the bar is hidden (DrawTextOverlay).
+        if (_fontRenderer is not null && _messageLog.Count > 0)
+        {
+            const int mx = 24, my = 26, mw = 162, mh = 56;
+            int maxLines = Math.Max(1, mh / _fontRenderer.LineHeight);
+            var lines = new List<string>();
+            foreach (string msg in _messageLog)
+                lines.AddRange(_fontRenderer.WrapText(msg, mw));
+            int ty = o.Y + my;
+            foreach (string line in lines.Skip(Math.Max(0, lines.Count - maxLines)))
+            {
+                _fontRenderer.Draw(_spriteBatch, line, new Vector2(o.X + mx, ty), new Color(0, 252, 0), shadow: false);
+                ty += _fontRenderer.LineHeight;
+            }
+        }
+
+        // HEXWASTE_HUD_DEBUG=1: translucent overlay of the clickable button rects to
+        // verify they align with the baked iface buttons.
+        if (Environment.GetEnvironmentVariable("HEXWASTE_HUD_DEBUG") == "1")
+        {
+            _panelPixel ??= CreatePixel();
+            foreach (HudButton b in HudButtons())
+                _spriteBatch.Draw(_panelPixel, new Rectangle(o.X + b.Local.X, o.Y + b.Local.Y, b.Local.Width, b.Local.Height), new Color(255, 0, 0, 90));
+        }
+    }
+
+    /// <summary>The clickable HUD buttons (bar-local rects, ported from interface.cc;
+    /// measured against this iface.frm). Each wires to the same action as its keyboard
+    /// shortcut — the buttons are additive, the keys still work (#15 M4).</summary>
+    private readonly record struct HudButton(string Name, Rectangle Local, Action OnClick);
+
+    private HudButton[] HudButtons() =>
+    [
+        new("INV", new Rectangle(210, 44, 36, 19), () => { _inventoryOpen = true; PrewarmItemTextures(_dudeInventory); }),
+        new("OPT", new Rectangle(213, 67, 34, 23), () => Log("Options — not wired in this slice.")),
+        new("MAP", new Rectangle(528, 36, 37, 16), () => { _worldmapOpen = true; }),
+        new("CHA", new Rectangle(528, 53, 37, 16), () => { if (_dudeGcd is not null) _skillAllocOpen = true; }),
+        new("PIP", new Rectangle(528, 70, 37, 16), () => Log("Pip-Boy — not wired in this slice.")),
+        new("SKILLDEX", new Rectangle(564, 2, 56, 22), () => Log("Skilldex — not wired in this slice.")),
+    ];
+
+    /// <summary>Route a left-click to a HUD button if it landed on one. Returns true
+    /// when handled (the caller then skips the world-interaction click).</summary>
+    private bool TryClickInterfaceBar(int mouseX, int mouseY)
+    {
+        if (_interfaceBar is not { Loaded: true } bar || _worldmapOpen)
+            return false;
+        Point o = bar.Origin(GraphicsDevice.Viewport.Bounds);
+        foreach (HudButton b in HudButtons())
+        {
+            var screen = new Rectangle(o.X + b.Local.X, o.Y + b.Local.Y, b.Local.Width, b.Local.Height);
+            if (screen.Contains(mouseX, mouseY))
+            {
+                b.OnClick();
+                return true;
+            }
+        }
+        return false;
     }
 
     /// <summary>Blit a right-aligned integer from NUMBERS.FRM (the engine digit font):
@@ -4654,11 +4737,16 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
             }
         }
 
-        int y = GraphicsDevice.Viewport.Height - _hudBarHeight - 8 - _messageLog.Count * _fontRenderer.LineHeight;
-        foreach (string message in _messageLog)
+        // The log lives in the bar's green monitor (P11 M3); only fall back to the
+        // bottom-left when the bar is hidden (no iface art / worldmap open).
+        if (_hudBarHeight == 0)
         {
-            _fontRenderer.Draw(_spriteBatch, message, new Vector2(8, y), green);
-            y += _fontRenderer.LineHeight;
+            int y = GraphicsDevice.Viewport.Height - 8 - _messageLog.Count * _fontRenderer.LineHeight;
+            foreach (string message in _messageLog)
+            {
+                _fontRenderer.Draw(_spriteBatch, message, new Vector2(8, y), green);
+                y += _fontRenderer.LineHeight;
+            }
         }
     }
 

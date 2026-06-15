@@ -1,0 +1,3 @@
+hud-click: INV -> inv=True skills=False worldmap=False
+hud-click: MAP -> inv=True skills=False worldmap=True
+hud-click: CHA -> inv=True skills=True worldmap=True
