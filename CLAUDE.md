@@ -651,6 +651,30 @@ proof of the P13-M2 cone (the fake-host test was the only one before). 296 Forma
 encounter + 15 combat goldens green. Spillover: true-LoS + save-persisted automap fog, the
 automap.db write side (generate the explored-tile RLE), the in-Pip-Boy date calendar page.
 
+Phase 21 (DONE — "Script-driven map effects", from the fo2ce gap analysis): wire two arity-
+stubbed external families that the slice ACTUALLY fires (verified via the OnStubbedExternal log
+on artemple/arcaves map_enter). M0 lighting (DONE): set_light_level (0x80E9) + obj_set_light_level
+(0x8107) were stubbed though the LightGrid existed since P3-M1. IVmExternals.SetLightLevel/
+SetObjectLightLevel + IntVm dispatch + ScriptHost LightLevelRequested/ObjectLightRequested
+callbacks. set_light_level -> LightGrid.AmbientFromLightLevel (opSetLightLevel's two-segment lerp,
+0->MIN/50->MID/100->MAX) sets _lightGrid.Ambient + pins it (AmbientFixed, so the day/night clock
+stops overriding). artemple's map_enter calls set_light_level(100) -> max+pinned (CONFIRMED live).
+obj_set_light_level sets the object's light fields (intensity*65636/100, the engine's literal) +
+OBJECT_LIGHTING flag + rebuilds (MapObject light fields made mutable; no slice map uses it but it
+shares the wiring + the tested AddObjectLight path). The callbacks are SILENT (set_light_level
+fires on EVERY map_enter -> would spam every golden); --light-probe reports the post-map_enter
+ambient. M1 reg_anim (DONE, with honest scope finding): the slice fires reg_anim ONLY as
+reg_anim_animate_forever (artemple+arcaves; denbus2 none), and EVERY target is SCENERY (firepits,
+a waterfall) our multi-frame FRMs already auto-loop -> visually redundant on the slice. Wired it
+anyway (0x8126: critters get an anim-coded looping FID = lights up for free; scenery loops its
+FRM); silent callback (no spam into the arcaves combat goldens). DEFERRED (no slice content, would
+be dead code): reg_anim_func begin/end queue + the MOVEMENT ops (obj_move/run_to_tile/obj) — the
+substantive "scripted on-entry NPC movement" reg_anim feature, which no shippable map exercises.
+--reg-anim-probe reports the registrations. Golden script-light covers both (artemple: ambient
+max+pinned + 2 firepits). 297 Formats tests (+ AmbientFromLightLevel), 29 encounter + 15 combat
+goldens green (all byte-identical bar the new script-light; the silent callbacks were the key).
+Spillover: the reg_anim movement ops + begin/end sequencing (light up when a map uses them).
+
 Phase 10 (DONE, per docs/phase10-research-report.md — "The Wasteland
 Bites Back"): M0 persistence pre-stage (the net: MapList saved=No /
 random_start_point parse + IsTransient; the 3-clause transient guards as
