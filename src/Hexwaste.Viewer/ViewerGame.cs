@@ -5509,6 +5509,10 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
         int cx = po.X + 254, ty = po.Y + 46;
         void Line(string text, Color c) { _fontRenderer!.Draw(_spriteBatch, text, new Vector2(cx, ty), c); ty += lh; }
 
+        // The embedded mini-map fills the empty left column on the status page (P20-M1).
+        if (!_pipboyRestMenu)
+            DrawPipboyMiniMap(po.X + 18, po.Y + 46, 210, ph - 92);
+
         if (!_pipboyRestMenu)
         {
             Line("STATUS", green); ty += 4;
@@ -5539,6 +5543,51 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
             new Vector2(cx, po.Y + ph - 30), dim);
     }
 
+    /// <summary>The automap dot colour for an object by FID type, shared by the full-window
+    /// automap and the Pip-Boy mini-map (P20-M1). Dead critters / untyped objects → null
+    /// (not plotted). Readable approximations of the engine's _colorTable indices.</summary>
+    private static Color? AutomapColor(MapObject obj) => Fid.Type(obj.Fid) switch
+    {
+        ObjectType.Wall => new Color(160, 160, 160),
+        ObjectType.Scenery => new Color(0, 168, 0),
+        ObjectType.Critter => obj.IsDead ? null : new Color(248, 0, 0),
+        ObjectType.Item => new Color(252, 252, 84),
+        ObjectType.Misc => new Color(84, 200, 252),
+        _ => null,
+    };
+
+    /// <summary>The embedded Pip-Boy mini-map (P20-M1): the current elevation's objects
+    /// plotted into a small box on the status page (col→x mirrored, row→y, like the full
+    /// window scaled). DIVERGENCE: the engine's embedded automap reads the explored-tile
+    /// RLE from a GENERATED MAPS\AUTOMAP.DB — which our PoC never writes — so we re-plot the
+    /// live objects instead (the same source as the full-window automap). A preview; press
+    /// A for the full view.</summary>
+    private void DrawPipboyMiniMap(int boxX, int boxY, int boxW, int boxH)
+    {
+        if (_fontRenderer is null)
+            return;
+        _panelPixel ??= CreatePixel();
+        _spriteBatch.Draw(_panelPixel, new Rectangle(boxX, boxY, boxW, boxH), new Color(0, 20, 0, 210));
+
+        void Plot(int tile, Color c, int size)
+        {
+            if (tile < 0)
+                return;
+            int mx = boxX + boxW * (199 - tile % 200) / 199; // mirror col like the full window
+            int my = boxY + boxH * (tile / 200) / 199;
+            if (mx >= boxX && my >= boxY && mx + size <= boxX + boxW && my + size <= boxY + boxH)
+                _spriteBatch.Draw(_panelPixel, new Rectangle(mx, my, size, size), c);
+        }
+
+        foreach (MapObject obj in _flatObjects[_elevation].Concat(_solidObjects[_elevation]))
+            if (AutomapColor(obj) is { } col)
+                Plot(obj.HexTile, col, 2);
+        if (_dude is not null)
+            Plot(_dude.Dude.HexTile, new Color(255, 255, 255), 3);
+
+        _fontRenderer.Draw(_spriteBatch, "MAP (A: full)", new Vector2(boxX + 4, boxY + 2), new Color(0, 252, 0));
+    }
+
     /// <summary>The full-window automap (P15 M0): the authentic AUTOMAP.FRM (519x480)
     /// centred, with every object on the current elevation plotted as a colored dot
     /// (automap.cc automapRenderInMapWindow projection: ax = 449 − 2·col, ay = 2·row + 8,
@@ -5560,12 +5609,6 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
         else
             _spriteBatch.Draw(_panelPixel, new Rectangle(o.X, o.Y, w, h), new Color(8, 16, 8, 240));
 
-        var wall = new Color(160, 160, 160);
-        var scenery = new Color(0, 168, 0);
-        var critter = new Color(248, 0, 0);
-        var item = new Color(252, 252, 84);
-        var misc = new Color(84, 200, 252);
-
         void Plot(int tile, Color c, int size)
         {
             if (tile < 0)
@@ -5578,19 +5621,8 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
         }
 
         foreach (MapObject obj in _flatObjects[_elevation].Concat(_solidObjects[_elevation]))
-        {
-            Color? c = Fid.Type(obj.Fid) switch
-            {
-                ObjectType.Wall => wall,
-                ObjectType.Scenery => scenery,
-                ObjectType.Critter => obj.IsDead ? null : critter,
-                ObjectType.Item => item,
-                ObjectType.Misc => misc,
-                _ => null,
-            };
-            if (c is { } col)
+            if (AutomapColor(obj) is { } col)
                 Plot(obj.HexTile, col, 2);
-        }
         if (_dude is not null)
             Plot(_dude.Dude.HexTile, new Color(255, 255, 255), 3); // the dude marker
 
