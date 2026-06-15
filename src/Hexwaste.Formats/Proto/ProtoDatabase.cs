@@ -51,6 +51,10 @@ public sealed record WeaponProtoStats(
     /// Throwers (index 5) stay on the melee path until rung (a) lands —
     /// their reach is capped to melee range by the host.</summary>
     public bool IsGun(int extendedFlags) => (extendedFlags & 0xF) >= 6;
+
+    /// <summary>WEAPON_TWO_HAND (item.cc weaponIsTwoHanded; proto_types.h 0x200) — a
+    /// two-handed weapon can't be fired with one crippled arm (phase-18 M2).</summary>
+    public static bool IsTwoHanded(int extendedFlags) => (extendedFlags & 0x200) != 0;
 }
 
 /// <summary>Ammo payload (protoItemDataRead ITEM_TYPE_AMMO): box size and the

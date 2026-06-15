@@ -123,6 +123,24 @@ public sealed class CombatEngine
     /// at 0 (phase-18 M0: combat movement costs MovePointCost per hex).</summary>
     public void SpendDudeAp(int amount) => _dudeAp = Math.Max(0, _dudeAp - amount);
 
+    /// <summary>combat.cc:5655 crippled-arm gate: with a WEAPON equipped, both arms crippled
+    /// blocks any weapon attack and one crippled arm blocks a TWO-HANDED weapon. Unarmed
+    /// (no weapon) is never gated here — you can still punch. Returns the block reason, or
+    /// null if the attack is allowed (phase-18 M2). Doctor heals the crip-arm bit (P14-M5).</summary>
+    private static string? WeaponBlockedByCrippledArms(MapObject attacker, ProtoInfo? weaponProto)
+    {
+        if (weaponProto?.Weapon is null)
+            return null;
+        int cr = attacker.CombatResults;
+        bool left = (cr & CriticalTables.DamCripArmLeft) != 0;
+        bool right = (cr & CriticalTables.DamCripArmRight) != 0;
+        if (left && right)
+            return "both arms are crippled";
+        if ((left || right) && WeaponProtoStats.IsTwoHanded(weaponProto.ExtendedFlags))
+            return "your crippled arm can't handle a two-handed weapon";
+        return null;
+    }
+
     // ====================================================================
     //  Attacks
     // ====================================================================
@@ -143,6 +161,11 @@ public sealed class CombatEngine
             return false;
 
         (ProtoInfo? weaponProto, MapObject? weaponItem) = _host.EquippedWeapon(dude);
+        if (WeaponBlockedByCrippledArms(dude, weaponProto) is { } crippleReason)
+        {
+            _host.Log($"You can't attack — {crippleReason}.");
+            return false;
+        }
         bool isGun = weaponProto?.Weapon is { } wstats && wstats.IsGun(weaponProto.ExtendedFlags);
         int range = isGun ? weaponProto!.Weapon!.MaxRange1
             : Math.Min(weaponProto?.Weapon?.MaxRange1 ?? 1, 2); // throwers melee-capped until rung (a)
@@ -252,6 +275,11 @@ public sealed class CombatEngine
             return false;
 
         (ProtoInfo? weaponProto, MapObject? weaponItem) = _host.EquippedWeapon(dude);
+        if (WeaponBlockedByCrippledArms(dude, weaponProto) is { } crippleReason)
+        {
+            _host.Log($"You can't fire — {crippleReason}.");
+            return false;
+        }
         if (!IsBurstWeapon(weaponProto) || weaponItem is null)
         {
             _host.Log("This weapon can't fire a burst.");
@@ -521,6 +549,11 @@ public sealed class CombatEngine
             return false;
 
         (ProtoInfo? weaponProto, MapObject? weaponItem) = _host.EquippedWeapon(dude);
+        if (WeaponBlockedByCrippledArms(dude, weaponProto) is { } crippleReason)
+        {
+            _host.Log($"You can't throw — {crippleReason}.");
+            return false;
+        }
         if (weaponProto?.Weapon is null || weaponItem is null
             || !IsThrowable(weaponProto, out _, out int rangeMax, out int apCost))
         {

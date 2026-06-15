@@ -770,6 +770,33 @@ public class CombatEngineTests
         Assert.Equal(30, dude.CurrentHp); // the distant dude is ignored — the factions fight each other
     }
 
+    [Fact]
+    public void CrippledArmsGateWeaponAttacks()
+    {
+        // Phase-18 M2 (combat.cc:5655): both arms crippled blocks ANY weapon attack; one
+        // crippled arm blocks a TWO-HANDED weapon only; unarmed (no weapon) is never gated.
+        bool CanAttack(int combatResults, (ProtoInfo?, MapObject?) equipped)
+        {
+            var host = new FakeCombatHost { Equipped = equipped };
+            MapObject dude = host.SetDude(NewCritter(20100, hp: 30, ap: 10, skill: 100));
+            dude.CombatResults = combatResults;
+            MapObject enemy = host.AddCritter(NewCritter(HexGrid.TileInDirection(20100, 0), hp: 30));
+            return new CombatEngine(host, new MinRng()).TryAttack(enemy);
+        }
+
+        var wstats = new WeaponProtoStats(1, 1, 6, 0, 1, 0, 0, 1, 3, 0, 0, 0, -1, 0, 0);
+        MapObject item = new() { Id = 8, HexTile = 0, X = 0, Y = 0, Frame = 0, Rotation = 0, Fid = 0, Flags = 0, Pid = 8, Sid = -1 };
+        (ProtoInfo?, MapObject?) twoHanded = (new ProtoInfo(8, 0, 0x01000000, 0, 0x201, 3, Weapon: wstats), item);
+        (ProtoInfo?, MapObject?) oneHanded = (new ProtoInfo(8, 0, 0x01000000, 0, 0x001, 3, Weapon: wstats), item);
+        (ProtoInfo?, MapObject?) unarmed = (null, null);
+
+        Assert.True(CanAttack(0, twoHanded));                                       // no crip → fine
+        Assert.False(CanAttack(CriticalTables.DamCripArmLeft, twoHanded));          // one arm + 2H → blocked
+        Assert.True(CanAttack(CriticalTables.DamCripArmLeft, oneHanded));           // one arm + 1H → fine
+        Assert.False(CanAttack(CriticalTables.DamCripArmAny, oneHanded));           // both arms + weapon → blocked
+        Assert.True(CanAttack(CriticalTables.DamCripArmAny, unarmed));              // both arms but unarmed → punch
+    }
+
     private static (MapObject Obj, CritterProtoStats Proto) NewCritter(
         int tile, int hp, int ap = 10, int seq = 1, int exp = 0, int betterCrit = 0, int meleeDmg = 0, int skill = 0, int endurance = 0)
     {
