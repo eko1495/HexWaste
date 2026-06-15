@@ -344,6 +344,10 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
         /// Row is 0-based within the current page. Drives the same geometry+dispatch path
         /// a live mouse click does, then reports the result — regression-proofs row clicks.</summary>
         public sealed record PanelClick(int Side, int Row) : StartupAction;
+        /// <summary>Click a row of the Options or Pip-Boy menu (phase-15 M3): Menu is
+        /// "options" / "pipboy" / "pipboy-rest", Row is 0-based. Drives the same
+        /// geometry + dispatch a live click does and reports which row was hit.</summary>
+        public sealed record MenuClick(string Menu, int Row) : StartupAction;
         public sealed record UseSkill(int Skill, int TargetHex) : StartupAction;
         public sealed record RestFor(int Minutes) : StartupAction;
         public sealed record OpenAutomap : StartupAction;
@@ -833,6 +837,33 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
                     Console.WriteLine($"panel-click: side={(pcSide == 0 ? "L" : "R")} row={pcRow}"
                         + $" consumed={consumed} inv={_dudeInventory.Count}"
                         + $" inHand={(inHand is null ? "none" : ObjectName(inHand))}");
+                    break;
+                }
+                case StartupAction.MenuClick(var menu, var mrow):
+                {
+                    // Compute the row's centre, hit-test it back (hit must == mrow), then
+                    // dispatch — proves the Options/Pip-Boy row geometry + action mapping.
+                    string state;
+                    int hit;
+                    if (menu == "options")
+                    {
+                        _optionsOpen = true;
+                        Point c = OptionsRowRect(mrow).Center;
+                        hit = OptionsRowAt(c.X, c.Y);
+                        if (hit == 4) _optionsOpen = false; // Resume — the side-effect-free row
+                        state = $"options={_optionsOpen}";
+                    }
+                    else
+                    {
+                        _pipboyOpen = true;
+                        _pipboyRestMenu = menu == "pipboy-rest";
+                        Point c = PipboyRowRect(mrow).Center;
+                        hit = PipboyRowAt(c.X, c.Y);
+                        if (hit >= 0)
+                            PipboyRows()[hit].OnClick();
+                        state = $"pipboy={_pipboyOpen} rest={_pipboyRestMenu} automap={_automapOpen}";
+                    }
+                    Console.WriteLine($"menu-click: menu={menu} row={mrow} hit={hit} -> {state}");
                     break;
                 }
                 case StartupAction.UseSkill(var useSkill, var skillHex):
@@ -1632,7 +1663,13 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
         // a rest duration. Esc backs out of the rest menu, then closes the panel.
         if (_pipboyOpen)
         {
-            if (_pipboyRestMenu)
+            // A row click fires the same action its keyboard shortcut does (P15 M3).
+            if (mouse.LeftButton == ButtonState.Pressed && _previousMouse.LeftButton == ButtonState.Released
+                && PipboyRowAt(mouse.X, mouse.Y) is var prow && prow >= 0)
+            {
+                PipboyRows()[prow].OnClick();
+            }
+            else if (_pipboyRestMenu)
             {
                 for (int i = 0; i < RestOptions.Length; i++)
                     if (IsKeyPressed(keyboard, Keys.D1 + i) || IsKeyPressed(keyboard, Keys.NumPad1 + i))
@@ -1674,11 +1711,15 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
         // Q quit to desktop, Esc/D resume (options.cc showOptions key set).
         if (_optionsOpen)
         {
-            if (IsKeyPressed(keyboard, Keys.S)) { _optionsOpen = false; SaveGame(); }
-            else if (IsKeyPressed(keyboard, Keys.L)) { _optionsOpen = false; LoadGame(); }
-            else if (IsKeyPressed(keyboard, Keys.M)) { _optionsOpen = false; QuitToMainMenu(); }
-            else if (IsKeyPressed(keyboard, Keys.Q)) Exit();
-            else if (IsKeyPressed(keyboard, Keys.Escape) || IsKeyPressed(keyboard, Keys.D)) _optionsOpen = false;
+            // A row click fires the same action its keyboard shortcut does (P15 M3):
+            // 0 Save, 1 Load, 2 Main Menu, 3 Quit, 4 Resume.
+            int orow = mouse.LeftButton == ButtonState.Pressed && _previousMouse.LeftButton == ButtonState.Released
+                ? OptionsRowAt(mouse.X, mouse.Y) : -1;
+            if (IsKeyPressed(keyboard, Keys.S) || orow == 0) { _optionsOpen = false; SaveGame(); }
+            else if (IsKeyPressed(keyboard, Keys.L) || orow == 1) { _optionsOpen = false; LoadGame(); }
+            else if (IsKeyPressed(keyboard, Keys.M) || orow == 2) { _optionsOpen = false; QuitToMainMenu(); }
+            else if (IsKeyPressed(keyboard, Keys.Q) || orow == 3) Exit();
+            else if (IsKeyPressed(keyboard, Keys.Escape) || IsKeyPressed(keyboard, Keys.D) || orow == 4) _optionsOpen = false;
 
             _previousMouse = mouse;
             _previousKeyboard = keyboard;
@@ -4981,17 +5022,70 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
     /// Automaps / archives / alarm are out of scope (content-gated). Reuses the AAF font
     /// (green) like the HUD monitor; the "date" is our game-day + clock — no full
     /// calendar (a documented simplification, since our GameClock tracks only ticks).</summary>
+    // Pip-Boy content origin + line height — shared by DrawPipboy (render) and the
+    // PipboyRow* helpers (hit-test) so a row click always lands where it's drawn.
+    private void PipboyContentOrigin(out Point po, out int lh)
+    {
+        Rectangle vp = GraphicsDevice.Viewport.Bounds;
+        int pw = _pipboyBg?.Width ?? 640, ph = _pipboyBg?.Height ?? 480;
+        po = new Point(Math.Max(0, (vp.Width - pw) / 2), Math.Max(0, (vp.Height - ph) / 2));
+        lh = (_fontRenderer?.LineHeight ?? 16) + 4;
+    }
+
+    // The clickable rows the current Pip-Boy page offers, paired with the action each
+    // fires — the SINGLE dispatch shared by the row click and (where they overlap) the
+    // keyboard. Rest rows call DoRest without closing the menu, matching the number keys.
+    private List<(string Label, Action OnClick)> PipboyRows()
+    {
+        var rows = new List<(string, Action)>();
+        if (!_pipboyRestMenu)
+        {
+            rows.Add(("Rest", () => _pipboyRestMenu = true));
+            rows.Add(("Automap", () => { _pipboyOpen = false; _automapOpen = true; }));
+            rows.Add(("Close", () => _pipboyOpen = false));
+        }
+        else
+        {
+            for (int i = 0; i < RestOptions.Length; i++)
+            {
+                int min = RestOptions[i].Minutes;
+                rows.Add(($"{i + 1}. {RestOptions[i].Label}", () => DoRest(min)));
+            }
+            rows.Add(("Back", () => _pipboyRestMenu = false));
+        }
+        return rows;
+    }
+
+    // The clickable rows render in a fixed band below the page's info text (reserve 9
+    // lines for the status block, 2 for the REST header) so the geometry is computable
+    // independent of the variable status content.
+    private Rectangle PipboyRowRect(int index)
+    {
+        PipboyContentOrigin(out Point po, out int lh);
+        int baseY = po.Y + 46 + (_pipboyRestMenu ? 2 : 9) * lh + 8;
+        return new Rectangle(po.X + 254 - 6, baseY + index * lh - 2, 220, lh);
+    }
+
+    private int PipboyRowAt(int mx, int my)
+    {
+        int n = PipboyRows().Count;
+        for (int i = 0; i < n; i++)
+            if (PipboyRowRect(i).Contains(mx, my))
+                return i;
+        return -1;
+    }
+
     private void DrawPipboy()
     {
         if (!_pipboyOpen || _fontRenderer is null)
             return;
         _pipboyBg ??= InterfaceBar.LoadFrm(GraphicsDevice, _vfs, _palette, @"art\intrface\PIP.frm");
 
-        Rectangle vp = GraphicsDevice.Viewport.Bounds;
+        PipboyContentOrigin(out Point po, out int lh);
         int pw = _pipboyBg?.Width ?? 640, ph = _pipboyBg?.Height ?? 480;
-        var po = new Point(Math.Max(0, (vp.Width - pw) / 2), Math.Max(0, (vp.Height - ph) / 2));
         var green = new Color(0, 252, 0);
         var dim = new Color(0, 160, 0);
+        var hot = new Color(252, 252, 84);
 
         if (_pipboyBg is not null)
             _spriteBatch.Draw(_pipboyBg, new Vector2(po.X, po.Y), Color.White);
@@ -5006,8 +5100,8 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
         _fontRenderer.Draw(_spriteBatch, $"{_clock.Hour / 100:00}:{_clock.Hour % 100:00}",
             new Vector2(po.X + 155, po.Y + 17), green);
 
-        // Content view (pipboy.cc CONTENT_VIEW 254,46 374x410): STATUS or the REST menu.
-        int cx = po.X + 254, ty = po.Y + 46, lh = _fontRenderer.LineHeight + 4;
+        // Content view (pipboy.cc CONTENT_VIEW 254,46): the info block, then the clickable rows.
+        int cx = po.X + 254, ty = po.Y + 46;
         void Line(string text, Color c) { _fontRenderer!.Draw(_spriteBatch, text, new Vector2(cx, ty), c); ty += lh; }
 
         if (!_pipboyRestMenu)
@@ -5022,19 +5116,22 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
                 Line($"Armor Class {st.ArmorClass}", dim);
                 Line($"Action Points {st.MaxActionPoints}", dim);
             }
-            ty += lh;
-            Line("R  Rest", green);
-            Line("A  Automap", green);
-            Line("P / Esc  Close", dim);
         }
         else
         {
-            Line("REST", green); ty += 4;
-            for (int i = 0; i < RestOptions.Length; i++)
-                Line($"{i + 1}. {RestOptions[i].Label}", green);
-            ty += 4;
-            Line("Esc  Back", dim);
+            Line("REST", green);
         }
+
+        // The clickable action rows (click or the keyboard shortcut). The hovered row lights.
+        int hovered = PipboyRowAt(Mouse.GetState().X, Mouse.GetState().Y);
+        var rows = PipboyRows();
+        for (int i = 0; i < rows.Count; i++)
+        {
+            Rectangle r = PipboyRowRect(i);
+            _fontRenderer.Draw(_spriteBatch, rows[i].Label, new Vector2(r.X + 6, r.Y + 2), i == hovered ? hot : green);
+        }
+        _fontRenderer.Draw(_spriteBatch, _pipboyRestMenu ? "click a duration, Esc back" : "click a row, P / Esc close",
+            new Vector2(cx, po.Y + ph - 30), dim);
     }
 
     /// <summary>The full-window automap (P15 M0): the authentic AUTOMAP.FRM (519x480)
@@ -5100,33 +5197,59 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
     /// <summary>The options / pause menu (P12 M2): the authentic OPBASE.FRM (164x217)
     /// centred, with the actions the engine's showOptions offers (minus Preferences,
     /// which we have no system for). Drawn over the paused world.</summary>
+    // The options/pause menu rows, top to bottom — index is the dispatch key shared by
+    // DrawOptions (render), OptionsRowAt (hit-test) and the click handler.
+    private static readonly string[] OptionsItems =
+        ["Save Game  (S)", "Load Game  (L)", "Main Menu  (M)", "Quit  (Q)", "Resume  (Esc)"];
+
+    // The clickable rect for the index-th options row — origin + spacing mirror DrawOptions
+    // exactly (the FRM-dim fallback keeps it valid before the art loads).
+    private Rectangle OptionsRowRect(int index)
+    {
+        Rectangle vp = GraphicsDevice.Viewport.Bounds;
+        int ow = _optionsBg?.Width ?? 164, oh = _optionsBg?.Height ?? 217;
+        int ox = Math.Max(0, (vp.Width - ow) / 2), oy = Math.Max(0, (vp.Height - oh) / 2);
+        int lh = (_fontRenderer?.LineHeight ?? 16) + 10;
+        int ty0 = oy + (oh - OptionsItems.Length * lh) / 2;
+        return new Rectangle(ox, ty0 + index * lh - 2, ow, lh);
+    }
+
+    private int OptionsRowAt(int mx, int my)
+    {
+        for (int i = 0; i < OptionsItems.Length; i++)
+            if (OptionsRowRect(i).Contains(mx, my))
+                return i;
+        return -1;
+    }
+
     private void DrawOptions()
     {
         if (!_optionsOpen || _fontRenderer is null)
             return;
         _optionsBg ??= InterfaceBar.LoadFrm(GraphicsDevice, _vfs, _palette, @"art\intrface\OPBASE.frm");
 
-        Rectangle vp = GraphicsDevice.Viewport.Bounds;
         int ow = _optionsBg?.Width ?? 164, oh = _optionsBg?.Height ?? 217;
-        var origin = new Point(Math.Max(0, (vp.Width - ow) / 2), Math.Max(0, (vp.Height - oh) / 2));
         var green = new Color(0, 252, 0);
+        var hot = new Color(252, 252, 84);
+
+        // Top-left of the panel (recompute the same way OptionsRowRect does).
+        Rectangle vp = GraphicsDevice.Viewport.Bounds;
+        int px = Math.Max(0, (vp.Width - ow) / 2), py = Math.Max(0, (vp.Height - oh) / 2);
 
         if (_optionsBg is not null)
-            _spriteBatch.Draw(_optionsBg, new Vector2(origin.X, origin.Y), Color.White);
+            _spriteBatch.Draw(_optionsBg, new Vector2(px, py), Color.White);
         else
         {
             _panelPixel ??= CreatePixel();
-            _spriteBatch.Draw(_panelPixel, new Rectangle(origin.X, origin.Y, ow, oh), new Color(8, 16, 8, 240));
+            _spriteBatch.Draw(_panelPixel, new Rectangle(px, py, ow, oh), new Color(8, 16, 8, 240));
         }
 
-        string[] items = ["Save Game  (S)", "Load Game  (L)", "Main Menu  (M)", "Quit  (Q)", "Resume  (Esc)"];
-        int lh = _fontRenderer.LineHeight + 10;
-        int ty = origin.Y + (oh - items.Length * lh) / 2;
-        foreach (string item in items)
+        int hovered = OptionsRowAt(Mouse.GetState().X, Mouse.GetState().Y);
+        for (int i = 0; i < OptionsItems.Length; i++)
         {
-            int tw = _fontRenderer.MeasureWidth(item);
-            _fontRenderer.Draw(_spriteBatch, item, new Vector2(origin.X + (ow - tw) / 2, ty), green);
-            ty += lh;
+            Rectangle r = OptionsRowRect(i);
+            int tw = _fontRenderer.MeasureWidth(OptionsItems[i]);
+            _fontRenderer.Draw(_spriteBatch, OptionsItems[i], new Vector2(px + (ow - tw) / 2, r.Y + 2), i == hovered ? hot : green);
         }
     }
 

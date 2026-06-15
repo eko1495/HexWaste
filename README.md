@@ -80,7 +80,10 @@ Prebuilt self-contained builds (Linux x64 / Windows x64) are produced by
   choose a skill (Lockpick, First Aid, Doctor, Steal, Traps, Science, Repair, Sneak)
   and click a target to apply it. The PIP tab opens the Pip-Boy: a status page (date/
   time, level, HP/AC) and a rest menu (timed rests or rest-until-healed). The OPT tab
-  (or Esc) opens the options/pause menu: save, load, main menu, quit, resume.
+  (or Esc) opens the options/pause menu: save, load, main menu, quit, resume. Every
+  panel and menu is fully mouse-navigable — click a row in the inventory/loot/barter/
+  trade lists (PgUp/PgDn page past the 9th item) or in the Pip-Boy/Options menus; the
+  keyboard shortcuts still work alongside.
 
 ## Controls
 

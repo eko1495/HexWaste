@@ -134,6 +134,11 @@ for (int i = 0; i < args.Length; i++)
             actions.Add(new ViewerGame.StartupAction.PanelClick(int.Parse(args[i + 1]), int.Parse(args[i + 2])));
             i += 2;
             break;
+        case "--menu-click" when i + 2 < args.Length:
+            // --menu-click <options|pipboy|pipboy-rest> <row>: click a menu row.
+            actions.Add(new ViewerGame.StartupAction.MenuClick(args[i + 1], int.Parse(args[i + 2])));
+            i += 2;
+            break;
         case "--use-skill" when i + 2 < args.Length:
             // --use-skill <skillId> <targetHex> (hex<0 = self): apply a Skilldex skill.
             actions.Add(new ViewerGame.StartupAction.UseSkill(int.Parse(args[i + 1]), int.Parse(args[i + 2])));
