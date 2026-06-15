@@ -10,6 +10,8 @@
 game-data/
 *.exe
 *.bin
+# Save files (the default --save-now target lands in the CWD).
+hexwaste-save*.json
 # Rendered game art (FrmDump/screenshot output) — never commit (legal guardrail);
 # screenshots were scrubbed from history, keep them out for good.
 *.png

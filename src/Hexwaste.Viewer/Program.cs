@@ -71,6 +71,9 @@ for (int i = 0; i < args.Length; i++)
             ambient = double.Parse(args[++i], System.Globalization.CultureInfo.InvariantCulture);
             ambientFixed = true;
             break;
+        case "--save-path" when i + 1 < args.Length: // set the file for in-process --save/--load
+            savePath = args[++i];
+            break;
         case "--save-to" when i + 1 < args.Length:
             savePath = args[++i];
             saveOnExit = true;

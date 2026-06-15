@@ -749,8 +749,12 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
                     int members = _scriptHost is null ? 0
                         : Formats.Int.ScriptHost.PartyMemberCount(_scriptHost.PartyMembers);
                     int caps = _dudeInventory.Where(i => i.Pid == 41).Sum(i => Math.Max(i.StackCount, 1));
+                    // Each member as Name(curHp/maxHp) — the maxHp reflects a levelled
+                    // companion's stage proto (via the stat override), so this line
+                    // proves the level-up state survives a save/load round-trip (#10 M3).
                     string names = _scriptHost is null ? ""
-                        : string.Join(",", _scriptHost.PartyMembers.Select(ObjectName));
+                        : string.Join(",", _scriptHost.PartyMembers.Select(m =>
+                            GetCritterState(m) is { } cs ? $"{ObjectName(m)}({cs.CurrentHp}/{cs.MaxHp})" : ObjectName(m)));
                     Console.WriteLine($"party-count: members={members} caps={caps} [{names}]");
                     break;
                 }
@@ -5475,7 +5479,10 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
                     i.Flags & (MapObject.FlagInLeftHand | MapObject.FlagInRightHand | MapObject.FlagWorn),
                     i.AmmoQuantity, i.AmmoTypePid)).ToList(),
                 Waiting: _waitingCompanions.Contains(m),
-                OriginalTeam: _originalTeam.GetValueOrDefault(m, m.Team)))],
+                OriginalTeam: _originalTeam.GetValueOrDefault(m, m.Team),
+                LevelUpLevel: _companionLevelState.GetValueOrDefault(m)?.Level ?? 0,
+                LevelUpNumLevelUps: _companionLevelState.GetValueOrDefault(m)?.NumLevelUps ?? 0,
+                LevelUpIsEarly: _companionLevelState.GetValueOrDefault(m)?.IsEarly ?? 0))],
             WorldPosX = _worldPosX,
             WorldPosY = _worldPosY,
             CurrentAreaId = _currentAreaId,
@@ -5655,6 +5662,25 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
                     _waitingCompanions.Add(member);
                 if (saved.OriginalTeam >= 0)
                     _originalTeam[member] = saved.OriginalTeam;
+
+                // Restore the proto level-up bookkeeping (#10 M3) and re-apply the
+                // stage proto as the stat override, so a levelled companion comes back
+                // with the right stats (HP already restored from saved.Hp above).
+                if (saved.LevelUpLevel > 0 || saved.LevelUpNumLevelUps > 0)
+                {
+                    _companionLevelState[member] = new Formats.Party.PartyLevelUpState
+                    {
+                        Level = saved.LevelUpLevel,
+                        NumLevelUps = saved.LevelUpNumLevelUps,
+                        IsEarly = saved.LevelUpIsEarly,
+                    };
+                    if (saved.LevelUpLevel > 0 && PartyTable()?.ForPid(saved.Pid) is { } desc
+                        && saved.LevelUpLevel <= desc.LevelPids.Count)
+                    {
+                        try { _companionStatOverride[member] = _protos.Get(desc.LevelPids[saved.LevelUpLevel - 1]).Critter; }
+                        catch (Exception ex) when (ex is FileNotFoundException or InvalidDataException or NotSupportedException) { }
+                    }
+                }
             }
             InjectPartyMembers();
         }

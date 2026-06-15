@@ -278,8 +278,17 @@ CritterProtoStats OVERRIDE that GetCritterState consults (NOT a shared-cache mut
 (party.txt member 13, level_minimum 5) advances 0x1000175→0x1000176 as the dude
 levels (vic-levelup golden fixture); the hub (wait/follow/dismiss/rejoin) opens for
 the recruited Vic unchanged (critter-agnostic, #8). A dedicated seeded _partyRng keeps
-the roll off the worldmap/combat streams. Remaining: M3 save a scripted recruit
-(the level-up state + scripted-recruit roster are not yet persisted).
+the roll off the worldmap/combat streams. M3 (DONE — #10 COMPLETE): the scripted
+recruit + its proto level-up survive save/load. The duplication trap was already
+handled (CaptureMapDelta marks PartyMembers' ordinals TAKEN, scripted recruits go
+through the same path); M3 added the level-up persistence — PartyMemberState gained
+3 additive-V2 ints (Level/NumLevelUps/IsEarly, party_member.cc:520-538), restored on
+load with the stage proto re-applied as the override (HP from saved.Hp). Verified by
+vic-save-roundtrip: the party-count line is byte-identical before save and after load
+(members=2, no dup; Vic keeps his levelled 78/78). --save-path sets the in-process
+--save-now/--load-now file; --party-count now shows each member's HP. #10 (Vic's
+legitimate rescue + companion lifecycle on a real recruit) is fully closed; the lone
+residual is the radio ITEM having no in-slice source (one --give, content not engine).
 P11 authentic HUD bar (#15, DONE M0-M5, per docs/research-notes/p11-hud-scope.md):
 the real art\intrface\iface.frm (640x99) pinned bottom-centre at native 1:1 scale
 (the camera has no zoom) via the new InterfaceBar class + DrawInterfaceBar. M0 bar

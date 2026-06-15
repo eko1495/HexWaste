@@ -42,6 +42,10 @@ SCENARIOS=(
   # #10 M2 — a legitimately-recruited Vic levels up his proto as the dude gains levels
   # (PartyLevelUp wired into AwardXp; party.txt member 13, level_minimum 5).
   "vic-levelup|--map denbus2.map --give 41:2000 --give 266:1 --talk-seq 17070 1,1,1 --talk-seq 15278 2,2,1,1 --talk-seq 17070 2,1 --grant-xp 60000 --party-count --rng-seed 1"
+  # #10 M3 — the scripted recruit + its proto level-up survive a save/load round-trip:
+  # the party-count line is identical before and after (members=2, no duplication; Vic
+  # keeps his levelled stage HP). Saves to /tmp so nothing lands in the repo.
+  "vic-save-roundtrip|--map denbus2.map --give 41:2000 --give 266:1 --talk-seq 17070 1,1,1 --talk-seq 15278 2,2,1,1 --talk-seq 17070 2,1 --grant-xp 60000 --save-path /tmp/hexwaste-m3golden.json --party-count --save-now --load-now --party-count --rng-seed 1"
 )
 
 # Keep only the deterministic transcript lines (drop map-load / animate / stub /

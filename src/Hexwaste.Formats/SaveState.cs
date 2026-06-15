@@ -106,7 +106,11 @@ public sealed class SaveState
     /// OriginalTeam = the pre-recruit team to restore on dismiss (-1 = none, derive
     /// from current). Both additive within V2 — old saves default.</summary>
     public sealed record PartyMemberState(int Pid, int ScriptListIndex, int Hp, int Team,
-        int AiPacket, List<SavedItem> Inventory, bool Waiting = false, int OriginalTeam = -1);
+        int AiPacket, List<SavedItem> Inventory, bool Waiting = false, int OriginalTeam = -1,
+        // Companion proto level-up bookkeeping (#10 M3; party_member.cc:520-538's 3-int
+        // struct). Additive within V2 — old saves deserialize these as 0 (= never
+        // levelled, pristine), so no version bump.
+        int LevelUpLevel = 0, int LevelUpNumLevelUps = 0, int LevelUpIsEarly = 0);
 
     /// <summary>A dismissed companion left standing on a map: enough to recreate the
     /// inert body and rejoin it (P10 #3).</summary>
