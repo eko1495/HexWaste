@@ -176,9 +176,16 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
 
     /// <summary>Full-window automap (P15 M0): the AUTOMAP.FRM (519x480) view, opened from
     /// the Pip-Boy (A), plotting the current elevation's objects as colored dots
-    /// (automap.cc automapRenderInMapWindow). Fog-of-war faked all-visible.</summary>
+    /// (automap.cc automapRenderInMapWindow).</summary>
     private bool _automapOpen;
     private Texture2D? _automapBg;
+
+    /// <summary>Objects the dude has come within sight of — the automap's OBJECT_SEEN
+    /// fog-of-war (P20-M2). Cleared per map, accumulated as the dude moves (RevealAround);
+    /// the automap + mini-map plot only seen objects. SIMPLIFICATION: a flat-radius
+    /// proximity reveal (not true line-of-sight), not persisted across save.</summary>
+    private readonly HashSet<MapObject> _seenObjects = [];
+    private const int AutomapSightRadius = 14; // hexes the dude "sees" around itself
 
     /// <summary>Options / pause menu (P12 M2): Esc or the OPT button opens it —
     /// Save / Load / Quit to main menu / Quit to desktop / Resume (the actions of
@@ -1080,13 +1087,17 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
                 case StartupAction.OpenAutomap:
                 {
                     _automapOpen = true;
-                    // Deterministic object census (the dots the automap plots), for the golden.
-                    int Count(ObjectType t) => _flatObjects[_elevation].Concat(_solidObjects[_elevation])
-                        .Count(o => Fid.Type(o.Fid) == t && !(t == ObjectType.Critter && o.IsDead));
+                    // Deterministic census of the dots the automap plots — now gated by the
+                    // OBJECT_SEEN fog (P20-M2), so it counts what the dude has actually seen.
+                    var live = _flatObjects[_elevation].Concat(_solidObjects[_elevation]).ToList();
+                    int Count(ObjectType t) => live.Count(o => _seenObjects.Contains(o)
+                        && Fid.Type(o.Fid) == t && !(t == ObjectType.Critter && o.IsDead));
+                    int totalPlottable = live.Count(o => AutomapColor(o) is not null);
                     Console.WriteLine($"automap: map={_currentMapName} elev={_elevation}"
                         + $" walls={Count(ObjectType.Wall)} scenery={Count(ObjectType.Scenery)}"
                         + $" critters={Count(ObjectType.Critter)} items={Count(ObjectType.Item)}"
-                        + $" misc={Count(ObjectType.Misc)} dude={_dude?.Dude.HexTile ?? -1}");
+                        + $" misc={Count(ObjectType.Misc)} seen={_seenObjects.Count(o => AutomapColor(o) is not null)}/{totalPlottable}"
+                        + $" dude={_dude?.Dude.HexTile ?? -1}");
                     break;
                 }
                 case StartupAction.PartyCount:
@@ -1623,6 +1634,7 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
         _hoveredObject = null;
         _dude = null;
         _openDoors.Clear();
+        _seenObjects.Clear(); // automap fog resets per map (P20-M2)
         _npcWalkers.Clear();
         _homeTiles.Clear();
         _projectiles.Clear();
@@ -2453,6 +2465,7 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
 
             _scriptHost?.RunSpatialsAt(_map, tile, _elevation, dude);
             CheckExitGridAt(tile);
+            RevealAround(tile); // automap fog reveals as the dude explores (P20-M2)
 
             // Phase-18 M0: in combat, each hex crossed costs MovePointCost AP (1 normally,
             // 4/8 with a crippled leg — P14-M3); halt the walk once the next hex is
@@ -2467,6 +2480,7 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
 
         InsertSorted(_solidObjects[_elevation], dude);
         _camera.SetCenter(dude.HexTile);
+        RevealAround(dude.HexTile); // automap fog: reveal the spawn surroundings (P20-M2)
     }
 
     private static void InsertSorted(List<MapObject> objects, MapObject obj)
@@ -5545,12 +5559,28 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
     }
 
     /// <summary>The automap dot colour for an object by FID type, shared by the full-window
-    /// automap and the Pip-Boy mini-map (P20-M1). Dead critters / untyped objects → null
-    /// (not plotted). Readable approximations of the engine's _colorTable indices.</summary>
+    /// automap and the Pip-Boy mini-map (P20-M1/M2). Dead critters / untyped objects → null.
+    /// Walls/scenery match the engine's IN-GAME _colorTable (automap.cc:537/541 — wall
+    /// _colorTable[992] = pure green, high-detail scenery [480] = dark green). DOCUMENTED
+    /// DIVERGENCE: the engine's in-game map hides critters + items (motion-sensor only) and
+    /// paints the dude red; we show them (red/yellow) with a WHITE dude so enemies + loot +
+    /// you are all distinguishable — a more useful PoC map.</summary>
+    /// <summary>Reveal every current-elevation object within sight of <paramref name="tile"/>
+    /// for the automap fog (P20-M2) — accumulated into <see cref="_seenObjects"/> as the dude
+    /// explores. Proximity, not true LoS (a documented simplification).</summary>
+    private void RevealAround(int tile)
+    {
+        if (tile < 0)
+            return;
+        foreach (MapObject obj in _flatObjects[_elevation].Concat(_solidObjects[_elevation]))
+            if (obj.HexTile >= 0 && Formats.Hex.HexGrid.Distance(tile, obj.HexTile) <= AutomapSightRadius)
+                _seenObjects.Add(obj);
+    }
+
     private static Color? AutomapColor(MapObject obj) => Fid.Type(obj.Fid) switch
     {
-        ObjectType.Wall => new Color(160, 160, 160),
-        ObjectType.Scenery => new Color(0, 168, 0),
+        ObjectType.Wall => new Color(0, 248, 0),     // _colorTable[992]
+        ObjectType.Scenery => new Color(0, 120, 0),  // _colorTable[480]
         ObjectType.Critter => obj.IsDead ? null : new Color(248, 0, 0),
         ObjectType.Item => new Color(252, 252, 84),
         ObjectType.Misc => new Color(84, 200, 252),
@@ -5581,7 +5611,7 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
         }
 
         foreach (MapObject obj in _flatObjects[_elevation].Concat(_solidObjects[_elevation]))
-            if (AutomapColor(obj) is { } col)
+            if (_seenObjects.Contains(obj) && AutomapColor(obj) is { } col) // OBJECT_SEEN fog (P20-M2)
                 Plot(obj.HexTile, col, 2);
         if (_dude is not null)
             Plot(_dude.Dude.HexTile, new Color(255, 255, 255), 3);
@@ -5622,7 +5652,7 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
         }
 
         foreach (MapObject obj in _flatObjects[_elevation].Concat(_solidObjects[_elevation]))
-            if (AutomapColor(obj) is { } col)
+            if (_seenObjects.Contains(obj) && AutomapColor(obj) is { } col) // OBJECT_SEEN fog (P20-M2)
                 Plot(obj.HexTile, col, 2);
         if (_dude is not null)
             Plot(_dude.Dude.HexTile, new Color(255, 255, 255), 3); // the dude marker
