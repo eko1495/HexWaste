@@ -194,6 +194,15 @@ for (int i = 0; i < args.Length; i++)
                 int.Parse(args[i + 1]), int.Parse(args[i + 2]), int.Parse(args[i + 3])));
             i += 3;
             break;
+        case "--encounter-answer" when i + 1 < args.Length:
+            // --encounter-answer <yes|no>: pre-answer a detected encounter's avoid prompt.
+            actions.Add(new ViewerGame.StartupAction.EncounterAnswer(
+                args[++i] is "yes" or "y" or "engage" or "true" or "1"));
+            break;
+        case "--force-outdoorsman" when i + 1 < args.Length:
+            // --force-outdoorsman <n>: override the party's best Outdoorsman (test plumbing).
+            actions.Add(new ViewerGame.StartupAction.ForceOutdoorsman(int.Parse(args[++i])));
+            break;
         case "--fight" when i + 1 < args.Length:
             actions.Add(new ViewerGame.StartupAction.Fight(int.Parse(args[++i])));
             break;

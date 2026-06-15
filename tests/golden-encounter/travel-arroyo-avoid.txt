@@ -1,0 +1,5 @@
+encounter detected: ARRO_Rats name="A group of rats." avoidXp=80 -> mountn1.map
+encounter avoided: continuing to area1
+encounter while travelling: ARRO_Silver_Geckos name="A group of silver geckos." table=6 entry=3 -> Mountn5.map
+encounter-spawn: ARRO_Silver_Geckos planned=2 placed=2 on Mountn5.map
+travel-from: (184,133)->area1 encounter map=Mountn5.map worldPos=(227,154) spawned=2

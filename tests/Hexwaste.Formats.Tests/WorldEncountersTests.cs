@@ -159,15 +159,22 @@ public class WorldEncountersTests
     }
 
     [Fact]
-    public void HighOutdoorsmanDetectsAndAvoidsTheEncounter()
+    public void HighOutdoorsmanDetectsTheEncounterAndGrantsAvoidXp()
     {
-        // A forced cell still rolls a group, but a high Outdoorsman steers around it
-        // (phase-10 #12). MinRng: the avoid roll (1) < detect (min(outdoorsman,95)).
-        EncounterResult? Run(int outdoorsman) =>
+        // A forced cell still rolls a group; a high Outdoorsman SPOTS it ahead (phase-16
+        // M1). Detection no longer auto-avoids — it flags Detected + grants (100-detect)
+        // XP; the yes/no avoid choice is the caller's. MinRng: avoid roll (1) < detect.
+        EncounterResult Run(int outdoorsman) =>
             new WorldEncounters(World0(), new MinRng(), 0, 0)
-                .Roll(110, 110, 1200, _ => 0, playerLevel: 1, daysPlayed: 0, outdoorsman: outdoorsman);
-        Assert.NotNull(Run(0));   // no skill → walks into it
-        Assert.Null(Run(100));    // capped to 95 → detected → avoided
+                .Roll(110, 110, 1200, _ => 0, playerLevel: 1, daysPlayed: 0, outdoorsman: outdoorsman)!;
+
+        EncounterResult low = Run(0);
+        Assert.False(low.Detected);   // no skill → undetected ambush, no choice
+        Assert.Equal(0, low.AvoidXp);
+
+        EncounterResult high = Run(100);
+        Assert.True(high.Detected);   // capped to 95 → detected (avoid roll 1 < 95)
+        Assert.Equal(5, high.AvoidXp); // 100 - 95
     }
 
     [Fact]

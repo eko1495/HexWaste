@@ -376,6 +376,12 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
         public sealed record EncounterWalk(int X0, int Y0, int X1, int Y1, int Steps) : StartupAction;
         public sealed record EncounterSpawnAt(string Map, string Group, int Count) : StartupAction;
         public sealed record TravelFrom(int X, int Y, int AreaIndex) : StartupAction;
+        /// <summary>Pre-answer a detected encounter's avoid prompt (phase-16 M1):
+        /// Engage=true engages, false avoids+continues. Must precede the travel action.</summary>
+        public sealed record EncounterAnswer(bool Engage) : StartupAction;
+        /// <summary>Override the party's best Outdoorsman skill (phase-16 M1 test plumbing)
+        /// so the detect path fires deterministically regardless of the dude's build.</summary>
+        public sealed record ForceOutdoorsman(int Value) : StartupAction;
         public sealed record Fight(int Hex) : StartupAction;
         public sealed record Give(int Pid, int Count) : StartupAction;
         public sealed record UseItemByPid(int Pid) : StartupAction;
@@ -759,12 +765,21 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
                         + $" critters={spawned.Count} corpses={corpses.Count}");
                     break;
                 }
+                case StartupAction.EncounterAnswer(var engage):
+                    _autoEncounterAnswer = engage; // phase-16 M1: pre-answer the avoid prompt
+                    break;
+                case StartupAction.ForceOutdoorsman(var od):
+                    _forceOutdoorsman = od;
+                    break;
                 case StartupAction.TravelFrom(var tx, var ty, var ai):
                 {
                     // Phase-10 M3 live-travel demo: stand at worldmap (tx,ty) and travel
                     // toward area ai, rolling encounters along the way (deterministic
                     // under --rng-seed). Either an encounter map loads (group spawned)
                     // or the dude arrives at the town.
+                    // Headless can't answer an interactive prompt, so default a detected
+                    // encounter to ENGAGE unless --encounter-answer set it (phase-16 M1).
+                    _autoEncounterAnswer ??= true;
                     _worldPosX = tx;
                     _worldPosY = ty;
                     WorldArea? dest = _cities.Areas.FirstOrDefault(a => a.Index == ai);
@@ -1918,6 +1933,28 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
             if (_companionHub is not null && IsKeyPressed(keyboard, Keys.Escape))
                 _companionHub = null;
 
+            _previousMouse = mouse;
+            _previousKeyboard = keyboard;
+            base.Update(gameTime);
+            return;
+        }
+
+        // Detected-encounter avoid prompt (phase-16 M1): Y engages, N avoids and travels
+        // on. Drawn over the worldmap; it must intercept before the worldmap's click-to-
+        // travel below.
+        if (_encounterPrompt is { } prompt)
+        {
+            if (IsKeyPressed(keyboard, Keys.Y))
+            {
+                _encounterPrompt = null;
+                EngageEncounter(prompt.Enc, prompt.MapFile, prompt.Name);
+            }
+            else if (IsKeyPressed(keyboard, Keys.N) || IsKeyPressed(keyboard, Keys.Escape))
+            {
+                _encounterPrompt = null;
+                Log($"You avoid {prompt.Name ?? "the encounter"} and travel on.");
+                TravelTo(prompt.Dest); // resume the leg from the encounter point
+            }
             _previousMouse = mouse;
             _previousKeyboard = keyboard;
             base.Update(gameTime);
@@ -4229,17 +4266,36 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
             _worldPosY = leg.FinalWorldY;
             if (leg.Encounter is { } r)
             {
-                _pendingEncounter = r;
-                _worldmapOpen = false;
-                // Phase-16 M0: name the encounter from worldmap.msg (3000+50*table+entry)
-                // instead of the bare literal — "Ambush! A group of spore plants."
                 string? name = EncounterName(r);
-                Console.WriteLine($"encounter while travelling: {r.Entry.Spawns.FirstOrDefault()?.Group ?? "?"}"
-                    + $" name=\"{name ?? "?"}\" table={r.Table.Index} entry={r.Entry.EntryIndex} -> {leg.EncounterMap}");
-                Log(name is not null
-                    ? $"{(r.Entry.Situation == "AMBUSH" ? "Ambush! " : "")}{name}"
-                    : "Ambush! The wasteland bites.");
-                LoadMap(leg.EncounterMap!, null, transient: true);
+
+                // Phase-16 M1: a high-Outdoorsman party SPOTS the encounter ahead
+                // (worldmap.cc:3475). Detection grants (100-detect) XP regardless of the
+                // choice, then offers a yes/no avoid. Live play pops the overlay (resolved
+                // in Update); a headless run resolves synchronously via _autoEncounterAnswer.
+                if (r.Detected)
+                {
+                    if (r.AvoidXp > 0)
+                        AwardXp(r.AvoidXp);
+                    Console.WriteLine($"encounter detected: {r.Entry.Spawns.FirstOrDefault()?.Group ?? "?"}"
+                        + $" name=\"{name ?? "?"}\" avoidXp={r.AvoidXp} -> {leg.EncounterMap}");
+                    if (_autoEncounterAnswer is not { } answer)
+                    {
+                        _encounterPrompt = (r, leg.EncounterMap!, name, area);
+                        _worldmapOpen = true; // keep the worldmap up under the prompt overlay
+                        Log($"You spot {name ?? "trouble"} ahead. Encounter it? (Y/N)");
+                        return;
+                    }
+                    if (!answer)
+                    {
+                        Log($"You avoid {name ?? "the encounter"} and travel on.");
+                        Console.WriteLine($"encounter avoided: continuing to area{area.Index}");
+                        TravelTo(area); // resume the leg from the encounter point
+                        return;
+                    }
+                    // engage → fall through to load the encounter map
+                }
+
+                EngageEncounter(r, leg.EncounterMap!, name);
                 return;
             }
         }
@@ -4272,6 +4328,29 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
         Log($"You arrive at {area.Name}.");
     }
 
+    /// <summary>Pre-answer for a detected encounter in headless runs (phase-16 M1):
+    /// true = engage, false = avoid. Null in live play → the interactive Y/N prompt.</summary>
+    private bool? _autoEncounterAnswer;
+
+    /// <summary>A detected encounter awaiting the player's avoid choice in live play
+    /// (phase-16 M1): the result, its transient map, display name, and the leg's
+    /// destination (to resume travel on avoid). Null = no prompt up.</summary>
+    private (Formats.Map.EncounterResult Enc, string MapFile, string? Name, WorldArea Dest)? _encounterPrompt;
+
+    /// <summary>Engage a worldmap encounter: spawn the group on its transient map
+    /// (phase-10 M3 path; the banner names it via worldmap.msg, phase-16 M0).</summary>
+    private void EngageEncounter(Formats.Map.EncounterResult r, string mapFile, string? name)
+    {
+        _pendingEncounter = r;
+        _worldmapOpen = false;
+        Console.WriteLine($"encounter while travelling: {r.Entry.Spawns.FirstOrDefault()?.Group ?? "?"}"
+            + $" name=\"{name ?? "?"}\" table={r.Table.Index} entry={r.Entry.EntryIndex} -> {mapFile}");
+        Log(name is not null
+            ? $"{(r.Entry.Situation == "AMBUSH" ? "Ambush! " : "")}{name}"
+            : "Ambush! The wasteland bites.");
+        LoadMap(mapFile, null, transient: true);
+    }
+
     /// <summary>The worldmap RNG — persisted across travel legs so successive rolls
     /// differ; seeded off --rng-seed for golden transcripts, else wall-clock for a
     /// fresh wasteland each playthrough (phase-10 M3).</summary>
@@ -4280,8 +4359,11 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
     /// <summary>The best Outdoorsman skill across the dude + companions (party_get_best_
     /// skill_value), feeding the encounter detect-and-avoid roll (phase-10 #12). 17 =
     /// SKILL_OUTDOORSMAN.</summary>
+    private int? _forceOutdoorsman; // phase-16 M1 test override (force the detect path)
     private int PartyBestOutdoorsman()
     {
+        if (_forceOutdoorsman is { } forced)
+            return forced;
         int best = (_dude is not null ? GetCritterState(_dude.Dude)?.SkillValue(17) : 0) ?? 0;
         foreach (MapObject m in _scriptHost?.PartyMembers ?? [])
             best = Math.Max(best, GetCritterState(m)?.SkillValue(17) ?? 0);
@@ -4377,6 +4459,7 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
         if (_worldmapOpen)
         {
             _worldmapScreen?.Draw(_spriteBatch, GraphicsDevice.Viewport.Bounds, _hoveredArea);
+            DrawEncounterPrompt();
         }
         else
         {
@@ -5244,6 +5327,33 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
             if (OptionsRowRect(i).Contains(mx, my))
                 return i;
         return -1;
+    }
+
+    /// <summary>The detected-encounter avoid prompt (phase-16 M1): a centred Yes/No
+    /// box over the worldmap mirroring the engine's showDialogBox (worldmap.cc:3510).</summary>
+    private void DrawEncounterPrompt()
+    {
+        if (_encounterPrompt is not { } p || _fontRenderer is null)
+            return;
+        _panelPixel ??= CreatePixel();
+        Rectangle vp = GraphicsDevice.Viewport.Bounds;
+        int w = 360, h = 96;
+        int x = (vp.Width - w) / 2, y = (vp.Height - h) / 2;
+        _spriteBatch.Draw(_panelPixel, new Rectangle(x, y, w, h), new Color(8, 16, 8, 240));
+        var green = new Color(0, 252, 0);
+        string[] lines =
+        [
+            "You detect something up ahead.",
+            p.Name ?? "An encounter.",
+            "Do you wish to encounter it?  (Y / N)",
+        ];
+        int ty = y + 14;
+        foreach (string line in lines)
+        {
+            int tw = _fontRenderer.MeasureWidth(line);
+            _fontRenderer.Draw(_spriteBatch, line, new Vector2(x + (w - tw) / 2, ty), green);
+            ty += _fontRenderer.LineHeight + 6;
+        }
     }
 
     private void DrawOptions()

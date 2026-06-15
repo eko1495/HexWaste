@@ -11,6 +11,16 @@ public sealed record EncounterResult(EncounterTable Table, EncounterEntry Entry)
     /// (worldmap.cc:3511 getmsg(3000 + 50*encounterTableId + encounterEntryId); the
     /// table id is its load-order index, the entry id its position in the table).</summary>
     public int MessageId => 3000 + 50 * Table.Index + Entry.EntryIndex;
+
+    /// <summary>True when a high-Outdoorsman party SPOTTED this encounter ahead
+    /// (worldmap.cc:3475) — the engine grants <see cref="AvoidXp"/> and pops a yes/no
+    /// avoid dialog. False = an undetected ambush (no choice). The avoid CHOICE itself is
+    /// the caller's (it's an interactive dialog), so the pure layer only flags detection.</summary>
+    public bool Detected { get; init; }
+
+    /// <summary>XP granted on detection regardless of the avoid choice:
+    /// max(0, 100 − detectValue) (worldmap.cc:3477).</summary>
+    public int AvoidXp { get; init; }
 }
 
 /// <summary>Game difficulty — skews the encounter occurrence frequency and the
@@ -21,10 +31,12 @@ public enum GameDifficulty { Easy, Normal, Hard }
 /// The random-encounter roll/pick chain, ported from fallout2-ce
 /// src/worldmap.cc (wmRndEncounterOccurred :3322 / wmRndEncounterPick :3557 /
 /// wmEvalConditional :4096). Pure + seeded off <see cref="ICombatRng"/> so travel
-/// gets golden transcripts like combat. The v1 cut SKIPS (all confirmed
-/// skippable for the Arroyo→Klamath→Den loop): Horrigan, sfall hooks,
-/// outdoorsman-avoid, the special-encounter circle pin, perks/Luck, and the
-/// difficulty skew. See docs/phase10-research-report.md M1/M2.
+/// gets golden transcripts like combat. Outdoorsman detect+avoid is wired
+/// (phase-16 M1: detection flags <see cref="EncounterResult.Detected"/> +
+/// <see cref="EncounterResult.AvoidXp"/>, the yes/no is caller-side). The v1 cut
+/// SKIPS (all confirmed skippable for the Arroyo→Klamath→Den loop): Horrigan, sfall
+/// hooks, the motion sensor +20, the special-encounter circle pin, and perks. See
+/// docs/phase10-research-report.md M1/M2.
 /// </summary>
 public sealed class WorldEncounters
 {
@@ -94,18 +106,22 @@ public sealed class WorldEncounters
         if (picked is null)
             return null;
 
-        // Outdoorsman-avoid (worldmap.cc:3454-3519): a high-Outdoorsman party detects the
-        // encounter ahead and steers around it. The engine pops a yes/no dialog on detect;
-        // here detect == avoid (XP + motion-sensor skipped). The Δ3 anchor still resets on
-        // an avoided encounter, exactly like the engine (:3501-3502), so the next step
-        // doesn't immediately re-roll.
+        // Outdoorsman-detect (worldmap.cc:3454-3490): a high-Outdoorsman party (capped 95,
+        // motion sensor skipped) plus the tile difficulty modifier can spot the encounter
+        // ahead. On detect the engine grants (100 − detectValue) XP and pops a yes/no avoid
+        // dialog (caller-side, phase-16 M1). The Δ3 anchor resets here on ANY fired
+        // encounter — exactly like the engine's oldWorldPos reset (:3501-3502) — so the
+        // next step doesn't immediately re-roll whether or not it's avoided.
         _lastX = worldX;
         _lastY = worldY;
         int detect = Math.Min(outdoorsman, 95) + _world.TileDifficultyAt(worldX, worldY);
-        if (_rng.Next(1, 101) < detect)
-            return null;
+        bool detected = _rng.Next(1, 101) < detect;
 
-        return new EncounterResult(table, picked);
+        return new EncounterResult(table, picked)
+        {
+            Detected = detected,
+            AvoidXp = detected ? Math.Max(0, 100 - detect) : 0,
+        };
     }
 
     /// <summary>Weighted pick over the candidates that pass their conditions and have a

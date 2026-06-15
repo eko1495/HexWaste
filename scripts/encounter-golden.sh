@@ -25,7 +25,11 @@ SCENARIOS=(
   "encounter-arro-rats|--encounter desert1.map ARRO_Rats 5 --rng-seed 1"
   "encounter-war-party|--encounter desert1.map ARRO_War_Party 4 --rng-seed 7"
   "encounter-scorpions|--encounter desert1.map ARRO_Sm_Scorpions 4 --rng-seed 2"
+  # P16-M1: travelling the Arroyo->Den leg now DETECTS the ARRO_Rats encounter ahead
+  # (Outdoorsman), grants the avoid XP, and (headless default) engages it. The avoid
+  # variant declines -> travels on -> walks into the next (undetected) ambush.
   "travel-arroyo-den|--travel-from 184 133 1 --rng-seed 2"
+  "travel-arroyo-avoid|--encounter-answer no --travel-from 184 133 1 --rng-seed 2"
   "companion-lifecycle|--map arcaves.map --companion 20529 --rng-seed 1"
   "trade-roundtrip|--map arcaves.map --trade 20529 7 --rng-seed 1"
   "companion-persist|--map arcaves.map --companion-persist 20529 --rng-seed 1"
