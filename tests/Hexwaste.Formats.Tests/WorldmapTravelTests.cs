@@ -40,6 +40,26 @@ public class WorldmapTravelTests
     }
 
     [Fact]
+    public void TerrainCadenceSlowsTheDotOverHarderTerrain()
+    {
+        // Phase-17 M1: per 4 ticks the dot steps 4/3/2/1 pixels for terrain difficulty
+        // 1/2/3/4 (worldmap.cc _terrainCounter / difficulty >= 1); difficulty 0 clamps to 1.
+        int StepsPer4(int diff)
+        {
+            var c = new TerrainCadence();
+            int n = 0;
+            for (int i = 0; i < 4; i++)
+                if (c.Tick(diff)) n++;
+            return n;
+        }
+        Assert.Equal(4, StepsPer4(1));
+        Assert.Equal(3, StepsPer4(2));
+        Assert.Equal(2, StepsPer4(3));
+        Assert.Equal(1, StepsPer4(4));
+        Assert.Equal(4, StepsPer4(0)); // clamped to 1
+    }
+
+    [Fact]
     public void IsNearKnownAreaScansEveryArea()
     {
         var areas = new[] { Area(1, 0, 0), Area(2, 500, 500) };

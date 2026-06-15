@@ -24,6 +24,9 @@ public sealed class WorldmapFile
     public IReadOnlyDictionary<string, EncounterGroup> Groups { get; }
     /// <summary>Terrain → ordered random-map lookup-names ([Random Maps: TERRAIN]).</summary>
     public IReadOnlyDictionary<string, IReadOnlyList<string>> RandomMaps { get; }
+    /// <summary>Terrain name → travel difficulty (1-4) from [Data] terrain_types — the
+    /// dot's per-pixel pacing (phase-17 M1; worldmap.cc terrain->difficulty).</summary>
+    public IReadOnlyDictionary<string, int> TerrainDifficulties { get; }
 
     // The pristine per-entry counters captured at parse time (before any pick
     // decrements them) — ExportCounters diffs against this so only the handful of
@@ -32,13 +35,14 @@ public sealed class WorldmapFile
 
     private WorldmapFile(Dictionary<string, int> freq, List<WorldTile> tiles,
         Dictionary<string, EncounterTable> tables, Dictionary<string, EncounterGroup> groups,
-        Dictionary<string, IReadOnlyList<string>> randomMaps)
+        Dictionary<string, IReadOnlyList<string>> randomMaps, Dictionary<string, int> terrainDiff)
     {
         Frequencies = freq;
         Tiles = tiles;
         Tables = tables;
         Groups = groups;
         RandomMaps = randomMaps;
+        TerrainDifficulties = terrainDiff;
         _pristineCounters = tables.ToDictionary(kv => kv.Key,
             kv => kv.Value.Entries.Select(e => e.Counter).ToArray(), StringComparer.OrdinalIgnoreCase);
     }
@@ -103,6 +107,16 @@ public sealed class WorldmapFile
         return row < SubtileGridWidth && col < SubtileGridHeight ? tile.Subtiles[row, col] : null;
     }
 
+    /// <summary>The travel difficulty (≥1) of the terrain under a worldmap pixel — drives
+    /// the dot's pacing (worldmap.cc:_terrainCounter / terrain->difficulty). Off-grid /
+    /// unknown terrain falls back to 1 (the engine's clamp; phase-17 M1).</summary>
+    public int TerrainTravelDifficultyAt(int worldX, int worldY)
+    {
+        string? terrain = SubtileAt(worldX, worldY)?.Terrain;
+        int d = terrain is not null ? TerrainDifficulties.GetValueOrDefault(terrain, 1) : 1;
+        return Math.Max(1, d);
+    }
+
     public static WorldmapFile Parse(string text)
     {
         var freq = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
@@ -110,6 +124,7 @@ public sealed class WorldmapFile
         var tables = new Dictionary<string, EncounterTable>(StringComparer.OrdinalIgnoreCase);
         var groups = new Dictionary<string, EncounterGroup>(StringComparer.OrdinalIgnoreCase);
         var randomMaps = new Dictionary<string, IReadOnlyList<string>>(StringComparer.OrdinalIgnoreCase);
+        var terrainDiff = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
 
         string section = "";
         string arg = "";                 // [Tile N] N, [Random Maps: TERRAIN] TERRAIN, [Encounter: NAME] NAME
@@ -156,9 +171,17 @@ public sealed class WorldmapFile
 
             if (section == "data")
             {
-                // "Uncommon=12%" — a frequency name. Skip terrain_* config lines.
+                // "Uncommon=12%" — a frequency name.
                 if (value.EndsWith('%') && int.TryParse(value[..^1], out int pct))
                     freq[key] = pct;
+                // "terrain_types=Desert:1, Mountain:2, City:1, Ocean:1" — the dot's pacing.
+                else if (key.Equals("terrain_types", StringComparison.OrdinalIgnoreCase))
+                    foreach (string pair in value.Split(',', StringSplitOptions.RemoveEmptyEntries))
+                    {
+                        string[] kv = pair.Split(':', 2);
+                        if (kv.Length == 2 && int.TryParse(kv[1].Trim(), out int diff))
+                            terrainDiff[kv[0].Trim()] = diff;
+                    }
             }
             else
             {
@@ -167,7 +190,7 @@ public sealed class WorldmapFile
         }
         Flush();
 
-        return new WorldmapFile(freq, tiles, tables, groups, randomMaps);
+        return new WorldmapFile(freq, tiles, tables, groups, randomMaps, terrainDiff);
     }
 
     private static string StripComment(string line)

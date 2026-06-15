@@ -188,3 +188,24 @@ public sealed class TravelLeg
         return new TravelStep(_x, _y, null, null, Arrived);
     }
 }
+
+/// <summary>The worldmap dot's per-pixel pacing, ported from fallout2-ce wmPartyWalkingStep
+/// (_terrainCounter cycles 1..4, advancing the dot one pixel only when
+/// <c>_terrainCounter / terrainDifficulty >= 1</c>). Higher terrain difficulty = fewer ticks
+/// advance = a slower dot over mountains (1/2/3/4 -> 4/3/2/1 of every 4 ticks step). The
+/// counter is continuous across the journey, NOT reset per pixel (the engine's static
+/// _terrainCounter starts at 1). PURE pacing — it does NOT touch the game clock or the
+/// encounter rolls, so animation speed is independent of encounter fidelity (phase-17 M1).</summary>
+public sealed class TerrainCadence
+{
+    private int _counter = 1; // worldmap.cc:752 static _terrainCounter = 1
+
+    /// <summary>Advance one wall-clock tick over terrain of the given difficulty; returns
+    /// true when the dot should step one pixel this tick.</summary>
+    public bool Tick(int terrainDifficulty)
+    {
+        if (++_counter > 4)
+            _counter = 1;
+        return _counter / Math.Max(1, terrainDifficulty) >= 1;
+    }
+}

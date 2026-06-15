@@ -80,6 +80,27 @@ public class WorldmapFileTests
     }
 
     [Fact]
+    public void TerrainTypesParseAndDriveTravelDifficulty()
+    {
+        // Phase-17 M1: [Data] terrain_types -> the dot's per-pixel pacing. A subtile's
+        // terrain maps to its difficulty (clamped >=1); off-grid falls back to 1.
+        WorldmapFile wm = WorldmapFile.Parse("""
+            [Data]
+            terrain_types=Desert:1, Mountain:2, City:1, Ocean:1
+            Forced=100%
+
+            [Tile 0]
+            encounter_difficulty=0
+            0_0=Mountain,No_Fill,Forced,Forced,Forced,T
+            2_2=Desert,No_Fill,Forced,Forced,Forced,T
+            """);
+        Assert.Equal(2, wm.TerrainDifficulties["Mountain"]);
+        Assert.Equal(2, wm.TerrainTravelDifficultyAt(10, 10));     // subtile [0,0] = Mountain
+        Assert.Equal(1, wm.TerrainTravelDifficultyAt(110, 110));   // subtile [2,2] = Desert
+        Assert.Equal(1, wm.TerrainTravelDifficultyAt(99999, 99999)); // off-grid → clamp 1
+    }
+
+    [Fact]
     public void LowercaseIfConditionParsesLikeCapitalIf()
     {
         // Regression for the phase-16 M4 bug: ARRO_Spore_Plants' Dead member uses lowercase
