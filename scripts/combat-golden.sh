@@ -36,6 +36,9 @@ SCENARIOS=(
   "arcaves-projectile-spear|--map arcaves.map --projectile 20529 --rng-seed 1"
   "arcaves-burst-smg|--map arcaves.map --give 9 --use-item 9 --burst 20529 --rng-seed 1"
   "arcaves-burst-shotgun|--map arcaves.map --give 242 --use-item 242 --burst 20529 --rng-seed 1"
+  # P20-M4: the P13-M2 collateral CONE on real data — bursting at a Den slave from across
+  # the cluster sweeps two real bystanders (Handsome + Cute Slave) on the left/right lines.
+  "denbus2-burst-collateral|--character combat --map denbus2.map --give 9 --use-item 9 --burst-at 13270 11670 --rng-seed 1"
 )
 
 echo "Building viewer..."

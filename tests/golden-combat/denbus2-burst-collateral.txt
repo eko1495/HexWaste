@@ -1,0 +1,30 @@
+dude sheet: Narg (gender 0), SPECIAL 8/5/9/3/4/7/4, tags [4,0,5]
+animating 0 multi-frame scenery/misc object(s)
+override_map_start: tile=18932 elevation=0 rotation=1
+give: 10mm SMG x1
+equip: 10mm SMG readied
+burst Healthy Slave@11670 [10mm SMG 30rnd d8]: chance=30% rounds=10 hit=1 damage=12
+burst-extra: Handsome Slave@12670 hit=2 damage=26
+burst-extra: Cute Slave@11272 hit=2 damage=33
+joins: Cute Slave@9876 (team 25)
+joins: Villager@10070 (team 25)
+joins: Villager@10270 (team 25)
+joins: Villager@10271 (team 25)
+joins: Villager@10276 (team 25)
+joins: Villager@11076 (team 25)
+joins: Cute Slave@11082 (team 25)
+joins: Cute Slave@11272 (team 25)
+joins: Clever Slave@11482 (team 25)
+joins: Healthy Slave@11678 (team 25)
+joins: Healthy Slave@12077 (team 25)
+joins: Clever Slave@12276 (team 25)
+joins: Handsome Slave@12670 (team 25)
+joins: Clever Slave@12672 (team 25)
+joins: Strong Slave@12876 (team 25)
+joins: Strong Slave@13466 (team 25)
+joins: Healthy Slave@13678 (team 25)
+joins: Strong Slave@13682 (team 25)
+joins: Villager@13874 (team 25)
+joins: Villager@14073 (team 25)
+joins: Vic@17070 (team 25)
+burst-at: from=13270 target@11670 hp=35 dead=False

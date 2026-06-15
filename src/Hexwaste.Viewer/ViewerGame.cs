@@ -353,6 +353,9 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
         public sealed record ExamineCritter(int Hex) : StartupAction;
         public sealed record Attack(int Hex) : StartupAction;
         public sealed record Burst(int Hex) : StartupAction;
+        /// <summary>Burst at TargetHex from an explicit dude tile FromHex (phase-20 M4) —
+        /// aim the collateral cone at a real bystander.</summary>
+        public sealed record BurstAt(int FromHex, int TargetHex) : StartupAction;
         /// <summary>Talk to the critter at Hex and auto-pick Choices (1-based), printing
         /// each round. Composable: several in one run share the session GVAR dict, so a
         /// gated chain (talk Vic → talk Metzger → talk Vic) works (#10 M0/M1).</summary>
@@ -1144,6 +1147,23 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
                     }
                     // Close any lingering dialog so the next talk-seq starts clean.
                     _dialog = null;
+                    break;
+                }
+                case StartupAction.BurstAt(var fromHex, var atHex):
+                {
+                    // Phase-20 M4: burst at <atHex> from an EXPLICIT dude tile <fromHex> so
+                    // the cone can be aimed to sweep a real bystander (collateral). Reports
+                    // any burst-extra: lines the spray produced.
+                    MapObject? bt = _solidObjects[_elevation]
+                        .FirstOrDefault(o => o.HexTile == atHex && Fid.Type(o.Fid) is ObjectType.Critter && !o.IsDead);
+                    if (bt is null || _dude is null) { Console.Error.WriteLine($"burst-at: no critter at {atHex}"); break; }
+                    _dude.Dude.HexTile = fromHex;
+                    RebuildBlockedTiles(_dude.Dude);
+                    _camera.SetCenter(atHex);
+                    _combat.TryBurst(bt);
+                    for (int guard = 0; guard < 3000 && _combat.IsResolving; guard++) { _animator.Update(10); _combat.ProcessAnimations(); }
+                    _combat.Reset();
+                    Console.WriteLine($"burst-at: from={fromHex} target@{atHex} hp={bt.CurrentHp} dead={bt.IsDead}");
                     break;
                 }
                 case StartupAction.Burst(var burstHex):

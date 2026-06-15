@@ -123,6 +123,11 @@ for (int i = 0; i < args.Length; i++)
             // burst weapon (e.g. --give 9 --use-item 9 --burst <hex> for the 10mm SMG).
             actions.Add(new ViewerGame.StartupAction.Burst(int.Parse(args[++i])));
             break;
+        case "--burst-at" when i + 2 < args.Length:
+            // --burst-at <fromHex> <targetHex>: burst from an explicit dude tile (P20-M4).
+            actions.Add(new ViewerGame.StartupAction.BurstAt(int.Parse(args[i + 1]), int.Parse(args[i + 2])));
+            i += 2;
+            break;
         case "--party-count":
             actions.Add(new ViewerGame.StartupAction.PartyCount());
             break;
