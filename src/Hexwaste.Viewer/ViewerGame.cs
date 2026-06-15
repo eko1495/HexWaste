@@ -391,6 +391,10 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
         /// animated leg from (X,Y) toward AreaIndex and drain StepAnimatedTravel tick-by-
         /// tick, reporting cadence-ticks vs pixel-steps (the terrain pacing) + the outcome.</summary>
         public sealed record TravelStepDemo(int X, int Y, int AreaIndex) : StartupAction;
+        /// <summary>Save MID-travel then load (phase-17 M4): start an animated leg, step
+        /// Ticks cadence ticks, save+load in-process, and report whether the dot worldPos +
+        /// the in-flight destination round-trip (the save resumes travel on load).</summary>
+        public sealed record TravelSaveMid(int X, int Y, int AreaIndex, int Ticks) : StartupAction;
         /// <summary>Override the party's best Outdoorsman skill (phase-16 M1 test plumbing)
         /// so the detect path fires deterministically regardless of the dude's build.</summary>
         public sealed record ForceOutdoorsman(int Value) : StartupAction;
@@ -831,6 +835,37 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
                     string outcome = _currentMapTransient ? "encounter" : "arrived";
                     Console.WriteLine($"travel-step: ({sx2},{sy2})->area{sa} ticks={ticks} pixels={pixels}"
                         + $" clockAdv={_clock.Ticks - clockBefore} {outcome} map={_currentMapName} worldPos=({_worldPosX},{_worldPosY})");
+                    break;
+                }
+                case StartupAction.TravelSaveMid(var mx2, var my2, var ma, var mTicks):
+                {
+                    // Phase-17 M4: start animated travel, step partway (staying mid-leg),
+                    // then save+load in-process and confirm the dot worldPos + in-flight
+                    // destination round-trip (load queues an auto-resume toward the dest).
+                    WorldArea? mdest = _cities.Areas.FirstOrDefault(a => a.Index == ma);
+                    if (mdest is null) { Console.Error.WriteLine($"travel-save-mid: no area {ma}"); break; }
+                    _autoEncounterAnswer ??= true;
+                    _animateTravel = true;
+                    _worldPosX = mx2; _worldPosY = my2;
+                    TravelTo(mdest); // sets _activeTravel
+                    for (int t = 0; t < mTicks && _activeTravel is not null; t++)
+                        StepAnimatedTravel(TravelTickMs);
+                    int savedX = _worldPosX, savedY = _worldPosY;
+                    int savedDest = _activeTravel?.Dest.Index ?? -1;
+                    bool wasTravelling = _activeTravel is not null;
+
+                    string realPath = SavePath;
+                    SavePath = Path.Combine(Path.GetTempPath(), "hexwaste-travelmid-test.json");
+                    SaveGame();
+                    LoadGame();
+                    if (File.Exists(SavePath)) File.Delete(SavePath);
+                    SavePath = realPath;
+
+                    int resumeDest = _resumeTravelDest?.Index ?? -1;
+                    Console.WriteLine($"travel-save-mid: travelling={wasTravelling}"
+                        + $" savedWorldPos=({savedX},{savedY}) savedDest={savedDest}"
+                        + $" -> loadedWorldPos=({_worldPosX},{_worldPosY}) resumeDest={resumeDest}"
+                        + $" roundTrip={savedX == _worldPosX && savedY == _worldPosY && savedDest == resumeDest}");
                     break;
                 }
                 case StartupAction.TravelResume(var rx, var ry, var ra):
@@ -6869,6 +6904,7 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
             WorldPosX = _worldPosX,
             WorldPosY = _worldPosY,
             CurrentAreaId = _currentAreaId,
+            TravelDestinationAreaId = _activeTravel?.Dest.Index ?? -1, // in-flight leg target (P17-M4)
             // _worldmap (not Worldmap): only export if worldmap.txt was actually
             // touched this session — never force-parse it just to save.
             EncounterCounters = _worldmap?.ExportCounters() ?? [],
@@ -6929,6 +6965,16 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
         _worldmap = null;
         if (state.EncounterCounters.Count > 0)
             Worldmap.ImportCounters(state.EncounterCounters);
+
+        // Mid-travel state (P17-M4): drop any stale in-flight leg (its Bresenham cursor is
+        // meaningless after a reload) + a pending avoid prompt. If the save was taken mid-
+        // walk, queue an auto-resume toward the saved destination (the P16-M2 machinery) —
+        // a documented divergence from the engine's drop-stopped reload.
+        _activeTravel = null;
+        _encounterPrompt = null;
+        _resumeTravelDest = state.TravelDestinationAreaId >= 0
+            ? _cities.Areas.FirstOrDefault(a => a.Index == state.TravelDestinationAreaId)
+            : null;
 
         ResetParty();
 

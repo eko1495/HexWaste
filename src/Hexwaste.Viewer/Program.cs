@@ -220,6 +220,13 @@ for (int i = 0; i < args.Length; i++)
                 int.Parse(args[i + 1]), int.Parse(args[i + 2]), int.Parse(args[i + 3])));
             i += 3;
             break;
+        case "--travel-save-mid" when i + 4 < args.Length:
+            // --travel-save-mid <x> <y> <areaIndex> <ticks>: save+load MID-travel and
+            // report whether the dot worldPos + in-flight destination round-trip (P17-M4).
+            actions.Add(new ViewerGame.StartupAction.TravelSaveMid(
+                int.Parse(args[i + 1]), int.Parse(args[i + 2]), int.Parse(args[i + 3]), int.Parse(args[i + 4])));
+            i += 4;
+            break;
         case "--force-outdoorsman" when i + 1 < args.Length:
             // --force-outdoorsman <n>: override the party's best Outdoorsman (test plumbing).
             actions.Add(new ViewerGame.StartupAction.ForceOutdoorsman(int.Parse(args[++i])));

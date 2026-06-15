@@ -1,0 +1,1 @@
+travel-save-mid: travelling=True savedWorldPos=(188,135) savedDest=1 -> loadedWorldPos=(188,135) resumeDest=1 roundTrip=True

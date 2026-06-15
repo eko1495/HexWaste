@@ -70,6 +70,7 @@ public class SaveStateRoundTripTests
             WorldPosX = 473,
             WorldPosY = 272,
             CurrentAreaId = 3,
+            TravelDestinationAreaId = 1, // saved mid-travel toward area 1 (P17-M4)
             EncounterCounters = { ["Den_D"] = [0, -1, 2], ["Arro_O"] = [1] },
         };
 
@@ -77,6 +78,7 @@ public class SaveStateRoundTripTests
         Assert.Equal(473, loaded.WorldPosX);
         Assert.Equal(272, loaded.WorldPosY);
         Assert.Equal(3, loaded.CurrentAreaId);
+        Assert.Equal(1, loaded.TravelDestinationAreaId);
         Assert.Equal([0, -1, 2], loaded.EncounterCounters["Den_D"]);
         Assert.Equal([1], loaded.EncounterCounters["Arro_O"]);
     }
@@ -112,12 +114,14 @@ public class SaveStateRoundTripTests
         Assert.Equal(-1, fresh.WorldPosX);
         Assert.Equal(-1, fresh.WorldPosY);
         Assert.Equal(-1, fresh.CurrentAreaId);
+        Assert.Equal(-1, fresh.TravelDestinationAreaId); // P17-M4: not travelling
         Assert.Empty(fresh.EncounterCounters);
 
         SaveState legacy = SaveState.FromJson("""{"Version":2,"Map":"denbus2.map"}""")!;
         Assert.Equal(SaveState.CurrentVersion, legacy.Version);
         Assert.Equal(-1, legacy.WorldPosX);
         Assert.Equal(-1, legacy.CurrentAreaId);
+        Assert.Equal(-1, legacy.TravelDestinationAreaId);
         Assert.Empty(legacy.EncounterCounters);
     }
 

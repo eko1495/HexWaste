@@ -80,6 +80,12 @@ public sealed class SaveState
     /// -1 = wilderness / none). Area 0 is a real area, so the sentinel is -1.</summary>
     public int CurrentAreaId { get; set; } = -1;
 
+    /// <summary>The destination area of an IN-FLIGHT travel leg when saved mid-walk
+    /// (P17-M4; -1 = not travelling). DIVERGENCE: the engine drops you stopped on a
+    /// mid-walk reload (see WorldPosX note); we instead resume toward this area on load,
+    /// consistent with the P16-M2 post-encounter auto-resume — a documented UX choice.</summary>
+    public int TravelDestinationAreaId { get; set; } = -1;
+
     /// <summary>Consumed one-shot encounter counters, table lookup_name →
     /// per-entry counter array (P10-M2). Only tables whose counters changed from
     /// pristine are stored (sparse); empty/absent → pristine worldmap.txt
