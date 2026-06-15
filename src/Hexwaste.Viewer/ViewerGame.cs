@@ -162,6 +162,12 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
     private bool _pipboyRestMenu;
     private Texture2D? _pipboyBg;
 
+    /// <summary>Skilldex authentic art (P13 follow-up): SKLDXBOX background + SKLDXOFF/
+    /// SKLDXON button states (skilldex.cc). Null if the art is missing → text fallback.</summary>
+    private Texture2D? _skilldexBox;
+    private Texture2D? _skilldexBtnOff;
+    private Texture2D? _skilldexBtnOn;
+
     /// <summary>Options / pause menu (P12 M2): Esc or the OPT button opens it —
     /// Save / Load / Quit to main menu / Quit to desktop / Resume (the actions of
     /// options.cc showOptions; Preferences is out of scope — no preferences system).</summary>
@@ -1555,7 +1561,7 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
             return;
         }
 
-        // Skilldex (S / SKILLDEX button): 1-8 pick a skill to arm, Esc/S close.
+        // Skilldex (S / SKILLDEX button): click a button (or press 1-8) to arm a skill, Esc/S close.
         if (_skilldexOpen)
         {
             for (int i = 0; i < SkilldexSkills.Length; i++)
@@ -1564,6 +1570,9 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
                     ArmSkill(SkilldexSkills[i]);
                     break;
                 }
+            if (mouse.LeftButton == ButtonState.Pressed && _previousMouse.LeftButton == ButtonState.Released
+                && SkilldexRowAt(mouse.X, mouse.Y) is var row && row >= 0)
+                ArmSkill(SkilldexSkills[row]);
             if (IsKeyPressed(keyboard, Keys.Escape) || IsKeyPressed(keyboard, Keys.S))
                 _skilldexOpen = false;
 
@@ -4748,16 +4757,92 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
         }
     }
 
-    /// <summary>The Skilldex use-skill picker (P12 M0) — a small flyout above the bar,
-    /// bottom-right (skilldex.cc anchors it there). Text-styled like the other gameplay
-    /// panels; the 8 skills numbered 1-8 with the dude's effective % (skillGetValue).</summary>
+    /// <summary>Top-left of the Skilldex box: bottom-right, just above the HUD bar
+    /// (skilldex.cc:225-226 — right margin 4, bottom margin 6). btnW/btnH = the SKLDXOFF
+    /// button size; row i sits at bar-local (15, 45 + i*36).</summary>
+    private Point SkilldexOrigin(out int boxW, out int boxH, out int btnW, out int btnH)
+    {
+        boxW = _skilldexBox?.Width ?? 185;
+        boxH = _skilldexBox?.Height ?? 368;
+        btnW = _skilldexBtnOff?.Width ?? 88;
+        btnH = _skilldexBtnOff?.Height ?? 33;
+        Rectangle vp = GraphicsDevice.Viewport.Bounds;
+        return new Point(Math.Max(0, vp.Width - boxW - 4), Math.Max(0, vp.Height - _hudBarHeight - boxH - 6));
+    }
+
+    /// <summary>The Skilldex row index under (mx,my), or -1 — the 8 buttons at
+    /// (origin + 15, 45 + i*36), size btnW×btnH.</summary>
+    private int SkilldexRowAt(int mx, int my)
+    {
+        Point o = SkilldexOrigin(out _, out _, out int btnW, out int btnH);
+        for (int i = 0; i < SkilldexSkills.Length; i++)
+        {
+            var r = new Rectangle(o.X + 15, o.Y + 45 + i * 36, btnW, btnH);
+            if (r.Contains(mx, my))
+                return i;
+        }
+        return -1;
+    }
+
+    /// <summary>The Skilldex use-skill picker (P12 M0 + P13 art upgrade) — the authentic
+    /// SKLDXBOX.FRM panel with SKLDXOFF/SKLDXON buttons, bottom-right above the bar
+    /// (skilldex.cc). The skill name is centred on each button and the % is shown to its
+    /// right; the hovered row lights with SKLDXON. Click a row (or press 1-8) to arm the
+    /// skill. Falls back to a text flyout if the art is missing.</summary>
     private void DrawSkilldex()
     {
         if (!_skilldexOpen || _fontRenderer is null)
             return;
 
+        _skilldexBox ??= InterfaceBar.LoadFrm(GraphicsDevice, _vfs, _palette, @"art\intrface\SKLDXBOX.frm");
+        _skilldexBtnOff ??= InterfaceBar.LoadFrm(GraphicsDevice, _vfs, _palette, @"art\intrface\SKLDXOFF.frm");
+        _skilldexBtnOn ??= InterfaceBar.LoadFrm(GraphicsDevice, _vfs, _palette, @"art\intrface\SKLDXON.frm");
+        if (_skilldexBox is null)
+        {
+            DrawSkilldexTextFallback();
+            return;
+        }
+
+        Point o = SkilldexOrigin(out _, out _, out int btnW, out int btnH);
+        var titleColor = new Color(252, 252, 84);
+        var nameColor = new Color(0, 252, 0);
+        var dim = new Color(0, 168, 0);
+
+        _spriteBatch.Draw(_skilldexBox, new Vector2(o.X, o.Y), Color.White);
+        _fontRenderer.Draw(_spriteBatch, "SKILLDEX", new Vector2(o.X + 55, o.Y + 14), titleColor);
+
+        MouseState m = Mouse.GetState();
+        int hovered = SkilldexRowAt(m.X, m.Y);
+        for (int i = 0; i < SkilldexSkills.Length; i++)
+        {
+            int skill = SkilldexSkills[i];
+            var btnPos = new Vector2(o.X + 15, o.Y + 45 + i * 36);
+            Texture2D? btn = i == hovered ? _skilldexBtnOn : _skilldexBtnOff;
+            if (btn is not null)
+                _spriteBatch.Draw(btn, btnPos, Color.White);
+
+            string name = SkillName(skill);
+            int nameX = Math.Max(0, (btnW - _fontRenderer.MeasureWidth(name)) / 2);
+            int nameY = Math.Max(0, (btnH - _fontRenderer.LineHeight) / 2);
+            _fontRenderer.Draw(_spriteBatch, name, new Vector2(btnPos.X + nameX, btnPos.Y + nameY), nameColor);
+
+            // The box bakes placeholder "223 %%" digits in each readout (like iface.frm);
+            // field-blank them to the recess colour (32,32,32) and draw the real value
+            // right-aligned (skilldex.cc blits BIG_NUMBERS here at x=110).
+            _panelPixel ??= CreatePixel();
+            int fieldX = o.X + 100, fieldW = 72, fieldY = o.Y + 46 + i * 36;
+            _spriteBatch.Draw(_panelPixel, new Rectangle(fieldX, fieldY, fieldW, 26), new Color(32, 32, 32));
+            string val = $"{DudeSkillValue(skill)}%";
+            _fontRenderer.Draw(_spriteBatch, val,
+                new Vector2(fieldX + fieldW - _fontRenderer.MeasureWidth(val) - 4, fieldY + (26 - _fontRenderer.LineHeight) / 2), dim);
+        }
+    }
+
+    /// <summary>The pre-art text flyout, kept as the fallback when SKLDXBOX is absent.</summary>
+    private void DrawSkilldexTextFallback()
+    {
         _panelPixel ??= CreatePixel();
-        int lh = Math.Max(_fontRenderer.LineHeight, 18);
+        int lh = Math.Max(_fontRenderer!.LineHeight, 18);
         int w = 220, h = (SkilldexSkills.Length + 2) * lh + 12;
         Rectangle vp = GraphicsDevice.Viewport.Bounds;
         int x = vp.Width - w - 12;
@@ -4772,9 +4857,8 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
         for (int i = 0; i < SkilldexSkills.Length; i++)
         {
             int skill = SkilldexSkills[i];
-            int value = DudeSkillValue(skill);
             _fontRenderer.Draw(_spriteBatch, $"{i + 1}. {SkillName(skill)}", new Vector2(x + 12, ty), green);
-            _fontRenderer.Draw(_spriteBatch, $"{value}%", new Vector2(x + w - 50, ty), gray);
+            _fontRenderer.Draw(_spriteBatch, $"{DudeSkillValue(skill)}%", new Vector2(x + w - 50, ty), gray);
             ty += lh;
         }
         _fontRenderer.Draw(_spriteBatch, "1-8 use, Esc/S close", new Vector2(x + 12, y + h - lh - 4), gray);
@@ -6233,6 +6317,9 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
         _worldmapScreen?.Dispose();
         _interfaceBar?.Dispose();
         _pipboyBg?.Dispose();
+        _skilldexBox?.Dispose();
+        _skilldexBtnOff?.Dispose();
+        _skilldexBtnOn?.Dispose();
         _optionsBg?.Dispose();
         _fontRenderer?.Dispose();
         _frmCache.Dispose();

@@ -408,6 +408,14 @@ fires when the defender doesn't absorb the whole centre budget; left/right budge
 independent. No --burst harness reaches a multi-critter cone on the shippable maps (the
 cone is narrow + the harness teleports to a fixed approach), so collateral has no real-
 data golden — the fake-host test is the deterministic proof.
+P13 FOLLOW-UP (Skilldex authentic art, DONE): DrawSkilldex now renders the real
+SKLDXBOX.FRM panel + SKLDXOFF/SKLDXON button art (skilldex.cc layout: title at 55,14;
+8 buttons at bar-local 15,45+i*36; values at the readouts) instead of the text flyout
+(kept as the fallback when art is absent). Skill names centred on each button (AAF
+font), the hovered row lights SKLDXON, a left-click on a row arms the skill (additive
+to the 1-8 keys). GOTCHA (same as iface.frm): SKLDXBOX ships BAKED "223 %%" placeholder
+digits — field-blanked to the recess colour (32,32,32) and overwritten with the real
+right-aligned value. Draw-only + additive mouse input → goldens unchanged.
 
 Phase 10 (DONE, per docs/phase10-research-report.md — "The Wasteland
 Bites Back"): M0 persistence pre-stage (the net: MapList saved=No /
