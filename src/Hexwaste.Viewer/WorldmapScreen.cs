@@ -94,6 +94,16 @@ public sealed class WorldmapScreen : IDisposable
         }
     }
 
+    /// <summary>Draw the moving party dot at a worldmap pixel position, using the same
+    /// world→screen transform as the area markers (phase-17 M2).</summary>
+    public void DrawPartyDot(SpriteBatch spriteBatch, Rectangle viewport, int worldX, int worldY)
+    {
+        (float scale, int offsetX, int offsetY) = Layout(viewport);
+        int x = offsetX + (int)(worldX * scale);
+        int y = offsetY + (int)(worldY * scale);
+        spriteBatch.Draw(_marker, new Rectangle(x - 4, y - 4, 8, 8), Color.White);
+    }
+
     public WorldArea? HitTest(int mouseX, int mouseY, Rectangle viewport)
     {
         (float scale, int offsetX, int offsetY) = Layout(viewport);

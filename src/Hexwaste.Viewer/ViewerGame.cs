@@ -387,6 +387,10 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
         /// flight travel state at (X,Y) bound for AreaIndex, walk off the edge, and assert
         /// travel auto-resumes toward the destination with no worldmap re-click.</summary>
         public sealed record TravelResume(int X, int Y, int AreaIndex) : StartupAction;
+        /// <summary>Drive the ANIMATED travel path headlessly (phase-17 M2/M4): start an
+        /// animated leg from (X,Y) toward AreaIndex and drain StepAnimatedTravel tick-by-
+        /// tick, reporting cadence-ticks vs pixel-steps (the terrain pacing) + the outcome.</summary>
+        public sealed record TravelStepDemo(int X, int Y, int AreaIndex) : StartupAction;
         /// <summary>Override the party's best Outdoorsman skill (phase-16 M1 test plumbing)
         /// so the detect path fires deterministically regardless of the dude's build.</summary>
         public sealed record ForceOutdoorsman(int Value) : StartupAction;
@@ -804,6 +808,31 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
                 case StartupAction.EncounterAnswer(var engage):
                     _autoEncounterAnswer = engage; // phase-16 M1: pre-answer the avoid prompt
                     break;
+                case StartupAction.TravelStepDemo(var sx2, var sy2, var sa):
+                {
+                    // Phase-17 M2: drive the REAL animated path — TravelTo (animate=true)
+                    // sets _activeTravel; drain StepAnimatedTravel one cadence tick at a
+                    // time, counting ticks vs pixels (slow terrain steps fewer pixels/tick).
+                    WorldArea? sdest = _cities.Areas.FirstOrDefault(a => a.Index == sa);
+                    if (sdest is null) { Console.Error.WriteLine($"travel-step: no area {sa}"); break; }
+                    _autoEncounterAnswer ??= true; // engage any encounter so the leg terminates
+                    _animateTravel = true;
+                    _worldPosX = sx2; _worldPosY = sy2;
+                    long clockBefore = _clock.Ticks;
+                    TravelTo(sdest); // sets _activeTravel + returns (no synchronous drain)
+                    int ticks = 0, pixels = 0;
+                    while (_activeTravel is not null && ticks < 200_000)
+                    {
+                        int bx = _worldPosX, by = _worldPosY;
+                        StepAnimatedTravel(TravelTickMs);
+                        ticks++;
+                        if (_worldPosX != bx || _worldPosY != by) pixels++;
+                    }
+                    string outcome = _currentMapTransient ? "encounter" : "arrived";
+                    Console.WriteLine($"travel-step: ({sx2},{sy2})->area{sa} ticks={ticks} pixels={pixels}"
+                        + $" clockAdv={_clock.Ticks - clockBefore} {outcome} map={_currentMapName} worldPos=({_worldPosX},{_worldPosY})");
+                    break;
+                }
                 case StartupAction.TravelResume(var rx, var ry, var ra):
                 {
                     // Phase-16 M2: stand at (rx,ry) mid-leg bound for area ra, "on" the
@@ -812,6 +841,7 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
                     WorldArea? rdest = _cities.Areas.FirstOrDefault(a => a.Index == ra);
                     if (rdest is null) { Console.Error.WriteLine($"travel-resume: no area {ra}"); break; }
                     _autoEncounterAnswer ??= true; // engage any encounter on the resumed leg
+                    _animateTravel = false;        // headless: synchronous drain (P17-M2)
                     _worldPosX = rx; _worldPosY = ry;
                     _travelDestination = rdest;
                     _currentMapTransient = true;                          // pretend we're on the encounter map
@@ -834,6 +864,7 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
                     // Headless can't answer an interactive prompt, so default a detected
                     // encounter to ENGAGE unless --encounter-answer set it (phase-16 M1).
                     _autoEncounterAnswer ??= true;
+                    _animateTravel = false; // headless: drain the whole leg synchronously (P17-M2)
                     _worldPosX = tx;
                     _worldPosY = ty;
                     WorldArea? dest = _cities.Areas.FirstOrDefault(a => a.Index == ai);
@@ -2018,13 +2049,27 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
         // Worldmap mode swallows map input.
         if (_worldmapOpen)
         {
-            if (IsKeyPressed(keyboard, Keys.Escape) || IsKeyPressed(keyboard, Keys.M))
-                _worldmapOpen = false;
+            // Phase-17 M2: while the dot is moving, Esc/click HALTS travel (stay put on the
+            // worldmap); a fresh click then re-routes. Esc with no travel closes the map.
+            if (_activeTravel is not null)
+            {
+                bool click = mouse.LeftButton == ButtonState.Pressed && _previousMouse.LeftButton == ButtonState.Released;
+                if (click || IsKeyPressed(keyboard, Keys.Escape))
+                {
+                    _activeTravel = null;
+                    Log("You stop to get your bearings.");
+                }
+            }
+            else
+            {
+                if (IsKeyPressed(keyboard, Keys.Escape) || IsKeyPressed(keyboard, Keys.M))
+                    _worldmapOpen = false;
 
-            _hoveredArea = _worldmapScreen?.HitTest(mouse.X, mouse.Y, GraphicsDevice.Viewport.Bounds);
-            if (mouse.LeftButton == ButtonState.Pressed && _previousMouse.LeftButton == ButtonState.Released
-                && _hoveredArea is not null)
-                TravelTo(_hoveredArea);
+                _hoveredArea = _worldmapScreen?.HitTest(mouse.X, mouse.Y, GraphicsDevice.Viewport.Bounds);
+                if (mouse.LeftButton == ButtonState.Pressed && _previousMouse.LeftButton == ButtonState.Released
+                    && _hoveredArea is not null)
+                    TravelTo(_hoveredArea);
+            }
 
             _previousMouse = mouse;
             _previousKeyboard = keyboard;
@@ -2155,6 +2200,10 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
             _resumeTravelDest = null;
             TravelTo(resume);
         }
+
+        // Phase-17 M2: animate the worldmap dot — drain TravelLeg.Step() over wall-time,
+        // paced by terrain (mountains slow it). Paused while an avoid prompt is up.
+        StepAnimatedTravel(gameTime.ElapsedGameTime.TotalMilliseconds);
 
         if (_cycler.Update(gameTime.ElapsedGameTime.TotalMilliseconds))
         {
@@ -4342,6 +4391,20 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
             int luck = dudeStats?.Stat(Formats.Combat.CritterStat.Luck) ?? 5;
             int outdoorsman = _dude is not null ? PartyBestOutdoorsman() : 0;
 
+            // Phase-17 M2: live play ANIMATES the leg — Update drains TravelLeg.Step() over
+            // wall-time so a party dot crosses the worldmap (terrain-paced). Headless runs
+            // (the goldens) drain the WHOLE leg synchronously, byte-identical (same RNG).
+            if (_animateTravel)
+            {
+                _activeTravel = (new Formats.Map.TravelLeg(Worldmap, _cities.Areas, _mapList,
+                    _worldPosX, _worldPosY, area.WorldX, area.WorldY, _clock.Ticks, _wmRng,
+                    getGlobal, _dudeLevel, luck, outdoorsman, Difficulty), area);
+                _travelCadence = new Formats.Map.TerrainCadence();
+                _travelStepAccumMs = 0;
+                _worldmapOpen = true;
+                return;
+            }
+
             Formats.Map.WorldmapTravel.LegOutcome leg = Formats.Map.WorldmapTravel.ResolveLeg(
                 Worldmap, _cities.Areas, _mapList, _worldPosX, _worldPosY, area.WorldX, area.WorldY,
                 _clock.Ticks, _wmRng, getGlobal, _dudeLevel, luck, outdoorsman, Difficulty);
@@ -4351,41 +4414,89 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
             _worldPosY = leg.FinalWorldY;
             if (leg.Encounter is { } r)
             {
-                string? name = EncounterName(r);
-
-                // Phase-16 M1: a high-Outdoorsman party SPOTS the encounter ahead
-                // (worldmap.cc:3475). Detection grants (100-detect) XP regardless of the
-                // choice, then offers a yes/no avoid. Live play pops the overlay (resolved
-                // in Update); a headless run resolves synchronously via _autoEncounterAnswer.
-                if (r.Detected)
-                {
-                    if (r.AvoidXp > 0)
-                        AwardXp(r.AvoidXp);
-                    Console.WriteLine($"encounter detected: {r.Entry.Spawns.FirstOrDefault()?.Group ?? "?"}"
-                        + $" name=\"{name ?? "?"}\" avoidXp={r.AvoidXp} -> {leg.EncounterMap}");
-                    if (_autoEncounterAnswer is not { } answer)
-                    {
-                        _encounterPrompt = (r, leg.EncounterMap!, name, area);
-                        _worldmapOpen = true; // keep the worldmap up under the prompt overlay
-                        Log($"You spot {name ?? "trouble"} ahead. Encounter it? (Y/N)");
-                        return;
-                    }
-                    if (!answer)
-                    {
-                        Log($"You avoid {name ?? "the encounter"} and travel on.");
-                        Console.WriteLine($"encounter avoided: continuing to area{area.Index}");
-                        TravelTo(area); // resume the leg from the encounter point
-                        return;
-                    }
-                    // engage → fall through to load the encounter map
-                }
-
-                _travelDestination = area; // remember the leg target so it auto-resumes (M2)
-                EngageEncounter(r, leg.EncounterMap!, name);
+                HandleLegEncounter(r, leg.EncounterMap!, area);
                 return;
             }
         }
 
+        ArriveAt(area, rolled);
+    }
+
+    /// <summary>Advance the animated worldmap dot (phase-17 M2): accumulate wall-time and,
+    /// each cadence tick, let <see cref="Formats.Map.TerrainCadence"/> decide whether the
+    /// dot steps one pixel (slow terrain holds it). On an encounter or arrival the leg ends
+    /// and the shared handlers run. Paused while an avoid prompt is up; no-op otherwise.</summary>
+    private void StepAnimatedTravel(double elapsedMs)
+    {
+        if (_activeTravel is null || _encounterPrompt is not null)
+            return;
+
+        _travelStepAccumMs += elapsedMs;
+        while (_travelStepAccumMs >= TravelTickMs && _activeTravel is { } active)
+        {
+            _travelStepAccumMs -= TravelTickMs;
+            int difficulty = Worldmap.TerrainTravelDifficultyAt(active.Leg.X, active.Leg.Y);
+            if (!_travelCadence.Tick(difficulty))
+                continue; // slow terrain: the dot lingers this tick
+
+            Formats.Map.TravelStep s = active.Leg.Step();
+            _clock.Ticks += Formats.Map.WorldmapTravel.TicksPerStep; // mirror the per-pixel travel time
+            _worldPosX = s.X;
+            _worldPosY = s.Y;
+            if (s.Encounter is { } r)
+            {
+                _activeTravel = null;
+                HandleLegEncounter(r, s.EncounterMap!, active.Dest);
+                return;
+            }
+            if (s.Arrived)
+            {
+                _activeTravel = null;
+                ArriveAt(active.Dest, rolled: true);
+                return;
+            }
+        }
+    }
+
+    /// <summary>Handle an encounter that fired mid-leg (shared by the synchronous resolve
+    /// and the animated step): a detected encounter grants (100-detect) XP then offers the
+    /// yes/no avoid (live = the overlay; headless = _autoEncounterAnswer); engaging loads
+    /// the transient map, avoiding resumes travel toward <paramref name="area"/>.</summary>
+    private void HandleLegEncounter(Formats.Map.EncounterResult r, string encounterMap, WorldArea area)
+    {
+        string? name = EncounterName(r);
+        if (r.Detected) // worldmap.cc:3475
+        {
+            if (r.AvoidXp > 0)
+                AwardXp(r.AvoidXp);
+            Console.WriteLine($"encounter detected: {r.Entry.Spawns.FirstOrDefault()?.Group ?? "?"}"
+                + $" name=\"{name ?? "?"}\" avoidXp={r.AvoidXp} -> {encounterMap}");
+            if (_autoEncounterAnswer is not { } answer)
+            {
+                _encounterPrompt = (r, encounterMap, name, area);
+                _worldmapOpen = true; // keep the worldmap up under the prompt overlay
+                Log($"You spot {name ?? "trouble"} ahead. Encounter it? (Y/N)");
+                return;
+            }
+            if (!answer)
+            {
+                Log($"You avoid {name ?? "the encounter"} and travel on.");
+                Console.WriteLine($"encounter avoided: continuing to area{area.Index}");
+                TravelTo(area); // resume the leg from the encounter point
+                return;
+            }
+            // engage → fall through to load the encounter map
+        }
+
+        _travelDestination = area; // remember the leg target so it auto-resumes (P16-M2)
+        EngageEncounter(r, encounterMap, name);
+    }
+
+    /// <summary>Arrive at a worldmap area: resolve its entrance, advance the clock (the
+    /// flat estimate only on the very first roll-less travel), record the worldmap
+    /// whereabouts, and load the town map.</summary>
+    private void ArriveAt(WorldArea area, bool rolled)
+    {
         // ported behavior from fallout2-ce src/worldmap.cc
         // wmAreaFindFirstValidMap(): first enabled entrance, else force the first.
         AreaEntrance entrance = area.Entrances.FirstOrDefault(e => e.StartsOn) ?? area.Entrances.First();
@@ -4426,6 +4537,17 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
     /// <summary>Deferred auto-resume: set when leaving a transient map mid-leg, consumed
     /// at the top of the next Update to continue travel without a re-click (phase-16 M2).</summary>
     private WorldArea? _resumeTravelDest;
+
+    /// <summary>Animate worldmap travel as a moving dot (phase-17 M2). True in live play;
+    /// the headless harness travel actions set it false so the goldens drain the whole leg
+    /// synchronously (byte-identical RNG).</summary>
+    private bool _animateTravel = true;
+    /// <summary>The in-flight animated leg + its destination; null = not travelling. Update
+    /// drains <see cref="Formats.Map.TravelLeg.Step"/> over wall-time (phase-17 M2).</summary>
+    private (Formats.Map.TravelLeg Leg, WorldArea Dest)? _activeTravel;
+    private Formats.Map.TerrainCadence _travelCadence = new();
+    private double _travelStepAccumMs;
+    private const double TravelTickMs = 30; // wall-time per cadence tick (the dot's base pace)
 
     /// <summary>A detected encounter awaiting the player's avoid choice in live play
     /// (phase-16 M1): the result, its transient map, display name, and the leg's
@@ -4554,6 +4676,8 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
         if (_worldmapOpen)
         {
             _worldmapScreen?.Draw(_spriteBatch, GraphicsDevice.Viewport.Bounds, _hoveredArea);
+            if (_activeTravel is not null) // the moving party dot (phase-17 M2)
+                _worldmapScreen?.DrawPartyDot(_spriteBatch, GraphicsDevice.Viewport.Bounds, _worldPosX, _worldPosY);
             DrawEncounterPrompt();
         }
         else

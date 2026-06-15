@@ -213,6 +213,13 @@ for (int i = 0; i < args.Length; i++)
                 int.Parse(args[i + 1]), int.Parse(args[i + 2]), int.Parse(args[i + 3])));
             i += 3;
             break;
+        case "--travel-step" when i + 3 < args.Length:
+            // --travel-step <x> <y> <areaIndex>: drive the animated travel path headlessly
+            // (cadence ticks vs pixel-steps + outcome) — phase-17 M2/M4.
+            actions.Add(new ViewerGame.StartupAction.TravelStepDemo(
+                int.Parse(args[i + 1]), int.Parse(args[i + 2]), int.Parse(args[i + 3])));
+            i += 3;
+            break;
         case "--force-outdoorsman" when i + 1 < args.Length:
             // --force-outdoorsman <n>: override the party's best Outdoorsman (test plumbing).
             actions.Add(new ViewerGame.StartupAction.ForceOutdoorsman(int.Parse(args[++i])));
