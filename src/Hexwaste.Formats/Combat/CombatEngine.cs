@@ -803,9 +803,10 @@ public sealed class CombatEngine
             AmmoProtoStats? ammo = weaponItem is null ? null : _host.LoadedAmmo(weaponProto, weaponItem);
             toHit = RangedMath.ToHitChance(
                 attacker.SmallGunsSkill, distance,
-                attacker.Stat(CritterStat.Perception), attackerIsDude,
+                attacker.Perception, attackerIsDude,                 // PE-5 when blind (stat.cc:191)
                 defender.ArmorClass, ammo?.AcModifier ?? 0,
-                w.MinStrength, attacker.Stat(CritterStat.Strength), crittersInPath);
+                w.MinStrength, attacker.Stat(CritterStat.Strength), crittersInPath,
+                attackerBlind: attacker.Blind);                      // ×12 distance penalty (combat.cc:4383)
         }
         else
         {
@@ -813,10 +814,14 @@ public sealed class CombatEngine
             toHit = CombatMath.ToHitChance(skill, defender);
         }
 
+        // A blind attacker: -25 to hit, melee or ranged (combat.cc:4470).
+        if (attacker.Blind)
+            toHit -= 25;
+
         // +40 to hit a prone OR knocked-out target (combat.cc:4474).
         if (_knockedDown.Contains(defender.Critter) || IsKnockedOut(defender.Critter))
             toHit = Math.Min(toHit + 40, 95);
-        return toHit;
+        return toHit; // callers clamp to [0,95]
     }
 
     /// <summary>Damage-on-completion + corpse conversion, polled every frame
@@ -1496,8 +1501,11 @@ public sealed class CombatEngine
         if (path is null || path.Length <= 1)
             return false;
 
-        int steps = Math.Min(path.Length - 1, _actingEnemyAp); // stop adjacent
-        _actingEnemyAp -= steps;
+        // Crippled legs cost 4×/8× AP per hex (critter.cc:1349); 1× otherwise → an
+        // intact enemy's budget is unchanged (byte-identical).
+        int costPerHex = CritterState.MovePointCost(enemy.CombatResults);
+        int steps = Math.Min(path.Length - 1, _actingEnemyAp / costPerHex); // stop adjacent
+        _actingEnemyAp -= steps * costPerHex;
         int targetTile = enemy.HexTile;
         for (int i = 0; i < steps; i++)
             targetTile = HexGrid.TileInDirection(targetTile, path[i]);

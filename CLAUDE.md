@@ -441,10 +441,15 @@ KO persists); OnCombatEvent wakes (clear KO, leave prone → stands next turn); 
 hit a KO'd target; KillCritter/Reset/EndCombat clear the queue + force-wake. public
 KnockOut(critter) seam for tests/scripts. BYTE-IDENTICAL on all fixtures (status flags
 only originate from the massive roll, M4 — dormant until then); verified by 3 fake-host
-turn-skip/wake tests. Next: M3 crippled-limb + blind effects (leg→move cost, arm→weapon
-gate, blind→-25/PE-5/×12 range), M4 the massive-crit secondary stat-roll (the ONE new
-RNG draw — isolated, re-records day-2 fixtures), M5 Skilldex Doctor limb-fix (NOT
-First-Aid — engine-inaccurate premise).
+turn-skip/wake tests. M3 crippled-leg move cost + blind effects (DONE): CritterState.MovePointCost (leg crip
+→ 4×/8× per-hex AP, critter.cc:1349, applied to the AI approach budget — 1× intact so
+byte-identical); CritterState.Perception → PE-5 when blind (stat.cc:191); ComputeToHit
+→ blind attacker -25 (combat.cc:4470) + RangedMath.ToHitChance gains attackerBlind for
+the ×12 distance penalty (combat.cc:4383, only the positive-penalty branch). DEFERRED:
+the crippled-ARM weapon-gate (niche, needs a two-handed proto flag) — the bit is set +
+Doctor-healable (M5). 8 pure status tests; byte-identical (effects only fire on set
+bits, M4). Next: M4 the massive-crit secondary stat-roll (the ONE new RNG draw —
+isolated, re-records day-2 fixtures), M5 Skilldex Doctor limb-fix (NOT First-Aid).
 
 Phase 10 (DONE, per docs/phase10-research-report.md — "The Wasteland
 Bites Back"): M0 persistence pre-stage (the net: MapList saved=No /

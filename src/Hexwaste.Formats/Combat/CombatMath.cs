@@ -66,14 +66,16 @@ public static class RangedMath
     /// clamp, 95 cap — exactly like the engine.</summary>
     public static int ToHitChance(int skill, int distance, int perception, bool attackerIsDude,
         int targetAc, int ammoAcModifier, int weaponMinStrength, int attackerStrength,
-        int crittersInPath)
+        int crittersInPath, bool attackerBlind = false)
     {
         int toHit = skill;
 
         // mult = 2 (no long-range/scope perks); dude uses PE-2, NPCs PE.
         int distanceMod = distance - 2 * (attackerIsDude ? perception - 2 : perception);
         distanceMod = Math.Max(distanceMod, -2 * perception);
-        toHit += -4 * distanceMod;
+        // A blind shooter triples the distance PENALTY (×12 vs ×4), but not the
+        // close-range bonus (combat.cc:4383-4388).
+        toHit += (attackerBlind && distanceMod >= 0 ? -12 : -4) * distanceMod;
 
         toHit -= 10 * crittersInPath;
 

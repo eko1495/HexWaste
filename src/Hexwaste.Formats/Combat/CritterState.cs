@@ -38,6 +38,23 @@ public sealed class CritterState(MapObject critter, CritterProtoStats proto, int
     /// <summary>Effective stat = base + bonus (src/stat.cc critterGetStat()).</summary>
     public int Stat(int stat) => proto.BaseStats[stat] + proto.BonusStats[stat];
 
+    /// <summary>True if this critter is blinded by a crit (CombatResults DAM_BLIND).</summary>
+    public bool Blind => (critter.CombatResults & CriticalTables.DamBlind) != 0;
+
+    /// <summary>Perception, minus 5 when blinded (stat.cc:191 critterGetStat). Used by
+    /// the ranged to-hit; the flat -25 + ×12 distance penalty are applied in the engine.</summary>
+    public int Perception => Stat(CritterStat.Perception) - (Blind ? 5 : 0);
+
+    /// <summary>Per-hex movement-point cost for a critter's combat-results flags
+    /// (critter.cc:1349 critterGetMovementPointCostAdjustedForCrippledLegs): both legs
+    /// crippled → 8×, either leg → 4×, else 1×.</summary>
+    public static int MovePointCost(int combatResults)
+    {
+        bool left = (combatResults & CriticalTables.DamCripLegLeft) != 0;
+        bool right = (combatResults & CriticalTables.DamCripLegRight) != 0;
+        return left && right ? 8 : (left || right) ? 4 : 1;
+    }
+
     /// <summary>Effective % of any skill (delegates to the canonical
     /// <see cref="SkillSet"/>); the dude's tags (taggedSkills) feed the bonus.</summary>
     public int SkillValue(int skill) =>
