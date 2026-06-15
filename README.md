@@ -86,8 +86,10 @@ Prebuilt self-contained builds (Linux x64 / Windows x64) are produced by
   TURN / END COMBAT buttons during a fight, and clickable INV/OPT/MAP/CHA/SKILLDEX/PIP
   tabs (the keyboard shortcuts still work). The SKILLDEX tab opens the use-skill picker —
   choose a skill (Lockpick, First Aid, Doctor, Steal, Traps, Science, Repair, Sneak)
-  and click a target to apply it. The PIP tab opens the Pip-Boy: a status page (date/
-  time, level, HP/AC) and a rest menu (timed rests or rest-until-healed). The OPT tab
+  and click a target to apply it. The PIP tab opens the Pip-Boy: a status page (the
+  real Fallout 2 calendar date, level, HP/AC, an embedded mini-map) and a rest menu
+  (timed rests or rest-until-healed); press A for the full-window automap, which
+  reveals as you explore (fog-of-war). The OPT tab
   (or Esc) opens the options/pause menu: save, load, main menu, quit, resume. Every
   panel and menu is fully mouse-navigable — click a row in the inventory/loot/barter/
   trade lists (PgUp/PgDn page past the 9th item) or in the Pip-Boy/Options menus; the

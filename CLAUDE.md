@@ -622,6 +622,35 @@ re-record (M3's flee) ARE the deliverable; NO RNG-divergence occurred (dude does
 --fight, flee is deterministic). 295 Formats tests, 28 encounter + 14 combat goldens green.
 Spillover: AP-gating the dude's OUT-of-combat move (a separate feature), the NPC crippled-arm gate.
 
+Phase 20 (DONE — "Doc Truth + Presentation Polish", a breather phase): M0 stale-doc
+reconciliation (DONE): SCOPE.md dropped the "AP-gated player movement is OUT" bullet (P18
+shipped it) + refreshed "What's in" (combat AP-gating/crippled-arm/X-FIGHTING-Y/flee-pathing;
+worldmap dot/avoid/resume/save-mid-travel); CLAUDE.md marked the P10 "v1 cuts" list SUPERSEDED
+(wait/dismiss persistence #2/#3, per-member If()/Distance P10+P16-M4, X-FIGHTING-Y P16-M3,
+projectile tween #11 all shipped — only Vic's radio item source remains). Pure docs. M1 embedded
+Pip-Boy mini-map (DONE): INVESTIGATION found automap.db is a GENERATED save artifact (engine
+writes MAPS\AUTOMAP.DB as you explore — not in the game data, our PoC never writes it), so the
+specified RLE-decode has nothing to decode. DIVERGENCE: render the mini-map from LIVE objects
+(the P15-M0 source) in the Pip-Boy status page's left column instead — AutomapColor shared helper
+(DrawAutomap refactored onto it, golden-safe), DrawPipboyMiniMap col→x(mirrored)/row→y scaled.
+Draw-only. M3 Pip-Boy real calendar (DONE): GameClock.DateAt/DateString port scripts.cc
+gameTimeGetDate (walk months from the FO2 start July 25 2241 — sfall_config.cc start year 2241/
+month 6/day 24, output +1; the old GameClock comment wrongly said "June 24"); the Pip-Boy shows
+"July 25, 2241" not "Day 1". Draw-only + pure date math. M2 automap fog + colors (DONE): colors
+aligned to the engine's IN-GAME _colorTable (walls→pure green [992], scenery→dark green [480];
+DIVERGENCE: we still show critters/items + a WHITE dude, which the in-game map hides/paints-red,
+for a more useful map). Fog: _seenObjects accumulates objects within AutomapSightRadius (14 hexes)
+of the dude — revealed at spawn + per hex, cleared per map; the automap + mini-map plot only seen
+objects (SIMPLIFICATION: proximity not LoS, not save-persisted). The --automap census now reports
+the seen dots (arcaves 186/1843 at spawn); automap-arcaves re-recorded. M4 burst collateral
+real-data golden (DONE — NOT inert): the standard --burst's fixed dir-3 approach never aligned the
+narrow cone with a bystander, so added --burst-at <fromHex> <targetHex> to aim it; golden denbus2-
+burst-collateral bursts a Den slave (11670) from across the cluster (13270) and sweeps TWO real
+bystanders (Handsome@12670 + Cute@11272) onto the left/right cone lines — the first real-data
+proof of the P13-M2 cone (the fake-host test was the only one before). 296 Formats tests, 28
+encounter + 15 combat goldens green. Spillover: true-LoS + save-persisted automap fog, the
+automap.db write side (generate the explored-tile RLE), the in-Pip-Boy date calendar page.
+
 Phase 10 (DONE, per docs/phase10-research-report.md — "The Wasteland
 Bites Back"): M0 persistence pre-stage (the net: MapList saved=No /
 random_start_point parse + IsTransient; the 3-clause transient guards as
