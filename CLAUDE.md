@@ -214,11 +214,12 @@ inception crit roll (crit-FAIL aborts, crit-SUCCESS +20, bullets still
 spent); per-round hit = plain d100≤acc, rounds never crit; fresh damage roll
 per hit summed; ammo decremented in ONE batch at resolve (combat.cc:5349),
 NOT eagerly like single-shot; AP = secondary ApCost2; burst can't be aimed.
-DOCUMENTED DIVERGENCE (like the LoF greedy-hex one): the left/right cone
-lines + up-to-6 collateral "extras" are not modelled — only the center line
-fires at the target (exposure = max(centerRounds, mainTargetRounds), ~3 of
-10 for an SMG in a duel); collateral is the named deferred upgrade. CombatEngine
-.TryBurst behind a B keybind + --burst harness flag + 2 golden fixtures.
+The main target's exposure = max(centerRounds, mainTargetRounds), ~3 of
+10 for an SMG in a duel. (The left/right cone lines + up-to-6 collateral "extras"
+were the named deferred upgrade — now DONE in P13-M2; the main-target exposure
+above is retained as the documented approximation so 1-on-1 bursts stay
+byte-identical.) CombatEngine.TryBurst behind a B keybind + --burst harness flag
++ 2 golden fixtures.
 GOTCHA (review-caught): EndPlayerTurn/UpdateCombat gated only _pendingAttack —
 a pending burst/throw could flip to the enemy turn mid-animation (the B+Space
 race; the throw half was a latent p9 bug); both now block on all three pending
@@ -371,9 +372,31 @@ critter on the target's own tile would false-block/false-count. Retained simpli-
 fications: host-side NO_BLOCK/SHOOT_THRU/dead-critter filter + the dropped +1
 MULTIHEX crowd bump (combat.cc:5921). DE-RISK PROVEN: both goldens BYTE-IDENTICAL
 after the swap (Trace draws no RNG; the fixtures' shots are d=1/open-ground) — the
-clean checkpoint that the M0 inverse is byte-correct. Next: M2 burst collateral cone
-(_compute_spray left/right lines + _shoot_along_path extras, using HexGrid.TileNum-
-Beyond for end-tiles); M3 thrown-crit DEFERRED.
+clean checkpoint that the M0 inverse is byte-correct.
+M2 burst collateral cone (DONE). RollBurst now fires the center/left/right lines
+(_compute_spray combat.cc:3766-3784): round split adds leftRounds=n/3, rightRounds=
+n-center-left (engine statement order, BEFORE the centerRounds-=1); ConeCollateral
+computes the pivot (dist<=3 ? TileNumBeyond(att,def,3) : def) + rotation RotationTo
+(pivot, attacker) + left/right tiles (rot±1) + end-tiles via the new HexGrid.TileNum-
+Beyond (_tile_num_beyond port); ShootCollateral walks each line REUSING LineOfFire.
+Trace (the collecting callback — Trace already counts critters + resumes past + stops
+at walls) and rolls per-round d100 ≤ each victim's own to-hit, accumulating non-target
+critters as PendingBurst.Extras (cap 6, dedup+accumulate on repeat). ResolveBurst's
+ApplyBurstExtras lands collateral HP/damage-proc/kill. DOCUMENTED APPROXIMATIONS: the
+MAIN target keeps the v1 centre-exposure model (so a 1-on-1 stays byte-identical — the
+cone lines are empty → ZERO extra RNG draws → the burst goldens are unchanged); the
+line sweep reuses the greedy/Bresenham Trace (only end-tiles use exact TileNumBeyond);
+_check_ranged_miss not ported. Collateral emitted as separate "burst-extra:" transcript
+lines (only when present) so the 1-on-1 burst line is untouched. Verified: fake-host
+BurstConeCatchesACollateralBystanderOnALine (a bystander on the discovered left line
+takes collateral) + BurstWithNoBystandersHasNoCollateral (the invariant) + both goldens
+byte-identical. M3 thrown-crit DEFERRED (orthogonal, would churn 3 throw fixtures).
+GOTCHA: a burst's per-line collateral budget for the CENTRE line is centerRounds minus
+the defender's hits (0 in a MinRng all-hit duel) — collateral on the centre line only
+fires when the defender doesn't absorb the whole centre budget; left/right budgets are
+independent. No --burst harness reaches a multi-critter cone on the shippable maps (the
+cone is narrow + the harness teleports to a fixed approach), so collateral has no real-
+data golden — the fake-host test is the deterministic proof.
 
 Phase 10 (DONE, per docs/phase10-research-report.md — "The Wasteland
 Bites Back"): M0 persistence pre-stage (the net: MapList saved=No /

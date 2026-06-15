@@ -46,8 +46,13 @@ public sealed class CombatEngine
     /// when the single muzzle-flash animation completes. AmmoBefore − RoundsFired is
     /// the post-burst magazine; RoundsHit of the center-line rounds connected.</summary>
     private sealed record PendingBurst(MapObject Attacker, MapObject Target, ProtoInfo WeaponProto,
-        MapObject WeaponItem, int AmmoBefore, int RoundsFired, int RoundsHit, int TotalDamage);
+        MapObject WeaponItem, int AmmoBefore, int RoundsFired, int RoundsHit, int TotalDamage,
+        IReadOnlyList<BurstExtra> Extras);
     private PendingBurst? _pendingBurst;
+
+    /// <summary>A collateral burst victim — a critter other than the main target struck
+    /// by the cone's center/left/right lines (combat.cc _shoot_along_path "extras").</summary>
+    private sealed record BurstExtra(MapObject Victim, int RoundsHit, int Damage);
 
     /// <summary>Critters playing their death fall; value = death anim (20/21).</summary>
     private readonly Dictionary<MapObject, int> _fallingCritters = [];
@@ -207,13 +212,13 @@ public sealed class CombatEngine
     /// rounds across a center/left/right cone. The outcome is rolled HERE; damage and
     /// the magazine decrement land when the muzzle-flash animation finishes.
     ///
-    /// DOCUMENTED DIVERGENCE (same class as the LineOfFire greedy-hex deviation): the
-    /// left/right cone lines (rotation±1, combat.cc:3769-3784) spray empty hexes in a
-    /// 1-on-1 and the up-to-6 collateral "extras" (_shoot_along_path) are NOT modelled
-    /// in v1 — only the center line through the target is fired, so the target is
-    /// exposed to ~centerRounds of the burst (3 of 10 for an SMG), exactly as the
-    /// engine would in a duel. Collateral damage to other critters standing in the
-    /// cone is the named deferred upgrade.
+    /// P13-M2: the collateral cone is now modelled — the left/right lines (rotation±1,
+    /// combat.cc:3769-3784) and any non-target critter on the three lines take
+    /// collateral fire (the up-to-6 "extras" of _shoot_along_path). DOCUMENTED
+    /// APPROXIMATION: the main target's own hit count keeps the v1 centre-exposure
+    /// model (so a 1-on-1 burst is byte-identical), the line sweep reuses the Bresenham
+    /// Trace (only the end-tiles use the exact _tile_num_beyond), and _check_ranged_miss
+    /// is not ported. In a duel the cone lines are empty → no collateral, no extra RNG.
     /// </summary>
     public bool TryBurst(MapObject target)
     {
@@ -283,16 +288,21 @@ public sealed class CombatEngine
         dude.Rotation = HexGrid.RotationTo(dude.HexTile, target.HexTile);
 
         int ammoBefore = _host.WeaponAmmo(weaponProto, weaponItem);
-        (int accuracy, int roundsFired, int roundsHit, int totalDamage) =
-            RollBurst(attacker, defender, weaponProto, weaponItem, distance, crittersInPath, ammoBefore);
+        (int accuracy, int roundsFired, int roundsHit, int totalDamage, List<BurstExtra> extras) =
+            RollBurst(dude, target, attacker, defender, weaponProto, weaponItem, distance, crittersInPath, ammoBefore);
 
         // Ammo is consumed in a single batch AT RESOLVE (after damage, combat.cc:5349)
         // — burst deliberately differs from the single-shot eager decrement in TryAttack.
         _pendingBurst = new PendingBurst(dude, target, weaponProto, weaponItem,
-            ammoBefore, roundsFired, roundsHit, totalDamage);
+            ammoBefore, roundsFired, roundsHit, totalDamage, extras);
         _host.Transcript($"burst {_host.ObjectName(target)}@{target.HexTile}"
             + $" [{_host.ObjectNameByPid(weaponProto.Pid)} {ammoBefore}rnd d{distance}]:"
             + $" chance={accuracy}% rounds={roundsFired} hit={roundsHit} damage={totalDamage}");
+        // Collateral is emitted as its own lines (only when present) so a 1-on-1 burst's
+        // transcript stays byte-identical to the pre-cone fixtures.
+        foreach (BurstExtra ex in extras)
+            _host.Transcript($"burst-extra: {_host.ObjectName(ex.Victim)}@{ex.Victim.HexTile}"
+                + $" hit={ex.RoundsHit} damage={ex.Damage}");
 
         _host.OnAttackStarted(dude, target, weaponProto);
 
@@ -308,9 +318,9 @@ public sealed class CombatEngine
     /// fresh roll per hit round, summed (combat.cc:4589-4615). Returns the bullets
     /// fired (always n — they leave the barrel even on an abort), the rounds that
     /// connected, and the accumulated damage.</summary>
-    private (int Accuracy, int RoundsFired, int RoundsHit, int TotalDamage) RollBurst(
-        CritterState attacker, CritterState defender, ProtoInfo weaponProto, MapObject weaponItem,
-        int distance, int crittersInPath, int loadedAmmo)
+    private (int Accuracy, int RoundsFired, int RoundsHit, int TotalDamage, List<BurstExtra> Extras) RollBurst(
+        MapObject dudeObj, MapObject targetObj, CritterState attacker, CritterState defender,
+        ProtoInfo weaponProto, MapObject weaponItem, int distance, int crittersInPath, int loadedAmmo)
     {
         int accuracy = Math.Clamp(
             ComputeToHit(attacker, defender, weaponProto, weaponItem, distance, crittersInPath, attackerIsDude: true),
@@ -327,7 +337,7 @@ public sealed class CombatEngine
             if (delta < 0)
             {
                 if (_rng.Next(1, 101) <= -delta / 10)
-                    return (accuracy, n, 0, 0); // CRITICAL_FAILURE: burst aborts, bullets still spent
+                    return (accuracy, n, 0, 0, []); // CRITICAL_FAILURE: burst aborts, bullets still spent
             }
             else if (_rng.Next(1, 101) <= delta / 10 + attacker.Stat(CritterStat.CriticalChance))
             {
@@ -335,10 +345,14 @@ public sealed class CombatEngine
             }
         }
 
-        // Cone split (combat.cc:3735-3746), exact integer truncation.
+        // Cone split (combat.cc:3735-3746), exact integer truncation and statement
+        // order: leftRounds + rightRounds are taken from centerRounds BEFORE the
+        // mainTargetRounds adjustment decrements it.
         int centerRounds = n / 3;
         if (centerRounds == 0)
             centerRounds = 1;
+        int leftRounds = n / 3;
+        int rightRounds = n - centerRounds - leftRounds;
         int mainTargetRounds = centerRounds / 2;
         if (mainTargetRounds == 0)
         {
@@ -346,8 +360,7 @@ public sealed class CombatEngine
             centerRounds -= 1;
         }
         // The center line passes through the target; its full budget can hit it
-        // (direct mainTargetRounds + the _shoot_along_path remainder). left/right
-        // rounds are collateral, dropped in v1 (see TryBurst divergence note).
+        // (direct mainTargetRounds + the _shoot_along_path remainder).
         int mainTargetExposure = Math.Max(centerRounds, mainTargetRounds);
 
         AmmoProtoStats? ammo = _host.LoadedAmmo(weaponProto, weaponItem);
@@ -362,7 +375,101 @@ public sealed class CombatEngine
                     ammo?.DrModifier ?? 0, ammo?.DamageMultiplier ?? 1, ammo?.DamageDivisor ?? 1);
             }
         }
-        return (accuracy, n, roundsHit, totalDamage);
+
+        // M2: the collateral cone. The center/left/right lines (combat.cc:3766-3784)
+        // spray any OTHER critter standing in the way (the defender's own hits stay the
+        // main model above). In a 1-on-1 the lines are empty → no _rng draws → the
+        // existing burst fixtures stay byte-identical. The line sweep reuses the
+        // Bresenham Trace (the single named LoF divergence); only the end-tiles use the
+        // exact TileNumBeyond. Cap 6 extras (combat.cc:3637).
+        List<BurstExtra> extras = ConeCollateral(dudeObj, targetObj, attacker, weaponProto,
+            weaponItem, ammo, centerRounds - roundsHit, leftRounds, rightRounds, accuracy);
+
+        return (accuracy, n, roundsHit, totalDamage, extras);
+    }
+
+    /// <summary>Walk the burst cone's three lines (center/left/right) and roll collateral
+    /// hits on every critter other than the main target — combat.cc _compute_spray's
+    /// _shoot_along_path passes. Returns the accumulated collateral victims (cap 6).</summary>
+    private List<BurstExtra> ConeCollateral(MapObject dudeObj, MapObject targetObj, CritterState attacker,
+        ProtoInfo weaponProto, MapObject weaponItem, AmmoProtoStats? ammo,
+        int centerBudget, int leftRounds, int rightRounds, int accuracy)
+    {
+        var extras = new List<BurstExtra>();
+        int from = dudeObj.HexTile;
+        int range = weaponProto.Weapon!.MaxRange1;
+
+        // Cone pivot + rotation (combat.cc:3769-3776; note the (pivot, attacker) arg order).
+        int pivot = HexGrid.Distance(from, targetObj.HexTile) <= 3
+            ? HexGrid.TileNumBeyond(from, targetObj.HexTile, 3)
+            : targetObj.HexTile;
+        int rotation = HexGrid.RotationTo(pivot, from);
+        int leftTile = HexGrid.TileInDirection(pivot, (rotation + 1) % 6, 1);
+        int rightTile = HexGrid.TileInDirection(pivot, (rotation + 5) % 6, 1);
+
+        ShootCollateral(from, HexGrid.TileNumBeyond(from, targetObj.HexTile, range), centerBudget,
+            dudeObj, targetObj, attacker, weaponProto, weaponItem, ammo, accuracy, extras);
+        ShootCollateral(from, HexGrid.TileNumBeyond(from, leftTile, range), leftRounds,
+            dudeObj, targetObj, attacker, weaponProto, weaponItem, ammo, accuracy, extras);
+        ShootCollateral(from, HexGrid.TileNumBeyond(from, rightTile, range), rightRounds,
+            dudeObj, targetObj, attacker, weaponProto, weaponItem, ammo, accuracy, extras);
+        return extras;
+    }
+
+    /// <summary>One cone line: collect the critters along it (Trace walks the Bresenham,
+    /// counts critters, resumes past them, stops at a wall), then spend the round budget
+    /// hitting each in turn (per-round d100 ≤ its own to-hit). Excludes the shooter and
+    /// the main target; accumulates on a repeat victim across lines.</summary>
+    private void ShootCollateral(int from, int endTile, int budget,
+        MapObject dudeObj, MapObject targetObj, CritterState attacker,
+        ProtoInfo weaponProto, MapObject weaponItem, AmmoProtoStats? ammo, int accuracy, List<BurstExtra> extras)
+    {
+        if (budget <= 0 || extras.Count >= 6 || endTile == from)
+            return;
+
+        var line = new List<MapObject>();
+        LineOfFire.Trace(from, endTile, tile =>
+        {
+            MapObject? obj = _host.ShootBlockerAt(tile, dudeObj, targetObj);
+            if (obj is not null && Fid.Type(obj.Fid) is ObjectType.Critter
+                && obj != targetObj && obj != dudeObj && !line.Contains(obj))
+                line.Add(obj);
+            return obj; // critters are counted + walked-past; a wall stops the line
+        });
+
+        int remaining = budget;
+        foreach (MapObject victim in line)
+        {
+            if (remaining <= 0 || extras.Count >= 6)
+                break;
+            if (_host.GetCritterState(victim) is not { } vstate)
+                continue;
+
+            int dist = HexGrid.Distance(from, victim.HexTile);
+            int acc = Math.Clamp(
+                ComputeToHit(attacker, vstate, weaponProto, weaponItem, dist, 0, attackerIsDude: dudeObj == _host.Dude),
+                0, 95);
+
+            int hits = 0;
+            while (remaining > 0 && _rng.Next(1, 101) <= acc)
+            {
+                remaining--;
+                hits++;
+            }
+            if (hits == 0)
+                continue;
+
+            int dmg = 0;
+            for (int h = 0; h < hits; h++)
+                dmg += RangedMath.RollDamage(_rng, weaponProto.Weapon!.MinDamage, weaponProto.Weapon.MaxDamage,
+                    vstate, ammo?.DrModifier ?? 0, ammo?.DamageMultiplier ?? 1, ammo?.DamageDivisor ?? 1);
+
+            int idx = extras.FindIndex(e => e.Victim == victim);
+            if (idx >= 0)
+                extras[idx] = extras[idx] with { RoundsHit = extras[idx].RoundsHit + hits, Damage = extras[idx].Damage + dmg };
+            else
+                extras.Add(new BurstExtra(victim, hits, dmg));
+        }
     }
 
     /// <summary>HIT_LOCATION nibble for a THROW attack mode (item.cc _attack_anim).</summary>
@@ -522,11 +629,43 @@ public sealed class CombatEngine
                 GameOver();
             else
                 KillCritter(b.Target, b.Attacker);
-            return;
+        }
+        else if (b.Target != dude)
+        {
+            _host.OnTargetHit(b.Target);
         }
 
-        if (b.Target != dude)
-            _host.OnTargetHit(b.Target);
+        ApplyBurstExtras(b);
+    }
+
+    /// <summary>Apply the collateral cone victims (M2): subtract HP, run the damage proc,
+    /// kill or hit-react — the same path as the main target, for each "extra".</summary>
+    private void ApplyBurstExtras(PendingBurst b)
+    {
+        MapObject? dude = _host.Dude;
+        foreach (BurstExtra ex in b.Extras)
+        {
+            if (ex.Damage <= 0 || ex.Victim.IsDead)
+                continue;
+            ex.Victim.CurrentHp -= ex.Damage;
+            _host.Log($"The burst also catches the {_host.ObjectName(ex.Victim)} for {ex.Damage} damage.");
+
+            if (ex.Victim != dude && ex.Victim.Sid != -1)
+                foreach (string line in _host.RunDamageProc(ex.Victim, b.Attacker, ex.Damage))
+                    _host.Log(line);
+
+            if (ex.Victim.CurrentHp <= 0)
+            {
+                if (ex.Victim == dude)
+                    GameOver();
+                else
+                    KillCritter(ex.Victim, b.Attacker);
+            }
+            else if (ex.Victim != dude)
+            {
+                _host.OnTargetHit(ex.Victim);
+            }
+        }
     }
 
     /// <summary>Roll an attack with the equipped weapon (or fists). Guns use the

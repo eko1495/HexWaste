@@ -167,6 +167,67 @@ public static class HexGrid
         return -1;
     }
 
+    /// <summary>The tile <paramref name="distance"/> hex-steps from <paramref name="from"/>
+    /// along the screen-straight line through <paramref name="to"/> (extrapolating past
+    /// it). Ported from fallout2-ce src/tile.cc _tile_num_beyond() — the burst cone's
+    /// end-tile extrapolator (combat.cc _compute_spray). Stops early at a grid edge.
+    /// </summary>
+    public static int TileNumBeyond(int from, int to, int distance)
+    {
+        if (distance <= 0 || from == to)
+            return from;
+
+        (int fromX, int fromY) = ScreenEmbedding(from);
+        fromX += 16; fromY += 8;
+        (int toX, int toY) = ScreenEmbedding(to);
+        toX += 16; toY += 8;
+
+        int stepX = Math.Sign(toX - fromX);
+        int stepY = Math.Sign(toY - fromY);
+        int v27 = 2 * Math.Abs(toX - fromX);
+        int v26 = 2 * Math.Abs(toY - fromY);
+
+        int prev = from;
+        int tileX = fromX, tileY = fromY;
+        int count = 0;
+        int guard = v27 + v26 + 8;
+
+        if (v27 > v26)
+        {
+            int middle = v26 - v27 / 2;
+            while (guard-- > 0)
+            {
+                int tile = FromScreenEmbedding(tileX, tileY);
+                if (tile != prev)
+                {
+                    if (++count == distance || IsEdge(tile))
+                        return tile;
+                    prev = tile;
+                }
+                if (middle >= 0) { middle -= v27; tileY += stepY; }
+                middle += v26; tileX += stepX;
+            }
+        }
+        else
+        {
+            int middle = v27 - v26 / 2;
+            while (guard-- > 0)
+            {
+                int tile = FromScreenEmbedding(tileX, tileY);
+                if (tile != prev)
+                {
+                    if (++count == distance || IsEdge(tile))
+                        return tile;
+                    prev = tile;
+                }
+                if (middle >= 0) { middle -= v26; tileX += stepX; }
+                middle += v27; tileY += stepY;
+            }
+        }
+
+        return prev;
+    }
+
     /// <summary>ported from fallout2-ce src/tile.cc tileGetRotationTo():
     /// the facing rotation from one hex toward another (screen-space angle).</summary>
     public static int RotationTo(int tile1, int tile2)

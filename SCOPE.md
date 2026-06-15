@@ -24,7 +24,8 @@ filing an issue.
   wait/follow/dismiss/rejoin control hub, a flat 1:1 inventory trade panel, and
   per-companion proto level-ups (`party.txt`, live on the recruited Vic).
 - **Gameplay**: turn-based melee + gun combat with the engine's depth — to-hit /
-  line-of-fire / ammo+reload, single + burst fire, AI behaviour packets
+  line-of-fire (screen-Bresenham) / ammo+reload, single + burst fire (with the
+  left/right collateral cone), AI behaviour packets
   (close-or-flee), critical hits + aimed called shots, knockback + persisting
   knockdown, area explosions, and throwing (spears, grenades, recoverable);
   armor, drugs, lootable corpses, scripted aggro, same-team joiners, a minimum
@@ -36,10 +37,6 @@ filing an issue.
 
 ## What's out (by design, today)
 
-- **Burst-fire collateral cone** — burst fire itself works (10mm SMG / Tommy Gun /
-  combat shotgun), but only the centre line fires at the target; the left/right
-  cone lines and the up-to-6 collateral "extras" (`combat.cc` `_compute_spray`)
-  are the one documented divergence (see `docs/phase9-research-report.md`).
 - **Most quest chains** — the opening hour (Arroyo → Temple → Klamath/Den) is
   the target; reputation/karma badges and the slave-run path are not wired.
   Vic's rescue (#10) *is* wired end-to-end, with one residual content gap: the

@@ -420,6 +420,63 @@ public class CombatEngineTests
     }
 
     [Fact]
+    public void BurstConeCatchesACollateralBystanderOnALine()
+    {
+        // M2: a critter standing on the left cone line takes collateral fire, while the
+        // main target keeps its own hits. (leftTile is on the from->leftEnd line by
+        // construction, so the bystander is guaranteed to be in the cone.)
+        int from = 20100;
+        int target = HexGrid.TileInDirection(from, 0, 3);
+
+        var host = new FakeCombatHost { CriticalsEnabled = false, LoadedAmmoCount = 10 };
+        host.SetDude(NewCritter(from, hp: 30, ap: 12, skill: 100)); // gun skill so ranged shots connect
+        MapObject enemy = host.AddCritter(NewCritter(target, hp: 500));
+        (ProtoInfo proto, MapObject item) = MakeBurstWeapon(rounds: 10, apCost2: 6, minDmg: 10, maxDmg: 10);
+        host.Equipped = (proto, item);
+
+        // Reproduce the engine's left-line geometry, then DISCOVER a tile actually on
+        // the from->leftEnd Bresenham (the far-endpoint path need not pass through
+        // leftTile), and stand the bystander there.
+        int pivot = HexGrid.Distance(from, target) <= 3 ? HexGrid.TileNumBeyond(from, target, 3) : target;
+        int rotation = HexGrid.RotationTo(pivot, from);
+        int leftTile = HexGrid.TileInDirection(pivot, (rotation + 1) % 6, 1);
+        int leftEnd = HexGrid.TileNumBeyond(from, leftTile, 40);
+        var leftLine = new List<int>();
+        LineOfFire.Trace(from, leftEnd, t => { leftLine.Add(t); return null; });
+        Assert.NotEmpty(leftLine);
+        MapObject bystander = host.AddCritter(NewCritter(leftLine[Math.Min(2, leftLine.Count - 1)], hp: 500));
+
+        host.BlockerOverride = tile => host.CombatCritters.FirstOrDefault(c => c.HexTile == tile && !c.IsDead);
+
+        var engine = new CombatEngine(host, new MinRng()); // every round connects
+        Assert.True(engine.TryBurst(enemy));
+        host.Animating.Clear();
+        engine.ProcessAnimations();
+
+        Assert.True(bystander.CurrentHp < 500, "the cone's left line should have caught the bystander");
+        Assert.True(enemy.CurrentHp < 500, "the main target still takes its own hits");
+        Assert.Contains(host.Transcripts, t => t.StartsWith("burst-extra:"));
+    }
+
+    [Fact]
+    public void BurstWithNoBystandersHasNoCollateral()
+    {
+        // The 1-on-1 invariant the burst goldens rely on: empty cone lines -> no extras.
+        var host = new FakeCombatHost { CriticalsEnabled = false, LoadedAmmoCount = 10 };
+        host.SetDude(NewCritter(20100, hp: 30, ap: 12));
+        MapObject enemy = host.AddCritter(NewCritter(HexGrid.TileInDirection(20100, 0, 3), hp: 500));
+        host.Equipped = MakeBurstWeapon(rounds: 10, apCost2: 6, minDmg: 10, maxDmg: 10);
+        host.BlockerOverride = tile => host.CombatCritters.FirstOrDefault(c => c.HexTile == tile && !c.IsDead);
+
+        var engine = new CombatEngine(host, new MinRng());
+        Assert.True(engine.TryBurst(enemy));
+        host.Animating.Clear();
+        engine.ProcessAnimations();
+
+        Assert.DoesNotContain(host.Transcripts, t => t.StartsWith("burst-extra:"));
+    }
+
+    [Fact]
     public void BurstConsumesTheWholeMagazineOnResolveNotOnRoll()
     {
         var host = new FakeCombatHost { CriticalsEnabled = false, LoadedAmmoCount = 10 };
@@ -536,7 +593,7 @@ public class CombatEngineTests
     }
 
     private static (MapObject Obj, CritterProtoStats Proto) NewCritter(
-        int tile, int hp, int ap = 10, int seq = 1, int exp = 0, int betterCrit = 0, int meleeDmg = 0)
+        int tile, int hp, int ap = 10, int seq = 1, int exp = 0, int betterCrit = 0, int meleeDmg = 0, int skill = 0)
     {
         int[] b = new int[35];
         b[CritterStat.Strength] = 5;
@@ -546,7 +603,9 @@ public class CombatEngineTests
         b[CritterStat.Sequence] = seq;
         b[CritterStat.BetterCriticals] = betterCrit;
         b[CritterStat.MeleeDamage] = meleeDmg;
-        var proto = new CritterProtoStats(0, 0, 0, b, new int[35], new int[18], 0, exp, 0, 0);
+        int[] sk = new int[18];
+        for (int i = 0; i < sk.Length; i++) sk[i] = skill; // ranged tests need a usable gun skill
+        var proto = new CritterProtoStats(0, 0, 0, b, new int[35], sk, 0, exp, 0, 0);
         var obj = new MapObject
         {
             Id = tile, HexTile = tile, X = 0, Y = 0, Frame = 0, Rotation = 0,
@@ -607,7 +666,8 @@ public class CombatEngineTests
         public int WeaponAmmo(ProtoInfo weaponProto, MapObject item) => LoadedAmmoCount;
         public AmmoProtoStats? LoadedAmmo(ProtoInfo weaponProto, MapObject item) => null;
         public bool TryReload(MapObject holder, ProtoInfo weaponProto, MapObject item) => false;
-        public MapObject? ShootBlockerAt(int tile, MapObject shooter, MapObject target) => null;
+        public Func<int, MapObject?>? BlockerOverride; // tests that need critters/walls on the line
+        public MapObject? ShootBlockerAt(int tile, MapObject shooter, MapObject target) => BlockerOverride?.Invoke(tile);
         public bool IsBlocked(int tile) => false;
         public bool IsAnimating(MapObject critter) => Animating.Contains(critter);
         public bool IsFallInProgress(MapObject critter) => false;
