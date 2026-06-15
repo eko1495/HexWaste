@@ -44,6 +44,9 @@ SCENARIOS=(
   # honours the script — the door stays locked, not blindly unlocked), First Aid self at
   # full HP (healthy already, no roll), and the Sneak stance toggle. All deterministic.
   "skilldex-skills|--map denbus2.map --use-skill 9 9510 --use-skill 6 -1 --use-skill 8 -1 --rng-seed 1"
+  # P15 M0 — the Pip-Boy automap object census (the dots it plots): deterministic
+  # per-type object counts + the dude tile for a fixed map (no RNG).
+  "automap-arcaves|--map arcaves.map --automap --rng-seed 1"
   # P12 M1 — the Pip-Boy rest options: a timed rest (6h heals proportionally) then an
   # until-healed rest from near-death to full. --hurt sets up the wound; deterministic
   # clock math + heal amounts (artemple has no enemy near the entry, so rest is allowed).
@@ -59,7 +62,7 @@ SCENARIOS=(
 
 # Keep only the deterministic transcript lines (drop map-load / animate / stub /
 # dialog-text noise — NEVER capture REPLY/OPTION game-asset strings).
-FILTER='^(encounter|travel-from|companion|dismiss-persist|trade:|party:|party-count:|set-global:|hud-click:|use-skill:|hurt:|rest:|  spawn|  wait:|  follow:|  dismiss:|  rejoin:)'
+FILTER='^(encounter|travel-from|companion|dismiss-persist|trade:|party:|party-count:|set-global:|hud-click:|use-skill:|hurt:|rest:|automap:|  spawn|  wait:|  follow:|  dismiss:|  rejoin:)'
 
 echo "Building viewer..."
 dotnet build src/Hexwaste.Viewer -c Debug >/dev/null || { echo "build failed"; exit 2; }

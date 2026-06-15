@@ -138,6 +138,9 @@ for (int i = 0; i < args.Length; i++)
             // --rest-for <minutes> (or -1 healed / -2,-3 until morning,evening): Pip-Boy rest.
             actions.Add(new ViewerGame.StartupAction.RestFor(int.Parse(args[++i])));
             break;
+        case "--automap":
+            actions.Add(new ViewerGame.StartupAction.OpenAutomap());
+            break;
         case "--set-global" when i + 2 < args.Length:
             // --set-global <id> <value>: force a session GVAR (probe gated dialog).
             actions.Add(new ViewerGame.StartupAction.SetGlobal(int.Parse(args[i + 1]), int.Parse(args[i + 2])));

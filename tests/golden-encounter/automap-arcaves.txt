@@ -1,0 +1,1 @@
+automap: map=arcaves.map elev=0 walls=1145 scenery=157 critters=11 items=2 misc=528 dude=28906

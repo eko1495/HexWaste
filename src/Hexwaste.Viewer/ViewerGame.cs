@@ -168,6 +168,12 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
     private Texture2D? _skilldexBtnOff;
     private Texture2D? _skilldexBtnOn;
 
+    /// <summary>Full-window automap (P15 M0): the AUTOMAP.FRM (519x480) view, opened from
+    /// the Pip-Boy (A), plotting the current elevation's objects as colored dots
+    /// (automap.cc automapRenderInMapWindow). Fog-of-war faked all-visible.</summary>
+    private bool _automapOpen;
+    private Texture2D? _automapBg;
+
     /// <summary>Options / pause menu (P12 M2): Esc or the OPT button opens it —
     /// Save / Load / Quit to main menu / Quit to desktop / Resume (the actions of
     /// options.cc showOptions; Preferences is out of scope — no preferences system).</summary>
@@ -326,6 +332,7 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
         public sealed record HudClick(string Name) : StartupAction;
         public sealed record UseSkill(int Skill, int TargetHex) : StartupAction;
         public sealed record RestFor(int Minutes) : StartupAction;
+        public sealed record OpenAutomap : StartupAction;
         public sealed record Explode(int Hex) : StartupAction;
         public sealed record Throw(int Hex) : StartupAction;
         public sealed record ProjectileCheck(int Hex) : StartupAction;
@@ -830,6 +837,18 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
                     // Drive a Pip-Boy rest option (positive minutes / -1 healed / -2,-3
                     // until morning,evening); RestForMinutes/RestToHeal print the state.
                     DoRest(restMinutes);
+                    break;
+                }
+                case StartupAction.OpenAutomap:
+                {
+                    _automapOpen = true;
+                    // Deterministic object census (the dots the automap plots), for the golden.
+                    int Count(ObjectType t) => _flatObjects[_elevation].Concat(_solidObjects[_elevation])
+                        .Count(o => Fid.Type(o.Fid) == t && !(t == ObjectType.Critter && o.IsDead));
+                    Console.WriteLine($"automap: map={_currentMapName} elev={_elevation}"
+                        + $" walls={Count(ObjectType.Wall)} scenery={Count(ObjectType.Scenery)}"
+                        + $" critters={Count(ObjectType.Critter)} items={Count(ObjectType.Item)}"
+                        + $" misc={Count(ObjectType.Misc)} dude={_dude?.Dude.HexTile ?? -1}");
                     break;
                 }
                 case StartupAction.PartyCount:
@@ -1601,10 +1620,23 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
             {
                 if (IsKeyPressed(keyboard, Keys.R))
                     _pipboyRestMenu = true;
+                if (IsKeyPressed(keyboard, Keys.A))
+                    { _pipboyOpen = false; _automapOpen = true; } // Automaps tab
                 if (IsKeyPressed(keyboard, Keys.Escape) || IsKeyPressed(keyboard, Keys.P))
                     _pipboyOpen = false;
             }
 
+            _previousMouse = mouse;
+            _previousKeyboard = keyboard;
+            base.Update(gameTime);
+            return;
+        }
+
+        // Automap (Pip-Boy → A): a full-window object plot; Esc/A closes.
+        if (_automapOpen)
+        {
+            if (IsKeyPressed(keyboard, Keys.Escape) || IsKeyPressed(keyboard, Keys.A))
+                _automapOpen = false;
             _previousMouse = mouse;
             _previousKeyboard = keyboard;
             base.Update(gameTime);
@@ -4240,6 +4272,7 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
             DrawSkillAllocator();
             DrawSkilldex();
             DrawPipboy();
+            DrawAutomap();
             DrawOptions();
         }
         _spriteBatch.End();
@@ -4936,6 +4969,7 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
             }
             ty += lh;
             Line("R  Rest", green);
+            Line("A  Automap", green);
             Line("P / Esc  Close", dim);
         }
         else
@@ -4946,6 +4980,66 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
             ty += 4;
             Line("Esc  Back", dim);
         }
+    }
+
+    /// <summary>The full-window automap (P15 M0): the authentic AUTOMAP.FRM (519x480)
+    /// centred, with every object on the current elevation plotted as a colored dot
+    /// (automap.cc automapRenderInMapWindow projection: ax = 449 − 2·col, ay = 2·row + 8,
+    /// col = tile%200, row = tile/200). Colors by FID type; the dude is a bright marker.
+    /// Fog-of-war is faked all-visible (we don't track OBJECT_SEEN) — a documented PoC
+    /// simplification; the embedded Pip-Boy mini-map (needs automap.db RLE) stays out.</summary>
+    private void DrawAutomap()
+    {
+        if (!_automapOpen || _fontRenderer is null)
+            return;
+        _automapBg ??= InterfaceBar.LoadFrm(GraphicsDevice, _vfs, _palette, @"art\intrface\AUTOMAP.frm");
+
+        Rectangle vp = GraphicsDevice.Viewport.Bounds;
+        int w = _automapBg?.Width ?? 519, h = _automapBg?.Height ?? 480;
+        var o = new Point(Math.Max(0, (vp.Width - w) / 2), Math.Max(0, (vp.Height - h) / 2));
+        _panelPixel ??= CreatePixel();
+        if (_automapBg is not null)
+            _spriteBatch.Draw(_automapBg, new Vector2(o.X, o.Y), Color.White);
+        else
+            _spriteBatch.Draw(_panelPixel, new Rectangle(o.X, o.Y, w, h), new Color(8, 16, 8, 240));
+
+        var wall = new Color(160, 160, 160);
+        var scenery = new Color(0, 168, 0);
+        var critter = new Color(248, 0, 0);
+        var item = new Color(252, 252, 84);
+        var misc = new Color(84, 200, 252);
+
+        void Plot(int tile, Color c, int size)
+        {
+            if (tile < 0)
+                return;
+            int ax = 449 - 2 * (tile % 200);   // automap.cc:550, decomposed
+            int ay = 2 * (tile / 200) + 8;
+            if (ax < 0 || ay < 0 || ax + size > w || ay + size > h)
+                return;
+            _spriteBatch.Draw(_panelPixel, new Rectangle(o.X + ax, o.Y + ay, size, size), c);
+        }
+
+        foreach (MapObject obj in _flatObjects[_elevation].Concat(_solidObjects[_elevation]))
+        {
+            Color? c = Fid.Type(obj.Fid) switch
+            {
+                ObjectType.Wall => wall,
+                ObjectType.Scenery => scenery,
+                ObjectType.Critter => obj.IsDead ? null : critter,
+                ObjectType.Item => item,
+                ObjectType.Misc => misc,
+                _ => null,
+            };
+            if (c is { } col)
+                Plot(obj.HexTile, col, 2);
+        }
+        if (_dude is not null)
+            Plot(_dude.Dude.HexTile, new Color(255, 255, 255), 3); // the dude marker
+
+        var labelGreen = new Color(0, 252, 0);
+        _fontRenderer.Draw(_spriteBatch, $"AUTOMAP — {_currentMapName} (elev {_elevation})", new Vector2(o.X + 20, o.Y + 12), labelGreen);
+        _fontRenderer.Draw(_spriteBatch, "Esc / A  close", new Vector2(o.X + 20, o.Y + h - 24), new Color(0, 168, 0));
     }
 
     /// <summary>The options / pause menu (P12 M2): the authentic OPBASE.FRM (164x217)
@@ -6042,6 +6136,7 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
         _skillUsesDay = -1;
         _pipboyOpen = false;
         _pipboyRestMenu = false;
+        _automapOpen = false;
         _optionsOpen = false;
         _dudeInventory = [];
         _visitedMaps.Clear();
@@ -6345,6 +6440,7 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
         _skilldexBtnOff?.Dispose();
         _skilldexBtnOn?.Dispose();
         _optionsBg?.Dispose();
+        _automapBg?.Dispose();
         _fontRenderer?.Dispose();
         _frmCache.Dispose();
         _vfs.Dispose();
