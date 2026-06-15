@@ -103,6 +103,12 @@ public sealed class DudeController(MapObject dude, FrmCache frmCache, Func<int, 
             Dude.HexTile = nextTile;
             TileChanged?.Invoke(nextTile);
 
+            // The handler may have halted the walk (e.g. phase-18 AP-gating Stop()s when
+            // the dude runs out of action points) — _rotations is now null, so bail before
+            // touching it again.
+            if (_rotations is null)
+                return;
+
             _step++;
             if (_step >= _rotations.Length)
             {

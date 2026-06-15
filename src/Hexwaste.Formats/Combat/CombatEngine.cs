@@ -119,6 +119,10 @@ public sealed class CombatEngine
     /// <summary>Load path: seed the dude's AP outside combat (SpawnDude).</summary>
     public void SetDudeAp(int ap) => _dudeAp = ap;
 
+    /// <summary>Charge the dude's turn AP for movement (or any non-attack action), clamped
+    /// at 0 (phase-18 M0: combat movement costs MovePointCost per hex).</summary>
+    public void SpendDudeAp(int amount) => _dudeAp = Math.Max(0, _dudeAp - amount);
+
     // ====================================================================
     //  Attacks
     // ====================================================================

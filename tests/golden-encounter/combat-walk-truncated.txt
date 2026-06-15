@@ -1,0 +1,1 @@
+combat-walk: started=True crippleLeg=False ap=2 start=20530 end=20332 dist=2 apLeft=0

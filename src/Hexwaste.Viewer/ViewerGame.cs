@@ -395,6 +395,10 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
         /// Ticks cadence ticks, save+load in-process, and report whether the dot worldPos +
         /// the in-flight destination round-trip (the save resumes travel on load).</summary>
         public sealed record TravelSaveMid(int X, int Y, int AreaIndex, int Ticks) : StartupAction;
+        /// <summary>Phase-18 M0/M1: open combat on the critter at FightHex, set the dude's AP
+        /// to Ap, walk toward WalkHex, and report how far the AP-gated walk got (HurtLeg
+        /// cripples a leg first to show the 4x cost). Proves in-combat movement costs AP.</summary>
+        public sealed record CombatWalk(int FightHex, int WalkHex, int Ap, bool CrippleLeg) : StartupAction;
         /// <summary>Override the party's best Outdoorsman skill (phase-16 M1 test plumbing)
         /// so the detect path fires deterministically regardless of the dude's build.</summary>
         public sealed record ForceOutdoorsman(int Value) : StartupAction;
@@ -812,6 +816,29 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
                 case StartupAction.EncounterAnswer(var engage):
                     _autoEncounterAnswer = engage; // phase-16 M1: pre-answer the avoid prompt
                     break;
+                case StartupAction.CombatWalk(var cwFight, var cwWalk, var cwAp, var cwCripple):
+                {
+                    // Phase-18 M0/M1: open combat, give the dude a clean Ap budget, then walk
+                    // toward WalkHex — the AP-gated walk halts when AP runs out (1 AP/hex, or
+                    // 4/hex with a crippled leg). Reports the distance covered + AP left.
+                    MapObject? foe = _solidObjects[_elevation]
+                        .FirstOrDefault(o => o.HexTile == cwFight && Fid.Type(o.Fid) is ObjectType.Critter && !o.IsDead);
+                    if (foe is null || _dude is null) { Console.Error.WriteLine($"combat-walk: no critter at {cwFight}"); break; }
+                    _dude.Dude.HexTile = Formats.Hex.HexGrid.TileInDirection(cwFight, 3); // adjacent, like --fight
+                    RebuildBlockedTiles(_dude.Dude);
+                    if (cwCripple)
+                        _dude.Dude.CombatResults |= Formats.Combat.CriticalTables.DamCripLegLeft;
+                    _combat.TryAttack(foe); // opens combat
+                    for (int g = 0; g < 3000 && _combat.IsResolving; g++) { _animator.Update(10); _combat.ProcessAnimations(); }
+                    _combat.SetDudeAp(cwAp); // clean AP for the walk measurement
+                    int startTile = _dude.Dude.HexTile, apBefore = _combat.DudeAp;
+                    bool started = _dude.WalkTo(cwWalk);
+                    for (int g = 0; g < 200_000 && _dude.Moving; g++) { _dude.Update(33); }
+                    Console.WriteLine($"combat-walk: started={started} crippleLeg={cwCripple} ap={apBefore} start={startTile}"
+                        + $" end={_dude.Dude.HexTile} dist={Formats.Hex.HexGrid.Distance(startTile, _dude.Dude.HexTile)}"
+                        + $" apLeft={_combat.DudeAp}");
+                    break;
+                }
                 case StartupAction.TravelStepDemo(var sx2, var sy2, var sa):
                 {
                     // Phase-17 M2: drive the REAL animated path — TravelTo (animate=true)
@@ -2297,7 +2324,12 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
             else if (_dude is not null)
             {
                 int target = _camera.ScreenToHex(mouse.X, mouse.Y);
-                if (target >= 0 && !_dude.WalkTo(target))
+                // Phase-18 M0: in combat a move needs AP for at least the first hex.
+                if (_combat.Phase != Formats.Combat.CombatPhase.Idle
+                    && GetCritterState(_dude.Dude) is { } walkStats
+                    && _combat.DudeAp < Formats.Combat.CritterState.MovePointCost(_dude.Dude.CombatResults))
+                    Log("Not enough action points to move.");
+                else if (target >= 0 && !_dude.WalkTo(target))
                     Log("You cannot get there from here. (Try clicking closer.)");
             }
         }
@@ -2421,6 +2453,16 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
 
             _scriptHost?.RunSpatialsAt(_map, tile, _elevation, dude);
             CheckExitGridAt(tile);
+
+            // Phase-18 M0: in combat, each hex crossed costs MovePointCost AP (1 normally,
+            // 4/8 with a crippled leg — P14-M3); halt the walk once the next hex is
+            // unaffordable. Out of combat, movement is free (the PoC has no AP model there).
+            if (_combat.Phase != Formats.Combat.CombatPhase.Idle && GetCritterState(dude) is { } st)
+            {
+                _combat.SpendDudeAp(Formats.Combat.CritterState.MovePointCost(dude.CombatResults));
+                if (_combat.DudeAp < Formats.Combat.CritterState.MovePointCost(dude.CombatResults))
+                    _dude?.Stop();
+            }
         };
 
         InsertSorted(_solidObjects[_elevation], dude);

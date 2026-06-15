@@ -220,6 +220,14 @@ for (int i = 0; i < args.Length; i++)
                 int.Parse(args[i + 1]), int.Parse(args[i + 2]), int.Parse(args[i + 3])));
             i += 3;
             break;
+        case "--combat-walk" when i + 3 < args.Length:
+            // --combat-walk <fightHex> <walkHex> <ap> [cripple]: open combat, set AP, walk
+            // toward walkHex; reports the AP-gated distance covered (phase-18 M0/M1).
+            actions.Add(new ViewerGame.StartupAction.CombatWalk(
+                int.Parse(args[i + 1]), int.Parse(args[i + 2]), int.Parse(args[i + 3]),
+                i + 4 < args.Length && args[i + 4] == "cripple"));
+            i += args.Length > i + 4 && args[i + 4] == "cripple" ? 4 : 3;
+            break;
         case "--travel-save-mid" when i + 4 < args.Length:
             // --travel-save-mid <x> <y> <areaIndex> <ticks>: save+load MID-travel and
             // report whether the dot worldPos + in-flight destination round-trip (P17-M4).
