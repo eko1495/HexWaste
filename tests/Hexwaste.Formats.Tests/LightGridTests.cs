@@ -10,6 +10,24 @@ public class LightGridTests
     private static IEnumerable<LightBlocker> NoBlockers(int tile) => [];
 
     [Fact]
+    public void AmbientFromLightLevelMatchesTheEngineMapping()
+    {
+        // P21: opSetLightLevel's two-segment lerp — 0→MIN, 50→MID, 100→MAX, with the
+        // engine's exact intermediate values (data*step/100).
+        int mid = (LightGrid.IntensityMin + LightGrid.IntensityMax) / 2;
+        Assert.Equal(LightGrid.IntensityMin, LightGrid.AmbientFromLightLevel(0));
+        Assert.Equal(mid, LightGrid.AmbientFromLightLevel(50));
+        Assert.Equal(LightGrid.IntensityMax, LightGrid.AmbientFromLightLevel(100));
+        // 25 → MIN + 25*(MID-MIN)/100 ; 75 → MID + 75*(MAX-MID)/100
+        Assert.Equal(LightGrid.IntensityMin + 25 * (mid - LightGrid.IntensityMin) / 100,
+            LightGrid.AmbientFromLightLevel(25));
+        Assert.Equal(mid + 75 * (LightGrid.IntensityMax - mid) / 100,
+            LightGrid.AmbientFromLightLevel(75));
+        // out-of-range clamps
+        Assert.Equal(LightGrid.IntensityMax, LightGrid.AmbientFromLightLevel(150));
+    }
+
+    [Fact]
     public void SourceTileGetsFullIntensityAdded()
     {
         var grid = new LightGrid { Ambient = 0 };

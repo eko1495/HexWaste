@@ -35,6 +35,18 @@ public sealed class LightGrid
     /// <summary>ported from fallout2-ce src/light.cc lightResetTileIntensity().</summary>
     public const int DefaultIntensity = 655;
 
+    /// <summary>ported from interpreter_extra.cc opSetLightLevel: map a 0-100 script light
+    /// level to an ambient intensity — 50 = the cavern mid-point, with the engine's exact
+    /// two-segment lerp between MIN / MID / MAX. Clamped to [MIN, MAX] (P21).</summary>
+    public static int AmbientFromLightLevel(int data)
+    {
+        int mid = (IntensityMin + IntensityMax) / 2;
+        int intensity = data == 50 ? mid
+            : data > 50 ? mid + data * (IntensityMax - mid) / 100
+            : IntensityMin + data * (mid - IntensityMin) / 100;
+        return Math.Clamp(intensity, IntensityMin, IntensityMax);
+    }
+
     // Rotations, ported from fallout2-ce src/obj_types.h Rotation.
     private const int RotationNE = 0;
     private const int RotationE = 1;

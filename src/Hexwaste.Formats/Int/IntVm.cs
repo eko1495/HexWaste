@@ -245,6 +245,12 @@ public interface IVmExternals
 
     /// <summary>animate_move_obj_to_tile — the host may start a walk animation.</summary>
     void AnimateMoveToTile(int objectHandle, int tile, int speed) { }
+
+    /// <summary>set_light_level — set the global ambient light (0-100%, 50 = cavern).</summary>
+    void SetLightLevel(int level) { }
+
+    /// <summary>obj_set_light_level — set a per-object light pool (intensity 0-100%, radius).</summary>
+    void SetObjectLightLevel(int objectHandle, int intensity, int distance) { }
 }
 
 /// <summary>
@@ -1322,6 +1328,16 @@ public sealed class IntVm
                 int speed = PopInt();
                 int tile = PopInt();
                 _externals.AnimateMoveToTile(PopInt(), tile, speed);
+                break;
+            }
+            case 0x80E9: // set_light_level (pops level)
+                _externals.SetLightLevel(PopInt());
+                break;
+            case 0x8107: // obj_set_light_level (pops distance, intensity, obj)
+            {
+                int distance = PopInt();
+                int intensity = PopInt();
+                _externals.SetObjectLightLevel(PopInt(), intensity, distance);
                 break;
             }
 

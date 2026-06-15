@@ -379,6 +379,9 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
         public sealed record UseSkill(int Skill, int TargetHex) : StartupAction;
         public sealed record RestFor(int Minutes) : StartupAction;
         public sealed record OpenAutomap : StartupAction;
+        /// <summary>Phase-21: report the ambient light after map_enter — proves the map's
+        /// scripted set_light_level took effect.</summary>
+        public sealed record LightProbe : StartupAction;
         public sealed record Explode(int Hex) : StartupAction;
         public sealed record Throw(int Hex) : StartupAction;
         public sealed record ProjectileCheck(int Hex) : StartupAction;
@@ -569,6 +572,22 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
                 CurrentMapIndexProvider = () => _mapList.GetIndexByFileName(_currentMapName),
                 OnScriptMessage = message => Log(message),
                 MoveRequested = (npc, tile) => StartNpcWalk(npc, tile),
+                // Phase-21: script-driven lighting. set_light_level sets the global ambient
+                // (pin it so the day/night clock stops driving it); obj_set_light_level
+                // re-lights one object + recomputes the grid.
+                LightLevelRequested = level =>
+                {
+                    _lightGrid.Ambient = Formats.Light.LightGrid.AmbientFromLightLevel(level);
+                    AmbientFixed = true; // a script light level pins the ambient (clock stops driving it)
+                },
+                ObjectLightRequested = (obj, intensity, distance) =>
+                {
+                    // opSetObjectLightLevel: intensity 0-100% -> 0..65536 (the engine's literal 65636).
+                    obj.LightIntensity = intensity != 0 ? intensity * 65636 / 100 : 0;
+                    obj.LightDistance = distance;
+                    if (obj.LightIntensity > 0) obj.Flags |= 0x20; else obj.Flags &= ~0x20; // OBJECT_LIGHTING
+                    RebuildLighting();
+                },
                 // First hit of each distinct stub goes to stderr; counts are
                 // dumped per map on exit (gap analysis for wiring externals).
                 OnStubbedExternal = name =>
@@ -1087,6 +1106,12 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
                     DoRest(restMinutes);
                     break;
                 }
+                case StartupAction.LightProbe:
+                    // Phase-21: report the ambient AFTER map_enter ran — proves the map's
+                    // scripted set_light_level took effect (artemple sets 100 -> max + pinned).
+                    Console.WriteLine($"light: map={_currentMapName} ambient={_lightGrid.Ambient}"
+                        + $"/{Formats.Light.LightGrid.IntensityMax} fixed={AmbientFixed}");
+                    break;
                 case StartupAction.OpenAutomap:
                 {
                     _automapOpen = true;

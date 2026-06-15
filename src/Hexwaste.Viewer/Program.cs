@@ -156,6 +156,10 @@ for (int i = 0; i < args.Length; i++)
         case "--automap":
             actions.Add(new ViewerGame.StartupAction.OpenAutomap());
             break;
+        case "--light-probe":
+            // --light-probe: report the ambient after the map's scripted set_light_level (P21).
+            actions.Add(new ViewerGame.StartupAction.LightProbe());
+            break;
         case "--set-global" when i + 2 < args.Length:
             // --set-global <id> <value>: force a session GVAR (probe gated dialog).
             actions.Add(new ViewerGame.StartupAction.SetGlobal(int.Parse(args[i + 1]), int.Parse(args[i + 2])));

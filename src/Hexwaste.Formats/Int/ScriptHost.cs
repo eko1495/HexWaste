@@ -76,6 +76,13 @@ public sealed class ScriptHost(GameFileSystem vfs, ScriptList scripts, Hexwaste.
     /// <summary>A script requested a walk animation (animate_move_obj_to_tile).</summary>
     public Action<MapObject, int>? MoveRequested { get; set; }
 
+    /// <summary>set_light_level: the host sets the global ambient light (0-100%, 50=cavern).</summary>
+    public Action<int>? LightLevelRequested { get; set; }
+
+    /// <summary>obj_set_light_level: the host sets a per-object light pool (obj, intensity
+    /// 0-100%, radius).</summary>
+    public Action<MapObject, int, int>? ObjectLightRequested { get; set; }
+
     /// <summary>Stat-block override (the dude's gcd sheet); null falls back to
     /// the critter's prototype.</summary>
     public Func<MapObject, Proto.CritterProtoStats?>? StatsResolver { get; set; }
@@ -862,6 +869,14 @@ public sealed class ScriptHost(GameFileSystem vfs, ScriptList scripts, Hexwaste.
         {
             if (_host.ObjectOf(objectHandle) is { } obj && Hex.HexGrid.IsValid(tile))
                 _host.MoveRequested?.Invoke(obj, tile);
+        }
+
+        public void SetLightLevel(int level) => _host.LightLevelRequested?.Invoke(level);
+
+        public void SetObjectLightLevel(int objectHandle, int intensity, int distance)
+        {
+            if (_host.ObjectOf(objectHandle) is { } obj)
+                _host.ObjectLightRequested?.Invoke(obj, intensity, distance);
         }
 
         public int GetCritterStat(int objectHandle, int stat) =>

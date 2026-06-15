@@ -50,9 +50,10 @@ public sealed class MapObject
     public required int Flags { get; set; }
     public required int Pid { get; init; }
 
-    /// <summary>Light emission: radius in hexes (max 8) and intensity (0..65536).</summary>
-    public int LightDistance { get; init; }
-    public int LightIntensity { get; init; }
+    /// <summary>Light emission: radius in hexes (max 8) and intensity (0..65536). Mutable —
+    /// obj_set_light_level (P21) re-lights an object at runtime.</summary>
+    public int LightDistance { get; set; }
+    public int LightIntensity { get; set; }
 
     /// <summary>Script id (type in the high byte), or -1; key into MapFile.ScriptsBySid.</summary>
     public int Sid { get; set; } // settable: engine removes a critter's script on death (combat.cc:4876)
