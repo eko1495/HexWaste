@@ -59,6 +59,38 @@ public class EncounterSpawnerTests
     }
 
     [Fact]
+    public void FightingEntryPutsItsSubGroupsOnDistinctTeams()
+    {
+        // "GRP_A AND GRP_B FIGHTING Player" → group A on team 1, group B on team 2, so the
+        // factions brawl (phase-16 M3); a plain AMBUSH keeps everyone on the one team.
+        IReadOnlyList<SpawnInstruction> fight = Plan(Setup("""
+            [Encounter: GRP_A]
+            type_00=ratio:100%, pid:100
+            position=huddle, spacing:1
+
+            [Encounter: GRP_B]
+            type_00=ratio:100%, pid:200
+            position=huddle, spacing:1
+            """, "Enc:(2-2) GRP_A AND (2-2) GRP_B FIGHTING Player"));
+        Assert.All(fight.Where(s => s.Pid == 100), s => Assert.Equal(1, s.Team));
+        Assert.All(fight.Where(s => s.Pid == 200), s => Assert.Equal(2, s.Team));
+        Assert.Contains(fight, s => s.Team == 1);
+        Assert.Contains(fight, s => s.Team == 2);
+    }
+
+    [Fact]
+    public void AmbushEntryKeepsEveryMemberOnTheSameTeam()
+    {
+        IReadOnlyList<SpawnInstruction> plan = Plan(Setup("""
+            [Encounter: GRP]
+            type_00=ratio:100%, pid:100
+            position=huddle, spacing:1
+            """, "Enc:(3-3) GRP AMBUSH Player"));
+        Assert.NotEmpty(plan);
+        Assert.All(plan, s => Assert.Equal(1, s.Team));
+    }
+
+    [Fact]
     public void RatioClampsToAtLeastOne()
     {
         // 25% of 1 = 0 → clamped to 1; the SINGLE leader adds 1. Total 2.

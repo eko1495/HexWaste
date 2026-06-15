@@ -375,6 +375,10 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
         public sealed record LoadTransient(string Map) : StartupAction;
         public sealed record EncounterWalk(int X0, int Y0, int X1, int Y1, int Steps) : StartupAction;
         public sealed record EncounterSpawnAt(string Map, string Group, int Count) : StartupAction;
+        /// <summary>Spawn an X-FIGHTING-Y encounter (phase-16 M3): two groups on distinct
+        /// teams on a transient map; SpawnEncounter starts the brawl. Reports the team
+        /// census + that combat opened.</summary>
+        public sealed record EncounterFight(string Map, string GroupA, int CountA, string GroupB, int CountB) : StartupAction;
         public sealed record TravelFrom(int X, int Y, int AreaIndex) : StartupAction;
         /// <summary>Pre-answer a detected encounter's avoid prompt (phase-16 M1):
         /// Engage=true engages, false avoids+continues. Must precede the travel action.</summary>
@@ -767,6 +771,25 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
                             + $" hp={o.CurrentHp} team={o.Team} sid={(o.Sid == -1 ? "none" : "bound")} items={o.Inventory.Count}");
                     Console.WriteLine($"encounter: map={emap} group={group} requested={count}"
                         + $" critters={spawned.Count} corpses={corpses.Count}");
+                    break;
+                }
+                case StartupAction.EncounterFight(var fmap, var ga, var ca, var gb, var cb):
+                {
+                    // Phase-16 M3: a synthetic X-FIGHTING-Y entry — two groups, situation
+                    // FIGHTING. SpawnEncounter puts them on teams 1 & 2 and StartBrawl
+                    // opens combat. The team census + open phase is the golden.
+                    var entry = new Formats.Map.EncounterEntry(100, null,
+                        [new Formats.Map.EncounterSpawn(ca, ca, ga), new Formats.Map.EncounterSpawn(cb, cb, gb)],
+                        "FIGHTING", []);
+                    var table = new Formats.Map.EncounterTable("demo", [], [entry]);
+                    _pendingEncounter = new Formats.Map.EncounterResult(table, entry);
+                    LoadMap(fmap, null, transient: true); // SpawnEncounter → StartBrawl
+
+                    var live = _solidObjects[_elevation]
+                        .Where(o => o.Id == -3 && Fid.Type(o.Fid) is ObjectType.Critter && !o.IsDead).ToList();
+                    int teamA = live.Count(o => o.Team == 1), teamB = live.Count(o => o.Team == 2);
+                    Console.WriteLine($"encounter-fight: groups={ga}/{gb} spawned={live.Count}"
+                        + $" teamA={teamA} teamB={teamB} hostiles={_combat.Hostiles.Count} phase={_combat.Phase}");
                     break;
                 }
                 case StartupAction.EncounterAnswer(var engage):
@@ -3958,12 +3981,15 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
             IsBlocked, Reachable, getGlobal, _dudeLevel, _clock.Hour, _clock.Day);
 
         int placed = 0;
+        var spawnedCritters = new List<MapObject>();
         foreach (Formats.Map.SpawnInstruction si in plan)
         {
             if (BuildSpawn(si) is not { } obj)
                 continue;
             _map.Elevations[_elevation]!.Objects.Add(obj);
             OnScriptObjectPlaced(obj);
+            if (!si.Dead && Fid.Type(obj.Fid) is ObjectType.Critter)
+                spawnedCritters.Add(obj);
             if (si.Dead)
             {
                 // Complete the death state so the body is lootable + examines as a
@@ -3978,6 +4004,13 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
         }
         Console.WriteLine($"encounter-spawn: {encounter.Entry.Spawns.FirstOrDefault()?.Group ?? "?"}"
             + $" planned={plan.Count} placed={placed} on {_currentMapName}");
+
+        // Phase-16 M3: an X-FIGHTING-Y encounter spawned its groups on distinct teams —
+        // start the brawl so the player arrives to two factions already at each other's
+        // throats (and can watch or join). Only when ≥2 teams actually landed.
+        if (encounter.Entry.Situation == "FIGHTING"
+            && spawnedCritters.Select(c => c.Team).Distinct().Count() >= 2)
+            _combat.StartBrawl(spawnedCritters);
     }
 
     /// <summary>Build one spawned encounter critter (or scenery): proto art, an
@@ -4016,8 +4049,10 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
         {
             // Team 0 is the dude's; a nonzero team makes the spawn hostile-eligible
             // (the bound EC script may re-set it via critter_add_trait, but this
-            // guarantees an AMBUSH is hostile even before its first heartbeat).
-            obj.Team = 1;
+            // guarantees an AMBUSH is hostile even before its first heartbeat). A
+            // FIGHTING encounter spawns its sub-groups on distinct teams (1, 2, …) so
+            // they brawl each other as well as the dude (phase-16 M3).
+            obj.Team = si.Team;
             obj.CurrentHp = GetCritterState(obj)?.MaxHp ?? obj.CurrentHp;
         }
 

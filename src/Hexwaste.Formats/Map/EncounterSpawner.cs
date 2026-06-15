@@ -7,7 +7,7 @@ namespace Hexwaste.Formats.Map;
 /// scripts.lst index to bind (-1 = none), the placed tile + facing, whether it is a
 /// corpse, and the inventory it carries.</summary>
 public sealed record SpawnInstruction(int Pid, int ScriptIndex, int Tile, int Rotation,
-    bool Dead, IReadOnlyList<SpawnItem> Items);
+    bool Dead, IReadOnlyList<SpawnItem> Items, int Team = 1);
 
 /// <summary>An item a spawned critter carries; <see cref="Wielded"/> equips it
 /// in-hand, <see cref="Worn"/> equips it as armor (the rest sit in the bag).</summary>
@@ -52,10 +52,20 @@ public static class EncounterSpawner
         // one holder across every group in this Plan to match.
         int[] sharedIndex = [0];
 
+        // A FIGHTING entry ("GROUP_A AND GROUP_B FIGHTING ...") puts its sub-groups on
+        // DISTINCT teams so they brawl (phase-16 M3). The engine realizes this via each
+        // group's team_num/proto team; only one shipping group sets team_num, so we
+        // assign sequential teams per sub-group for a FIGHTING situation — a documented
+        // divergence. Non-FIGHTING entries keep every member on the one hostile team.
+        bool fighting = encounter.Entry.Situation == "FIGHTING";
+
         // wmSetupRandomEncounter: each Enc:(min-max) GROUP sub-entry rolls its own
         // size, then wmSetupCritterObjs lays the group out. +2 if a real party.
+        int subIndex = 0;
         foreach (EncounterSpawn sub in encounter.Entry.Spawns)
         {
+            int team = fighting ? 1 + subIndex : 1;
+            subIndex++;
             int critterCount = Between(rng, sub.Min, sub.Max);
             if (partyCount > 2)
                 critterCount += 2;
@@ -63,7 +73,7 @@ public static class EncounterSpawner
                 continue;
 
             if (world.Group(sub.Group) is { } group)
-                SpawnGroup(group, critterCount, rng, dudeTile, dudePerception, startTiles,
+                SpawnGroup(group, critterCount, team, rng, dudeTile, dudePerception, startTiles,
                     isBlocked, reachable, result, sharedIndex, getGlobal, playerLevel, hhmm, daysPlayed);
         }
 
@@ -71,7 +81,7 @@ public static class EncounterSpawner
     }
 
     // ported from fallout2-ce src/worldmap.cc wmSetupCritterObjs()
-    private static void SpawnGroup(EncounterGroup group, int critterCount, ICombatRng rng,
+    private static void SpawnGroup(EncounterGroup group, int critterCount, int team, ICombatRng rng,
         int dudeTile, int dudePerception, IReadOnlyList<int> startTiles,
         Func<int, bool> isBlocked, Func<int, int, bool> reachable, List<SpawnInstruction> output,
         int[] sharedIndex, Func<int, int> getGlobal, int playerLevel, int hhmm, int daysPlayed)
@@ -115,7 +125,7 @@ public static class EncounterSpawner
                     items.Add(new SpawnItem(it.Pid, qty, it.Wielded, it.Worn));
                 }
                 output.Add(new SpawnInstruction(member.Pid, member.ScriptIndex, tile, rotation,
-                    member.Dead, items));
+                    member.Dead, items, team));
             }
         }
     }

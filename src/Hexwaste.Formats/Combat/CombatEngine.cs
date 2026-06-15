@@ -1149,6 +1149,37 @@ public sealed class CombatEngine
         _host.Log($"Combat begins — round 1, your turn (AP {_dudeAp}).");
     }
 
+    /// <summary>Start a multi-team brawl (phase-16 M3, X-FIGHTING-Y): every supplied
+    /// non-dude critter joins as a hostile, and cross-team targeting makes the opposing
+    /// groups fight each other as well as the dude. Opens on the dude's turn so the
+    /// player can watch the factions thin each other out, or wade in. A NEW entry point
+    /// — it does not touch BeginCombat/AddJoiners, so single-team combat is untouched.</summary>
+    public void StartBrawl(IEnumerable<MapObject> combatants)
+    {
+        MapObject? dude = _host.Dude;
+        if (dude is null || _gameOver || _phase != CombatPhase.Idle)
+            return;
+        _host.StopDude();
+        _phase = CombatPhase.PlayerTurn;
+        _round = 1;
+        _combatTick = 0;
+        _events.ClearAll();
+        _hostiles.Clear();
+        _enemyQueue.Clear();
+        _actingEnemy = null;
+        foreach (MapObject c in combatants)
+            if (!c.IsDead && c != dude && c.Team != dude.Team)
+            {
+                _hostiles.Add(c);
+                c.WhoHitMeCid = -1;
+            }
+        if (_host.GetCritterState(dude) is { } stats)
+            _dudeAp = stats.MaxActionPoints;
+        var teams = _hostiles.Select(h => h.Team).Distinct().OrderBy(t => t).ToList();
+        _host.Log($"You stumble into a battle! ({_hostiles.Count} combatants).");
+        _host.Transcript($"brawl: combatants={_hostiles.Count} teams=[{string.Join(",", teams)}]");
+    }
+
     /// <summary>Scriptless hostility, the engine's combat_ai team rule: living
     /// same-team critters within sight range join the fight at round start.</summary>
     private void AddJoiners()
@@ -1438,6 +1469,23 @@ public sealed class CombatEngine
             {
                 bestDistance = d;
                 defenderObj = ally;
+            }
+        }
+
+        // Cross-team targeting (phase-16 M3, X-FIGHTING-Y): a critter also targets the
+        // nearest HOSTILE on a DIFFERENT team — so two spawned enemy groups brawl each
+        // other, not just the dude. Considered AFTER the dude+party loop and skipping the
+        // enemy's own team, so a single-enemy-team fight (every golden) is byte-identical:
+        // its only other-team critters are the dude+party, already chosen above.
+        foreach (MapObject other in _hostiles)
+        {
+            if (other.IsDead || other == enemy || other.Team == enemy.Team)
+                continue;
+            int d = HexGrid.Distance(enemy.HexTile, other.HexTile);
+            if (d < bestDistance)
+            {
+                bestDistance = d;
+                defenderObj = other;
             }
         }
 

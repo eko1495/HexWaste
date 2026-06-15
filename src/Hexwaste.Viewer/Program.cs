@@ -187,6 +187,13 @@ for (int i = 0; i < args.Length; i++)
                 args[i + 1], args[i + 2], int.Parse(args[i + 3])));
             i += 3;
             break;
+        case "--encounter-fight" when i + 5 < args.Length:
+            // --encounter-fight <map> <groupA> <countA> <groupB> <countB>: spawn an
+            // X-FIGHTING-Y encounter (two groups, distinct teams) and start the brawl.
+            actions.Add(new ViewerGame.StartupAction.EncounterFight(
+                args[i + 1], args[i + 2], int.Parse(args[i + 3]), args[i + 4], int.Parse(args[i + 5])));
+            i += 5;
+            break;
         case "--travel-from" when i + 3 < args.Length:
             // --travel-from <x> <y> <areaIndex>: travel from worldmap pixel (x,y)
             // toward a city.txt area, rolling encounters along the way.

@@ -738,6 +738,38 @@ public class CombatEngineTests
         Assert.Contains(host.Logs, l => l.Contains("can't fire a burst"));
     }
 
+    [Fact]
+    public void BrawlMakesOpposingTeamsFightEachOtherNotJustTheDude()
+    {
+        // Phase-16 M3 (X-FIGHTING-Y): two enemy teams spawned next to each other but far
+        // from the dude. StartBrawl puts both in combat; cross-team targeting makes each
+        // attack the NEARER enemy (the other faction), sparing the distant dude.
+        var host = new FakeCombatHost();
+        MapObject dude = host.SetDude(NewCritter(tile: 20100, hp: 30, ap: 10));
+        int aTile = HexGrid.TileInDirection(20100, 0, 8);          // ~8 hexes from the dude
+        MapObject teamA = host.AddCritter(NewCritter(aTile, hp: 30, ap: 10));
+        MapObject teamB = host.AddCritter(NewCritter(HexGrid.TileInDirection(aTile, 0), hp: 30, ap: 10));
+        teamA.Team = 1;
+        teamB.Team = 2;                                            // distinct teams → they brawl
+        var engine = new CombatEngine(host, new MinRng());
+
+        engine.StartBrawl([teamA, teamB]);
+        Assert.Equal(CombatPhase.PlayerTurn, engine.Phase);
+        Assert.Contains(teamA, engine.Hostiles);
+        Assert.Contains(teamB, engine.Hostiles);
+
+        engine.EndPlayerTurn();                                   // hand over to the factions
+        for (int i = 0; i < 200 && engine.Phase == CombatPhase.EnemyTurn; i++)
+        {
+            host.Animating.Clear();
+            engine.Step();
+        }
+
+        Assert.True(teamA.CurrentHp < 30, "team A should have been hit by team B");
+        Assert.True(teamB.CurrentHp < 30, "team B should have been hit by team A");
+        Assert.Equal(30, dude.CurrentHp); // the distant dude is ignored — the factions fight each other
+    }
+
     private static (MapObject Obj, CritterProtoStats Proto) NewCritter(
         int tile, int hp, int ap = 10, int seq = 1, int exp = 0, int betterCrit = 0, int meleeDmg = 0, int skill = 0, int endurance = 0)
     {
