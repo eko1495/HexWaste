@@ -78,6 +78,95 @@ public static class HexGrid
         return (screenX, screenY);
     }
 
+    /// <summary>Corner-correction mask for the 32-wide sub-cell, built exactly like
+    /// fallout2-ce src/tile.cc tileSetupTileGrid(): 0 = inside the hex, 1..4 =
+    /// NW/NE/SW/SE neighbour correction. Verbatim mirror of the proven viewer port
+    /// (Camera.BuildTileMask) — kept here so the pure layer can invert the embedding.</summary>
+    private static readonly byte[] TileMask = BuildTileMask();
+
+    private static byte[] BuildTileMask()
+    {
+        var mask = new byte[512];
+        int i = 0;
+        for (int row = 0; row != 64; row += 16)
+        {
+            for (int v = 64; v != 0; v -= 4)
+                mask[i++] = (byte)(v > row ? 1 : 0);
+            for (int v = 0; v != 64; v += 4)
+                mask[i++] = (byte)(v > row ? 2 : 0);
+        }
+
+        i += 8 * 32; // middle rows are all 0 (inside the hex)
+
+        for (int row = 0; row != 64; row += 16)
+        {
+            for (int v = 0; v != 64; v += 4)
+                mask[i++] = (byte)(v > row ? 0 : 3);
+            for (int v = 64; v != 0; v -= 4)
+                mask[i++] = (byte)(v > row ? 0 : 4);
+        }
+
+        return mask;
+    }
+
+    /// <summary>
+    /// Inverse of <see cref="ScreenEmbedding"/>: the hex tile whose cell contains the
+    /// embedding-space pixel (screenX, screenY), or -1 if off the grid. Ported from
+    /// fallout2-ce src/tile.cc tileFromScreenXY() with all camera offsets zeroed (the
+    /// proven viewer port is Camera.ScreenToHex). This is the shared primitive the
+    /// screen-Bresenham line-of-fire and the burst cone's end-tile extrapolator both
+    /// need — it walks the same pixel space ScreenEmbedding produces.
+    /// </summary>
+    public static int FromScreenEmbedding(int screenX, int screenY)
+    {
+        int v2 = screenY;
+        int v3 = v2 >= 0 ? v2 / 12 : (v2 + 1) / 12 - 1;
+
+        int v4 = screenX - 16 * v3;
+        int v5 = v2 - 12 * v3;
+
+        int v6 = v4 >= 0 ? v4 / 64 : (v4 + 1) / 64 - 1;
+
+        int v7 = v6 + v3;
+        int v8 = v4 - v6 * 64;
+        int v9 = 2 * v6;
+
+        if (v8 >= 32)
+        {
+            v8 -= 32;
+            v9++;
+        }
+
+        int v10 = v7;
+        int v11 = v9;
+
+        switch (TileMask[32 * v5 + v8])
+        {
+            case 2:
+                v11++;
+                if ((v11 & 1) != 0)
+                    v10--;
+                break;
+            case 1:
+                v10--;
+                break;
+            case 3:
+                v11--;
+                if ((v11 & 1) == 0)
+                    v10++;
+                break;
+            case 4:
+                v10++;
+                break;
+        }
+
+        int v12 = Width - 1 - v11;
+        if (v12 >= 0 && v12 < Width && v10 >= 0 && v10 < Height)
+            return Width * v10 + v12;
+
+        return -1;
+    }
+
     /// <summary>ported from fallout2-ce src/tile.cc tileGetRotationTo():
     /// the facing rotation from one hex toward another (screen-space angle).</summary>
     public static int RotationTo(int tile1, int tile2)

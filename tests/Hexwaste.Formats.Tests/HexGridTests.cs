@@ -44,6 +44,21 @@ public class HexGridTests
     }
 
     [Fact]
+    public void FromScreenEmbeddingInvertsScreenEmbedding()
+    {
+        // A point at each tile's cell centre (+16,+8 of its embedding top-left)
+        // must map back to that tile — the load-bearing invariant for the
+        // screen-Bresenham line-of-fire and the burst cone's end-tile walk.
+        for (int y = 2; y < HexGrid.Height - 2; y += 7)
+            for (int x = 2; x < HexGrid.Width - 2; x += 5)
+            {
+                int tile = y * HexGrid.Width + x;
+                (int sx, int sy) = HexGrid.ScreenEmbedding(tile);
+                Assert.Equal(tile, HexGrid.FromScreenEmbedding(sx + 16, sy + 8));
+            }
+    }
+
+    [Fact]
     public void EdgeTilesDoNotEscapeTheGrid()
     {
         for (int rotation = 0; rotation < 6; rotation++)

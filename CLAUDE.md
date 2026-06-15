@@ -353,6 +353,28 @@ collateral cone remains the documented out-of-scope divergence). GOTCHA: FrmDump
 --info is NOT a flag — it dumps a rendered PNG named "--info.png" into cwd (a legal-
 guardrail trap); *.png is gitignored but delete it anyway.
 
+Phase 13 (IN PROGRESS — "Combat Presentation + Burst Fidelity"; the projectile
+screen-tween was already DONE as #11): M0 HexGrid.FromScreenEmbedding (DONE) —
+the tileFromScreenXY inverse + the 512-byte _tile_mask corner LUT, ported with
+camera offsets zeroed (verbatim mirror of the proven Camera.ScreenToHex/BuildTile-
+Mask); the shared primitive both the Bresenham LoF and the cone's end-tile walk
+need. Round-trip unit-tested: FromScreenEmbedding(ScreenEmbedding(t)+(16,8))==t.
+M1 screen-Bresenham line-of-fire (DONE) — LineOfFire.Trace rewritten from greedy-
+hex to the pixel-Bresenham of animation.cc:1951 _make_straight_path_func wrapped by
+combat.cc:5897 _combat_is_shot_blocked: walk the screen line between tile centres
+(+16,+8), FromScreenEmbedding per pixel, blocker-check on tile changes; SIGNATURE
+UNCHANGED so all 5 callers + the host's ShootBlockerAt are untouched. GOTCHA: the
+pixel cursor maps to the TARGET tile for a few steps before the exact-centre break,
+so Trace must skip BOTH endpoints (tile != fromTile && tile != toTile) — the
+engine's equivalent is the outer "obstacle != targetObj" guard; without it a wall/
+critter on the target's own tile would false-block/false-count. Retained simpli-
+fications: host-side NO_BLOCK/SHOOT_THRU/dead-critter filter + the dropped +1
+MULTIHEX crowd bump (combat.cc:5921). DE-RISK PROVEN: both goldens BYTE-IDENTICAL
+after the swap (Trace draws no RNG; the fixtures' shots are d=1/open-ground) — the
+clean checkpoint that the M0 inverse is byte-correct. Next: M2 burst collateral cone
+(_compute_spray left/right lines + _shoot_along_path extras, using HexGrid.TileNum-
+Beyond for end-tiles); M3 thrown-crit DEFERRED.
+
 Phase 10 (DONE, per docs/phase10-research-report.md — "The Wasteland
 Bites Back"): M0 persistence pre-stage (the net: MapList saved=No /
 random_start_point parse + IsTransient; the 3-clause transient guards as
