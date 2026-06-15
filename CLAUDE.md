@@ -472,7 +472,7 @@ SkillHealing unit tests; goldens byte-identical (no Doctor-on-crippled scenario)
 COMPLETE: crit consequences (knockout+wake, lose-turn, crippled limbs, blind) are live,
 driven by the massive-crit roll, with the Doctor cure; SCOPE.md/README reconciled.
 
-Phase 15 (IN PROGRESS — "Make the Chrome Click", UI completeness; the UI audit found
+Phase 15 (DONE — "Make the Chrome Click", UI completeness; the UI audit found
 all 8 HUD bar buttons fire, but the weapon slot is inert + Options/Pip-Boy rows are
 key-only + item panels keyboard-only + the Pip-Boy lacked Automap/Archives): M0 Pip-Boy
 full-window automap (DONE). DrawAutomap renders the authentic AUTOMAP.FRM (519x480) with
@@ -494,7 +494,28 @@ targets the hovered critter via F/B), so the slot left-click CYCLES the mode ins
 (the engine's right-click semantics) — firing stays on F/B-on-hover. Additive (the
 --attack/--burst harness calls TryAttack/TryBurst directly, not F or _weaponMode) ->
 goldens byte-identical; golden weapon-mode-cycle (--give 9 SMG -> click WEAPON -> Burst).
-Next: M2 item-row mouse clicking + overflow paging, M3 clickable Options/Pip-Boy rows.
+M2 item-row clicking + overflow paging (DONE): the four item panels (inventory/loot/
+barter/trade) share one ItemPanel model (CurrentItemPanels) tagged by ItemPanelKind so a
+row CLICK routes to the same action its number key fires (buy/sell/take/give/use; Shift+
+click drops in inventory). ItemRowRect is the ONE geometry helper the renderer + hit-test
+(TryClickItemPanel) both go through — geometry-only, no Draw dependency, so the headless
+--panel-click <side> <row> harness drives the real path. A shared _panelPage window (reset
+to 0 on every panel open; PgUp/PgDn while a panel is open — those keys do elevation only
+when NO panel is up) makes the 10th+ item reachable; the number keys take the page offset.
+Page-0 number keys + Draw-only paging = existing fixtures byte-identical; golden panel-
+click-equip (out-of-bounds no-op + a valid equip click). M3 clickable Options/Pip-Boy rows
+(DONE — Skilldex parity): OptionsRowRect/OptionsRowAt + PipboyContentOrigin/PipboyRowRect/
+PipboyRowAt are geometry-recompute helpers (the SkilldexRowAt pattern) shared by render +
+hit-test; the Pip-Boy action rows render in a FIXED band below the variable status text
+(reserve 9 lines status / 2 rest) so the geometry is computable. PipboyRows() is the single
+(label,action) list the click + page share (Rest rows call DoRest WITHOUT closing, matching
+the number keys); Options dispatch routes a row click to the same Save/Load/Main/Quit/Resume
+the keys fire. Harness --menu-click <options|pipboy|pipboy-rest> <row> asserts each row's
+centre hit-tests back to its own index then dispatches (goldens menu-click-options +
+menu-click-pipboy, side-effect-free rows -> map-independent). Draw-only + no new action
+paths -> 286 Formats tests + combat + all 19 encounter goldens green. Spillover: per-member
+companion trade priced-barter, the embedded Pip-Boy mini-automap (automap.db RLE), inventory
+drag-and-drop equip slots (we use click-to-use), the worldmap-screen tab wiring.
 
 Phase 10 (DONE, per docs/phase10-research-report.md — "The Wasteland
 Bites Back"): M0 persistence pre-stage (the net: MapList saved=No /
