@@ -129,6 +129,11 @@ for (int i = 0; i < args.Length; i++)
         case "--hud-click" when i + 1 < args.Length:
             actions.Add(new ViewerGame.StartupAction.HudClick(args[++i]));
             break;
+        case "--panel-click" when i + 2 < args.Length:
+            // --panel-click <side> <row>: click an item-panel row (side 0=left, 1=right).
+            actions.Add(new ViewerGame.StartupAction.PanelClick(int.Parse(args[i + 1]), int.Parse(args[i + 2])));
+            i += 2;
+            break;
         case "--use-skill" when i + 2 < args.Length:
             // --use-skill <skillId> <targetHex> (hex<0 = self): apply a Skilldex skill.
             actions.Add(new ViewerGame.StartupAction.UseSkill(int.Parse(args[i + 1]), int.Parse(args[i + 2])));

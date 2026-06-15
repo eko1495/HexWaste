@@ -209,6 +209,10 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
     /// M5). Non-null = the loot panel is in TRADE mode: a flat 1:1 item move (no caps,
     /// no barter price), with Shift+1-9 giving to the follower.</summary>
     private MapObject? _tradePartner;
+    /// <summary>Shared overflow-paging window for the item panels (phase-15 M2): row N of
+    /// the visible list is item <c>_panelPage*9 + N</c>. Reset to 0 whenever a panel opens;
+    /// PgUp/PgDn step it within <see cref="MaxPanelPage"/> so the 10th+ item is reachable.</summary>
+    private int _panelPage;
     private readonly List<(string Label, CompanionCmd Cmd)> _hubOptions = [];
     /// <summary>Party members told to "wait here" — PumpCritterProcs skips them, so
     /// their follow critter_p_proc stops and they hold position.</summary>
@@ -336,6 +340,10 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
         /// <summary>Fire a HUD bar button by name (INV/OPT/MAP/CHA/PIP/SKILLDEX) and
         /// report the resulting panel state — regression-proofs the M4 click wiring.</summary>
         public sealed record HudClick(string Name) : StartupAction;
+        /// <summary>Click an item-panel row (phase-15 M2): Side 0=left/40, 1=right/420;
+        /// Row is 0-based within the current page. Drives the same geometry+dispatch path
+        /// a live mouse click does, then reports the result — regression-proofs row clicks.</summary>
+        public sealed record PanelClick(int Side, int Row) : StartupAction;
         public sealed record UseSkill(int Skill, int TargetHex) : StartupAction;
         public sealed record RestFor(int Minutes) : StartupAction;
         public sealed record OpenAutomap : StartupAction;
@@ -812,6 +820,19 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
                     }
                     btn.OnClick();
                     Console.WriteLine($"hud-click: {hudName} -> inv={_inventoryOpen} skills={_skillAllocOpen} worldmap={_worldmapOpen} skilldex={_skilldexOpen} pipboy={_pipboyOpen} options={_optionsOpen}");
+                    break;
+                }
+                case StartupAction.PanelClick(var pcSide, var pcRow):
+                {
+                    // Click the centre of a row rect via the same geometry + dispatch a live
+                    // mouse uses (TryClickItemPanel) — proves a click == its number key.
+                    int px = pcSide == 0 ? 40 : 420;
+                    Rectangle rect = ItemRowRect(px, pcRow);
+                    bool consumed = TryClickItemPanel(rect.Center.X, rect.Center.Y, shift: false);
+                    MapObject? inHand = _dudeInventory.FirstOrDefault(i => i.IsInHand);
+                    Console.WriteLine($"panel-click: side={(pcSide == 0 ? "L" : "R")} row={pcRow}"
+                        + $" consumed={consumed} inv={_dudeInventory.Count}"
+                        + $" inHand={(inHand is null ? "none" : ObjectName(inHand))}");
                     break;
                 }
                 case StartupAction.UseSkill(var useSkill, var skillHex):
@@ -1665,7 +1686,7 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
             return;
         }
 
-        // Barter mode: 1-9 buy, Shift+1-9 sell, Esc close (back to dialog).
+        // Barter mode: 1-9 buy, Shift+1-9 sell (or click a row), Esc close (back to dialog).
         if (_barterNpc is not null)
         {
             bool shift = keyboard.IsKeyDown(Keys.LeftShift) || keyboard.IsKeyDown(Keys.RightShift);
@@ -1673,13 +1694,19 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
             {
                 if (IsKeyPressed(keyboard, Keys.D1 + i) || IsKeyPressed(keyboard, Keys.NumPad1 + i))
                 {
+                    int gi = _panelPage * ItemRowsPerPage + i;
                     if (shift)
-                        BarterSell(i);
+                        BarterSell(gi);
                     else
-                        BarterBuy(i);
+                        BarterBuy(gi);
                     break;
                 }
             }
+
+            if (mouse.LeftButton == ButtonState.Pressed && _previousMouse.LeftButton == ButtonState.Released)
+                TryClickItemPanel(mouse.X, mouse.Y, shift);
+
+            HandlePanelPaging(keyboard);
 
             if (IsKeyPressed(keyboard, Keys.Escape))
                 CloseBarter();
@@ -1690,43 +1717,51 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
             return;
         }
 
-        // Loot/inventory mode: number keys take/drop, A take-all, Esc/I close.
+        // Loot/inventory mode: number keys take/drop (or click a row), A take-all, Esc/I close.
         if (_lootContainer is not null || _inventoryOpen)
         {
+            bool shiftHeld = keyboard.IsKeyDown(Keys.LeftShift) || keyboard.IsKeyDown(Keys.RightShift);
             for (int i = 0; i < 9; i++)
             {
                 if (IsKeyPressed(keyboard, Keys.D1 + i) || IsKeyPressed(keyboard, Keys.NumPad1 + i))
                 {
-                    bool shiftHeld = keyboard.IsKeyDown(Keys.LeftShift) || keyboard.IsKeyDown(Keys.RightShift);
+                    int gi = _panelPage * ItemRowsPerPage + i;
                     if (_tradePartner is not null && shiftHeld)
                     {
-                        GiveToFollower(i); // trade give-side: Shift+1-9 → the follower
+                        GiveToFollower(gi); // trade give-side: Shift+1-9 → the follower
                     }
                     else if (_lootContainer is not null)
                     {
-                        TakeFromContainer(i);
+                        TakeFromContainer(gi);
                     }
                     else if (shiftHeld)
                     {
-                        DropFromInventory(i);
+                        DropFromInventory(gi);
                     }
                     else if (keyboard.IsKeyDown(Keys.U))
                     {
                         // U+number: arm "use this item on the next clicked object"
-                        if (i < _dudeInventory.Count)
+                        if (gi < _dudeInventory.Count)
                         {
-                            _pendingUseItem = _dudeInventory[i];
+                            _pendingUseItem = _dudeInventory[gi];
                             _inventoryOpen = false;
                             Log($"Use the {ObjectName(_pendingUseItem)} on what?");
                         }
                     }
                     else
                     {
-                        UseInventoryItem(i);
+                        UseInventoryItem(gi);
                     }
                     break;
                 }
             }
+
+            // A row click fires the same per-panel action (the trade give-side is the
+            // right panel, so its click needs no Shift — unlike the shared number row).
+            if (mouse.LeftButton == ButtonState.Pressed && _previousMouse.LeftButton == ButtonState.Released)
+                TryClickItemPanel(mouse.X, mouse.Y, shiftHeld);
+
+            HandlePanelPaging(keyboard);
 
             if (_lootContainer is not null && IsKeyPressed(keyboard, Keys.A))
                 while (_lootContainer.Inventory.Count > 0)
@@ -1748,6 +1783,7 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
         if (IsKeyPressed(keyboard, Keys.I))
         {
             _inventoryOpen = true;
+            _panelPage = 0;
             PrewarmItemTextures(_dudeInventory);
         }
 
@@ -2725,6 +2761,7 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
         }
 
         _barterNpc = npc;
+        _panelPage = 0;
         // Stock lives in the shop box once the talk epilogue has run; loose
         // merchants (no box choreography) trade from their own pockets.
         _barterStock = _dialog?.StockBox ?? npc;
@@ -3648,6 +3685,7 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
                     return;
                 }
                 _lootContainer = obj;
+                _panelPage = 0;
                 PrewarmItemTextures(obj.Inventory);
                 return;
             }
@@ -3685,6 +3723,7 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
             }
 
             _lootContainer = obj;
+            _panelPage = 0;
             PrewarmItemTextures(obj.Inventory);
             return;
         }
@@ -5091,33 +5130,68 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
         }
     }
 
+    // Phase-15 M2: the four item panels (inventory / loot / barter / trade) share one
+    // layout + one set of clickable rows + one overflow-paging window. A "kind" tags
+    // each panel so a row CLICK can route to the same action its number key fires.
+    private enum ItemPanelKind { Inventory, Loot, BarterStock, BarterGoods, TradeTake, TradeGive }
+
+    // x position + title + list + dispatch kind + optional price column. One per visible
+    // panel; the left panel is x=40, the right (sell/give side) x=420.
+    private readonly record struct ItemPanel(
+        int X, string Title, List<MapObject> Items, ItemPanelKind Kind, Func<MapObject, int>? Price);
+
+    private const int ItemRowsPerPage = 9; // the 1-9 number-key row maps to one page
+
+    // The panels currently on screen, in draw order. SINGLE source of truth shared by
+    // DrawItemPanels (render) and TryClickItemPanel (hit-test) so a click always targets
+    // exactly what's drawn. Mirrors the old DrawItemPanels branch order (barter > trade >
+    // loot > inventory — OpenTrade sets both _tradePartner and _lootContainer, so trade
+    // must be tested first).
+    private List<ItemPanel> CurrentItemPanels()
+    {
+        var panels = new List<ItemPanel>(2);
+        if (_barterNpc is { } merchant)
+        {
+            panels.Add(new(40, $"{ObjectName(merchant)} sells (caps {(_barterStock is { } till ? _scriptHost?.CapsTotal(till) : 0) ?? 0}) - click/1-9 buy",
+                BarterStock(), ItemPanelKind.BarterStock, BarterBuyPrice));
+            panels.Add(new(420, $"You sell (caps {DudeCaps()}) - click/Shift+1-9 sell, Esc done",
+                BarterGoods(), ItemPanelKind.BarterGoods, BarterSellPrice));
+        }
+        else if (_tradePartner is { } follower)
+        {
+            panels.Add(new(40, $"Trading with {ObjectName(follower)} - click/1-9 take, A take all",
+                follower.Inventory, ItemPanelKind.TradeTake, null));
+            panels.Add(new(420, "You carry - click/Shift+1-9 give, Esc done",
+                _dudeInventory, ItemPanelKind.TradeGive, null));
+        }
+        else if (_lootContainer is { } container)
+        {
+            panels.Add(new(40, $"{ObjectName(container)} - click/1-9 take, A take all, Esc close",
+                container.Inventory, ItemPanelKind.Loot, null));
+        }
+        else if (_inventoryOpen)
+        {
+            panels.Add(new(40, "Inventory - click/1-9 use/equip, Shift drop, Esc close",
+                _dudeInventory, ItemPanelKind.Inventory, null));
+        }
+        return panels;
+    }
+
     private void DrawItemPanels()
     {
         if (_fontRenderer is null)
             return;
+        foreach (ItemPanel panel in CurrentItemPanels())
+            DrawItemList(panel.Title, panel.Items, panel.X, panel.Price);
+    }
 
-        if (_barterNpc is { } merchant)
-        {
-            DrawItemList($"{ObjectName(merchant)} sells (caps {(_barterStock is { } till ? _scriptHost?.CapsTotal(till) : 0) ?? 0}) - 1-9 buy",
-                BarterStock(), 40, BarterBuyPrice);
-            DrawItemList($"You sell (caps {DudeCaps()}) - Shift+1-9 sell, Esc done",
-                BarterGoods(), 420, BarterSellPrice);
-        }
-        else if (_tradePartner is { } follower)
-        {
-            DrawItemList($"Trading with {ObjectName(follower)} - 1-9 take, A take all",
-                follower.Inventory, 40);
-            DrawItemList("You carry - Shift+1-9 give, Esc done", _dudeInventory, 420);
-        }
-        else if (_lootContainer is { } container)
-        {
-            DrawItemList($"{ObjectName(container)} - 1-9 take, A take all, Esc close",
-                container.Inventory, 40);
-        }
-        else if (_inventoryOpen)
-        {
-            DrawItemList("Inventory - 1-9 use/equip, Shift+1-9 drop, Esc close", _dudeInventory, 40);
-        }
+    // The clickable rect for the displayRow-th row (0..8) of the panel at x. Both the
+    // renderer and the hit-test go through this so they can never disagree on geometry.
+    private Rectangle ItemRowRect(int x, int displayRow)
+    {
+        int lineHeight = Math.Max(_fontRenderer?.LineHeight ?? 26, 26);
+        int rowY = 60 + 8 + lineHeight + 6 + displayRow * lineHeight;
+        return new Rectangle(x + 6, rowY - 4, 360 - 12, lineHeight);
     }
 
     private void DrawItemList(string title, List<MapObject> items, int x,
@@ -5126,7 +5200,9 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
         _panelPixel ??= CreatePixel();
         int lineHeight = Math.Max(_fontRenderer!.LineHeight, 26);
         int panelWidth = 360;
-        int panelHeight = (Math.Max(items.Count, 1) + 2) * lineHeight + 16;
+        int start = _panelPage * ItemRowsPerPage;
+        int shown = Math.Clamp(items.Count - start, 0, ItemRowsPerPage);
+        int panelHeight = (Math.Max(shown, 1) + 2) * lineHeight + 16;
         int y = 60;
 
         _spriteBatch.Draw(_panelPixel, new Rectangle(x, y, panelWidth, panelHeight), new Color(8, 8, 8, 230));
@@ -5137,19 +5213,86 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
         if (items.Count == 0)
             _fontRenderer.Draw(_spriteBatch, "(empty)", new Vector2(x + 10, rowY), Color.Gray);
 
-        for (int i = 0; i < items.Count && i < 9; i++)
+        for (int row = 0; row < ItemRowsPerPage; row++)
         {
-            MapObject item = items[i];
+            int gi = start + row;
+            if (gi >= items.Count)
+                break;
+            MapObject item = items[gi];
             DrawItemIcon(item, new Rectangle(x + 28, rowY - 2, 28, 22));
             string count = item.StackCount > 1 ? $" x{item.StackCount}" : "";
             string tag = price is null ? "" : $"  ${price(item)}";
-            _fontRenderer.Draw(_spriteBatch, $"{i + 1}.", new Vector2(x + 10, rowY), green);
+            _fontRenderer.Draw(_spriteBatch, $"{row + 1}.", new Vector2(x + 10, rowY), green);
             _fontRenderer.Draw(_spriteBatch, $"{ObjectName(item)}{count}{tag}", new Vector2(x + 62, rowY), green);
             rowY += lineHeight;
         }
 
-        if (items.Count > 9)
-            _fontRenderer.Draw(_spriteBatch, $"(+{items.Count - 9} more)", new Vector2(x + 10, rowY), Color.Gray);
+        if (items.Count > ItemRowsPerPage)
+        {
+            int pages = (items.Count + ItemRowsPerPage - 1) / ItemRowsPerPage;
+            _fontRenderer.Draw(_spriteBatch, $"(page {Math.Min(_panelPage + 1, pages)}/{pages} - PgUp/PgDn)",
+                new Vector2(x + 10, rowY), Color.Gray);
+        }
+    }
+
+    // Highest page index across the visible panels (shared paging window).
+    private int MaxPanelPage()
+    {
+        int max = 0;
+        foreach (ItemPanel panel in CurrentItemPanels())
+            max = Math.Max(max, (Math.Max(panel.Items.Count, 1) - 1) / ItemRowsPerPage);
+        return max;
+    }
+
+    // Route a row CLICK to the same action its number key fires. `shift` only matters
+    // for the single inventory panel (use vs drop); the other panels are physically
+    // split (buy/sell, take/give), so a plain click is unambiguous.
+    private void DispatchItemPanel(ItemPanelKind kind, int index, bool shift)
+    {
+        switch (kind)
+        {
+            case ItemPanelKind.BarterStock: BarterBuy(index); break;
+            case ItemPanelKind.BarterGoods: BarterSell(index); break;
+            case ItemPanelKind.TradeTake:
+            case ItemPanelKind.Loot:        TakeFromContainer(index); break;
+            case ItemPanelKind.TradeGive:   GiveToFollower(index); break;
+            case ItemPanelKind.Inventory:
+                if (shift) DropFromInventory(index);
+                else UseInventoryItem(index);
+                break;
+        }
+    }
+
+    // Hit-test a click against the visible panel rows; dispatch the first match. Returns
+    // false if the click missed every row (so the caller can fall through). Geometry-only
+    // (no Draw dependency) so the headless --panel-click harness can drive it too.
+    private bool TryClickItemPanel(int mx, int my, bool shift)
+    {
+        foreach (ItemPanel panel in CurrentItemPanels())
+        {
+            int start = _panelPage * ItemRowsPerPage;
+            for (int row = 0; row < ItemRowsPerPage; row++)
+            {
+                int gi = start + row;
+                if (gi >= panel.Items.Count)
+                    break;
+                if (ItemRowRect(panel.X, row).Contains(mx, my))
+                {
+                    DispatchItemPanel(panel.Kind, gi, shift);
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+
+    // PgUp/PgDn step the shared paging window so overflow past the 9th row is reachable.
+    private void HandlePanelPaging(KeyboardState keyboard)
+    {
+        if (IsKeyPressed(keyboard, Keys.PageDown))
+            _panelPage = Math.Min(_panelPage + 1, MaxPanelPage());
+        else if (IsKeyPressed(keyboard, Keys.PageUp))
+            _panelPage = Math.Max(_panelPage - 1, 0);
     }
 
     /// <summary>
@@ -5407,7 +5550,7 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
     // the baked iface.frm buttons sit, so the DN press-art overlays exactly.
     private HudButton[] HudButtons() =>
     [
-        new("INV", new Rectangle(211, 40, 32, 21), () => { _inventoryOpen = true; PrewarmItemTextures(_dudeInventory); }), // interface.cc:360
+        new("INV", new Rectangle(211, 40, 32, 21), () => { _inventoryOpen = true; _panelPage = 0; PrewarmItemTextures(_dudeInventory); }), // interface.cc:360
         new("OPT", new Rectangle(210, 61, 34, 34), () => { _optionsOpen = true; }),                                       // :380
         new("MAP", new Rectangle(526, 39, 41, 19), () => { _worldmapOpen = true; }),                                      // :433
         new("CHA", new Rectangle(526, 58, 41, 19), () => { if (_dudeGcd is not null) _skillAllocOpen = true; }),          // :475

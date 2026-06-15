@@ -21,6 +21,7 @@ public sealed partial class ViewerGame
         _companionHub = null;
         _tradePartner = follower;
         _lootContainer = follower; // reuse the loot panel's take path (TakeFromContainer)
+        _panelPage = 0;
         PrewarmItemTextures(follower.Inventory);
         PrewarmItemTextures(_dudeInventory);
         Log($"Trading with {ObjectName(follower)}.");

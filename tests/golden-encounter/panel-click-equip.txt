@@ -1,0 +1,3 @@
+hud-click: INV -> inv=True skills=False worldmap=False skilldex=False pipboy=False options=False
+panel-click: side=L row=5 consumed=False inv=1 inHand=none
+panel-click: side=L row=0 consumed=True inv=1 inHand=10mm SMG

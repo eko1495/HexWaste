@@ -88,7 +88,7 @@ Prebuilt self-contained builds (Linux x64 / Windows x64) are produced by
 | --- | --- |
 | mouse drag / arrow keys | pan (hold Shift for fast) |
 | click open ground | walk there (A* on the hex grid) |
-| click door / container / item / stairs | use / loot (1–9 take, A take all) / pick up / travel |
+| click door / container / item / stairs | use / loot (click a row or 1–9 take, A take all) / pick up / travel |
 | click a critter | talk (real scripted dialog, 1–9 to choose; shopkeepers open a barter panel) |
 | right-click | examine (critters show HP/AC) |
 | F | attack the hovered critter (starts combat) |
@@ -98,12 +98,12 @@ Prebuilt self-contained builds (Linux x64 / Windows x64) are produced by
 | L | lockpick the hovered door (the Skilldex Lockpick skill) |
 | S | Skilldex — pick a skill (1–8), then click a target to use it |
 | P | Pip-Boy — status page + rest (R for the rest menu, 1–9 pick a duration) |
-| I | inventory (1–9 use/equip/consume, Shift+1–9 drop) |
+| I | inventory (click an item, or 1–9 use/equip/consume, Shift+1–9 drop) |
 | C / K | character sheet (spend level-up skill points) |
 | Z | rest to heal (when no enemies are near) |
 | F5 / F9 | save / load |
 | R | reload the equipped gun (2 AP in combat) |
-| F4 / T / PgUp / PgDn | roofs / walk-cycle / elevation |
+| F4 / T / PgUp / PgDn | roofs / walk-cycle / elevation (PgUp/PgDn page an open item panel) |
 | [ / ] | ambient light (night ↔ day) |
 | M | worldmap |
 | Esc | options / pause menu (save / load / main menu / quit / resume) |

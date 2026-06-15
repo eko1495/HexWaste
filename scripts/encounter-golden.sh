@@ -46,6 +46,9 @@ SCENARIOS=(
   "skilldex-skills|--map denbus2.map --use-skill 9 9510 --use-skill 6 -1 --use-skill 8 -1 --rng-seed 1"
   # P15 M1 — the HUD weapon slot cycles the attack mode (single->burst) for a burst gun.
   "weapon-mode-cycle|--map arcaves.map --give 9 --use-item 9 --hud-click WEAPON --rng-seed 1"
+  # P15 M2 — item-panel row CLICK == its number key: open the inventory (HUD INV), click an
+  # empty row (out of bounds -> no-op, consumed=false) then row 0 (equips, same as pressing 1).
+  "panel-click-equip|--character combat --map denbus2.map --give 9 --hud-click INV --panel-click 0 5 --panel-click 0 0 --rng-seed 1"
   # P15 M0 — the Pip-Boy automap object census (the dots it plots): deterministic
   # per-type object counts + the dude tile for a fixed map (no RNG).
   "automap-arcaves|--map arcaves.map --automap --rng-seed 1"
@@ -64,7 +67,7 @@ SCENARIOS=(
 
 # Keep only the deterministic transcript lines (drop map-load / animate / stub /
 # dialog-text noise — NEVER capture REPLY/OPTION game-asset strings).
-FILTER='^(encounter|travel-from|companion|dismiss-persist|trade:|party:|party-count:|set-global:|hud-click:|use-skill:|hurt:|rest:|automap:|weapon-mode:|  spawn|  wait:|  follow:|  dismiss:|  rejoin:)'
+FILTER='^(encounter|travel-from|companion|dismiss-persist|trade:|party:|party-count:|set-global:|hud-click:|use-skill:|hurt:|rest:|automap:|weapon-mode:|panel-click:|  spawn|  wait:|  follow:|  dismiss:|  rejoin:)'
 
 echo "Building viewer..."
 dotnet build src/Hexwaste.Viewer -c Debug >/dev/null || { echo "build failed"; exit 2; }
