@@ -417,6 +417,24 @@ to the 1-8 keys). GOTCHA (same as iface.frm): SKLDXBOX ships BAKED "223 %%" plac
 digits — field-blanked to the recess colour (32,32,32) and overwritten with the real
 right-aligned value. Draw-only + additive mouse input → goldens unchanged.
 
+Phase 14 (IN PROGRESS — "Combat Consequences": honor the crit flags the tables
+emit but CombatEngine masked — lose-turn/crippled/blind/knockout — + a timed-event
+queue + crippled-limb model): M0 crit-table 5-tuple + mask widen (DONE). gen_critical
+_tables.py now emits the full row (mult, flags, massiveStat, statMod, massiveFlags) —
+only the 2 message-id columns dropped; CriticalEffect widened to 5 fields, Lookup
+stride 2→5, checksum regenerated. CriticalTables.HonoredFlags widened from the p9 set
+(knockdown/dead/bypass/critical) to also carry KnockedOut/LoseTurn/CripLimbs/Blind
+(the engine _set_new_results mask, combat.cc:4809). CritTag lists the honored effects.
+KEY FINDING: M0 is BYTE-IDENTICAL across ALL 14 combat fixtures incl. the 3 day-2
+crit ones — because the new effects (CRIP/BLIND/KNOCKED_OUT) live in the MASSIVE-
+critical column (applied via a secondary stat-roll, wired in M4), NOT the base-row
+flags the day-2 crits actually hit; so widening the mask + tag is pure inert plumbing
+(no CombatResults write yet — that lands in M2 with its clearing). Next: M1 EventQueue
+(pure queue.cc port), M2 knockout-wake + lose-turn/knockout turn-skip (+ ICombatHost.
+ClockTicks, combat-owned 50-tick/round source), M3 crippled-limb + blind effects, M4
+the massive-crit secondary stat-roll (the ONE new RNG draw — isolated, re-records the
+day-2 fixtures), M5 Skilldex Doctor limb-fix (NOT First-Aid — engine-inaccurate premise).
+
 Phase 10 (DONE, per docs/phase10-research-report.md — "The Wasteland
 Bites Back"): M0 persistence pre-stage (the net: MapList saved=No /
 random_start_point parse + IsTransient; the 3-clause transient guards as

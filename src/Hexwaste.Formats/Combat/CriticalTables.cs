@@ -1,10 +1,13 @@
 namespace Hexwaste.Formats.Combat;
 
-/// <summary>One critical-hit table entry: the damage multiplier (the engine's
-/// hardcoded ×2 slot) and the resolved DAM_* effect flags. phase-9 M2 honours
-/// <see cref="CriticalTables.DamDead"/> / <see cref="CriticalTables.DamKnockedDown"/>
-/// / <see cref="CriticalTables.DamBypass"/>; other flags are masked at apply time.</summary>
-public readonly record struct CriticalEffect(int DamageMultiplier, int Flags);
+/// <summary>One critical-hit table entry. <paramref name="DamageMultiplier"/> is the
+/// engine's hardcoded ×2 slot; <paramref name="Flags"/> are the always-applied DAM_*
+/// effects; <paramref name="MassiveStat"/>/<paramref name="StatMod"/>/<paramref
+/// name="MassiveFlags"/> are the secondary "massive critical" roll (combat.cc:4134) —
+/// on a FAILED <c>stat+statMod</c> check the MassiveFlags are added too (wired in
+/// P14-M4). MassiveStat == -1 ⇒ no secondary roll.</summary>
+public readonly record struct CriticalEffect(
+    int DamageMultiplier, int Flags, int MassiveStat, int StatMod, int MassiveFlags);
 
 /// <summary>
 /// The Fallout 2 critical-hit tables (data in <c>CriticalTables.g.cs</c>, ported
@@ -14,13 +17,30 @@ public readonly record struct CriticalEffect(int DamageMultiplier, int Flags);
 public static partial class CriticalTables
 {
     // DAM_* effect flags (obj_types.h:127-142).
+    public const int DamKnockedOut = 0x01;
     public const int DamKnockedDown = 0x02;
+    public const int DamCripLegLeft = 0x04;
+    public const int DamCripLegRight = 0x08;
+    public const int DamCripArmLeft = 0x10;
+    public const int DamCripArmRight = 0x20;
+    public const int DamBlind = 0x40;
     public const int DamDead = 0x80;
     public const int DamCritical = 0x200;
     public const int DamBypass = 0x800;
+    public const int DamLoseTurn = 0x8000;
 
-    /// <summary>The flags phase-9 honours; everything else is masked at apply time.</summary>
-    public const int HonoredFlags = DamKnockedDown | DamDead | DamBypass | DamCritical;
+    public const int DamCripLegAny = DamCripLegLeft | DamCripLegRight;   // 0x0C
+    public const int DamCripArmAny = DamCripArmLeft | DamCripArmRight;   // 0x30
+    public const int DamCripLimbs = DamCripLegAny | DamCripArmAny;       // 0x3C
+    /// <summary>The Doctor-healable damage flags (skill.cc gHealableDamageFlags):
+    /// blind + the four crippled limbs.</summary>
+    public const int DamHealable = DamCripLimbs | DamBlind;              // 0x7C
+
+    /// <summary>The flags honoured at apply time. P14 widened this from the phase-9
+    /// set (knockdown/dead/bypass/critical) to also carry knockout, lose-turn, the
+    /// crippled limbs and blind — the engine's _set_new_results mask (combat.cc:4809).</summary>
+    public const int HonoredFlags = DamKnockedDown | DamDead | DamBypass | DamCritical
+        | DamKnockedOut | DamLoseTurn | DamCripLimbs | DamBlind;
 
     /// <summary>hit_location_penalty_default (combat.cc:172) — HEAD, L_ARM, R_ARM,
     /// TORSO, R_LEG, L_LEG, EYES, GROIN, UNCALLED. Full for ranged, halved for
@@ -45,14 +65,14 @@ public static partial class CriticalTables
 
         if (defenderIsDude)
         {
-            int p = (location * SeverityCount + severity) * 2;
-            return new CriticalEffect(PlayerData[p], PlayerData[p + 1]);
+            int p = (location * SeverityCount + severity) * Stride;
+            return new CriticalEffect(PlayerData[p], PlayerData[p + 1], PlayerData[p + 2], PlayerData[p + 3], PlayerData[p + 4]);
         }
 
         if (killType < 0 || killType >= KillTypeCount)
             killType = 0; // KILL_TYPE_MAN
-        int i = ((killType * LocationCount + location) * SeverityCount + severity) * 2;
-        return new CriticalEffect(CritterData[i], CritterData[i + 1]);
+        int i = ((killType * LocationCount + location) * SeverityCount + severity) * Stride;
+        return new CriticalEffect(CritterData[i], CritterData[i + 1], CritterData[i + 2], CritterData[i + 3], CritterData[i + 4]);
     }
 
     /// <summary>Recompute the FNV-1a checksum from the in-memory data — must equal

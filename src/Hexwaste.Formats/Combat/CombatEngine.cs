@@ -754,16 +754,21 @@ public sealed class CombatEngine
         return (accuracy, hit, damage, critFlags);
     }
 
-    /// <summary>Transcript suffix marking a critical (and its honoured effect).</summary>
+    /// <summary>Transcript suffix marking a critical (and its honoured effects, P14).</summary>
     private static string CritTag(int critFlags)
     {
         if ((critFlags & CriticalTables.DamCritical) == 0)
             return "";
         if ((critFlags & CriticalTables.DamDead) != 0)
             return " CRITICAL(kill)";
-        if ((critFlags & CriticalTables.DamKnockedDown) != 0)
-            return " CRITICAL(knockdown)";
-        return " CRITICAL";
+        var fx = new List<string>();
+        if ((critFlags & CriticalTables.DamKnockedDown) != 0) fx.Add("knockdown");
+        if ((critFlags & CriticalTables.DamKnockedOut) != 0) fx.Add("knockout");
+        if ((critFlags & CriticalTables.DamLoseTurn) != 0) fx.Add("loseturn");
+        if ((critFlags & CriticalTables.DamCripArmAny) != 0) fx.Add("crip-arm");
+        if ((critFlags & CriticalTables.DamCripLegAny) != 0) fx.Add("crip-leg");
+        if ((critFlags & CriticalTables.DamBlind) != 0) fx.Add("blind");
+        return fx.Count > 0 ? $" CRITICAL({string.Join(",", fx)})" : " CRITICAL";
     }
 
     /// <summary>The to-hit % only (no roll) — for AI min_to_hit decisions and the
