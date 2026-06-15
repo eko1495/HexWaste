@@ -68,8 +68,12 @@ Prebuilt self-contained builds (Linux x64 / Windows x64) are produced by
   engine's price formula.
 - **Worldmap**: click-to-travel between areas (`maps.txt`/`city.txt`); the
   wasteland bites — travel rolls random encounters (`worldmap.txt` tables) and
-  drops you onto a transient encounter map with the group spawned in formation
-  (rats, scorpions, war parties, slavers). Walk off the edge to head back.
+  drops you onto a transient encounter map with the named group spawned in
+  formation (rats, scorpions, war parties, slavers). A high Outdoorsman spots
+  the encounter ahead and offers a Yes/No to avoid it (for XP); walk off the
+  edge and travel auto-resumes toward your destination. An X-FIGHTING-Y
+  encounter spawns its two groups on opposing teams so you stumble into a
+  brawl already in progress — watch them thin each other out, or wade in.
 - **Companions**: recruit, then a control hub (talk to them) — wait here /
   follow / trade / dismiss / rejoin; a 1:1 flat item trade to gear them up.
 - **HUD**: the authentic Fallout 2 interface bar (`iface.frm`) along the bottom —

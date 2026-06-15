@@ -517,6 +517,50 @@ paths -> 286 Formats tests + combat + all 19 encounter goldens green. Spillover:
 companion trade priced-barter, the embedded Pip-Boy mini-automap (automap.db RLE), inventory
 drag-and-drop equip slots (we use click-to-use), the worldmap-screen tab wiring.
 
+Phase 16 (DONE — "The Road Watches Back", worldmap + encounter authenticity; the wasteland
+was silent + inert): M0 encounter-name banner (DONE). EncounterTable.Index (0-based load
+order = the subtile's encounterType, worldmap.cc:1384/1962) + EncounterEntry.EntryIndex (the
+enc_NN number, parsed from the key so a gap can't shift it, :1404) + EncounterResult.MessageId
+= 3000 + 50*tableId + entryId (:3511); worldmap.msg loaded lazily -> the banner names the
+encounter ("Ambush! A group of spore plants.") instead of the bare literal. Reconciled the
+stale EncounterSpawner docstring (per-member If()/Distance/Tile ARE honored — the old "not
+parsed" note was wrong). M1 Outdoorsman detect + Yes/No avoid (DONE): the detect roll now
+FLAGS the result (EncounterResult.Detected + AvoidXp = max(0,100-detectValue), worldmap.cc:
+3475-3477) instead of silently nulling — SAME single rng draw, so the stream is byte-identical;
+only a detection's OUTCOME changed. The viewer awards the XP then pops a Y/N (DrawEncounterPrompt,
+resolved in Update); N resumes the leg via TravelTo (re-detect or undetected ambush). Headless
+resolves synchronously via _autoEncounterAnswer (TravelFrom defaults engage so it never hangs);
+--encounter-answer/--force-outdoorsman harness. GOTCHA: the Arroyo->Den leg now DETECTS ARRO_Rats
+(previously the silent-avoid skipped it and the leg ran on to spore plants) — travel-arroyo-den
+re-recorded to the engaged rats. M2 auto-resume travel (DONE): _travelDestination remembers an
+engaged-encounter-interrupted leg's target; leaving the transient map (ApplyTransition Map<0)
+sets a deferred _resumeTravelDest -> the next Update continues TravelTo, no worldmap re-click.
+--travel-resume harness. DEFERRED (documented): the terrain-difficulty step cadence (worldmap.cc
+:4318) presupposes an ANIMATED party dot — our travel is instantaneous (ResolveLeg computes the
+whole leg, then loads), so there's no per-step dot to slow. M3 X-FIGHTING-Y team brawl (DONE):
+SpawnInstruction.Team — a FIGHTING situation puts each sub-group on a DISTINCT team (group 0->1,
+1->2, ...; engine uses per-group team_num/proto, only one shipping group sets it, so we assign
+sequential teams — a documented divergence). CombatEngine cross-team targeting: a critter also
+targets the nearest HOSTILE on a DIFFERENT team — appended AFTER the dude+party loop, skipping
+the actor's own team, so a single-enemy-team fight (EVERY combat golden) is BYTE-IDENTICAL. New
+StartBrawl entry point (does NOT touch BeginCombat/AddJoiners) opens the brawl on the dude's
+turn. --encounter-fight harness. GOTCHA: ENCOUNTER_SITUATION_FIGHTING is only in the engine's
+enum + parse — never used behaviorally; the fight is emergent from proto teams + AI, so we
+realize it via team assignment. DOCUMENTED LIMITATION: the brawl runs within dude-involved
+combat (he can watch by passing); a fully independent NPC-vs-NPC fight with the dude absent
+needs the non-dude-centric turn loop (deferred). M4 per-member If()/Distance + the case-bug
+(DONE): locking the now-honored fidelity on real data surfaced a genuine bug — CondRx matched
+"If(" case-SENSITIVELY, but ARRO_Spore_Plants' Dead member gates behind the ONLY lowercase
+"if (Rand(5%))" in worldmap.txt, so its condition was dropped and the corpse spawned 100%
+(10/10 seeds) instead of 5% (~1/10). Fix: RegexOptions.IgnoreCase (the engine's keyword match
+is case-insensitive); adds 1 rng draw ONLY for that member, so every non-spore-plants golden
+stays byte-identical. The --encounter census now prints each flat (If()-gated) member at its
+Distance pin (pid/tile/dist/dead) + splits the mislabeled corpses=N into items=N + corpses=N.
+New golden encounter-spore-plants; the per-member If()/Distance LOGIC + Counter one-shot budget
+were already unit-tested (EncounterSpawnerTests/WorldEncountersTests). 291 Formats tests, 23
+encounter + 14 combat goldens green. Spillover: animated worldmap travel (the dot + terrain
+cadence), the fully-independent NPC-vs-NPC brawl loop, the special-encounter circle pin.
+
 Phase 10 (DONE, per docs/phase10-research-report.md — "The Wasteland
 Bites Back"): M0 persistence pre-stage (the net: MapList saved=No /
 random_start_point parse + IsTransient; the 3-clause transient guards as
