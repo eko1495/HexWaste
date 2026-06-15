@@ -39,6 +39,9 @@ SCENARIOS=(
   "vic-recruit|--map denbus2.map --give 41:2000 --give 266:1 --talk-seq 17070 1,1,1 --talk-seq 15278 2,2,1,1 --talk-seq 17070 2,1 --party-count --rng-seed 1"
   # P11 M4 — the HUD bar buttons fire their panel actions (INV/MAP/CHA wired).
   "hud-buttons|--character combat --map denbus2.map --hud-click INV --hud-click MAP --hud-click CHA --rng-seed 1"
+  # #10 M2 — a legitimately-recruited Vic levels up his proto as the dude gains levels
+  # (PartyLevelUp wired into AwardXp; party.txt member 13, level_minimum 5).
+  "vic-levelup|--map denbus2.map --give 41:2000 --give 266:1 --talk-seq 17070 1,1,1 --talk-seq 15278 2,2,1,1 --talk-seq 17070 2,1 --grant-xp 60000 --party-count --rng-seed 1"
 )
 
 # Keep only the deterministic transcript lines (drop map-load / animate / stub /

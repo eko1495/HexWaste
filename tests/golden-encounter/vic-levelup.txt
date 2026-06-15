@@ -1,0 +1,4 @@
+party: Vic joined (script 49)
+companion-levelup: Vic -> stage 0x1000175 level 1 hp 78
+companion-levelup: Vic -> stage 0x1000176 level 2 hp 78
+party-count: members=2 caps=1000 [Vic]

@@ -21,6 +21,8 @@ public sealed partial class ViewerGame
         _dismissedCompanions.Clear();
         _dismissedByMap.Clear();
         _originalTeam.Clear();
+        _companionLevelState.Clear();
+        _companionStatOverride.Clear();
         _companionHub = null;
         if (_tradePartner is not null) // a trade panel pointed at a follower we're clearing
             _lootContainer = null;

@@ -269,8 +269,17 @@ pid 266 "Vic's Radio" in the bag, dcVic Node004 ("Can you use this radio I found
 Node005 rm radio + set_global_var(446,|0x400000) → Metzger's $1000 buy unlocks → FULL
 plumbing-free recruit (vic-recruit fixture now --give 266, NO --set-global). GOTCHA:
 pid 266 has no in-slice source (multi-step Klamath quest item) — the recruit needs
-ONE item-give, the documented residual content gap. Remaining: M2 light up
-level-up/hub on the real recruit, M3 save a scripted recruit.
+ONE item-give, the documented residual content gap. M2 (DONE): the #13 level-up
+foundation is now LIVE on the real recruit — PartyLevelUp.IncLevel wired into AwardXp
+(once per PC level-up, stat.cc:789), party.txt parsed lazily (PartyTable), per-member
+PartyLevelUpState tracked, and the advanced stage proto applied as a per-companion
+CritterProtoStats OVERRIDE that GetCritterState consults (NOT a shared-cache mutation
+— anti-aliasing), HP reset to the new max (party_member.cc:1605). Verified: Vic
+(party.txt member 13, level_minimum 5) advances 0x1000175→0x1000176 as the dude
+levels (vic-levelup golden fixture); the hub (wait/follow/dismiss/rejoin) opens for
+the recruited Vic unchanged (critter-agnostic, #8). A dedicated seeded _partyRng keeps
+the roll off the worldmap/combat streams. Remaining: M3 save a scripted recruit
+(the level-up state + scripted-recruit roster are not yet persisted).
 P11 authentic HUD bar (#15, DONE M0-M5, per docs/research-notes/p11-hud-scope.md):
 the real art\intrface\iface.frm (640x99) pinned bottom-centre at native 1:1 scale
 (the camera has no zoom) via the new InterfaceBar class + DrawInterfaceBar. M0 bar

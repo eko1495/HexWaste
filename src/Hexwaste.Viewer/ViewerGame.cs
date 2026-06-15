@@ -167,6 +167,15 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
     /// (e.g. Vic's team 25) — captured once, preserved across dismiss/rejoin.</summary>
     private readonly Dictionary<MapObject, int> _originalTeam = [];
 
+    // Companion proto level-ups (#10 M2, lights up the #13 foundation): party.txt
+    // tables, the per-member level-up bookkeeping, and the swapped-in stage proto
+    // (an OVERRIDE, never a mutation of the shared proto cache). The level roll has
+    // its own seeded RNG so it doesn't perturb the worldmap/combat streams.
+    private Formats.Party.PartyTable? _partyTable;
+    private readonly Dictionary<MapObject, Formats.Party.PartyLevelUpState> _companionLevelState = [];
+    private readonly Dictionary<MapObject, Formats.Proto.CritterProtoStats> _companionStatOverride = [];
+    private Formats.Combat.ICombatRng? _partyRng;
+
     private readonly Random _ambientRandom = new(20260612);
     private double _fidgetTimerMs;
     private double _wanderTimerMs;
@@ -2891,6 +2900,52 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
             }
             Log($"You have reached level {_dudeLevel}! ({_unspentSkillPoints} skill points — press K)");
             Console.WriteLine($"level-up: now level {_dudeLevel}, skillPoints={_unspentSkillPoints}");
+
+            // The engine runs _partyMemberIncLevels once per PC level-up (stat.cc:789):
+            // a party.txt companion may swap to its next stage proto (#10 M2 / #13).
+            AdvancePartyLevels();
+        }
+    }
+
+    /// <summary>data\party.txt, lazily parsed (the level-up tables). Null if absent.</summary>
+    private Formats.Party.PartyTable? PartyTable()
+    {
+        if (_partyTable is null && _vfs.Exists(@"data\party.txt"))
+            _partyTable = Formats.Party.PartyTable.Parse(
+                System.Text.Encoding.Latin1.GetString(_vfs.ReadAllBytes(@"data\party.txt")));
+        return _partyTable;
+    }
+
+    /// <summary>One PC level-up's worth of companion proto advancement: each party
+    /// member that is a party.txt entry rolls via PartyLevelUp.IncLevel; on advance,
+    /// its stage proto becomes the per-member stat override and HP resets to the new
+    /// max (party_member.cc:1605). Lights up the #13 foundation on a real recruit.</summary>
+    private void AdvancePartyLevels()
+    {
+        if (_scriptHost is null || PartyTable() is not { } table)
+            return;
+        _partyRng ??= new Formats.Combat.SystemCombatRng(RngSeed ?? Environment.TickCount);
+
+        foreach (MapObject member in _scriptHost.PartyMembers.ToArray())
+        {
+            if (table.ForPid(member.Pid) is not { } desc)
+                continue;
+            Formats.Party.PartyLevelUpState state = _companionLevelState.TryGetValue(member, out var s)
+                ? s : _companionLevelState[member] = new Formats.Party.PartyLevelUpState();
+
+            if (Formats.Party.PartyLevelUp.IncLevel(desc, state, _dudeLevel, _partyRng) is not { } stagePid || stagePid == -1)
+                continue;
+            try
+            {
+                _companionStatOverride[member] = _protos.Get(stagePid).Critter;
+                if (GetCritterState(member) is { } cs)
+                    member.CurrentHp = cs.MaxHp; // engine resets HP to the new max on advance
+                Log($"{ObjectName(member)} has gained in some abilities.");
+                Console.WriteLine($"companion-levelup: {ObjectName(member)} -> stage 0x{stagePid:X} level {state.Level} hp {member.CurrentHp}");
+            }
+            catch (Exception ex) when (ex is FileNotFoundException or InvalidDataException or NotSupportedException)
+            {
+            }
         }
     }
 
@@ -4139,6 +4194,10 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
             return new Formats.Combat.CritterState(obj, _dudeGcd.Stats, _dudeGcd.TaggedSkills);
         if (Fid.PidType(obj.Pid) != (int)ObjectType.Critter)
             return null;
+        // A leveled-up companion reads its swapped-in stage proto, not the base
+        // (#10 M2 / #13). Per-instance, so the shared proto cache stays pristine.
+        if (_companionStatOverride.TryGetValue(obj, out Formats.Proto.CritterProtoStats? overrideStats))
+            return new Formats.Combat.CritterState(obj, overrideStats);
         try
         {
             return _protos.Get(obj.Pid).Critter is { } stats
