@@ -66,10 +66,12 @@ Prebuilt self-contained builds (Linux x64 / Windows x64) are produced by
   and stat-gated dialog runs the right branches. Rest (Z) heals over time.
 - **Barter**: real shopkeeper trade (Tubby's stock box and all) at the
   engine's price formula.
-- **Worldmap**: click-to-travel between areas (`maps.txt`/`city.txt`); the
-  wasteland bites — travel rolls random encounters (`worldmap.txt` tables) and
-  drops you onto a transient encounter map with the named group spawned in
-  formation (rats, scorpions, war parties, slavers). A high Outdoorsman spots
+- **Worldmap**: click-to-travel between areas (`maps.txt`/`city.txt`) — a party
+  dot crosses the map, paced by terrain (mountains slow it), and the trip can be
+  saved/resumed mid-walk. The wasteland bites — travel rolls random encounters
+  (`worldmap.txt` tables) and drops you onto a transient encounter map with the
+  named group spawned in formation (rats, scorpions, war parties, slavers). A
+  high Outdoorsman spots
   the encounter ahead and offers a Yes/No to avoid it (for XP); walk off the
   edge and travel auto-resumes toward your destination. An X-FIGHTING-Y
   encounter spawns its two groups on opposing teams so you stumble into a

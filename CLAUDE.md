@@ -561,6 +561,40 @@ were already unit-tested (EncounterSpawnerTests/WorldEncountersTests). 291 Forma
 encounter + 14 combat goldens green. Spillover: animated worldmap travel (the dot + terrain
 cadence), the fully-independent NPC-vs-NPC brawl loop, the special-encounter circle pin.
 
+Phase 17 (DONE — "The World Visibly Moves", animated worldmap traversal): travel was
+INSTANTANEOUS (click -> compute the whole leg -> load); now a party dot crosses the worldmap.
+M0 stepwise TravelLeg iterator (DONE): refactored WorldmapTravel.ResolveLeg from whole-leg-
+compute into a pure per-pixel-step TravelLeg.Step() (holds the Bresenham cursor + the
+WorldEncounters Δ3 anchor across calls); ResolveLeg is now a DRAIN-loop over Step() — one
+Step() == one old iteration, same RNG draws in the same order, so all 5 callers + the goldens
+are BYTE-IDENTICAL. Proven by GameDataFact StepwiseDrainMatchesResolveLeg. The de-risk
+checkpoint (the proven P13-M1 pattern). M1 terrain cadence (DONE, pure): WorldmapFile parses
+[Data] terrain_types=Desert:1,Mountain:2,... -> TerrainDifficulties + TerrainTravelDifficultyAt;
+TerrainCadence ports wmPartyWalkingStep's _terrainCounter (cycles 1..4, steps a pixel only when
+counter/difficulty>=1, so 1/2/3/4 -> 4/3/2/1 of every 4 ticks advance — mountains slow the dot).
+PURE pacing — it does NOT touch the game clock or the encounter rolls, so animation speed is
+independent of encounter fidelity. M2 animated dot (DONE): live play ANIMATES the leg — Update
+drains Step() over wall-time (TravelTickMs=30), terrain-paced; the clock advances per pixel
+(same total as sync); an encounter pauses the dot (the avoid prompt), Esc/click halts (a fresh
+click re-routes). The headless harness keeps the SYNCHRONOUS whole-leg resolve (byte-identical)
+via _animateTravel=false (set in the TravelFrom/TravelResume actions). TravelTo's encounter+
+arrival tails extracted into shared HandleLegEncounter + ArriveAt so both paths end identically.
+WorldmapScreen.DrawPartyDot. --travel-step harness drives the REAL StepAnimatedTravel headlessly
+(golden travel-step: animated path matches the sync ARRO_Rats at worldPos 204,143, cadence
+visible 26 ticks > 20 pixels). M3 unified travel surface (DONE): the survey's "second travel
+surface" was a phantom — every click already routes through the ONE TravelTo (encounters since
+P10/16, the dot since M2); reconciled the stale WorldmapScreen docstring ("no encounters, no
+travel time"). The party dot now also renders as a persistent "you are here" whenever a worldmap
+position is known, not just mid-travel. The lone remaining worldmap simplification is no subtile
+fog-of-war reveal (separate feature). M4 save/restore mid-travel (DONE): SaveState.Travel-
+DestinationAreaId (additive-V2, -1=none) captures an in-flight leg's target; LoadGame drops the
+stale leg+prompt (cursors are meaningless post-reload) and queues an auto-resume via the P16-M2
+_resumeTravelDest machinery. DIVERGENCE (documented): the engine drops you STOPPED on a mid-walk
+reload; we resume, consistent with the P16-M2 post-encounter auto-resume. --travel-save-mid
+harness (golden travel-save-mid: saved at dot 188,135 -> round-trips + resumes toward area 1).
+294 Formats tests, 25 encounter + 14 combat goldens green. Spillover: subtile fog-of-war reveal
+(worldmap exploration), the fully-independent NPC-vs-NPC brawl loop.
+
 Phase 10 (DONE, per docs/phase10-research-report.md — "The Wasteland
 Bites Back"): M0 persistence pre-stage (the net: MapList saved=No /
 random_start_point parse + IsTransient; the 3-clause transient guards as
