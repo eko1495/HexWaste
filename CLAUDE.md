@@ -484,8 +484,17 @@ SIMPLIFICATIONS: fog-of-war faked all-visible (no OBJECT_SEEN); the per-type col
 readable approximations of the engine's _colorTable indices; the embedded Pip-Boy mini-
 automap stays out (needs automap.db RLE). Harness --automap opens it + prints a
 deterministic object census (golden automap-arcaves). Draw-only + additive → other
-goldens byte-identical. Next: M1 weapon-slot interactive (click=fire + attack-mode
-cycle), M2 item-row mouse clicking + overflow paging, M3 clickable Options/Pip-Boy rows.
+goldens byte-identical. M1 weapon-slot interactive (DONE): the HUD weapon slot (interface.cc:505 rect 267,26,
+188,67) is now a HudButton — clicking it (or N) cycles the attack mode single<->burst
+for a burst-capable gun (CycleWeaponMode; non-burst stays single). The mode label goes
+LIVE (was faked from the proto nibble): SINGLE/BURST for a burst gun, else AttackModeName.
+F now fires with the selected mode (burst when set). DOCUMENTED DIVERGENCE: the engine's
+weapon slot left-click FIRES at a held target; we have no held-target model (combat
+targets the hovered critter via F/B), so the slot left-click CYCLES the mode instead
+(the engine's right-click semantics) — firing stays on F/B-on-hover. Additive (the
+--attack/--burst harness calls TryAttack/TryBurst directly, not F or _weaponMode) ->
+goldens byte-identical; golden weapon-mode-cycle (--give 9 SMG -> click WEAPON -> Burst).
+Next: M2 item-row mouse clicking + overflow paging, M3 clickable Options/Pip-Boy rows.
 
 Phase 10 (DONE, per docs/phase10-research-report.md — "The Wasteland
 Bites Back"): M0 persistence pre-stage (the net: MapList saved=No /

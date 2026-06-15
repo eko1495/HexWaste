@@ -1,0 +1,2 @@
+weapon-mode: Burst
+hud-click: WEAPON -> inv=False skills=False worldmap=False skilldex=False pipboy=False options=False

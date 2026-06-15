@@ -89,6 +89,12 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
     /// it headlessly). UNCALLED = no aiming. See Formats.Combat.CriticalTables.</summary>
     public int AimLocation { get; set; } = Formats.Combat.CriticalTables.LocationUncalled;
 
+    /// <summary>The HUD weapon-slot attack mode (P15 M1): which fire mode F (and a
+    /// slot/N cycle) uses — Single or Burst for a burst-capable gun. The bar's mode
+    /// label reflects it live.</summary>
+    private enum WeaponMode { Single, Burst }
+    private WeaponMode _weaponMode = WeaponMode.Single;
+
     private static readonly string[] AimNames =
         ["head", "left arm", "right arm", "torso", "right leg", "left leg", "eyes", "groin", "uncalled"];
     private static string AimName(int loc) => AimNames[Math.Clamp(loc, 0, AimNames.Length - 1)];
@@ -1899,9 +1905,19 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
             Log($"Aiming: {AimName(AimLocation)}.");
         }
 
-        // F: attack the hovered critter at the current aim location (A is take-all in loot mode).
+        // F: attack the hovered critter at the current aim location, using the selected
+        // weapon mode (P15 M1 — burst when the slot is set to BURST on a burst gun).
         if (IsKeyPressed(keyboard, Keys.F) && _hoveredObject is { } attackTarget)
-            _combat.TryAttack(attackTarget, AimLocation);
+        {
+            if (_weaponMode == WeaponMode.Burst)
+                _combat.TryBurst(attackTarget);
+            else
+                _combat.TryAttack(attackTarget, AimLocation);
+        }
+
+        // N: cycle the weapon-slot attack mode (single↔burst), same as clicking the slot.
+        if (IsKeyPressed(keyboard, Keys.N))
+            CycleWeaponMode();
 
         // B: spray a burst at the hovered critter (only fires if a burst-capable gun
         // is equipped — the SMG/Tommy Gun/Combat Shotgun; #9).
@@ -5251,10 +5267,16 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
         // Ammo count for guns, over the baked ammo bar (NUMBERS.FRM, white band).
         if (weaponProto?.Weapon is { } w && w.IsGun(weaponProto.ExtendedFlags) && weaponItem is not null && bar.Numbers is { } numAmmo)
             DrawCounter(numAmmo, WeaponAmmo(weaponProto, weaponItem), band: 0, xRight: o.X + 458, yTop: o.Y + 76);
-        // M5: the active attack-mode label, bright, at the weapon-button top-left
-        // (SINGLE/BURST/SWING/THRUST/… from the proto's primary attack-anim nibble).
+        // The active attack-mode label, bright, at the weapon-button top-left. For a
+        // burst-capable gun it reflects the LIVE _weaponMode (P15 M1 — the slot/N cycle);
+        // otherwise the proto's attack-anim nibble (SWING/THRUST/SINGLE/…).
         if (weaponProto is not null && _fontRenderer is not null)
-            _fontRenderer.Draw(_spriteBatch, AttackModeName(weaponProto), new Vector2(o.X + 271, o.Y + 28), new Color(252, 252, 84));
+        {
+            string mode = Formats.Combat.CombatEngine.IsBurstWeapon(weaponProto)
+                ? (_weaponMode == WeaponMode.Burst ? "BURST" : "SINGLE")
+                : AttackModeName(weaponProto);
+            _fontRenderer.Draw(_spriteBatch, mode, new Vector2(o.X + 271, o.Y + 28), new Color(252, 252, 84));
+        }
 
         // --- M1: HP/AC via NUMBERS.FRM. The bar has baked placeholder digits ("036"/
         // "-258") in dark recessed fields; blank each field to its background colour
@@ -5358,6 +5380,23 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
         return anim >= 0 && anim < AttackAnimNames.Length ? AttackAnimNames[anim] : "";
     }
 
+    /// <summary>Toggle the weapon-slot attack mode (single↔burst) for a burst-capable
+    /// gun; a non-burst weapon stays single (P15 M1 — the slot click + N).</summary>
+    private void CycleWeaponMode()
+    {
+        (Formats.Proto.ProtoInfo? weaponProto, _) = _dude is null ? (null, null) : EquippedWeapon(_dude.Dude);
+        if (!Formats.Combat.CombatEngine.IsBurstWeapon(weaponProto))
+        {
+            _weaponMode = WeaponMode.Single;
+            Log("This weapon has only a single-shot mode.");
+            Console.WriteLine("weapon-mode: Single (single-only)");
+            return;
+        }
+        _weaponMode = _weaponMode == WeaponMode.Single ? WeaponMode.Burst : WeaponMode.Single;
+        Log($"Attack mode: {(_weaponMode == WeaponMode.Burst ? "burst" : "single")}.");
+        Console.WriteLine($"weapon-mode: {_weaponMode}");
+    }
+
     /// <summary>The clickable HUD buttons (bar-local rects, ported from interface.cc;
     /// measured against this iface.frm). Each wires to the same action as its keyboard
     /// shortcut — the buttons are additive, the keys still work (#15 M4).</summary>
@@ -5374,6 +5413,9 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
         new("CHA", new Rectangle(526, 58, 41, 19), () => { if (_dudeGcd is not null) _skillAllocOpen = true; }),          // :475
         new("PIP", new Rectangle(526, 77, 41, 19), () => { _pipboyOpen = true; }),                                        // :454
         new("SKILLDEX", new Rectangle(523, 6, 22, 21), () => { _skilldexOpen = true; }),                                  // :406
+        // The weapon slot (interface.cc:505 gSingleAttackButton): click cycles the
+        // attack mode (single↔burst); F fires with the selected mode (P15 M1).
+        new("WEAPON", new Rectangle(267, 26, 188, 67), CycleWeaponMode),                                                 // :505
         // Combat-mode buttons (shown + clickable only during a fight; M5).
         new("ENDTURN", new Rectangle(590, 43, 38, 22), () => _combat.EndPlayerTurn(), CombatOnly: true),                  // :1903
         new("ENDCOMBAT", new Rectangle(590, 65, 38, 22),                                                                  // :1955
@@ -6138,6 +6180,7 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
         _pipboyRestMenu = false;
         _automapOpen = false;
         _optionsOpen = false;
+        _weaponMode = WeaponMode.Single;
         _dudeInventory = [];
         _visitedMaps.Clear();
         _combat.Reset();
