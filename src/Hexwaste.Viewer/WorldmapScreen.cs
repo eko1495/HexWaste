@@ -8,11 +8,14 @@ using Microsoft.Xna.Framework.Graphics;
 namespace Hexwaste.Viewer;
 
 /// <summary>
-/// Minimal click-to-travel worldmap: the 4x5 grid of 350x300
+/// The click-to-travel worldmap RENDERER: the 4x5 grid of 350x300
 /// art\intrface\wrldmpNN.frm tiles (layout per fallout2-ce
-/// src/worldmap.cc wmInterfaceRefresh) scaled to fit the window, with all
-/// areas from city.txt shown as labeled markers. No encounters, no travel
-/// time, no fog — per the phase-3 scope.
+/// src/worldmap.cc wmInterfaceRefresh) scaled to fit the window, all areas from
+/// city.txt shown as labeled markers, plus the moving party dot (<see cref="DrawPartyDot"/>).
+/// This is render + hit-test only: a click routes through the ONE unified travel path
+/// (ViewerGame.TravelTo), which rolls encounters (phase-10/16) and advances the clock and
+/// animates the dot (phase-17). The lone remaining simplification is no subtile fog-of-war
+/// reveal (the whole worldmap is always visible) — a separate worldmap-exploration feature.
 /// </summary>
 public sealed class WorldmapScreen : IDisposable
 {

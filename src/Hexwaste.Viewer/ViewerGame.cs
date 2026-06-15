@@ -4676,7 +4676,9 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
         if (_worldmapOpen)
         {
             _worldmapScreen?.Draw(_spriteBatch, GraphicsDevice.Viewport.Bounds, _hoveredArea);
-            if (_activeTravel is not null) // the moving party dot (phase-17 M2)
+            // The party dot: "you are here" whenever a worldmap position is known, and the
+            // moving marker mid-travel (phase-17 M2/M3 — one dot, the unified position).
+            if (_worldPosX >= 0 && _worldPosY >= 0)
                 _worldmapScreen?.DrawPartyDot(_spriteBatch, GraphicsDevice.Viewport.Bounds, _worldPosX, _worldPosY);
             DrawEncounterPrompt();
         }
