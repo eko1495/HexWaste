@@ -80,6 +80,24 @@ public class WorldmapFileTests
     }
 
     [Fact]
+    public void LowercaseIfConditionParsesLikeCapitalIf()
+    {
+        // Regression for the phase-16 M4 bug: ARRO_Spore_Plants' Dead member uses lowercase
+        // "if (Rand(5%))" — a case-sensitive match dropped it, so the member spawned 100%
+        // instead of 5%. Both casings must parse into the member's Conditions.
+        WorldmapFile wm = WorldmapFile.Parse("""
+            [Encounter: GRP]
+            type_00=ratio:100%, pid:100, If(Rand(10%))
+            type_01=Dead, pid:101, if (Rand(5%))
+            position=huddle
+            """);
+        GroupMember capital = wm.Group("GRP")!.Members[0];
+        GroupMember lower = wm.Group("GRP")!.Members[1];
+        Assert.Contains(capital.Conditions ?? [], c => c is { Type: "Rand", Param: 10 });
+        Assert.Contains(lower.Conditions ?? [], c => c is { Type: "Rand", Param: 5 });
+    }
+
+    [Fact]
     public void TableIndexAndEntryIndexDriveTheEncounterNameMessageId()
     {
         // Phase-16 M0: the encounter-name lookup is getmsg(3000 + 50*tableId + entryId),

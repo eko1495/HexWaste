@@ -1,0 +1,7 @@
+encounter-spawn: ARRO_Spore_Plants planned=6 placed=6 on desert1.map
+  spawn pid=0x01000010 tile=19309 rot=1 hp=40 team=1 sid=bound items=1
+  spawn pid=0x01000010 tile=19696 rot=3 hp=40 team=1 sid=bound items=1
+  spawn pid=0x01000010 tile=19701 rot=1 hp=40 team=1 sid=bound items=1
+  spawn pid=0x01000010 tile=20106 rot=1 hp=40 team=1 sid=bound items=1
+  flat pid=0x01000004 tile=20900 dist=4 dead=True
+encounter: map=desert1.map group=ARRO_Spore_Plants requested=4 critters=4 items=0 corpses=1

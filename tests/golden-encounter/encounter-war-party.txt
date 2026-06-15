@@ -1,4 +1,4 @@
 encounter-spawn: ARRO_War_Party planned=2 placed=2 on desert1.map
   spawn pid=0x010000CA tile=17302 rot=1 hp=40 team=1 sid=bound items=3
   spawn pid=0x010000CB tile=17702 rot=1 hp=35 team=1 sid=bound items=3
-encounter: map=desert1.map group=ARRO_War_Party requested=4 critters=2 corpses=0
+encounter: map=desert1.map group=ARRO_War_Party requested=4 critters=2 items=0 corpses=0

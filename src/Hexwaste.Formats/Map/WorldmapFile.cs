@@ -199,7 +199,12 @@ public sealed class WorldmapFile
     }
 
     private static readonly Regex SpawnRx = new(@"\((\d+)-(\d+)\)\s*([A-Za-z0-9_]+)", RegexOptions.Compiled);
-    private static readonly Regex CondRx = new(@"If\s*\(\s*(\w+)\(([^)]*)\)\s*(==|!=|<|>)?\s*(-?\d+)?", RegexOptions.Compiled);
+    // IgnoreCase: worldmap.txt is mostly "If(...)" but at least one member uses lowercase
+    // "if (...)" (ARRO_Spore_Plants' Dead Primitive Female, If(Rand(5%))). A case-sensitive
+    // match dropped that condition, so the gated member spawned 100% instead of 5% — the
+    // engine's strParseStrFromFunc keyword match is case-insensitive (phase-16 M4 fix).
+    private static readonly Regex CondRx = new(@"If\s*\(\s*(\w+)\(([^)]*)\)\s*(==|!=|<|>)?\s*(-?\d+)?",
+        RegexOptions.Compiled | RegexOptions.IgnoreCase);
 
     private static void BuildTable(string sectionArg, Dictionary<string, string> fields, Dictionary<string, EncounterTable> tables)
     {

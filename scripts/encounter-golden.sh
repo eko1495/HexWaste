@@ -25,6 +25,11 @@ SCENARIOS=(
   "encounter-arro-rats|--encounter desert1.map ARRO_Rats 5 --rng-seed 1"
   "encounter-war-party|--encounter desert1.map ARRO_War_Party 4 --rng-seed 7"
   "encounter-scorpions|--encounter desert1.map ARRO_Sm_Scorpions 4 --rng-seed 2"
+  # P16-M4: lock the per-member If()/Distance fidelity on real data — ARRO_Spore_Plants'
+  # Dead Primitive Female is gated behind lowercase "if (Rand(5%))" (a case-sensitivity bug
+  # made it spawn 100%); at seed 13 the roll passes so the corpse appears (the flat line),
+  # while its Distance-pinned plant-item siblings stay gated out.
+  "encounter-spore-plants|--encounter desert1.map ARRO_Spore_Plants 4 --rng-seed 13"
   # P16-M1: travelling the Arroyo->Den leg now DETECTS the ARRO_Rats encounter ahead
   # (Outdoorsman), grants the avoid XP, and (headless default) engages it. The avoid
   # variant declines -> travels on -> walks into the next (undetected) ambush.
@@ -83,7 +88,7 @@ SCENARIOS=(
 
 # Keep only the deterministic transcript lines (drop map-load / animate / stub /
 # dialog-text noise — NEVER capture REPLY/OPTION game-asset strings).
-FILTER='^(encounter|travel-from|companion|dismiss-persist|trade:|party:|party-count:|set-global:|hud-click:|use-skill:|hurt:|rest:|automap:|weapon-mode:|panel-click:|menu-click:|travel-resume:|encounter-fight:|brawl:|  spawn|  wait:|  follow:|  dismiss:|  rejoin:)'
+FILTER='^(encounter|travel-from|companion|dismiss-persist|trade:|party:|party-count:|set-global:|hud-click:|use-skill:|hurt:|rest:|automap:|weapon-mode:|panel-click:|menu-click:|travel-resume:|encounter-fight:|brawl:|  spawn|  flat|  wait:|  follow:|  dismiss:|  rejoin:)'
 
 echo "Building viewer..."
 dotnet build src/Hexwaste.Viewer -c Debug >/dev/null || { echo "build failed"; exit 2; }

@@ -765,12 +765,21 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
                         .Where(o => o.Id == -3 && Fid.Type(o.Fid) is ObjectType.Critter)
                         .OrderBy(o => o.HexTile)
                         .ToList();
-                    var corpses = _flatObjects[_elevation].Where(o => o.Id == -3).ToList();
+                    // Flat spawns = the group's If()-gated ground members: scenery/items
+                    // (e.g. ARRO_Rats' Xander Root at Distance:10) + Dead corpses. The
+                    // pid + dist-from-dude lock the per-member If()/Distance fidelity (M4).
+                    int dudeTile = _dude?.Dude.HexTile ?? 0;
+                    var flat = _flatObjects[_elevation].Where(o => o.Id == -3)
+                        .OrderBy(o => o.HexTile).ToList();
                     foreach (MapObject o in spawned)
                         Console.WriteLine($"  spawn pid=0x{o.Pid:X8} tile={o.HexTile} rot={o.Rotation}"
                             + $" hp={o.CurrentHp} team={o.Team} sid={(o.Sid == -1 ? "none" : "bound")} items={o.Inventory.Count}");
+                    foreach (MapObject o in flat)
+                        Console.WriteLine($"  flat pid=0x{o.Pid:X8} tile={o.HexTile}"
+                            + $" dist={Formats.Hex.HexGrid.Distance(dudeTile, o.HexTile)} dead={o.IsDead}");
+                    int deadCount = flat.Count(o => o.IsDead);
                     Console.WriteLine($"encounter: map={emap} group={group} requested={count}"
-                        + $" critters={spawned.Count} corpses={corpses.Count}");
+                        + $" critters={spawned.Count} items={flat.Count - deadCount} corpses={deadCount}");
                     break;
                 }
                 case StartupAction.EncounterFight(var fmap, var ga, var ca, var gb, var cb):
