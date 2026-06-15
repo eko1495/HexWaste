@@ -44,6 +44,42 @@ public class CombatStatusTests
     }
 
     [Fact]
+    public void DoctorHealsAllCrippledLimbsAtHighSkill()
+    {
+        int crippled = CriticalTables.DamBlind | CriticalTables.DamCripArmLeft
+            | CriticalTables.DamCripLegRight | CriticalTables.DamKnockedOut; // KO is NOT healable
+        int after = SkillHealing.HealLimbs(crippled, 100, new AlwaysHits(), out List<string> healed);
+
+        Assert.Equal(["eyes", "left arm", "right leg"], healed); // gHealableDamageFlags order
+        Assert.False(SkillHealing.IsCrippled(after));
+        Assert.True((after & CriticalTables.DamKnockedOut) != 0); // knockout is left untouched
+    }
+
+    [Fact]
+    public void DoctorFailingTheRollLeavesTheLimbCrippled()
+    {
+        int crippled = CriticalTables.DamCripLegLeft;
+        int after = SkillHealing.HealLimbs(crippled, 0, new AlwaysHits(), out List<string> healed);
+        // skill 0 → d10s of 1 are never <= 0 → nothing mended.
+        Assert.Empty(healed);
+        Assert.Equal(crippled, after);
+    }
+
+    [Fact]
+    public void HealLimbsOnlyRollsForPresentInjuries()
+    {
+        // No crippled flags → no rolls drawn, no heals.
+        int after = SkillHealing.HealLimbs(0, 100, new AlwaysHits(), out List<string> healed);
+        Assert.Empty(healed);
+        Assert.Equal(0, after);
+    }
+
+    private sealed class AlwaysHits : ICombatRng
+    {
+        public int Next(int minInclusive, int maxExclusive) => minInclusive; // d100 -> 1
+    }
+
+    [Fact]
     public void BlindDoesNotPenalizeTheCloseRangeBonus()
     {
         // Point-blank (negative distance modifier = a bonus): blind keeps the ×4, so

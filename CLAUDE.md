@@ -456,8 +456,16 @@ massiveStat != -1, so day-1 (no crit) is byte-identical. Re-recorded 2 day-2 fix
 (aim-eyes-day2 now shows CRITICAL(blind) → the scorpion's enemy-attack drops 67→42 =
 the -25; the all-aimed-eyes run vs 2 scorpions deterministically loses on the shifted
 stream — RNG-divergence, not a bug; crit-day2 unchanged — its torso row has no massive
-stat). 2 SequenceRng tests (forced KO on fail / resisted on EN-10). Next: M5 Skilldex
-Doctor limb-fix (NOT First-Aid — engine-inaccurate premise).
+stat). 2 SequenceRng tests (forced KO on fail / resisted on EN-10). M5 Skilldex Doctor limb-fix (DONE — P14 COMPLETE): Formats.Combat.SkillHealing.HealLimbs
+rolls the Doctor skill% (d100) against each present crippled limb / blindness in the
+gHealableDamageFlags order (blind, L-arm, R-arm, R-leg, L-leg; skill.cc:69-75), clearing
+the CombatResults bit on success (the engine reads it live, no resync needed). Wired
+into TryHeal for skill 7 ONLY (gate: HP<max OR crippled), before the HP heal. CORRECTION:
+First-Aid does NOT heal limbs (skill.cc:574 = HP only) — the task premise was engine-
+inaccurate; only Doctor mends limbs (Repair does on robots — none in slice, inert). 3
+SkillHealing unit tests; goldens byte-identical (no Doctor-on-crippled scenario). P14
+COMPLETE: crit consequences (knockout+wake, lose-turn, crippled limbs, blind) are live,
+driven by the massive-crit roll, with the Doctor cure; SCOPE.md/README reconciled.
 
 Phase 10 (DONE, per docs/phase10-research-report.md — "The Wasteland
 Bites Back"): M0 persistence pre-stage (the net: MapList saved=No /

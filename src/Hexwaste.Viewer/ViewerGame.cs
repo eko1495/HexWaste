@@ -3854,8 +3854,8 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
     /// Apply a Skilldex skill to a target (ported from skill.cc skillUse + the
     /// use_skill_on_p_proc path lockpick already used). Targeted skills (Lockpick/
     /// Steal/Traps/Science/Repair) run the target's script and fall back to the
-    /// lockpick unlock; First Aid/Doctor heal a critter (no Healer perk → 1-5 HP,
-    /// no crippled-limb model — documented PoC simplifications); Sneak toggles.
+    /// lockpick unlock; First Aid heals HP (no Healer perk → 1-5); Doctor also mends
+    /// crippled limbs / blindness (P14-M5); Sneak toggles.
     /// </summary>
     private void TryUseSkillOn(int skill, MapObject target)
     {
@@ -3915,7 +3915,11 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
             Log("You can't heal the dead.");
             return;
         }
-        if (target.CurrentHp >= cs.MaxHp)
+        // Only Doctor (skill 7) mends crippled limbs / blindness (skill.cc:675); First Aid
+        // is HP-only, so it has nothing to do on a full-HP target.
+        bool needsHp = target.CurrentHp < cs.MaxHp;
+        bool doctorCripple = skill == 7 && Formats.Combat.SkillHealing.IsCrippled(target.CombatResults);
+        if (!needsHp && !doctorCripple)
         {
             Log(self ? "You look healthy already." : $"{ObjectName(target)} looks healthy already.");
             return;
@@ -3929,18 +3933,38 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
         }
 
         _skillRng ??= new Formats.Combat.SystemCombatRng(RngSeed ?? Environment.TickCount);
-        bool success = _skillRng.Next(1, 101) <= DudeSkillValue(skill);
-        if (success)
+
+        // Doctor: try to mend each crippled limb / blindness (clears the CombatResults
+        // bits the combat engine reads live).
+        if (doctorCripple)
         {
-            int heal = Math.Min(_skillRng.Next(1, 6), cs.MaxHp - target.CurrentHp);
-            target.CurrentHp += heal;
-            _skillUsesByDay[skill] = _skillUsesByDay.GetValueOrDefault(skill) + 1;
-            Log(self ? $"You heal {heal} hit points." : $"You heal the {ObjectName(target)} for {heal} hit points.");
+            target.CombatResults = Formats.Combat.SkillHealing.HealLimbs(
+                target.CombatResults, DudeSkillValue(skill), _skillRng, out List<string> healed);
+            foreach (string limb in healed)
+            {
+                Log(self ? $"You heal your {limb}." : $"You heal the {ObjectName(target)}'s {limb}.");
+                Console.WriteLine($"limb-heal: {ObjectName(target)}@{target.HexTile} {limb}");
+            }
+            if (healed.Count == 0)
+                Log("You fail to mend the injury.");
         }
-        else
+
+        // HP heal (both skills) when wounded.
+        if (needsHp)
         {
-            Log("You fail to do any healing.");
+            if (_skillRng.Next(1, 101) <= DudeSkillValue(skill))
+            {
+                int heal = Math.Min(_skillRng.Next(1, 6), cs.MaxHp - target.CurrentHp);
+                target.CurrentHp += heal;
+                Log(self ? $"You heal {heal} hit points." : $"You heal the {ObjectName(target)} for {heal} hit points.");
+            }
+            else
+            {
+                Log("You fail to do any healing.");
+            }
         }
+
+        _skillUsesByDay[skill] = _skillUsesByDay.GetValueOrDefault(skill) + 1;
         _clock.Ticks += (skill == 6 ? 1800 : 3600) * Formats.GameClock.TicksPerSecond;
     }
 
