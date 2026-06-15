@@ -17,19 +17,23 @@ filing an issue.
   trees), examine, locks/lockpick, use / use-on-object, pickup, timers, spatial
   traps, the critter heartbeat, ~70 real engine externals.
 - **Simulation**: A* movement, mouse picking, doors/stairs/exit grids, worldmap
-  click-to-travel with random encounters (`worldmap.txt` tables → transient
-  encounter maps, groups spawned in formation), ambient NPC life, sound
+  travel as a moving party dot paced by terrain (mountains slow it), with random
+  encounters (`worldmap.txt` tables → transient encounter maps, groups spawned in
+  formation), an Outdoorsman detect-and-avoid prompt, auto-resume after an
+  encounter, save/resume mid-travel, ambient NPC life, sound
   (music/sfx/footsteps/combat).
 - **Companions**: recruit (including Vic's legitimate VM-driven rescue), a
   wait/follow/dismiss/rejoin control hub, a flat 1:1 inventory trade panel, and
   per-companion proto level-ups (`party.txt`, live on the recruited Vic).
 - **Gameplay**: turn-based melee + gun combat with the engine's depth — to-hit /
   line-of-fire (screen-Bresenham) / ammo+reload, single + burst fire (with the
-  left/right collateral cone), AI behaviour packets
-  (close-or-flee), critical hits + aimed called shots with their consequences
-  (knockout + timed wake, lose-turn, crippled limbs, blindness — a Doctor mends
-  limbs/eyes), knockback + persisting knockdown, area explosions, and throwing
-  (spears, grenades, recoverable);
+  left/right collateral cone), AP-gated movement (a crippled leg crawls at 4× the
+  AP/hex, a crippled arm blocks a two-handed weapon), AI behaviour packets
+  (close-or-flee with real `_ai_run_away` retreat pathing), X-FIGHTING-Y team
+  brawls (two spawned groups fight each other and you), critical hits + aimed
+  called shots with their consequences (knockout + timed wake, lose-turn, crippled
+  limbs, blindness — a Doctor mends limbs/eyes), knockback + persisting knockdown,
+  area explosions, and throwing (spears, grenades, recoverable, can crit);
   armor, drugs, lootable corpses, scripted aggro, same-team joiners, a minimum
   party member, barter, kill XP, level-ups, per-map persistent world, versioned
   JSON save/load, a main menu, character creation, rest.
@@ -51,9 +55,6 @@ filing an issue.
   level-up logic lights up for free when one lands. Per-companion quest *banter*
   is 100% companion-script content gated on those same quests (it already runs
   via `talk_p_proc` when present), so there is no engine work to do.
-- **AP-gated player movement in combat** — the dude free-walks (click-to-move)
-  during his turn; movement isn't charged against AP per hex, so the crippled-leg
-  slowdown applies to NPC approach only. (NPC AP-budgeted movement *is* modelled.)
 - **Perks, traits, skill points beyond the gated skills**, the full character
   editor, and worldmap car travel.
 - **Anything needing assets we can't ship** — Hexwaste requires *your own* legal

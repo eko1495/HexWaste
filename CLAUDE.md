@@ -663,7 +663,11 @@ map deltas — exclude PartyMembers from EVERY CaptureMapDelta loop (mark
 in-place recruits Taken) or an F5 duplicates them on load. Documented v1
 cuts: wait/dismiss state is viewer-side not saved; per-member encounter
 If()/distance overrides, X FIGHTING Y combat-lock, Vic's radio quest, the
-projectile screen-tween.
+projectile screen-tween. (SUPERSEDED — nearly all of this list later shipped:
+wait/dismiss persistence is in the save [#2/#3, SaveState Dismissed/Waiting/
+OriginalTeam]; per-member If()/Distance are honored [P10 + the P16-M4 lowercase-
+if fix]; X-FIGHTING-Y is wired [P16-M3]; the projectile tween landed [#11]. The
+lone residual is Vic's radio ITEM having no in-slice source [one --give].)
 
 After each milestone: run tests, run the app if possible, update README progress checklist, conventional commit.
 
