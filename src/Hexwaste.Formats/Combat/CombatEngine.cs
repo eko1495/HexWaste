@@ -38,7 +38,8 @@ public sealed class CombatEngine
     /// an explosive detonates (AoE), a spear/rock damages the target and drops
     /// recoverable on the ground.</summary>
     private sealed record PendingThrow(MapObject Thrower, MapObject? Target, int TargetTile,
-        bool Hit, int Damage, bool Explosive, int MinDamage, int MaxDamage, ProtoInfo Proto, MapObject Item);
+        bool Hit, int Damage, bool Explosive, int MinDamage, int MaxDamage, ProtoInfo Proto, MapObject Item,
+        int CritFlags = 0);
     private PendingThrow? _pendingThrow;
 
     /// <summary>A burst in flight: every round is rolled up front; the accumulated
@@ -535,22 +536,42 @@ public sealed class CombatEngine
             .FirstOrDefault(c => !c.IsDead && c.HexTile == targetTile);
         bool explosive = weaponProto.Weapon.DamageType == 6; // DAMAGE_TYPE_EXPLOSION
 
-        // Ranged-style to-hit with the Throwing skill; no crit (PoC simplification).
+        // Ranged-style to-hit with the Throwing skill, then the SAME day-gated critical
+        // upgrade as single-shot (combat.cc randomRoll — throws crit too; P13-M3). The
+        // hit draw is the identical single d100, so day-1 throws stay byte-identical.
+        // Throws are uncalled (torso, penalty 0) and never knock back (projectiles).
         int defenderAc = targetCritter is not null && _host.GetCritterState(targetCritter) is { } ds ? ds.ArmorClass : 0;
         int chance = RangedMath.ToHitChance(attacker.ThrowingSkill, distance,
             attacker.Stat(CritterStat.Perception), attackerIsDude: true,
             defenderAc, 0, weaponProto.Weapon.MinStrength, strength, crittersInPath: 0);
-        bool hit = CombatMath.RollHit(_rng, chance);
+
+        int delta = chance - _rng.Next(1, 101);
+        bool hit = delta >= 0;
+
+        int critMultiplier = 2;
+        int critFlags = 0;
+        if (hit && targetCritter is not null && _host.CriticalsEnabled
+            && _host.GetCritterState(targetCritter) is { } critDef
+            && _rng.Next(1, 101) <= delta / 10 + attacker.Stat(CritterStat.CriticalChance))
+        {
+            int severity = CriticalTables.Severity(_rng.Next(1, 101) + attacker.Stat(CritterStat.BetterCriticals));
+            CriticalEffect eff = CriticalTables.Lookup(critDef.Proto.KillType,
+                CriticalTables.LocationUncalled, severity, targetCritter == dude);
+            critMultiplier = eff.DamageMultiplier;
+            critFlags = (eff.Flags & CriticalTables.HonoredFlags) | CriticalTables.DamCritical;
+        }
+
         int damage = hit && targetCritter is not null && _host.GetCritterState(targetCritter) is { } td
-            ? RangedMath.RollDamage(_rng, weaponProto.Weapon.MinDamage, weaponProto.Weapon.MaxDamage, td, 0, 1, 1)
+            ? RangedMath.RollDamage(_rng, weaponProto.Weapon.MinDamage, weaponProto.Weapon.MaxDamage, td,
+                0, 1, 1, critMultiplier, (critFlags & CriticalTables.DamBypass) != 0)
             : 0;
 
         dude.Rotation = HexGrid.RotationTo(dude.HexTile, targetTile);
         _host.RemoveFromHand(dude, weaponItem); // leaves the hand at throw time
         _pendingThrow = new PendingThrow(dude, targetCritter, targetTile, hit, damage, explosive,
-            weaponProto.Weapon.MinDamage, weaponProto.Weapon.MaxDamage, weaponProto, weaponItem);
+            weaponProto.Weapon.MinDamage, weaponProto.Weapon.MaxDamage, weaponProto, weaponItem, critFlags);
         _host.Transcript($"throw {_host.ObjectNameByPid(weaponProto.Pid)} -> @{targetTile}"
-            + $": chance={chance}% hit={hit}{(explosive ? " explosive" : $" damage={damage}")}");
+            + $": chance={chance}% hit={hit}{(explosive ? " explosive" : $" damage={damage}")}{CritTag(critFlags)}");
         _host.OnThrowStarted(dude, targetTile, weaponProto);
 
         if (_phase == CombatPhase.Idle && targetCritter is not null)
@@ -572,12 +593,15 @@ public sealed class CombatEngine
 
         if (t.Hit && t.Target is { IsDead: false })
         {
+            bool critical = (t.CritFlags & CriticalTables.DamCritical) != 0;
             t.Target.CurrentHp -= t.Damage;
             bool byDude = t.Thrower == _host.Dude;
-            _host.Log(byDude
+            _host.Log((byDude
                 ? $"You hit the {_host.ObjectName(t.Target)} for {t.Damage} damage."
-                : $"The {_host.ObjectName(t.Thrower)} hits you for {t.Damage} damage.");
-            if (t.Target.CurrentHp <= 0)
+                : $"The {_host.ObjectName(t.Thrower)} hits you for {t.Damage} damage.")
+                + (critical ? " Critical hit!" : ""));
+            // A DEAD critical kills outright regardless of remaining HP (combat.cc DAM_DEAD).
+            if (t.Target.CurrentHp <= 0 || (t.CritFlags & CriticalTables.DamDead) != 0)
             {
                 if (t.Target == _host.Dude)
                     GameOver();

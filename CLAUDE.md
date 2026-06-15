@@ -197,7 +197,8 @@ landing tile via Explode + the misc-10 marker + metarule(49)==EXPLOSION
 + a radius-3 damage_p_proc broadcast = the temple-door path; non-
 explosives drop recoverable on the ground; --throw/--aim/--explode
 harness hooks. GOTCHA: the projectile flies via the throw anim, not a
-tweened sprite; throws don't crit; the artemple door-blast beat is WIRED
+tweened sprite (UPDATE: the screen-tween landed in #11, and throws crit as of
+P13-M3 — both these p9 notes are now superseded); the artemple door-blast beat is WIRED
 but unverified in-game — lockpick stays the advertised opener, per the
 content gate). 108→182 Formats tests; an 11-fixture golden combat
 harness; tools/ContentAudit (weapon/killtype/packet census) +
@@ -390,7 +391,17 @@ _check_ranged_miss not ported. Collateral emitted as separate "burst-extra:" tra
 lines (only when present) so the 1-on-1 burst line is untouched. Verified: fake-host
 BurstConeCatchesACollateralBystanderOnALine (a bystander on the discovered left line
 takes collateral) + BurstWithNoBystandersHasNoCollateral (the invariant) + both goldens
-byte-identical. M3 thrown-crit DEFERRED (orthogonal, would churn 3 throw fixtures).
+byte-identical.
+M3 thrown weapons can crit (DONE — P13 COMPLETE). TryThrow now runs the SAME
+day-gated 2nd-d100 crit upgrade as single-shot (combat.cc randomRoll — throws crit
+too): the hit roll became the delta form (chance - d100; the identical single draw,
+so day-1 throws stay byte-identical), and on a hit from day 2 a 2nd d100 ≤ delta/10 +
+critChance upgrades to a crit (severity → CriticalTables.Lookup at LocationUncalled
+(8, penalty 0) → damage multiplier + flags). PendingThrow gained CritFlags; ResolveThrow
+logs "Critical hit!" + honours DAM_DEAD (instant kill). Throws are uncalled (torso) and
+never knock back (projectiles), so no called-shot UI / no knockback — documented. day-1
+throw fixtures byte-identical (CriticalsEnabled false → crit block skipped → no extra
+draws); verified by fake-host ThrownWeaponCanCritFromDay2 + ThrownWeaponDoesNotCritOnDay1.
 GOTCHA: a burst's per-line collateral budget for the CENTRE line is centerRounds minus
 the defender's hits (0 in a MinRng all-hit duel) — collateral on the centre line only
 fires when the defender doesn't absorb the whole centre budget; left/right budgets are

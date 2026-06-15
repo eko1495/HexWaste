@@ -385,6 +385,36 @@ public class CombatEngineTests
         Assert.False(engine.TryThrow(targetTile));
     }
 
+    [Fact]
+    public void ThrownWeaponCanCritFromDay2()
+    {
+        // P13-M3: throws now run the day-gated 2nd-d100 crit upgrade (combat.cc randomRoll).
+        var host = new FakeCombatHost { CriticalsEnabled = true };
+        host.SetDude(NewCritter(20100, hp: 30, ap: 10, skill: 100)); // Throwing skill -> high chance
+        int targetTile = Step(20100, 0, 3);
+        host.AddCritter(NewCritter(targetTile, hp: 500));
+        host.Equipped = MakeThrowWeapon(pid: 0x07, ext: 0x50, dmgType: 0, r1: 2, r2: 8, min: 3, max: 10);
+        var engine = new CombatEngine(host, new MinRng()); // hit, then the crit roll succeeds (delta/10 large)
+
+        Assert.True(engine.TryThrow(targetTile));
+        Assert.Contains(host.Transcripts, t => t.StartsWith("throw ") && t.Contains("CRITICAL"));
+    }
+
+    [Fact]
+    public void ThrownWeaponDoesNotCritOnDay1()
+    {
+        // The day-1 invariant the throw goldens rely on: no crit roll, no extra RNG.
+        var host = new FakeCombatHost { CriticalsEnabled = false };
+        host.SetDude(NewCritter(20100, hp: 30, ap: 10, skill: 100));
+        int targetTile = Step(20100, 0, 3);
+        host.AddCritter(NewCritter(targetTile, hp: 500));
+        host.Equipped = MakeThrowWeapon(pid: 0x07, ext: 0x50, dmgType: 0, r1: 2, r2: 8, min: 3, max: 10);
+        var engine = new CombatEngine(host, new MinRng());
+
+        Assert.True(engine.TryThrow(targetTile));
+        Assert.DoesNotContain(host.Transcripts, t => t.Contains("CRITICAL"));
+    }
+
     // --- helpers ---------------------------------------------------------
 
     /// <summary>STR/AG 5 ⇒ unarmed skill 50, so a MinRng roll always connects.</summary>
