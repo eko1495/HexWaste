@@ -22,12 +22,14 @@ public sealed record SpawnItem(int Pid, int Count, bool Wielded, bool Worn);
 /// random_start_points, and movement-blocking/reachability predicates, it returns the
 /// list of objects to create — the viewer turns each into a MapObject (phase-10 M3).
 ///
-/// v1 divergences (documented): per-member If() conditions are not parsed, so every
-/// group member spawns (the engine's wmEvalConditional skip is omitted); the X
-/// FIGHTING Y combat-lock between sub-groups is skipped (treated as neutrals — AMBUSH
-/// hostility is script-side via the critter_p_proc heartbeat); the placement gate
-/// reuses the movement-blocking predicate for the engine's shoot-blocking LoF check;
-/// the difficulty −2/+2 skew and Cautious-Nature perk are skipped (Normal only).
+/// Honored (phase-10 #7): per-member If() conditions gate each member
+/// (<see cref="SpawnGroup"/> — wmEvalConditional skip), and a member's Distance/Tile pin
+/// the surrounding-ring radius/origin (<see cref="Formation.Step"/>).
+/// v1 divergences (documented): the X FIGHTING Y combat-lock between sub-groups is
+/// skipped (treated as neutrals — AMBUSH hostility is script-side via the critter_p_proc
+/// heartbeat; phase-16 M3 wires the team-vs-team fight); the placement gate reuses the
+/// movement-blocking predicate for the engine's shoot-blocking LoF check; the difficulty
+/// −2/+2 skew and Cautious-Nature perk are skipped (Normal only).
 /// </summary>
 public static class EncounterSpawner
 {

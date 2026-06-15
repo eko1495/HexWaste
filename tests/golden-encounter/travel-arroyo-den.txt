@@ -1,3 +1,3 @@
-encounter while travelling: ARRO_Spore_Plants -> mountn4.map
+encounter while travelling: ARRO_Spore_Plants name="A group of spore plants." table=6 entry=14 -> mountn4.map
 encounter-spawn: ARRO_Spore_Plants planned=4 placed=4 on mountn4.map
 travel-from: (184,133)->area1 encounter map=mountn4.map worldPos=(210,146) spawned=3

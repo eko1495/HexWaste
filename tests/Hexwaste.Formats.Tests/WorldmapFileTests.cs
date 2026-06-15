@@ -80,6 +80,25 @@ public class WorldmapFileTests
     }
 
     [Fact]
+    public void TableIndexAndEntryIndexDriveTheEncounterNameMessageId()
+    {
+        // Phase-16 M0: the encounter-name lookup is getmsg(3000 + 50*tableId + entryId),
+        // where tableId is the table's load-order index (the "[Encounter Table N]" number)
+        // and entryId is the enc_NN number itself (so a gap can't shift it).
+        WorldmapFile wm = WorldmapFile.Parse(Sample);
+        EncounterTable table = wm.Table("Arro_M")!;
+        Assert.Equal(6, table.Index);
+
+        EncounterEntry e0 = table.Entries[0]; // enc_00
+        EncounterEntry e4 = table.Entries[1]; // enc_04 (note the gap)
+        Assert.Equal(0, e0.EntryIndex);
+        Assert.Equal(4, e4.EntryIndex);
+
+        Assert.Equal(3300, new EncounterResult(table, e0).MessageId); // 3000 + 50*6 + 0
+        Assert.Equal(3304, new EncounterResult(table, e4).MessageId); // 3000 + 50*6 + 4
+    }
+
+    [Fact]
     public void CountersExportOnlyChangedTablesAndImportRoundTrips()
     {
         const string w = """

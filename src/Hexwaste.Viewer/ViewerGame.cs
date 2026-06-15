@@ -275,6 +275,24 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
     private Formats.Map.WorldmapFile? _worldmap;
     private Formats.Map.WorldmapFile Worldmap => _worldmap ??=
         Formats.Map.WorldmapFile.Parse(System.Text.Encoding.Latin1.GetString(_vfs.ReadAllBytes(@"data\worldmap.txt")));
+
+    /// <summary>worldmap.msg — the encounter display names (phase-16 M0); lazy, null if
+    /// absent. Indexed by <see cref="Formats.Map.EncounterResult.MessageId"/>.</summary>
+    private Formats.Text.MessageFile? _worldmapMsg;
+    private bool _worldmapMsgTried;
+    private string? EncounterName(Formats.Map.EncounterResult enc)
+    {
+        if (!_worldmapMsgTried)
+        {
+            _worldmapMsgTried = true;
+            const string path = @"text\english\game\worldmap.msg";
+            if (_vfs.Exists(path))
+                using (Stream s = _vfs.OpenRead(path))
+                    _worldmapMsg = Formats.Text.MessageFile.Load(s);
+        }
+        string? name = _worldmapMsg?.GetText(enc.MessageId);
+        return string.IsNullOrWhiteSpace(name) ? null : name;
+    }
     private Formats.Light.LightGrid _lightGrid = new();
 
     /// <summary>Open the worldmap on start (screenshot testing).</summary>
@@ -4213,8 +4231,14 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
             {
                 _pendingEncounter = r;
                 _worldmapOpen = false;
-                Console.WriteLine($"encounter while travelling: {r.Entry.Spawns.FirstOrDefault()?.Group ?? "?"} -> {leg.EncounterMap}");
-                Log("Ambush! The wasteland bites.");
+                // Phase-16 M0: name the encounter from worldmap.msg (3000+50*table+entry)
+                // instead of the bare literal — "Ambush! A group of spore plants."
+                string? name = EncounterName(r);
+                Console.WriteLine($"encounter while travelling: {r.Entry.Spawns.FirstOrDefault()?.Group ?? "?"}"
+                    + $" name=\"{name ?? "?"}\" table={r.Table.Index} entry={r.Entry.EntryIndex} -> {leg.EncounterMap}");
+                Log(name is not null
+                    ? $"{(r.Entry.Situation == "AMBUSH" ? "Ambush! " : "")}{name}"
+                    : "Ambush! The wasteland bites.");
                 LoadMap(leg.EncounterMap!, null, transient: true);
                 return;
             }

@@ -120,7 +120,7 @@ public sealed class WorldmapFile
             if (section == "tile" && int.TryParse(arg, out int idx))
                 tiles.Add(BuildTile(idx, fields, freq));
             else if (section == "table")
-                BuildTable(fields, tables);
+                BuildTable(arg, fields, tables);
             else if (section == "group")
                 groups[arg] = BuildGroup(arg, fields);
             else if (section == "randommaps")
@@ -201,20 +201,29 @@ public sealed class WorldmapFile
     private static readonly Regex SpawnRx = new(@"\((\d+)-(\d+)\)\s*([A-Za-z0-9_]+)", RegexOptions.Compiled);
     private static readonly Regex CondRx = new(@"If\s*\(\s*(\w+)\(([^)]*)\)\s*(==|!=|<|>)?\s*(-?\d+)?", RegexOptions.Compiled);
 
-    private static void BuildTable(Dictionary<string, string> fields, Dictionary<string, EncounterTable> tables)
+    private static void BuildTable(string sectionArg, Dictionary<string, string> fields, Dictionary<string, EncounterTable> tables)
     {
         if (!fields.TryGetValue("lookup_name", out string? lookup))
             return;
         var maps = fields.TryGetValue("maps", out string? m)
             ? m.Split(',').Select(s => s.Trim()).Where(s => s.Length > 0).ToList()
             : [];
-        var entries = new List<EncounterEntry>();
-        foreach ((string k, string v) in fields.Where(kv => kv.Key.StartsWith("enc_", StringComparison.OrdinalIgnoreCase))
-                     .OrderBy(kv => kv.Key))
-        {
-            entries.Add(ParseEntry(v));
-        }
-        tables[lookup.Trim()] = new EncounterTable(lookup.Trim(), maps, entries);
+        // The table id is the "[Encounter Table N]" number — load order, which is what
+        // a subtile's encounterType resolves to (worldmap.cc:1384/1962) and the encounter-
+        // name formula's table id. The entries keep their enc_NN position as EntryIndex.
+        int tableIndex = int.TryParse(sectionArg, out int n) ? n : tables.Count;
+        // EntryIndex = the enc_NN number itself (the engine keys entries by enc_%02d off a
+        // sequential counter, worldmap.cc:1404 — so the id is the NN). Parse it from the
+        // key rather than the loop position so a (non-real) gap can't shift the message id.
+        var entries = fields
+            .Where(kv => kv.Key.StartsWith("enc_", StringComparison.OrdinalIgnoreCase))
+            .OrderBy(kv => kv.Key)
+            .Select(kv => ParseEntry(kv.Value) with
+            {
+                EntryIndex = int.TryParse(kv.Key.AsSpan("enc_".Length), out int ei) ? ei : 0,
+            })
+            .ToList();
+        tables[lookup.Trim()] = new EncounterTable(lookup.Trim(), maps, entries, tableIndex);
     }
 
     private static EncounterEntry ParseEntry(string v)
@@ -322,12 +331,19 @@ public sealed record WorldTile(int Index, int Difficulty, Subtile[,] Subtiles);
 /// per-daypart encounter % (resolved from the frequency names).</summary>
 public sealed record Subtile(string Terrain, string EncTable, int MorningChance, int AfternoonChance, int NightChance);
 
-public sealed record EncounterTable(string LookupName, IReadOnlyList<string> Maps, IReadOnlyList<EncounterEntry> Entries);
+/// <summary><see cref="Index"/> is the table's 0-based load order ("[Encounter Table N]"),
+/// which is what a subtile's encounterType references AND the table id in the encounter-name
+/// formula (worldmap.cc:1384 encounterTable->index, :3564 encounterTableId).</summary>
+public sealed record EncounterTable(string LookupName, IReadOnlyList<string> Maps,
+    IReadOnlyList<EncounterEntry> Entries, int Index = 0);
 
 /// <summary>A weighted candidate: Chance weight, an optional special Map override,
-/// the spawn groups, the situation, and the If conditions that must all pass.</summary>
+/// the spawn groups, the situation, and the If conditions that must all pass.
+/// <see cref="EntryIndex"/> is its position in the table's enc_NN list — the entry id in
+/// the encounter-name formula (worldmap.cc:3633 candidates[index]).</summary>
 public sealed record EncounterEntry(int Chance, string? Map,
-    IReadOnlyList<EncounterSpawn> Spawns, string Situation, IReadOnlyList<EncCondition> Conditions)
+    IReadOnlyList<EncounterSpawn> Spawns, string Situation, IReadOnlyList<EncCondition> Conditions,
+    int EntryIndex = 0)
 {
     /// <summary>One-shot budget (-1 = unlimited); decremented on selection and
     /// persisted in the save (phase-10 M2). Mutable runtime state.</summary>

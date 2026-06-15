@@ -5,7 +5,13 @@ namespace Hexwaste.Formats.Map;
 /// <summary>The outcome of a step that triggered an encounter: the chosen table
 /// entry (spawn groups + situation + optional special map) and its table (the
 /// random-map pool to pick a terrain map from).</summary>
-public sealed record EncounterResult(EncounterTable Table, EncounterEntry Entry);
+public sealed record EncounterResult(EncounterTable Table, EncounterEntry Entry)
+{
+    /// <summary>The worldmap.msg id of this encounter's display name
+    /// (worldmap.cc:3511 getmsg(3000 + 50*encounterTableId + encounterEntryId); the
+    /// table id is its load-order index, the entry id its position in the table).</summary>
+    public int MessageId => 3000 + 50 * Table.Index + Entry.EntryIndex;
+}
 
 /// <summary>Game difficulty — skews the encounter occurrence frequency and the
 /// weighted pick (phase-10 #12). Normal is the no-op default.</summary>
