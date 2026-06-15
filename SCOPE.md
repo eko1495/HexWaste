@@ -20,32 +20,38 @@ filing an issue.
   click-to-travel with random encounters (`worldmap.txt` tables → transient
   encounter maps, groups spawned in formation), ambient NPC life, sound
   (music/sfx/footsteps/combat).
-- **Companions**: recruit, a wait/follow/dismiss/rejoin control hub, and a flat
-  1:1 inventory trade panel.
+- **Companions**: recruit (including Vic's legitimate VM-driven rescue), a
+  wait/follow/dismiss/rejoin control hub, a flat 1:1 inventory trade panel, and
+  per-companion proto level-ups (`party.txt`, live on the recruited Vic).
 - **Gameplay**: turn-based melee + gun combat with the engine's depth — to-hit /
-  line-of-fire / ammo+reload, AI behaviour packets (close-or-flee), critical hits
-  + aimed called shots, knockback + persisting knockdown, area explosions, and
-  throwing (spears, grenades, recoverable); armor, drugs, lootable corpses,
-  scripted aggro, same-team joiners, a minimum party member, barter, kill XP,
-  level-ups, per-map persistent world, versioned JSON save/load, a main menu,
-  character creation, rest.
+  line-of-fire / ammo+reload, single + burst fire, AI behaviour packets
+  (close-or-flee), critical hits + aimed called shots, knockback + persisting
+  knockdown, area explosions, and throwing (spears, grenades, recoverable);
+  armor, drugs, lootable corpses, scripted aggro, same-team joiners, a minimum
+  party member, barter, kill XP, level-ups, per-map persistent world, versioned
+  JSON save/load, a main menu, character creation, rest.
+- **Interface**: the authentic bottom HUD bar plus its panels — inventory,
+  character sheet, the Skilldex use-skill picker, the Pip-Boy (status + rest),
+  and an in-game options/pause menu.
 
 ## What's out (by design, today)
 
-- **Burst fire** — single-shot (and aimed/thrown) only; no burst-capable weapon
-  reaches the player in the shippable slice (see `docs/phase9-research-report.md`).
+- **Burst-fire collateral cone** — burst fire itself works (10mm SMG / Tommy Gun /
+  combat shotgun), but only the centre line fires at the target; the left/right
+  cone lines and the up-to-6 collateral "extras" (`combat.cc` `_compute_spray`)
+  are the one documented divergence (see `docs/phase9-research-report.md`).
 - **Most quest chains** — the opening hour (Arroyo → Temple → Klamath/Den) is
-  the target; deeper quests (incl. Vic's radio rescue), reputation/karma badges,
-  and the slave-run path are not wired.
-- **Companion depth** — recruit/follow/fight/dismiss/rejoin/wait and 1:1 trade
-  work (phase 10). The level-up proto-swap *logic* is now ported and unit-tested
-  (`Hexwaste.Formats.Party`, from `party.txt` + `party_member.cc`
-  `_partyMemberIncLevels`), but it is not wired into the viewer because **no
-  shippable map recruits a `party.txt` companion** (Sulik/Marcus/etc. need their
-  out-of-scope recruitment quests) — it lights up for free once one does (#13).
-  Per-companion quest *banter* is 100% companion-script content gated on those
-  same recruitment quests (it already runs via `talk_p_proc` when present), so
-  there is no engine work to do — blocked on content like Vic's rescue (#10).
+  the target; reputation/karma badges and the slave-run path are not wired.
+  Vic's rescue (#10) *is* wired end-to-end, with one residual content gap: the
+  radio item (pid 266) is a multi-step Klamath quest reward with no in-slice
+  source, so the recruit needs one `--give` to supply it.
+- **Companion depth** — recruit/follow/fight/dismiss/rejoin/wait, 1:1 trade, and
+  per-companion proto level-ups all work (phases 10 + #10), live on the
+  legitimately-recruited Vic (`party.txt` member 13). A second `party.txt`
+  recruit (Sulik/Marcus/etc.) needs its out-of-scope recruitment quest; the
+  level-up logic lights up for free when one lands. Per-companion quest *banter*
+  is 100% companion-script content gated on those same quests (it already runs
+  via `talk_p_proc` when present), so there is no engine work to do.
 - **Perks, traits, skill points beyond the gated skills**, the full character
   editor, and worldmap car travel.
 - **Anything needing assets we can't ship** — Hexwaste requires *your own* legal

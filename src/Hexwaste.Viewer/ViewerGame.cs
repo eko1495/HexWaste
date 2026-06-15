@@ -162,6 +162,12 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
     private bool _pipboyRestMenu;
     private Texture2D? _pipboyBg;
 
+    /// <summary>Options / pause menu (P12 M2): Esc or the OPT button opens it —
+    /// Save / Load / Quit to main menu / Quit to desktop / Resume (the actions of
+    /// options.cc showOptions; Preferences is out of scope — no preferences system).</summary>
+    private bool _optionsOpen;
+    private Texture2D? _optionsBg;
+
     /// <summary>Rest options (pipboy.cc PipboyRestDuration order, subset): positive =
     /// rest that many game-minutes; -1 = until healed; -2/-3 = until next 06:00 / 18:00.</summary>
     private static readonly (string Label, int Minutes)[] RestOptions =
@@ -786,7 +792,7 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
                         break;
                     }
                     btn.OnClick();
-                    Console.WriteLine($"hud-click: {hudName} -> inv={_inventoryOpen} skills={_skillAllocOpen} worldmap={_worldmapOpen} skilldex={_skilldexOpen} pipboy={_pipboyOpen}");
+                    Console.WriteLine($"hud-click: {hudName} -> inv={_inventoryOpen} skills={_skillAllocOpen} worldmap={_worldmapOpen} skilldex={_skilldexOpen} pipboy={_pipboyOpen} options={_optionsOpen}");
                     break;
                 }
                 case StartupAction.UseSkill(var useSkill, var skillHex):
@@ -1596,6 +1602,22 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
             return;
         }
 
+        // Options / pause menu (Esc or the OPT button): S save, L load, M main menu,
+        // Q quit to desktop, Esc/D resume (options.cc showOptions key set).
+        if (_optionsOpen)
+        {
+            if (IsKeyPressed(keyboard, Keys.S)) { _optionsOpen = false; SaveGame(); }
+            else if (IsKeyPressed(keyboard, Keys.L)) { _optionsOpen = false; LoadGame(); }
+            else if (IsKeyPressed(keyboard, Keys.M)) { _optionsOpen = false; QuitToMainMenu(); }
+            else if (IsKeyPressed(keyboard, Keys.Q)) Exit();
+            else if (IsKeyPressed(keyboard, Keys.Escape) || IsKeyPressed(keyboard, Keys.D)) _optionsOpen = false;
+
+            _previousMouse = mouse;
+            _previousKeyboard = keyboard;
+            base.Update(gameTime);
+            return;
+        }
+
         // Barter mode: 1-9 buy, Shift+1-9 sell, Esc close (back to dialog).
         if (_barterNpc is not null)
         {
@@ -1780,8 +1802,9 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
         if (IsKeyPressed(keyboard, Keys.M))
             _worldmapOpen = true;
 
-        if (keyboard.IsKeyDown(Keys.Escape))
-            Exit();
+        // Esc opens the options/pause menu (engine-faithful; the panel offers Quit).
+        if (IsKeyPressed(keyboard, Keys.Escape))
+            _optionsOpen = true;
 
         int panBeforeX = _camera.PanX;
         int panBeforeY = _camera.PanY;
@@ -4184,6 +4207,7 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
             DrawSkillAllocator();
             DrawSkilldex();
             DrawPipboy();
+            DrawOptions();
         }
         _spriteBatch.End();
 
@@ -4816,6 +4840,39 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
         }
     }
 
+    /// <summary>The options / pause menu (P12 M2): the authentic OPBASE.FRM (164x217)
+    /// centred, with the actions the engine's showOptions offers (minus Preferences,
+    /// which we have no system for). Drawn over the paused world.</summary>
+    private void DrawOptions()
+    {
+        if (!_optionsOpen || _fontRenderer is null)
+            return;
+        _optionsBg ??= InterfaceBar.LoadFrm(GraphicsDevice, _vfs, _palette, @"art\intrface\OPBASE.frm");
+
+        Rectangle vp = GraphicsDevice.Viewport.Bounds;
+        int ow = _optionsBg?.Width ?? 164, oh = _optionsBg?.Height ?? 217;
+        var origin = new Point(Math.Max(0, (vp.Width - ow) / 2), Math.Max(0, (vp.Height - oh) / 2));
+        var green = new Color(0, 252, 0);
+
+        if (_optionsBg is not null)
+            _spriteBatch.Draw(_optionsBg, new Vector2(origin.X, origin.Y), Color.White);
+        else
+        {
+            _panelPixel ??= CreatePixel();
+            _spriteBatch.Draw(_panelPixel, new Rectangle(origin.X, origin.Y, ow, oh), new Color(8, 16, 8, 240));
+        }
+
+        string[] items = ["Save Game  (S)", "Load Game  (L)", "Main Menu  (M)", "Quit  (Q)", "Resume  (Esc)"];
+        int lh = _fontRenderer.LineHeight + 10;
+        int ty = origin.Y + (oh - items.Length * lh) / 2;
+        foreach (string item in items)
+        {
+            int tw = _fontRenderer.MeasureWidth(item);
+            _fontRenderer.Draw(_spriteBatch, item, new Vector2(origin.X + (ow - tw) / 2, ty), green);
+            ty += lh;
+        }
+    }
+
     private void DrawItemPanels()
     {
         if (_fontRenderer is null)
@@ -5110,7 +5167,7 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
     private HudButton[] HudButtons() =>
     [
         new("INV", new Rectangle(211, 40, 32, 21), () => { _inventoryOpen = true; PrewarmItemTextures(_dudeInventory); }), // interface.cc:360
-        new("OPT", new Rectangle(210, 61, 34, 34), () => Log("Options — not wired in this slice.")),                      // :380
+        new("OPT", new Rectangle(210, 61, 34, 34), () => { _optionsOpen = true; }),                                       // :380
         new("MAP", new Rectangle(526, 39, 41, 19), () => { _worldmapOpen = true; }),                                      // :433
         new("CHA", new Rectangle(526, 58, 41, 19), () => { if (_dudeGcd is not null) _skillAllocOpen = true; }),          // :475
         new("PIP", new Rectangle(526, 77, 41, 19), () => { _pipboyOpen = true; }),                                        // :454
@@ -5683,6 +5740,16 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
     private bool MenuActivated(KeyboardState k) =>
         IsKeyPressed(k, Keys.Enter) || Enumerable.Range(0, 9).Any(i => IsKeyPressed(k, Keys.D1 + i));
 
+    /// <summary>Quit the current game back to the title menu (options.cc EXIT path).
+    /// The world/dude state lingers in memory; New Game / a premade reinitialises it.</summary>
+    private void QuitToMainMenu()
+    {
+        _combat.Reset();
+        _menu = MenuState.Title;
+        _menuIndex = 0;
+        Console.WriteLine("options: quit to main menu");
+    }
+
     private void PickPremade(int idx)
     {
         if (idx < 0 || idx >= _premadeGcds.Count)
@@ -5867,6 +5934,7 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
         _skillUsesDay = -1;
         _pipboyOpen = false;
         _pipboyRestMenu = false;
+        _optionsOpen = false;
         _dudeInventory = [];
         _visitedMaps.Clear();
         _combat.Reset();
@@ -6165,6 +6233,7 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
         _worldmapScreen?.Dispose();
         _interfaceBar?.Dispose();
         _pipboyBg?.Dispose();
+        _optionsBg?.Dispose();
         _fontRenderer?.Dispose();
         _frmCache.Dispose();
         _vfs.Dispose();

@@ -342,6 +342,16 @@ gate) with RestForMinutes; behaviour/Console output unchanged. Harness:
 --rest-for <min|-1|-2|-3> (reusing the pre-existing --hurt to set up a wound);
 golden pipboy-rest (timed + until-healed from near-death) + hud-buttons gained
 pipboy=/the PIP click. Automaps/archives/holodisks/alarm stay out (content-gated).
+M2 options/pause menu (DONE — P12 COMPLETE). Esc (CHANGED from quit→pause) or the
+OPT button opens DrawOptions: the authentic OPBASE.FRM (164x217) centred with the
+options.cc showOptions actions minus Preferences (no preferences system): Save (S),
+Load (L), Main Menu (M → QuitToMainMenu = _combat.Reset + _menu=Title), Quit (Q →
+Exit), Resume (Esc/D). hud-buttons gained options=/the OPT click. RIDER (the survey's
+stale-doc fix): SCOPE.md + README reconciled — burst fire, Vic's rescue, companion
+level-ups, and the HUD panels moved from "out"/unmentioned to "in" (only the burst
+collateral cone remains the documented out-of-scope divergence). GOTCHA: FrmDump's
+--info is NOT a flag — it dumps a rendered PNG named "--info.png" into cwd (a legal-
+guardrail trap); *.png is gitignored but delete it anyway.
 
 Phase 10 (DONE, per docs/phase10-research-report.md — "The Wasteland
 Bites Back"): M0 persistence pre-stage (the net: MapList saved=No /

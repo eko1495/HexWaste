@@ -71,11 +71,12 @@ Prebuilt self-contained builds (Linux x64 / Windows x64) are produced by
 - **HUD**: the authentic Fallout 2 interface bar (`iface.frm`) along the bottom —
   the green scrolling message monitor, the equipped-weapon slot with its attack-mode
   label, lit action-point pips, the HP/AC readout in the original digit font, the END
-  TURN / END COMBAT buttons during a fight, and clickable INV/MAP/CHA/SKILLDEX/PIP tabs
-  (the keyboard shortcuts still work). The SKILLDEX tab opens the use-skill picker —
+  TURN / END COMBAT buttons during a fight, and clickable INV/OPT/MAP/CHA/SKILLDEX/PIP
+  tabs (the keyboard shortcuts still work). The SKILLDEX tab opens the use-skill picker —
   choose a skill (Lockpick, First Aid, Doctor, Steal, Traps, Science, Repair, Sneak)
   and click a target to apply it. The PIP tab opens the Pip-Boy: a status page (date/
-  time, level, HP/AC) and a rest menu (timed rests or rest-until-healed).
+  time, level, HP/AC) and a rest menu (timed rests or rest-until-healed). The OPT tab
+  (or Esc) opens the options/pause menu: save, load, main menu, quit, resume.
 
 ## Controls
 
@@ -101,7 +102,7 @@ Prebuilt self-contained builds (Linux x64 / Windows x64) are produced by
 | F4 / T / PgUp / PgDn | roofs / walk-cycle / elevation |
 | [ / ] | ambient light (night ↔ day) |
 | M | worldmap |
-| Esc | quit |
+| Esc | options / pause menu (save / load / main menu / quit / resume) |
 
 A large set of `--flags` exists for headless testing (screenshots, scripted
 dialog/combat transcripts, deterministic RNG); see `src/Hexwaste.Viewer/Program.cs`.

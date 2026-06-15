@@ -37,9 +37,9 @@ SCENARIOS=(
   # GVAR445 handshake); then Vic's talk_p_proc party_add recruits him. The radio
   # ITEM (--give 266) is the one documented content gap — it has no in-slice source.
   "vic-recruit|--map denbus2.map --give 41:2000 --give 266:1 --talk-seq 17070 1,1,1 --talk-seq 15278 2,2,1,1 --talk-seq 17070 2,1 --party-count --rng-seed 1"
-  # P11 M4 + P12 M0/M1 — the HUD bar buttons fire their panel actions (INV/MAP/CHA wired
-  # in P11; SKILLDEX in P12-M0; PIP in P12-M1).
-  "hud-buttons|--character combat --map denbus2.map --hud-click INV --hud-click MAP --hud-click CHA --hud-click SKILLDEX --hud-click PIP --rng-seed 1"
+  # P11 M4 + P12 M0/M1/M2 — the HUD bar buttons fire their panel actions (INV/MAP/CHA
+  # wired in P11; SKILLDEX in P12-M0; PIP in P12-M1; OPT in P12-M2).
+  "hud-buttons|--character combat --map denbus2.map --hud-click INV --hud-click MAP --hud-click CHA --hud-click SKILLDEX --hud-click PIP --hud-click OPT --rng-seed 1"
   # P12 M0 — the Skilldex use-skill picker: lockpick a scripted door (use_skill_on_p_proc
   # honours the script — the door stays locked, not blindly unlocked), First Aid self at
   # full HP (healthy already, no roll), and the Sneak stance toggle. All deterministic.
