@@ -1619,33 +1619,30 @@ public sealed class CombatEngine
             return false;
 
         int fromTile = critter.HexTile;
-        int target = fromTile;
-        int moved = 0;
-        for (int step = 0; step < _actingEnemyAp; step++)
+        // ported from fallout2-ce combat_ai.cc _ai_run_away: head directly AWAY from the
+        // threat (the rotation from threat→self), or ±1 rotation, as far as AP allows, via
+        // a REAL path (_make_path) — not greedy neighbour-stepping that snags on obstacles.
+        // Try the full-AP distance first, shrinking until a reachable retreat tile is found.
+        int rotation = HexGrid.RotationTo(threatTile, fromTile);
+        int target = -1;
+        for (int dist = _actingEnemyAp; dist > 0 && target < 0; dist--)
         {
-            int best = -1;
-            int bestDist = HexGrid.Distance(target, threatTile);
-            for (int dir = 0; dir < 6; dir++)
+            foreach (int dir in (ReadOnlySpan<int>)[rotation, (rotation + 1) % 6, (rotation + 5) % 6])
             {
-                int n = HexGrid.TileInDirection(target, dir);
-                int d = HexGrid.Distance(n, threatTile);
-                if (d > bestDist && !_host.IsBlocked(n))
+                int dest = HexGrid.TileInDirection(fromTile, dir, dist);
+                if (dest != fromTile && Pathfinder.FindPath(fromTile, dest, _host.IsBlocked) is not null)
                 {
-                    best = n;
-                    bestDist = d;
+                    target = dest;
+                    break;
                 }
             }
-            if (best < 0)
-                break; // no neighbour increases distance — hemmed in
-            target = best;
-            moved++;
         }
 
-        if (moved == 0)
-            return false;
+        if (target < 0)
+            return false; // hemmed in — no reachable retreat
 
-        _actingEnemyAp -= moved;
-        _host.Log($"The {_host.ObjectName(critter)} tries to back away.");
+        _actingEnemyAp = 0; // the run uses the whole turn (animationRegisterRunToTile, full ap)
+        _host.Log($"The {_host.ObjectName(critter)} flees!");
         _host.Transcript($"flee: {_host.ObjectName(critter)}@{fromTile} -> {target}");
         return _host.StartWalk(critter, target);
     }

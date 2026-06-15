@@ -30,10 +30,10 @@ attack Healthy Slave@11670: chance=55% hit=True damage=4
 enemy-attack Clever Slave@12071: chance=40% hit=True damage=1
 enemy-attack Healthy Slave@11670: chance=44% hit=False damage=0
 enemy-attack Healthy Slave@11670: chance=44% hit=True damage=2
-flee: Cute Slave@9876 -> 8882
-flee: Cute Slave@11082 -> 11283
-flee: Cute Slave@11272 -> 10877
-flee: Handsome Slave@12670 -> 12869
+flee: Cute Slave@9876 -> 9084
+flee: Cute Slave@11082 -> 10290
+flee: Cute Slave@11272 -> 10480
+flee: Handsome Slave@12670 -> 13462
 attack Healthy Slave@11670: chance=55% hit=True damage=5
 attack Healthy Slave@11670: chance=55% hit=False damage=0
 attack Healthy Slave@11670: chance=55% hit=True damage=1
@@ -46,7 +46,10 @@ enemy-attack Clever Slave@12071: chance=40% hit=False damage=0
 enemy-attack Clever Slave@12071: chance=40% hit=True damage=3
 enemy-attack Healthy Slave@11670: chance=44% hit=False damage=0
 enemy-attack Healthy Slave@11670: chance=44% hit=False damage=0
-flee: Cute Slave@8882 -> 8089
+flee: Cute Slave@9876 -> 9084
+flee: Cute Slave@10290 -> 9498
+flee: Cute Slave@10480 -> 9688
+flee: Handsome Slave@13462 -> 14254
 attack Healthy Slave@11670: chance=55% hit=True damage=3
 attack Healthy Slave@11670: chance=55% hit=True damage=2
 attack Healthy Slave@11670: chance=55% hit=True damage=4
@@ -57,8 +60,11 @@ enemy-attack Clever Slave@11872: chance=40% hit=False damage=0
 enemy-attack Clever Slave@11872: chance=40% hit=False damage=0
 enemy-attack Clever Slave@12071: chance=40% hit=False damage=0
 enemy-attack Clever Slave@12071: chance=40% hit=False damage=0
-flee: Healthy Slave@11670 -> 10666
-flee: Cute Slave@8882 -> 8089
+flee: Healthy Slave@11670 -> 11063
+flee: Cute Slave@9876 -> 9084
+flee: Cute Slave@10290 -> 9498
+flee: Cute Slave@10480 -> 9688
+flee: Handsome Slave@13462 -> 14254
 attack Villager@11672: chance=52% hit=False damage=0
 attack Villager@11672: chance=52% hit=False damage=0
 attack Villager@11672: chance=52% hit=True damage=3
@@ -69,8 +75,11 @@ enemy-attack Clever Slave@11872: chance=40% hit=True damage=3
 enemy-attack Clever Slave@11872: chance=40% hit=True damage=3
 enemy-attack Clever Slave@12071: chance=40% hit=False damage=0
 enemy-attack Clever Slave@12071: chance=40% hit=True damage=3
-flee: Healthy Slave@10666 -> 9465
-flee: Cute Slave@8882 -> 8089
+flee: Healthy Slave@11063 -> 10256
+flee: Cute Slave@9876 -> 9084
+flee: Cute Slave@10290 -> 9498
+flee: Cute Slave@10480 -> 9688
+flee: Handsome Slave@13462 -> 14254
 attack Villager@11672: chance=52% hit=True damage=1
 attack Villager@11672: chance=52% hit=False damage=0
 attack Villager@11672: chance=52% hit=False damage=0
