@@ -1,5 +1,28 @@
 # Changelog
 
+## v0.11.0 — the opening hour, fully armed
+
+Closes the last of the backlog (#1–#15) and the post-v0.10 feature arc.
+
+- **Authentic HUD bar** (the real `iface.frm`): green message monitor, equipped-
+  weapon slot + attack-mode label, AP pips, HP/AC in the original digit font, the
+  END TURN / END COMBAT buttons, and clickable INV/OPT/MAP/CHA/SKILLDEX/PIP tabs
+  with their pressed-art and an HP/AC digit-roll.
+- **Companion — Vic**: his rescue is wired end-to-end (the radio-gated Metzger
+  buy, the VM-driven `party_add`), with `party.txt` proto level-ups that ride the
+  dude's level-ups and survive save/load.
+- **Panels**: the Skilldex use-skill picker (authentic `SKLDXBOX` art), the Pip-Boy
+  (status + a rest menu), and an Esc/OPT options/pause menu (save / load / main
+  menu / quit / resume).
+- **Combat presentation**: line-of-fire is now the engine's screen-space Bresenham
+  (was a greedy-hex approximation); burst fire sprays the real left/right collateral
+  cone; thrown weapons can land day-gated criticals.
+- **Combat consequences**: a critical can knock a target out (with a timed wake),
+  cost it a turn, cripple an arm/leg, or blind it — driven by the engine's
+  massive-critical stat roll. A crippled leg slows movement, blindness is −25 to
+  hit (and −5 Perception), a knocked-out critter is +40 to be hit, and the
+  Skilldex **Doctor** skill mends crippled limbs and eyes.
+
 ## v0.10.0 — 2026-06-14
 
 The wasteland bites back — random encounters and companions.

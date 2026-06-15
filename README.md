@@ -48,7 +48,11 @@ Prebuilt self-contained builds (Linux x64 / Windows x64) are produced by
   wounded, instead of fighting to the last hit point. Critical hits (from in-game
   day 2, like the engine) roll off the real Fallout 2 crit tables — bonus damage,
   armor bypass, the occasional instant kill; aim a called shot (V) at eyes/head/
-  legs to trade accuracy for a far better critical. Big melee blows knock the
+  legs to trade accuracy for a far better critical. And criticals have
+  consequences (the engine's massive-critical roll): a blow can blind, cripple a
+  limb, knock a target out cold (it wakes after a spell), or cost it a turn — a
+  blinded foe fights at −25, a crippled leg crawls, and the Skilldex Doctor skill
+  mends limbs and eyes. Big melee blows knock the
   target sprawling back along the hex line; a crit leaves it prone (+40 to hit,
   3 AP to stand). Throw a spear or rock (Throwing skill, range scaled by
   Strength) — it lands recoverable on the ground — or lob a grenade for an

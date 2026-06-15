@@ -122,7 +122,8 @@ replayed BEFORE map_enter; SavedItem ammo fields, -1 = derive from
 proto; override_map_start; V1 refuses), M2 guns (10mm-class = HITSCAN,
 muzzle flash baked in FRM 'j' — zero animator features; to-hit
 combat.cc:4314 subset; LoF = greedy hex walk DEVIATION from the
-engine's screen Bresenham; dude art hmjmps — hmwarr has no gun sets,
+engine's screen Bresenham [SUPERSEDED by P13-M1: LineOfFire is now the faithful
+screen-Bresenham port]; dude art hmjmps — hmwarr has no gun sets,
 engine has NO weapon-art fallback; R=reload, roofs moved to F4),
 M3 traps (spatial records kept in MapFile; RunSpatialsAt gated like
 _scr_SpatialsEnabled; create_object_sid BINDS scripts via AllocateSid;
@@ -350,8 +351,8 @@ options.cc showOptions actions minus Preferences (no preferences system): Save (
 Load (L), Main Menu (M → QuitToMainMenu = _combat.Reset + _menu=Title), Quit (Q →
 Exit), Resume (Esc/D). hud-buttons gained options=/the OPT click. RIDER (the survey's
 stale-doc fix): SCOPE.md + README reconciled — burst fire, Vic's rescue, companion
-level-ups, and the HUD panels moved from "out"/unmentioned to "in" (only the burst
-collateral cone remains the documented out-of-scope divergence). GOTCHA: FrmDump's
+level-ups, and the HUD panels moved from "out"/unmentioned to "in" (at the time, only
+the burst collateral cone remained out — SUPERSEDED: it shipped in P13-M2). GOTCHA: FrmDump's
 --info is NOT a flag — it dumps a rendered PNG named "--info.png" into cwd (a legal-
 guardrail trap); *.png is gitignored but delete it anyway.
 
@@ -443,7 +444,11 @@ KnockOut(critter) seam for tests/scripts. BYTE-IDENTICAL on all fixtures (status
 only originate from the massive roll, M4 — dormant until then); verified by 3 fake-host
 turn-skip/wake tests. M3 crippled-leg move cost + blind effects (DONE): CritterState.MovePointCost (leg crip
 → 4×/8× per-hex AP, critter.cc:1349, applied to the AI approach budget — 1× intact so
-byte-identical); CritterState.Perception → PE-5 when blind (stat.cc:191); ComputeToHit
+byte-identical). DOCUMENTED CUT (final-pass review): the crippled-leg slowdown applies
+to NPCs ONLY — the dude's in-combat movement is NOT AP-gated per hex (a pre-existing
+PoC simplification: the dude free-walks via WalkTo, ViewerGame.cs ~1974, with no combat
+AP charge), so a crippled-leg dude isn't slowed. AP-gating dude combat movement is its
+own feature, not a P14 item. CritterState.Perception → PE-5 when blind (stat.cc:191); ComputeToHit
 → blind attacker -25 (combat.cc:4470) + RangedMath.ToHitChance gains attackerBlind for
 the ×12 distance penalty (combat.cc:4383, only the positive-penalty branch). DEFERRED:
 the crippled-ARM weapon-gate (niche, needs a two-handed proto flag) — the bit is set +

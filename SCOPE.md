@@ -51,6 +51,9 @@ filing an issue.
   level-up logic lights up for free when one lands. Per-companion quest *banter*
   is 100% companion-script content gated on those same quests (it already runs
   via `talk_p_proc` when present), so there is no engine work to do.
+- **AP-gated player movement in combat** — the dude free-walks (click-to-move)
+  during his turn; movement isn't charged against AP per hex, so the crippled-leg
+  slowdown applies to NPC approach only. (NPC AP-budgeted movement *is* modelled.)
 - **Perks, traits, skill points beyond the gated skills**, the full character
   editor, and worldmap car travel.
 - **Anything needing assets we can't ship** — Hexwaste requires *your own* legal
