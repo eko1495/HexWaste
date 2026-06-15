@@ -155,6 +155,22 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
     /// Sneak, Lockpick, Steal, Traps, First Aid, Doctor, Science, Repair.</summary>
     private static readonly int[] SkilldexSkills = [8, 9, 10, 11, 6, 7, 12, 13];
 
+    /// <summary>Pip-Boy (P12 M1): the status + rest panel (PIP.FRM). _pipboyRestMenu
+    /// = the rest-duration sub-page (pipboy.cc PipboyRestDuration). Automaps, archives/
+    /// holodisks and the alarm are out of scope (content-gated).</summary>
+    private bool _pipboyOpen;
+    private bool _pipboyRestMenu;
+    private Texture2D? _pipboyBg;
+
+    /// <summary>Rest options (pipboy.cc PipboyRestDuration order, subset): positive =
+    /// rest that many game-minutes; -1 = until healed; -2/-3 = until next 06:00 / 18:00.</summary>
+    private static readonly (string Label, int Minutes)[] RestOptions =
+    [
+        ("Ten minutes", 10), ("Thirty minutes", 30), ("One hour", 60),
+        ("Two hours", 120), ("Three hours", 180), ("Six hours", 360),
+        ("Until morning", -2), ("Until evening", -3), ("Until healed", -1),
+    ];
+
     /// <summary>Open trade session (gdialog_barter): merchant + price modifier.</summary>
     private MapObject? _barterNpc;
     private MapObject? _barterStock;
@@ -297,6 +313,7 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
         /// report the resulting panel state — regression-proofs the M4 click wiring.</summary>
         public sealed record HudClick(string Name) : StartupAction;
         public sealed record UseSkill(int Skill, int TargetHex) : StartupAction;
+        public sealed record RestFor(int Minutes) : StartupAction;
         public sealed record Explode(int Hex) : StartupAction;
         public sealed record Throw(int Hex) : StartupAction;
         public sealed record ProjectileCheck(int Hex) : StartupAction;
@@ -769,7 +786,7 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
                         break;
                     }
                     btn.OnClick();
-                    Console.WriteLine($"hud-click: {hudName} -> inv={_inventoryOpen} skills={_skillAllocOpen} worldmap={_worldmapOpen} skilldex={_skilldexOpen}");
+                    Console.WriteLine($"hud-click: {hudName} -> inv={_inventoryOpen} skills={_skillAllocOpen} worldmap={_worldmapOpen} skilldex={_skilldexOpen} pipboy={_pipboyOpen}");
                     break;
                 }
                 case StartupAction.UseSkill(var useSkill, var skillHex):
@@ -794,6 +811,13 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
                     TryUseSkillOn(useSkill, skillTarget);
                     Console.WriteLine($"use-skill: skill={useSkill} target={ObjectName(skillTarget)} "
                         + $"hp={skillTarget.CurrentHp} locked={skillTarget.IsLockedState} sneak={_sneaking}");
+                    break;
+                }
+                case StartupAction.RestFor(var restMinutes):
+                {
+                    // Drive a Pip-Boy rest option (positive minutes / -1 healed / -2,-3
+                    // until morning,evening); RestForMinutes/RestToHeal print the state.
+                    DoRest(restMinutes);
                     break;
                 }
                 case StartupAction.PartyCount:
@@ -1543,6 +1567,35 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
             return;
         }
 
+        // Pip-Boy (P / PIP button): status page; R opens the rest menu, where 1-9 pick
+        // a rest duration. Esc backs out of the rest menu, then closes the panel.
+        if (_pipboyOpen)
+        {
+            if (_pipboyRestMenu)
+            {
+                for (int i = 0; i < RestOptions.Length; i++)
+                    if (IsKeyPressed(keyboard, Keys.D1 + i) || IsKeyPressed(keyboard, Keys.NumPad1 + i))
+                    {
+                        DoRest(RestOptions[i].Minutes);
+                        break;
+                    }
+                if (IsKeyPressed(keyboard, Keys.Escape))
+                    _pipboyRestMenu = false;
+            }
+            else
+            {
+                if (IsKeyPressed(keyboard, Keys.R))
+                    _pipboyRestMenu = true;
+                if (IsKeyPressed(keyboard, Keys.Escape) || IsKeyPressed(keyboard, Keys.P))
+                    _pipboyOpen = false;
+            }
+
+            _previousMouse = mouse;
+            _previousKeyboard = keyboard;
+            base.Update(gameTime);
+            return;
+        }
+
         // Barter mode: 1-9 buy, Shift+1-9 sell, Esc close (back to dialog).
         if (_barterNpc is not null)
         {
@@ -1636,6 +1689,10 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
         // S opens the Skilldex use-skill picker (engine KEY_LOWERCASE_S).
         if (IsKeyPressed(keyboard, Keys.S))
             _skilldexOpen = true;
+
+        // P opens the Pip-Boy (engine KEY_LOWERCASE_P).
+        if (IsKeyPressed(keyboard, Keys.P))
+            _pipboyOpen = true;
 
         // Z rests to heal (when it's safe).
         if (IsKeyPressed(keyboard, Keys.Z))
@@ -3068,38 +3125,50 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
         Console.WriteLine($"skill-spend: {Formats.Combat.SkillSet.Names[skill]} {current}->{after} cost={cost} left={_unspentSkillPoints}");
     }
 
-    /// <summary>
-    /// Rest to heal, modeled on fallout2-ce pipboy.cc:2111-2113: advance the
-    /// clock by hpToHeal / HEALING_RATE × 3 hours and restore HP. The engine
-    /// gates on the per-map can_rest_here flag + the worldmap rest loop; we
-    /// have neither, so we gate on local safety (no living non-party critter
-    /// within sight) — a documented divergence. Heals the dude + companions.
-    /// </summary>
-    private void RestToHeal()
+    /// <summary>Why resting is blocked right now, or null if allowed. The engine gates
+    /// on the per-map can_rest_here flag + the worldmap rest loop; we have neither, so
+    /// we gate on combat + local safety (no living non-party critter within sight) — a
+    /// documented divergence.</summary>
+    private string? RestBlockReason()
     {
         if (_dude is null)
-            return;
+            return "no dude";
         if (_combat.Phase != Formats.Combat.CombatPhase.Idle)
-        {
-            Log("You can't rest during a fight.");
-            Console.WriteLine("rest: refused (in combat)");
-            return;
-        }
-
+            return "in combat";
         bool danger = _solidObjects[_elevation].Any(o =>
             Fid.Type(o.Fid) is ObjectType.Critter && o != _dude.Dude && !o.IsDead
             && (_scriptHost is null || !_scriptHost.PartyMembers.Contains(o))
             && !_dismissedCompanions.ContainsKey(o) // a companion you just dismissed isn't a threat
             && Formats.Hex.HexGrid.Distance(o.HexTile, _dude.Dude.HexTile)
                 <= Formats.Combat.CombatRules.SightRangeHexes);
-        if (danger)
+        return danger ? "enemies near" : null;
+    }
+
+    private void LogRestRefusal(string why)
+    {
+        Log(why == "in combat" ? "You can't rest during a fight." : "It isn't safe to rest here.");
+        Console.WriteLine($"rest: refused ({why})");
+    }
+
+    private List<MapObject> Sleepers() =>
+        [_dude!.Dude, .. (_scriptHost?.PartyMembers ?? []).Where(m => !m.IsDead)];
+
+    /// <summary>
+    /// Rest to heal (Z / Pip-Boy "Until healed"), modeled on fallout2-ce
+    /// pipboy.cc:2111-2113: advance the clock by hpToHeal / HEALING_RATE × 3 hours
+    /// and restore the dude + companions to full.
+    /// </summary>
+    private void RestToHeal()
+    {
+        if (_dude is null)
+            return;
+        if (RestBlockReason() is { } why)
         {
-            Log("It isn't safe to rest here.");
-            Console.WriteLine("rest: refused (enemies near)");
+            LogRestRefusal(why);
             return;
         }
 
-        List<MapObject> sleepers = [_dude.Dude, .. (_scriptHost?.PartyMembers ?? []).Where(m => !m.IsDead)];
+        List<MapObject> sleepers = Sleepers();
         int hours = 0;
         foreach (MapObject c in sleepers)
         {
@@ -3125,6 +3194,65 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
                 c.CurrentHp = st.MaxHp;
         Log($"You rest for {hours} hours. Fully healed.");
         Console.WriteLine($"rest: +{hours}h, healed {sleepers.Count} to full (hour {_clock.Hour / 100:00})");
+    }
+
+    /// <summary>Pip-Boy rest-option dispatch (P12 M1): positive = that many game-minutes;
+    /// -1 = until healed; -2/-3 = until the next 06:00 / 18:00.</summary>
+    private void DoRest(int minutes)
+    {
+        _pipboyRestMenu = false;
+        if (minutes == -1)
+        {
+            RestToHeal();
+            return;
+        }
+        int restMin = minutes switch
+        {
+            -2 => MinutesUntil(600),
+            -3 => MinutesUntil(1800),
+            _ => minutes,
+        };
+        RestForMinutes(restMin);
+    }
+
+    /// <summary>Game-minutes from now until the next occurrence of an hhmm time-of-day.</summary>
+    private int MinutesUntil(int hhmm)
+    {
+        int nowMin = _clock.Hour / 100 * 60 + _clock.Hour % 100;
+        int targetMin = hhmm / 100 * 60 + hhmm % 100;
+        int delta = targetMin - nowMin;
+        return delta <= 0 ? delta + 24 * 60 : delta;
+    }
+
+    /// <summary>Timed rest: advance the clock and heal each sleeper proportionally
+    /// (Progression.HpHealedResting — the inverse of the until-healed hours math).</summary>
+    private void RestForMinutes(int minutes)
+    {
+        if (_dude is null || minutes <= 0)
+            return;
+        if (RestBlockReason() is { } why)
+        {
+            LogRestRefusal(why);
+            return;
+        }
+
+        _clock.Ticks += (long)minutes * 60 * Formats.GameClock.TicksPerSecond;
+        _lastAmbientHour = -1;
+        int healedCount = 0;
+        foreach (MapObject c in Sleepers())
+        {
+            if (GetCritterState(c) is not { } st)
+                continue;
+            int need = st.MaxHp - c.CurrentHp;
+            if (need <= 0)
+                continue;
+            int rate = Formats.Combat.Progression.HealingRate(st.Stat(Formats.Combat.CritterStat.Endurance));
+            int heal = Math.Min(need, Formats.Combat.Progression.HpHealedResting(minutes, rate));
+            if (heal > 0) { c.CurrentHp += heal; healedCount++; }
+        }
+        Log($"You rest for {minutes} minutes.");
+        Console.WriteLine($"rest: +{minutes}min, healed {healedCount} dudeHp {_dude.Dude.CurrentHp} "
+            + $"(hour {_clock.Hour / 100:00}, day {_clock.Day})");
     }
 
     private void PlayWeaponSfx(ProtoInfo? weaponProto)
@@ -4055,6 +4183,7 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
             DrawItemPanels();
             DrawSkillAllocator();
             DrawSkilldex();
+            DrawPipboy();
         }
         _spriteBatch.End();
 
@@ -4627,6 +4756,66 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
         _fontRenderer.Draw(_spriteBatch, "1-8 use, Esc/S close", new Vector2(x + 12, y + h - lh - 4), gray);
     }
 
+    /// <summary>The Pip-Boy panel (P12 M1): the authentic PIP.FRM (640x480) centred,
+    /// with the date/time, a character STATUS page, and a REST sub-page (durations).
+    /// Automaps / archives / alarm are out of scope (content-gated). Reuses the AAF font
+    /// (green) like the HUD monitor; the "date" is our game-day + clock — no full
+    /// calendar (a documented simplification, since our GameClock tracks only ticks).</summary>
+    private void DrawPipboy()
+    {
+        if (!_pipboyOpen || _fontRenderer is null)
+            return;
+        _pipboyBg ??= InterfaceBar.LoadFrm(GraphicsDevice, _vfs, _palette, @"art\intrface\PIP.frm");
+
+        Rectangle vp = GraphicsDevice.Viewport.Bounds;
+        int pw = _pipboyBg?.Width ?? 640, ph = _pipboyBg?.Height ?? 480;
+        var po = new Point(Math.Max(0, (vp.Width - pw) / 2), Math.Max(0, (vp.Height - ph) / 2));
+        var green = new Color(0, 252, 0);
+        var dim = new Color(0, 160, 0);
+
+        if (_pipboyBg is not null)
+            _spriteBatch.Draw(_pipboyBg, new Vector2(po.X, po.Y), Color.White);
+        else
+        {
+            _panelPixel ??= CreatePixel();
+            _spriteBatch.Draw(_panelPixel, new Rectangle(po.X, po.Y, pw, ph), new Color(8, 16, 8, 240));
+        }
+
+        // Date/time, top-left (pipboy.cc PIPBOY_WINDOW_DAY/TIME positions 20,17 / 155,17).
+        _fontRenderer.Draw(_spriteBatch, $"Day {_clock.Day}", new Vector2(po.X + 20, po.Y + 17), green);
+        _fontRenderer.Draw(_spriteBatch, $"{_clock.Hour / 100:00}:{_clock.Hour % 100:00}",
+            new Vector2(po.X + 155, po.Y + 17), green);
+
+        // Content view (pipboy.cc CONTENT_VIEW 254,46 374x410): STATUS or the REST menu.
+        int cx = po.X + 254, ty = po.Y + 46, lh = _fontRenderer.LineHeight + 4;
+        void Line(string text, Color c) { _fontRenderer!.Draw(_spriteBatch, text, new Vector2(cx, ty), c); ty += lh; }
+
+        if (!_pipboyRestMenu)
+        {
+            Line("STATUS", green); ty += 4;
+            string name = _dudeGcd is { Name.Length: > 0 } g && g.Name != "None" ? g.Name : "Wanderer";
+            Line(name, green);
+            Line($"Level {_dudeLevel}   XP {_dudeXp}", dim);
+            if (_dude is not null && GetCritterState(_dude.Dude) is { } st)
+            {
+                Line($"Hit Points {_dude.Dude.CurrentHp}/{st.MaxHp}", dim);
+                Line($"Armor Class {st.ArmorClass}", dim);
+                Line($"Action Points {st.MaxActionPoints}", dim);
+            }
+            ty += lh;
+            Line("R  Rest", green);
+            Line("P / Esc  Close", dim);
+        }
+        else
+        {
+            Line("REST", green); ty += 4;
+            for (int i = 0; i < RestOptions.Length; i++)
+                Line($"{i + 1}. {RestOptions[i].Label}", green);
+            ty += 4;
+            Line("Esc  Back", dim);
+        }
+    }
+
     private void DrawItemPanels()
     {
         if (_fontRenderer is null)
@@ -4924,7 +5113,7 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
         new("OPT", new Rectangle(210, 61, 34, 34), () => Log("Options — not wired in this slice.")),                      // :380
         new("MAP", new Rectangle(526, 39, 41, 19), () => { _worldmapOpen = true; }),                                      // :433
         new("CHA", new Rectangle(526, 58, 41, 19), () => { if (_dudeGcd is not null) _skillAllocOpen = true; }),          // :475
-        new("PIP", new Rectangle(526, 77, 41, 19), () => Log("Pip-Boy — not wired in this slice.")),                      // :454
+        new("PIP", new Rectangle(526, 77, 41, 19), () => { _pipboyOpen = true; }),                                        // :454
         new("SKILLDEX", new Rectangle(523, 6, 22, 21), () => { _skilldexOpen = true; }),                                  // :406
         // Combat-mode buttons (shown + clickable only during a fight; M5).
         new("ENDTURN", new Rectangle(590, 43, 38, 22), () => _combat.EndPlayerTurn(), CombatOnly: true),                  // :1903
@@ -5676,6 +5865,8 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
         _sneaking = false;
         _skillUsesByDay.Clear();
         _skillUsesDay = -1;
+        _pipboyOpen = false;
+        _pipboyRestMenu = false;
         _dudeInventory = [];
         _visitedMaps.Clear();
         _combat.Reset();
@@ -5973,6 +6164,7 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
         _audio?.Dispose();
         _worldmapScreen?.Dispose();
         _interfaceBar?.Dispose();
+        _pipboyBg?.Dispose();
         _fontRenderer?.Dispose();
         _frmCache.Dispose();
         _vfs.Dispose();

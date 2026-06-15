@@ -71,10 +71,11 @@ Prebuilt self-contained builds (Linux x64 / Windows x64) are produced by
 - **HUD**: the authentic Fallout 2 interface bar (`iface.frm`) along the bottom —
   the green scrolling message monitor, the equipped-weapon slot with its attack-mode
   label, lit action-point pips, the HP/AC readout in the original digit font, the END
-  TURN / END COMBAT buttons during a fight, and clickable INV/MAP/CHA/SKILLDEX tabs
+  TURN / END COMBAT buttons during a fight, and clickable INV/MAP/CHA/SKILLDEX/PIP tabs
   (the keyboard shortcuts still work). The SKILLDEX tab opens the use-skill picker —
   choose a skill (Lockpick, First Aid, Doctor, Steal, Traps, Science, Repair, Sneak)
-  and click a target to apply it.
+  and click a target to apply it. The PIP tab opens the Pip-Boy: a status page (date/
+  time, level, HP/AC) and a rest menu (timed rests or rest-until-healed).
 
 ## Controls
 
@@ -91,6 +92,7 @@ Prebuilt self-contained builds (Linux x64 / Windows x64) are produced by
 | Space | end combat turn |
 | L | lockpick the hovered door (the Skilldex Lockpick skill) |
 | S | Skilldex — pick a skill (1–8), then click a target to use it |
+| P | Pip-Boy — status page + rest (R for the rest menu, 1–9 pick a duration) |
 | I | inventory (1–9 use/equip/consume, Shift+1–9 drop) |
 | C / K | character sheet (spend level-up skill points) |
 | Z | rest to heal (when no enemies are near) |

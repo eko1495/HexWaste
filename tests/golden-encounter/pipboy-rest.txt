@@ -1,0 +1,4 @@
+hurt: dude HP now 10
+rest: +360min, healed 1 dudeHp 12 (hour 14, day 1)
+hurt: dude HP now 1
+rest: +87h, healed 1 to full (hour 05)

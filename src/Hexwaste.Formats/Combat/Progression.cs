@@ -37,6 +37,13 @@ public static class Progression
     /// (int)(hpToHeal / healingRate × 3).</summary>
     public static int RestHoursToHeal(int hpToHeal, int healingRate) =>
         hpToHeal <= 0 ? 0 : (int)((double)hpToHeal / Math.Max(healingRate, 1) * 3.0);
+
+    /// <summary>HP healed by resting <paramref name="minutes"/> game-minutes — the
+    /// inverse of <see cref="RestHoursToHeal"/> (healingRate HP per 3 hours = 180 min).
+    /// Used by the Pip-Boy timed-rest options (P12 M1); "until healed" still rests the
+    /// exact hours to full.</summary>
+    public static int HpHealedResting(int minutes, int healingRate) =>
+        minutes <= 0 ? 0 : (int)((double)minutes * Math.Max(healingRate, 1) / 180.0);
 }
 
 /// <summary>

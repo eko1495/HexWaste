@@ -47,6 +47,15 @@ public class RestMathTests
     [InlineData(7, 2, 10)]    // (int)(7/2*3) = (int)10.5 = 10
     public void RestHoursMatchesEngineTruncation(int need, int rate, int hours) =>
         Assert.Equal(hours, Combat.Progression.RestHoursToHeal(need, rate));
+
+    [Theory]
+    [InlineData(0, 3, 0)]      // no time -> no heal
+    [InlineData(180, 3, 3)]    // 3 game-hours at rate 3 = 3 HP (the inverse of RestHoursToHeal)
+    [InlineData(10, 3, 0)]     // 10 min -> (int)(10*3/180) = 0
+    [InlineData(60, 3, 1)]     // 1 hour at rate 3 = 1 HP
+    [InlineData(360, 2, 4)]    // 6 hours at rate 2 = 4 HP
+    public void TimedRestHealInvertsRestHours(int minutes, int rate, int healed) =>
+        Assert.Equal(healed, Combat.Progression.HpHealedResting(minutes, rate));
 }
 
 public class CombatRulesTests

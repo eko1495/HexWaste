@@ -1,4 +1,5 @@
-hud-click: INV -> inv=True skills=False worldmap=False skilldex=False
-hud-click: MAP -> inv=True skills=False worldmap=True skilldex=False
-hud-click: CHA -> inv=True skills=True worldmap=True skilldex=False
-hud-click: SKILLDEX -> inv=True skills=True worldmap=True skilldex=True
+hud-click: INV -> inv=True skills=False worldmap=False skilldex=False pipboy=False
+hud-click: MAP -> inv=True skills=False worldmap=True skilldex=False pipboy=False
+hud-click: CHA -> inv=True skills=True worldmap=True skilldex=False pipboy=False
+hud-click: SKILLDEX -> inv=True skills=True worldmap=True skilldex=True pipboy=False
+hud-click: PIP -> inv=True skills=True worldmap=True skilldex=True pipboy=True

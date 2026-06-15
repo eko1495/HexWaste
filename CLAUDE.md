@@ -329,6 +329,19 @@ effect. Heal rolls use a dedicated seeded _skillRng (off the combat/party/wm
 streams). Harness: --use-skill <skillId> <hex> (hex<0 = self); golden
 skilldex-skills (scripted-door lockpick + self First-Aid-at-full + Sneak, all
 deterministic) + hud-buttons re-recorded (the hud-click print gained skilldex=).
+M1 Pip-Boy status + rest (DONE). The PIP button (or P) opens the authentic
+PIP.FRM (640x480) centred, with the date/time top-left (pipboy.cc 20,17 / 155,17
+positions — our game-day + clock, NO full calendar since GameClock tracks only
+ticks: documented simplification), a STATUS content page (name/level/XP/HP/AC/AP)
+and a REST sub-page (R toggles it). Rest options (pipboy.cc PipboyRestDuration
+subset) map to game-minutes; the timed heal is Progression.HpHealedResting =
+minutes*rate/180 (the exact inverse of RestHoursToHeal — unit-tested), "Until
+healed" reuses RestToHeal, "Until morning/evening" advance to the next 06:00/
+18:00. RestToHeal refactored to share RestBlockReason (combat + local-safety
+gate) with RestForMinutes; behaviour/Console output unchanged. Harness:
+--rest-for <min|-1|-2|-3> (reusing the pre-existing --hurt to set up a wound);
+golden pipboy-rest (timed + until-healed from near-death) + hud-buttons gained
+pipboy=/the PIP click. Automaps/archives/holodisks/alarm stay out (content-gated).
 
 Phase 10 (DONE, per docs/phase10-research-report.md — "The Wasteland
 Bites Back"): M0 persistence pre-stage (the net: MapList saved=No /
