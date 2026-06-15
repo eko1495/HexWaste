@@ -187,6 +187,10 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
     private readonly HashSet<MapObject> _seenObjects = [];
     private const int AutomapSightRadius = 14; // hexes the dude "sees" around itself
 
+    /// <summary>Objects a map's reg_anim_animate_forever registered this map (P21-M1) —
+    /// recorded for the --reg-anim-probe; cleared per map.</summary>
+    private readonly List<string> _regAnimForever = [];
+
     /// <summary>Options / pause menu (P12 M2): Esc or the OPT button opens it —
     /// Save / Load / Quit to main menu / Quit to desktop / Resume (the actions of
     /// options.cc showOptions; Preferences is out of scope — no preferences system).</summary>
@@ -382,6 +386,9 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
         /// <summary>Phase-21: report the ambient light after map_enter — proves the map's
         /// scripted set_light_level took effect.</summary>
         public sealed record LightProbe : StartupAction;
+        /// <summary>Phase-21: report the map's reg_anim_animate_forever registrations — proves
+        /// the (otherwise arity-stubbed) external reached the animator.</summary>
+        public sealed record RegAnimProbe : StartupAction;
         public sealed record Explode(int Hex) : StartupAction;
         public sealed record Throw(int Hex) : StartupAction;
         public sealed record ProjectileCheck(int Hex) : StartupAction;
@@ -587,6 +594,20 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
                     obj.LightDistance = distance;
                     if (obj.LightIntensity > 0) obj.Flags |= 0x20; else obj.Flags &= ~0x20; // OBJECT_LIGHTING
                     RebuildLighting();
+                },
+                AnimateForeverRequested = (obj, anim) =>
+                {
+                    // reg_anim_animate_forever: loop animation code `anim` on the object. A
+                    // critter gets its anim-coded FID + a looping animator state; scenery just
+                    // loops its FRM. SLICE NOTE: every slice usage targets SCENERY (firepits,
+                    // a waterfall) which our multi-frame art already auto-loops, so the call is
+                    // faithful but visually redundant here; the critter path lights up for free.
+                    _regAnimForever.Add($"{ObjectName(obj)}@{obj.HexTile}:{Fid.Type(obj.Fid)}:anim{anim}");
+                    if (Fid.Type(obj.Fid) is ObjectType.Critter)
+                        _animator.SetCritterAnimation(obj, Fid.Build(ObjectType.Critter, Fid.Index(obj.Fid), anim,
+                            Fid.WeaponCode(obj.Fid), obj.Rotation));
+                    else
+                        _animator.AddLooping(obj);
                 },
                 // First hit of each distinct stub goes to stderr; counts are
                 // dumped per map on exit (gap analysis for wiring externals).
@@ -1111,6 +1132,11 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
                     // scripted set_light_level took effect (artemple sets 100 -> max + pinned).
                     Console.WriteLine($"light: map={_currentMapName} ambient={_lightGrid.Ambient}"
                         + $"/{Formats.Light.LightGrid.IntensityMax} fixed={AmbientFixed}");
+                    break;
+                case StartupAction.RegAnimProbe:
+                    // Phase-21: the reg_anim_animate_forever registrations from map_enter.
+                    Console.WriteLine($"reg-anim: map={_currentMapName} forever={_regAnimForever.Count}"
+                        + $" [{string.Join(", ", _regAnimForever)}]");
                     break;
                 case StartupAction.OpenAutomap:
                 {
@@ -1680,6 +1706,7 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
         _dude = null;
         _openDoors.Clear();
         _seenObjects.Clear(); // automap fog resets per map (P20-M2)
+        _regAnimForever.Clear(); // reg_anim record resets per map (P21-M1)
         _npcWalkers.Clear();
         _homeTiles.Clear();
         _projectiles.Clear();

@@ -86,9 +86,11 @@ SCENARIOS=(
   # P15 M0 — the Pip-Boy automap object census (the dots it plots): deterministic
   # per-type object counts + the dude tile for a fixed map (no RNG).
   "automap-arcaves|--map arcaves.map --automap --rng-seed 1"
-  # P21 M0 — script-driven lighting: artemple's map_enter calls set_light_level(100), now
-  # wired to pin the ambient (was an arity-stubbed no-op). --light-probe reports the result.
-  "script-light|--map artemple.map --light-probe --rng-seed 1"
+  # P21 — script-driven lighting + reg_anim: artemple's map_enter calls set_light_level(100)
+  # (now pins the ambient) and reg_anim_animate_forever on its two firepits (now reaches the
+  # animator; redundant with FRM auto-loop on the slice, faithful for the critter case). Both
+  # were arity-stubbed no-ops before. The probes report the results.
+  "script-light|--map artemple.map --light-probe --reg-anim-probe --rng-seed 1"
   # P12 M1 — the Pip-Boy rest options: a timed rest (6h heals proportionally) then an
   # until-healed rest from near-death to full. --hurt sets up the wound; deterministic
   # clock math + heal amounts (artemple has no enemy near the entry, so rest is allowed).
@@ -104,7 +106,7 @@ SCENARIOS=(
 
 # Keep only the deterministic transcript lines (drop map-load / animate / stub /
 # dialog-text noise — NEVER capture REPLY/OPTION game-asset strings).
-FILTER='^(encounter|travel-from|companion|dismiss-persist|trade:|party:|party-count:|set-global:|hud-click:|use-skill:|hurt:|rest:|automap:|weapon-mode:|panel-click:|menu-click:|travel-resume:|travel-step:|travel-save-mid:|combat-walk:|light:|encounter-fight:|brawl:|  spawn|  flat|  wait:|  follow:|  dismiss:|  rejoin:)'
+FILTER='^(encounter|travel-from|companion|dismiss-persist|trade:|party:|party-count:|set-global:|hud-click:|use-skill:|hurt:|rest:|automap:|weapon-mode:|panel-click:|menu-click:|travel-resume:|travel-step:|travel-save-mid:|combat-walk:|light:|reg-anim:|encounter-fight:|brawl:|  spawn|  flat|  wait:|  follow:|  dismiss:|  rejoin:)'
 
 echo "Building viewer..."
 dotnet build src/Hexwaste.Viewer -c Debug >/dev/null || { echo "build failed"; exit 2; }

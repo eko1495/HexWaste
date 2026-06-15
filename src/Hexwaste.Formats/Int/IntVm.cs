@@ -251,6 +251,10 @@ public interface IVmExternals
 
     /// <summary>obj_set_light_level — set a per-object light pool (intensity 0-100%, radius).</summary>
     void SetObjectLightLevel(int objectHandle, int intensity, int distance) { }
+
+    /// <summary>reg_anim_animate_forever — loop animation code <paramref name="anim"/> on the
+    /// object forever (the host's animator).</summary>
+    void RegAnimAnimateForever(int objectHandle, int anim) { }
 }
 
 /// <summary>
@@ -1338,6 +1342,12 @@ public sealed class IntVm
                 int distance = PopInt();
                 int intensity = PopInt();
                 _externals.SetObjectLightLevel(PopInt(), intensity, distance);
+                break;
+            }
+            case 0x8126: // reg_anim_animate_forever (pops anim, obj)
+            {
+                int anim = PopInt();
+                _externals.RegAnimAnimateForever(PopInt(), anim);
                 break;
             }
 

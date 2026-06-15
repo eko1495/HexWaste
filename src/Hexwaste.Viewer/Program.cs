@@ -160,6 +160,10 @@ for (int i = 0; i < args.Length; i++)
             // --light-probe: report the ambient after the map's scripted set_light_level (P21).
             actions.Add(new ViewerGame.StartupAction.LightProbe());
             break;
+        case "--reg-anim-probe":
+            // --reg-anim-probe: report the map's reg_anim_animate_forever registrations (P21).
+            actions.Add(new ViewerGame.StartupAction.RegAnimProbe());
+            break;
         case "--set-global" when i + 2 < args.Length:
             // --set-global <id> <value>: force a session GVAR (probe gated dialog).
             actions.Add(new ViewerGame.StartupAction.SetGlobal(int.Parse(args[i + 1]), int.Parse(args[i + 2])));

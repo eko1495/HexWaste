@@ -83,6 +83,9 @@ public sealed class ScriptHost(GameFileSystem vfs, ScriptList scripts, Hexwaste.
     /// 0-100%, radius).</summary>
     public Action<MapObject, int, int>? ObjectLightRequested { get; set; }
 
+    /// <summary>reg_anim_animate_forever: the host loops anim code on the object.</summary>
+    public Action<MapObject, int>? AnimateForeverRequested { get; set; }
+
     /// <summary>Stat-block override (the dude's gcd sheet); null falls back to
     /// the critter's prototype.</summary>
     public Func<MapObject, Proto.CritterProtoStats?>? StatsResolver { get; set; }
@@ -877,6 +880,12 @@ public sealed class ScriptHost(GameFileSystem vfs, ScriptList scripts, Hexwaste.
         {
             if (_host.ObjectOf(objectHandle) is { } obj)
                 _host.ObjectLightRequested?.Invoke(obj, intensity, distance);
+        }
+
+        public void RegAnimAnimateForever(int objectHandle, int anim)
+        {
+            if (_host.ObjectOf(objectHandle) is { } obj)
+                _host.AnimateForeverRequested?.Invoke(obj, anim);
         }
 
         public int GetCritterStat(int objectHandle, int stat) =>

@@ -1,1 +1,2 @@
 light: map=artemple.map ambient=65536/65536 fixed=True
+reg-anim: map=artemple.map forever=2 [Firepit@17278:Scenery:anim0, Firepit@17294:Scenery:anim0]
