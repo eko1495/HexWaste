@@ -472,6 +472,21 @@ SkillHealing unit tests; goldens byte-identical (no Doctor-on-crippled scenario)
 COMPLETE: crit consequences (knockout+wake, lose-turn, crippled limbs, blind) are live,
 driven by the massive-crit roll, with the Doctor cure; SCOPE.md/README reconciled.
 
+Phase 15 (IN PROGRESS — "Make the Chrome Click", UI completeness; the UI audit found
+all 8 HUD bar buttons fire, but the weapon slot is inert + Options/Pip-Boy rows are
+key-only + item panels keyboard-only + the Pip-Boy lacked Automap/Archives): M0 Pip-Boy
+full-window automap (DONE). DrawAutomap renders the authentic AUTOMAP.FRM (519x480) with
+every current-elevation object as a colored dot (automap.cc automapRenderInMapWindow:
+ax = 449 - 2*(tile%200), ay = 2*(tile/200) + 8 — the engine's flat-buffer v10 decomposed),
+colored by FID type (wall grey / scenery green / critter red / item yellow / misc cyan;
+dead critters skipped), dude = bright marker; opened from the Pip-Boy (A). DOCUMENTED
+SIMPLIFICATIONS: fog-of-war faked all-visible (no OBJECT_SEEN); the per-type colors are
+readable approximations of the engine's _colorTable indices; the embedded Pip-Boy mini-
+automap stays out (needs automap.db RLE). Harness --automap opens it + prints a
+deterministic object census (golden automap-arcaves). Draw-only + additive → other
+goldens byte-identical. Next: M1 weapon-slot interactive (click=fire + attack-mode
+cycle), M2 item-row mouse clicking + overflow paging, M3 clickable Options/Pip-Boy rows.
+
 Phase 10 (DONE, per docs/phase10-research-report.md — "The Wasteland
 Bites Back"): M0 persistence pre-stage (the net: MapList saved=No /
 random_start_point parse + IsTransient; the 3-clause transient guards as
