@@ -595,6 +595,33 @@ harness (golden travel-save-mid: saved at dot 188,135 -> round-trips + resumes t
 294 Formats tests, 25 encounter + 14 combat goldens green. Spillover: subtile fog-of-war reveal
 (worldmap exploration), the fully-independent NPC-vs-NPC brawl loop.
 
+Phase 18 (DONE — "Combat Movement Symmetry"): the dude free-walked the whole map for free on
+its combat turn while NPCs paid AP, and the P14-M3 crippled-leg slowdown never touched the
+player. M0+M1 AP-gated dude combat movement (DONE): the _dude.TileChanged closure deducts
+CritterState.MovePointCost per hex from _combat.DudeAp DURING COMBAT (CombatEngine.SpendDudeAp,
+clamped 0) and HALTS the walk when the next hex is unaffordable; the click-to-walk is refused
+when AP can't afford a hex. Out of combat, movement is free (no AP model). MovePointCost's 4x/8x
+crippled-leg cost (P14-M3, NPC-only) now charges the dude — closing the SCOPE asymmetry; Doctor-
+heal (P14-M5) restores it. FIX: DudeController.Update touched _rotations AFTER TileChanged,
+NPE-ing when a handler Stop()s the walk (the survey-flagged "AP-truncation desync") — guarded.
+GOTCHA: the combat goldens NEVER walk the dude (--fight teleports adjacent + attacks), so AP-
+gating MOVEMENT is inert there → all combat goldens byte-identical; the new behaviour is proven
+by the --combat-walk harness (goldens combat-walk-full AP8→4 hexes / -truncated AP2→2 hexes /
+-crippled AP8 4-per-hex→2 hexes). M2 crippled-arm weapon gate (DONE): WeaponProtoStats.IsTwoHanded
+(extendedFlags 0x200); CombatEngine.WeaponBlockedByCrippledArms (combat.cc:5655) — both arms
+crippled blocks ANY weapon attack, one arm blocks a TWO-HANDED weapon, unarmed never gated;
+wired into the dude's TryAttack/TryBurst/TryThrow. DOCUMENTED CUT: the NPC AI attack is not
+gated (NPCs rarely lose an arm + it'd churn the sensitive day-2 crit goldens). Inert for an
+un-crippled dude → byte-identical; fake-host CrippledArmsGateWeaponAttacks. M3 faithful AI flee
+(DONE): TryFlee ported from combat_ai.cc _ai_run_away — head directly AWAY (threat→self rotation,
+or ±1), as far as AP allows, to a tile reached by a REAL A* path (was greedy neighbour-stepping
+that snags on walls); the run uses the whole turn. Flee draws NO RNG → attack rolls byte-identical;
+denbus2-fight-flee re-recorded for the faithful retreat tiles only (SAME outcome: rounds=5, dude
+dies identically). M4 (DONE): the movement goldens (M0's combat-walk trio) + the one affected
+re-record (M3's flee) ARE the deliverable; NO RNG-divergence occurred (dude doesn't walk in
+--fight, flee is deterministic). 295 Formats tests, 28 encounter + 14 combat goldens green.
+Spillover: AP-gating the dude's OUT-of-combat move (a separate feature), the NPC crippled-arm gate.
+
 Phase 10 (DONE, per docs/phase10-research-report.md — "The Wasteland
 Bites Back"): M0 persistence pre-stage (the net: MapList saved=No /
 random_start_point parse + IsTransient; the 3-clause transient guards as

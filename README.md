@@ -51,8 +51,10 @@ Prebuilt self-contained builds (Linux x64 / Windows x64) are produced by
   legs to trade accuracy for a far better critical. And criticals have
   consequences (the engine's massive-critical roll): a blow can blind, cripple a
   limb, knock a target out cold (it wakes after a spell), or cost it a turn — a
-  blinded foe fights at −25, a crippled leg crawls, and the Skilldex Doctor skill
-  mends limbs and eyes. Big melee blows knock the
+  blinded foe fights at −25, and the Skilldex Doctor skill mends limbs and eyes.
+  Moving in combat costs action points per hex (you can't free-walk the map mid-
+  fight), a crippled leg costs 4× so it crawls, and a crippled arm blocks a
+  two-handed weapon (both arms block any weapon). Big melee blows knock the
   target sprawling back along the hex line; a crit leaves it prone (+40 to hit,
   3 AP to stand). Throw a spear or rock (Throwing skill, range scaled by
   Strength) — it lands recoverable on the ground — or lob a grenade for an
