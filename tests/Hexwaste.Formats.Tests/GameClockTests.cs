@@ -13,6 +13,25 @@ public class GameClockTests
     }
 
     [Fact]
+    public void CalendarStartsOnTheFalloutDateAndWalksTheMonths()
+    {
+        // P20-M3: the FO2 start is July 25, 2241 (scripts.cc gameTimeGetDate).
+        var clock = new GameClock();
+        Assert.Equal((7, 25, 2241), clock.Date);
+        Assert.Equal("July 25, 2241", clock.DateString);
+
+        // +6 days → still July (25→31), +7th day crosses into August 1.
+        clock.Ticks = 302400 + 6L * GameClock.TicksPerDay;
+        Assert.Equal((7, 31, 2241), clock.Date);
+        clock.Ticks = 302400 + 7L * GameClock.TicksPerDay;
+        Assert.Equal((8, 1, 2241), clock.Date);
+
+        // +160 days from July 25 lands in early January 2242 (year rollover).
+        clock.Ticks = 302400 + 160L * GameClock.TicksPerDay;
+        Assert.Equal(2242, clock.Date.Year);
+    }
+
+    [Fact]
     public void AdvancesRealTimeAtIdleRate()
     {
         var clock = new GameClock { IdleRate = 60 };

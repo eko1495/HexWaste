@@ -5501,7 +5501,8 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
         }
 
         // Date/time, top-left (pipboy.cc PIPBOY_WINDOW_DAY/TIME positions 20,17 / 155,17).
-        _fontRenderer.Draw(_spriteBatch, $"Day {_clock.Day}", new Vector2(po.X + 20, po.Y + 17), green);
+        // P20-M3: the real FO2 calendar date (scripts.cc gameTimeGetDate) — not a day count.
+        _fontRenderer.Draw(_spriteBatch, _clock.DateString, new Vector2(po.X + 20, po.Y + 17), green);
         _fontRenderer.Draw(_spriteBatch, $"{_clock.Hour / 100:00}:{_clock.Hour % 100:00}",
             new Vector2(po.X + 155, po.Y + 17), green);
 
