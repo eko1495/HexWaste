@@ -192,6 +192,15 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
     /// <summary>The bar's screen footprint this frame (0-height when hidden) so the
     /// message log + HUD text lift above it instead of colliding (P11 M0).</summary>
     private int _hudBarHeight;
+
+    /// <summary>The HP/AC values currently shown on the bar — they roll toward the real
+    /// stat one unit at a time (the iconic Fallout counter animation; P11 M5 polish).
+    /// -1 = uninitialised → snap to the real value on the next step. Purely cosmetic:
+    /// never printed, so golden transcripts are unaffected.</summary>
+    private int _hudDisplayedHp = -1;
+    private int _hudDisplayedAc = -1;
+    private double _hudRollAccumulatorMs;
+
     private WorldArea? _hoveredArea;
 
     /// <summary>The dude's last worldmap position + area, persisted across saves
@@ -1758,6 +1767,7 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
         }
 
         UpdateClock(gameTime.ElapsedGameTime.TotalMilliseconds);
+        UpdateHudRoll(gameTime.ElapsedGameTime.TotalMilliseconds);
 
         // Hover picking; click prints the object's identity.
         MapObject? previousHover = _hoveredObject;
@@ -1894,6 +1904,7 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
             dude.CurrentHp = stats.MaxHp;
             _combat.SetDudeAp(stats.MaxActionPoints);
         }
+        _hudDisplayedHp = _hudDisplayedAc = -1; // snap the HUD counters to the new dude
 
         // Carry the bag over and alias it to the new dude object so scripts
         // (caps payments, inventory checks) and panels share one pocket.
@@ -4531,6 +4542,32 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
         return pixel;
     }
 
+    /// <summary>Step the HP/AC HUD counters one unit per <c>StepMs</c> toward the real
+    /// stat — the iconic Fallout digit roll (P11 M5). -1 snaps (fresh dude/load); a big
+    /// swing rolls visibly over a beat. Cosmetic only; never printed.</summary>
+    private void UpdateHudRoll(double elapsedMs)
+    {
+        if (_dude is null || GetCritterState(_dude.Dude) is not { } stats)
+            return;
+
+        if (_hudDisplayedHp < 0 || _hudDisplayedAc < 0)
+        {
+            _hudDisplayedHp = stats.CurrentHp;
+            _hudDisplayedAc = stats.ArmorClass;
+            _hudRollAccumulatorMs = 0;
+            return;
+        }
+
+        const double StepMs = 25; // ~40 digits/sec — fast enough to feel snappy, slow enough to read
+        _hudRollAccumulatorMs += elapsedMs;
+        while (_hudRollAccumulatorMs >= StepMs)
+        {
+            _hudRollAccumulatorMs -= StepMs;
+            _hudDisplayedHp += Math.Sign(stats.CurrentHp - _hudDisplayedHp);
+            _hudDisplayedAc += Math.Sign(stats.ArmorClass - _hudDisplayedAc);
+        }
+    }
+
     /// <summary>The authentic bottom HUD bar (P11): the iface.frm panel pinned
     /// bottom-centre at native scale, with live readouts composed on top. Sets
     /// <see cref="_hudBarHeight"/> so the message log + HUD text lift above it.</summary>
@@ -4588,10 +4625,15 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
             var fieldBg = new Color(32, 32, 32); // the recessed digit-box interior colour
             _spriteBatch.Draw(_panelPixel, new Rectangle(o.X + 474, o.Y + 40, 33, 17), fieldBg);  // HP box
             _spriteBatch.Draw(_panelPixel, new Rectangle(o.X + 474, o.Y + 75, 33, 17), fieldBg);  // AC box
-            // HP: white band normal, yellow <50%, red <25% (interface.cc:889-894).
-            int hpBand = stats.CurrentHp * 4 <= stats.MaxHp ? 2 : stats.CurrentHp * 2 <= stats.MaxHp ? 1 : 0;
-            DrawCounter(numbers, stats.CurrentHp, hpBand, xRight: o.X + 505, yTop: o.Y + 40);
-            DrawCounter(numbers, stats.ArmorClass, band: 0, xRight: o.X + 505, yTop: o.Y + 75);
+            // The counters roll toward the live stat (M5); fall back to the real value
+            // until the first roll step initialises them.
+            int shownHp = _hudDisplayedHp >= 0 ? _hudDisplayedHp : stats.CurrentHp;
+            int shownAc = _hudDisplayedAc >= 0 ? _hudDisplayedAc : stats.ArmorClass;
+            // HP: white band normal, yellow <50%, red <25% (interface.cc:889-894) — from
+            // the shown value so the colour tracks the rolling digits.
+            int hpBand = shownHp * 4 <= stats.MaxHp ? 2 : shownHp * 2 <= stats.MaxHp ? 1 : 0;
+            DrawCounter(numbers, shownHp, hpBand, xRight: o.X + 505, yTop: o.Y + 40);
+            DrawCounter(numbers, shownAc, band: 0, xRight: o.X + 505, yTop: o.Y + 75);
         }
 
         // AP: light the green dot sockets along the top (interface.cc:974,1001 — 10 dots,
@@ -4631,15 +4673,29 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
                 _spriteBatch.Draw(bar.EndCombat, new Vector2(o.X + 590, o.Y + 65), Color.White);
         }
 
-        // M5: hover feedback — a soft highlight on the clickable button under the cursor.
+        // M5: press/hover feedback. While the left mouse is held on a button, overlay
+        // its DOWN-state art (invbutdn/optidn/…, the same native size as the baked UP
+        // button — interface.cc buttonCreate w×h) at the button's top-left; merely
+        // hovering gets a soft highlight. HEXWASTE_HUD_FORCE_PRESS=<name> forces the
+        // pressed look so the art can be checked in a --screenshot (a live press is
+        // otherwise only on screen mid-click). Falls back to a darken tint if the DN
+        // art is missing.
         _panelPixel ??= CreatePixel();
         MouseState hoverMouse = Mouse.GetState();
+        string? forcePress = Environment.GetEnvironmentVariable("HEXWASTE_HUD_FORCE_PRESS");
         foreach (HudButton b in HudButtons())
         {
             if (b.CombatOnly && !inCombat)
                 continue;
             var rect = new Rectangle(o.X + b.Local.X, o.Y + b.Local.Y, b.Local.Width, b.Local.Height);
-            if (rect.Contains(hoverMouse.X, hoverMouse.Y))
+            bool over = rect.Contains(hoverMouse.X, hoverMouse.Y);
+            bool pressed = (over && hoverMouse.LeftButton == ButtonState.Pressed)
+                || string.Equals(forcePress, b.Name, StringComparison.OrdinalIgnoreCase);
+            if (pressed && bar.Pressed.TryGetValue(b.Name, out Texture2D? dn) && dn is not null)
+                _spriteBatch.Draw(dn, new Vector2(rect.X, rect.Y), Color.White);
+            else if (pressed)
+                _spriteBatch.Draw(_panelPixel, rect, new Color(0, 0, 0, 90));
+            else if (over)
                 _spriteBatch.Draw(_panelPixel, rect, new Color(255, 255, 255, 45));
         }
 
@@ -4666,17 +4722,20 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
     /// shortcut — the buttons are additive, the keys still work (#15 M4).</summary>
     private readonly record struct HudButton(string Name, Rectangle Local, Action OnClick, bool CombatOnly = false);
 
+    // Bar-local button rects, ported verbatim from interface.cc buttonCreate(x,y,w,h)
+    // with gInterfaceBarContentOffset=0 (our native 640-wide bar). These match where
+    // the baked iface.frm buttons sit, so the DN press-art overlays exactly.
     private HudButton[] HudButtons() =>
     [
-        new("INV", new Rectangle(210, 44, 36, 19), () => { _inventoryOpen = true; PrewarmItemTextures(_dudeInventory); }),
-        new("OPT", new Rectangle(213, 67, 34, 23), () => Log("Options — not wired in this slice.")),
-        new("MAP", new Rectangle(528, 36, 37, 16), () => { _worldmapOpen = true; }),
-        new("CHA", new Rectangle(528, 53, 37, 16), () => { if (_dudeGcd is not null) _skillAllocOpen = true; }),
-        new("PIP", new Rectangle(528, 70, 37, 16), () => Log("Pip-Boy — not wired in this slice.")),
-        new("SKILLDEX", new Rectangle(564, 2, 56, 22), () => Log("Skilldex — not wired in this slice.")),
+        new("INV", new Rectangle(211, 40, 32, 21), () => { _inventoryOpen = true; PrewarmItemTextures(_dudeInventory); }), // interface.cc:360
+        new("OPT", new Rectangle(210, 61, 34, 34), () => Log("Options — not wired in this slice.")),                      // :380
+        new("MAP", new Rectangle(526, 39, 41, 19), () => { _worldmapOpen = true; }),                                      // :433
+        new("CHA", new Rectangle(526, 58, 41, 19), () => { if (_dudeGcd is not null) _skillAllocOpen = true; }),          // :475
+        new("PIP", new Rectangle(526, 77, 41, 19), () => Log("Pip-Boy — not wired in this slice.")),                      // :454
+        new("SKILLDEX", new Rectangle(523, 6, 22, 21), () => Log("Skilldex — not wired in this slice.")),                 // :406
         // Combat-mode buttons (shown + clickable only during a fight; M5).
-        new("ENDTURN", new Rectangle(590, 43, 38, 22), () => _combat.EndPlayerTurn(), CombatOnly: true),
-        new("ENDCOMBAT", new Rectangle(590, 65, 38, 22),
+        new("ENDTURN", new Rectangle(590, 43, 38, 22), () => _combat.EndPlayerTurn(), CombatOnly: true),                  // :1903
+        new("ENDCOMBAT", new Rectangle(590, 65, 38, 22),                                                                  // :1955
             () => { if (_combat.Phase != Formats.Combat.CombatPhase.Idle) _combat.Reset(); }, CombatOnly: true),
     ];
 

@@ -36,12 +36,27 @@ public sealed class InterfaceBar : IDisposable
     public Texture2D? EndTurn { get; }
     public Texture2D? EndCombat { get; }
 
+    /// <summary>Pressed (DN) button art keyed by HUD-button name — overlaid while the
+    /// mouse is held on a button (M5 polish). Missing entries fall back to a tint.</summary>
+    public IReadOnlyDictionary<string, Texture2D?> Pressed { get; }
+
     public InterfaceBar(GraphicsDevice graphicsDevice, GameFileSystem vfs, Palette palette)
     {
         Background = LoadFrm(graphicsDevice, vfs, palette, @"art\intrface\iface.frm");
         Numbers = LoadFrm(graphicsDevice, vfs, palette, @"art\intrface\numbers.frm");
         EndTurn = LoadFrm(graphicsDevice, vfs, palette, @"art\intrface\endturnu.frm");
         EndCombat = LoadFrm(graphicsDevice, vfs, palette, @"art\intrface\endcmbtu.frm");
+        Texture2D? Load(string name) => LoadFrm(graphicsDevice, vfs, palette, $@"art\intrface\{name}.frm");
+        Pressed = new Dictionary<string, Texture2D?>
+        {
+            ["INV"] = Load("invbutdn"),
+            ["OPT"] = Load("optidn"),
+            ["MAP"] = Load("mapdn"),
+            ["CHA"] = Load("chadn"),
+            ["PIP"] = Load("pipdn"),
+            ["ENDTURN"] = Load("endturnd"),
+            ["ENDCOMBAT"] = Load("endcmbtd"),
+        };
     }
 
     public bool Loaded => Background is not null;
@@ -85,5 +100,7 @@ public sealed class InterfaceBar : IDisposable
         Numbers?.Dispose();
         EndTurn?.Dispose();
         EndCombat?.Dispose();
+        foreach (Texture2D? t in Pressed.Values)
+            t?.Dispose();
     }
 }

@@ -21,6 +21,17 @@
 > hover feedback (a soft highlight on the button under the cursor), and the combat-
 > mode buttons (ENDTURNU/ENDCMBTU drawn over the hazard panel during a fight → END
 > TURN = EndPlayerTurn, END COMBAT = leave combat). **P11 is complete (M0-M5).**
+>
+> **POLISH (the deferred upgrade below, now landed):** button press-art — the
+> DOWN-state FRMs (invbutdn/optidn/mapdn/chadn/pipdn/endturnd/endcmbtd) overlay the
+> baked UP button while the mouse is held on it (fall back to a darken tint if art
+> missing); and the HP/AC digit-roll — the counters step one unit per ~25 ms toward
+> the live stat (cosmetic, never printed, so golden fixtures stay byte-identical).
+> The HudButton rects were re-derived from interface.cc buttonCreate(x,y,w,h) so the
+> DN art overlays the baked buttons exactly (replacing the earlier eyeballed rects);
+> alignment re-verified via HEXWASTE_HUD_DEBUG + a HEXWASTE_HUD_FORCE_PRESS=<name>
+> screenshot hook. The Skilldex flyout (a feature) and the burst collateral cone
+> (combat fidelity) remain out of "polish" scope.
 
 Scope for the iconic Fallout 2 bottom interface bar (the metal panel: green
 message monitor on the left, equipped-weapon slot + AP dots + attack-mode in the
@@ -60,7 +71,9 @@ FRMs + real `LILREDUP` AP dots + real attack-mode label FRMs (single/burst/swing
 …, chosen by the weapon anim code we already derive) + the monitor at the engine's
 own font. HP/AC via AAF text (not `NUMBERS.FRM`) — indistinguishable in a
 screenshot, sidesteps the one fiddly new system. Pixel-perfect (`NUMBERS.FRM` +
-up/down press art + digit-roll) is a contained later upgrade.
+up/down press art + digit-roll) is a contained later upgrade. **Update: all three
+landed** — `NUMBERS.FRM` over field-blanked boxes (M1), and the press-art +
+digit-roll polish (see the COMPLETE note above).
 
 **Window: pin the bar bottom-centre at native 1:1 scale.** The world camera has no
 zoom (only `PanX/PanY`); the map renders at native pixel scale at any window size.
