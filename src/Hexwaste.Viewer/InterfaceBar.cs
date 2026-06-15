@@ -31,10 +31,17 @@ public sealed class InterfaceBar : IDisposable
     /// The engine blits these over the bar's baked placeholder digits.</summary>
     public Texture2D? Numbers { get; }
 
+    /// <summary>The combat-mode buttons (38x22), shown over the far-right hazard panel
+    /// only during combat: END TURN (Space) and END COMBAT.</summary>
+    public Texture2D? EndTurn { get; }
+    public Texture2D? EndCombat { get; }
+
     public InterfaceBar(GraphicsDevice graphicsDevice, GameFileSystem vfs, Palette palette)
     {
         Background = LoadFrm(graphicsDevice, vfs, palette, @"art\intrface\iface.frm");
         Numbers = LoadFrm(graphicsDevice, vfs, palette, @"art\intrface\numbers.frm");
+        EndTurn = LoadFrm(graphicsDevice, vfs, palette, @"art\intrface\endturnu.frm");
+        EndCombat = LoadFrm(graphicsDevice, vfs, palette, @"art\intrface\endcmbtu.frm");
     }
 
     public bool Loaded => Background is not null;
@@ -76,5 +83,7 @@ public sealed class InterfaceBar : IDisposable
     {
         Background?.Dispose();
         Numbers?.Dispose();
+        EndTurn?.Dispose();
+        EndCombat?.Dispose();
     }
 }

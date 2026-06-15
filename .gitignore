@@ -10,6 +10,14 @@
 game-data/
 *.exe
 *.bin
+# Rendered game art (FrmDump/screenshot output) — never commit (legal guardrail);
+# screenshots were scrubbed from history, keep them out for good.
+*.png
+*.PNG
+*.msg
+*.MSG
+*.int
+*.INT
 
 # Reference repos (cloned, not ours)
 reference/

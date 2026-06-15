@@ -15,7 +15,12 @@
 > rects measured + alignment-verified via a HEXWASTE_HUD_DEBUG overlay, wired to the
 > same actions as the keyboard shortcuts, which still work) are DONE and
 > regression-locked (the hud-buttons golden fixture via the new --hud-click harness).
-> Only M5 polish remains.
+>
+> **COMPLETE:** M5 (polish) is DONE — the active attack-mode label (SWING/SINGLE/
+> BURST/… from the proto attack-anim nibble, bright at the weapon-button top-left),
+> hover feedback (a soft highlight on the button under the cursor), and the combat-
+> mode buttons (ENDTURNU/ENDCMBTU drawn over the hazard panel during a fight → END
+> TURN = EndPlayerTurn, END COMBAT = leave combat). **P11 is complete (M0-M5).**
 
 Scope for the iconic Fallout 2 bottom interface bar (the metal panel: green
 message monitor on the left, equipped-weapon slot + AP dots + attack-mode in the

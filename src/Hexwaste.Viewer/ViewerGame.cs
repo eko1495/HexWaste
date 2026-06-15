@@ -4510,8 +4510,10 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
         // Ammo count for guns, over the baked ammo bar (NUMBERS.FRM, white band).
         if (weaponProto?.Weapon is { } w && w.IsGun(weaponProto.ExtendedFlags) && weaponItem is not null && bar.Numbers is { } numAmmo)
             DrawCounter(numAmmo, WeaponAmmo(weaponProto, weaponItem), band: 0, xRight: o.X + 458, yTop: o.Y + 76);
-        // (The dynamic SINGLE/BURST/SWING mode-label highlight is an M5 upgrade — the
-        // baked labels stay as the panel art for this slice.)
+        // M5: the active attack-mode label, bright, at the weapon-button top-left
+        // (SINGLE/BURST/SWING/THRUST/… from the proto's primary attack-anim nibble).
+        if (weaponProto is not null && _fontRenderer is not null)
+            _fontRenderer.Draw(_spriteBatch, AttackModeName(weaponProto), new Vector2(o.X + 271, o.Y + 28), new Color(252, 252, 84));
 
         // --- M1: HP/AC via NUMBERS.FRM. The bar has baked placeholder digits ("036"/
         // "-258") in dark recessed fields; blank each field to its background colour
@@ -4555,20 +4557,51 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
             }
         }
 
+        // M5: the combat-mode buttons over the far-right hazard panel — only during a
+        // fight (END TURN / END COMBAT, 38x22 @ 590,43 / 590,65; interface.cc:1893).
+        bool inCombat = _combat.Phase != Formats.Combat.CombatPhase.Idle;
+        if (inCombat)
+        {
+            if (bar.EndTurn is not null)
+                _spriteBatch.Draw(bar.EndTurn, new Vector2(o.X + 590, o.Y + 43), Color.White);
+            if (bar.EndCombat is not null)
+                _spriteBatch.Draw(bar.EndCombat, new Vector2(o.X + 590, o.Y + 65), Color.White);
+        }
+
+        // M5: hover feedback — a soft highlight on the clickable button under the cursor.
+        _panelPixel ??= CreatePixel();
+        MouseState hoverMouse = Mouse.GetState();
+        foreach (HudButton b in HudButtons())
+        {
+            if (b.CombatOnly && !inCombat)
+                continue;
+            var rect = new Rectangle(o.X + b.Local.X, o.Y + b.Local.Y, b.Local.Width, b.Local.Height);
+            if (rect.Contains(hoverMouse.X, hoverMouse.Y))
+                _spriteBatch.Draw(_panelPixel, rect, new Color(255, 255, 255, 45));
+        }
+
         // HEXWASTE_HUD_DEBUG=1: translucent overlay of the clickable button rects to
         // verify they align with the baked iface buttons.
         if (Environment.GetEnvironmentVariable("HEXWASTE_HUD_DEBUG") == "1")
-        {
-            _panelPixel ??= CreatePixel();
             foreach (HudButton b in HudButtons())
                 _spriteBatch.Draw(_panelPixel, new Rectangle(o.X + b.Local.X, o.Y + b.Local.Y, b.Local.Width, b.Local.Height), new Color(255, 0, 0, 90));
-        }
+    }
+
+    /// <summary>Weapon attack-mode label from the proto's primary attack-anim nibble
+    /// (extendedFlags &amp; 0xF; item.cc _attack_anim) — SWING/THRUST/SINGLE/BURST/etc.</summary>
+    private static readonly string[] AttackAnimNames =
+        ["", "PUNCH", "KICK", "SWING", "THRUST", "THROW", "SINGLE", "BURST", "FLAME"];
+
+    private static string AttackModeName(Formats.Proto.ProtoInfo proto)
+    {
+        int anim = proto.ExtendedFlags & 0xF;
+        return anim >= 0 && anim < AttackAnimNames.Length ? AttackAnimNames[anim] : "";
     }
 
     /// <summary>The clickable HUD buttons (bar-local rects, ported from interface.cc;
     /// measured against this iface.frm). Each wires to the same action as its keyboard
     /// shortcut — the buttons are additive, the keys still work (#15 M4).</summary>
-    private readonly record struct HudButton(string Name, Rectangle Local, Action OnClick);
+    private readonly record struct HudButton(string Name, Rectangle Local, Action OnClick, bool CombatOnly = false);
 
     private HudButton[] HudButtons() =>
     [
@@ -4578,6 +4611,10 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
         new("CHA", new Rectangle(528, 53, 37, 16), () => { if (_dudeGcd is not null) _skillAllocOpen = true; }),
         new("PIP", new Rectangle(528, 70, 37, 16), () => Log("Pip-Boy — not wired in this slice.")),
         new("SKILLDEX", new Rectangle(564, 2, 56, 22), () => Log("Skilldex — not wired in this slice.")),
+        // Combat-mode buttons (shown + clickable only during a fight; M5).
+        new("ENDTURN", new Rectangle(590, 43, 38, 22), () => _combat.EndPlayerTurn(), CombatOnly: true),
+        new("ENDCOMBAT", new Rectangle(590, 65, 38, 22),
+            () => { if (_combat.Phase != Formats.Combat.CombatPhase.Idle) _combat.Reset(); }, CombatOnly: true),
     ];
 
     /// <summary>Route a left-click to a HUD button if it landed on one. Returns true
@@ -4587,8 +4624,11 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
         if (_interfaceBar is not { Loaded: true } bar || _worldmapOpen)
             return false;
         Point o = bar.Origin(GraphicsDevice.Viewport.Bounds);
+        bool inCombat = _combat.Phase != Formats.Combat.CombatPhase.Idle;
         foreach (HudButton b in HudButtons())
         {
+            if (b.CombatOnly && !inCombat)
+                continue;
             var screen = new Rectangle(o.X + b.Local.X, o.Y + b.Local.Y, b.Local.Width, b.Local.Height);
             if (screen.Contains(mouseX, mouseY))
             {

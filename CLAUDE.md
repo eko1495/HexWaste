@@ -271,6 +271,21 @@ plumbing-free recruit (vic-recruit fixture now --give 266, NO --set-global). GOT
 pid 266 has no in-slice source (multi-step Klamath quest item) — the recruit needs
 ONE item-give, the documented residual content gap. Remaining: M2 light up
 level-up/hub on the real recruit, M3 save a scripted recruit.
+P11 authentic HUD bar (#15, DONE M0-M5, per docs/research-notes/p11-hud-scope.md):
+the real art\intrface\iface.frm (640x99) pinned bottom-centre at native 1:1 scale
+(the camera has no zoom) via the new InterfaceBar class + DrawInterfaceBar. M0 bar
++ log relocation (the green monitor is now the log home; bottom-left is the
+bar-hidden fallback). M1 HP/AC via the real NUMBERS.FRM digit blitter (3 colour
+bands; HP white/yellow/red by <50%/<25%) over a field-blank to (32,32,32) — GOTCHA:
+iface.frm ships BAKED placeholder digits "036"/"-258" + SINGLE/BURST labels + the AP
+socket row, so AAF text won't do; AP = lit green pips on the sockets. M2 weapon slot
+(inventory FRM centred) + ammo. M3 green monitor (font1.aaf == engine font 101,
+tinted green, wrapped, top-anchored). M4 clickable INV/OPT/MAP/CHA/PIP/SKILLDEX
+(HudButtons rects, TryClickInterfaceBar consumes the click before world-interaction;
+wired to the same actions as the I/M/C keys, additive). M5 active mode-label
+(SWING/SINGLE/BURST), hover highlight, ENDTURNU/ENDCMBTU combat buttons (combat-only).
+Tooling: --hud-click harness + hud-buttons golden; HEXWASTE_HUD_DEBUG=1 rect overlay.
+The bar is Draw-only so every transcript/golden fixture stayed byte-identical.
 
 Phase 10 (DONE, per docs/phase10-research-report.md — "The Wasteland
 Bites Back"): M0 persistence pre-stage (the net: MapList saved=No /

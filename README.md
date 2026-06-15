@@ -68,6 +68,11 @@ Prebuilt self-contained builds (Linux x64 / Windows x64) are produced by
   (rats, scorpions, war parties, slavers). Walk off the edge to head back.
 - **Companions**: recruit, then a control hub (talk to them) — wait here /
   follow / trade / dismiss / rejoin; a 1:1 flat item trade to gear them up.
+- **HUD**: the authentic Fallout 2 interface bar (`iface.frm`) along the bottom —
+  the green scrolling message monitor, the equipped-weapon slot with its attack-mode
+  label, lit action-point pips, the HP/AC readout in the original digit font, the END
+  TURN / END COMBAT buttons during a fight, and clickable INV/MAP/CHA tabs (the
+  keyboard shortcuts still work).
 
 ## Controls
 
