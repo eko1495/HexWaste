@@ -48,30 +48,19 @@ public static class WorldmapTravel
         ICombatRng rng, Func<int, int> getGlobal,
         int dudeLevel, int luck, int outdoorsman, GameDifficulty difficulty)
     {
-        var enc = new WorldEncounters(worldmap, rng, startX, startY);
-
-        int x = startX, y = startY;
-        int dx = Math.Abs(destX - x), dy = Math.Abs(destY - y);
-        int sx = x < destX ? 1 : -1, sy = y < destY ? 1 : -1, err = dx - dy;
-        long ticksAdded = 0;
-
-        for (int guard = 0; (x != destX || y != destY) && guard < 4000; guard++)
+        // Phase-17 M0: the whole-leg walk is now a DRAIN of the stepwise TravelLeg — one
+        // Step() == one old loop iteration, in the same RNG draw order, so this stays
+        // byte-identical while the viewer can also drive Step() per frame for the dot.
+        var leg = new TravelLeg(worldmap, areas, mapList, startX, startY, destX, destY,
+            startClockTicks, rng, getGlobal, dudeLevel, luck, outdoorsman, difficulty);
+        while (true)
         {
-            int e2 = 2 * err;
-            if (e2 > -dy) { err -= dy; x += sx; }
-            if (e2 < dx) { err += dx; y += sy; }
-            ticksAdded += TicksPerStep;
-            if (IsNearKnownArea(areas, x, y)) // known-area suppression (worldmap.cc:3340-3343)
-                continue;
-
-            long nowTicks = startClockTicks + ticksAdded;
-            EncounterResult? r = enc.Roll(x, y, GameClock.HourAt(nowTicks), getGlobal,
-                dudeLevel, GameClock.DayAt(nowTicks), luck, outdoorsman, difficulty);
-            if (r is not null)
-                return new LegOutcome(x, y, ticksAdded, r, ResolveEncounterMap(mapList, r, rng));
+            TravelStep s = leg.Step();
+            if (s.Encounter is not null)
+                return new LegOutcome(s.X, s.Y, leg.TicksAdded, s.Encounter, s.EncounterMap);
+            if (s.Arrived)
+                return new LegOutcome(s.X, s.Y, leg.TicksAdded, null, null);
         }
-
-        return new LegOutcome(destX, destY, ticksAdded, null, null);
     }
 
     /// <summary>True when a worldmap pixel sits on/near a known city circle — the engine
@@ -110,5 +99,92 @@ public static class WorldmapTravel
                 if (Resolve(lookup) is { } file)
                     return file;
         return "desert1.map"; // guaranteed transient fallback
+    }
+}
+
+/// <summary>The outcome of a single <see cref="TravelLeg.Step"/>: the new pixel position,
+/// the encounter that fired on it (null = none), its transient map, and whether the leg has
+/// reached the destination.</summary>
+public readonly record struct TravelStep(int X, int Y, EncounterResult? Encounter,
+    string? EncounterMap, bool Arrived);
+
+/// <summary>
+/// A worldmap travel leg walked ONE Bresenham pixel-step at a time (phase-17 M0). Holds the
+/// Bresenham cursor + the <see cref="WorldEncounters"/> instance (its Δ3 anchor) across steps,
+/// so the viewer can drive <see cref="Step"/> per frame to animate the party dot while the
+/// pure <see cref="WorldmapTravel.ResolveLeg"/> drains it in one go. Each Step() is exactly one
+/// iteration of the old whole-leg loop, in the same RNG draw order — byte-identical.
+/// </summary>
+public sealed class TravelLeg
+{
+    private readonly WorldEncounters _enc;
+    private readonly IReadOnlyList<WorldArea> _areas;
+    private readonly MapList _mapList;
+    private readonly ICombatRng _rng;
+    private readonly Func<int, int> _getGlobal;
+    private readonly int _destX, _destY, _dudeLevel, _luck, _outdoorsman;
+    private readonly long _startClockTicks;
+    private readonly GameDifficulty _difficulty;
+    private readonly int _dx, _dy, _sx, _sy;
+    private int _x, _y, _err, _guard;
+
+    public int X => _x;
+    public int Y => _y;
+    /// <summary>Cumulative travel time across the steps taken so far (the caller adds it to
+    /// the real clock).</summary>
+    public long TicksAdded { get; private set; }
+    public bool Arrived => _x == _destX && _y == _destY;
+
+    public TravelLeg(
+        WorldmapFile worldmap, IReadOnlyList<WorldArea> areas, MapList mapList,
+        int startX, int startY, int destX, int destY, long startClockTicks,
+        ICombatRng rng, Func<int, int> getGlobal,
+        int dudeLevel, int luck, int outdoorsman, GameDifficulty difficulty)
+    {
+        _enc = new WorldEncounters(worldmap, rng, startX, startY);
+        _areas = areas;
+        _mapList = mapList;
+        _rng = rng;
+        _getGlobal = getGlobal;
+        _destX = destX;
+        _destY = destY;
+        _dudeLevel = dudeLevel;
+        _luck = luck;
+        _outdoorsman = outdoorsman;
+        _startClockTicks = startClockTicks;
+        _difficulty = difficulty;
+        _x = startX;
+        _y = startY;
+        _dx = Math.Abs(destX - startX);
+        _dy = Math.Abs(destY - startY);
+        _sx = startX < destX ? 1 : -1;
+        _sy = startY < destY ? 1 : -1;
+        _err = _dx - _dy;
+    }
+
+    /// <summary>Advance one pixel-step toward the destination, rolling an encounter on the
+    /// new pixel (suppressed near a known city). Returns the step's outcome. No-ops once the
+    /// leg has arrived (or the 4000-step guard trips).</summary>
+    public TravelStep Step()
+    {
+        if (Arrived || _guard >= 4000)
+            return new TravelStep(_x, _y, null, null, true);
+
+        _guard++;
+        int e2 = 2 * _err;
+        if (e2 > -_dy) { _err -= _dy; _x += _sx; }
+        if (e2 < _dx) { _err += _dx; _y += _sy; }
+        TicksAdded += WorldmapTravel.TicksPerStep;
+
+        if (!WorldmapTravel.IsNearKnownArea(_areas, _x, _y)) // worldmap.cc:3340-3343
+        {
+            long nowTicks = _startClockTicks + TicksAdded;
+            EncounterResult? r = _enc.Roll(_x, _y, GameClock.HourAt(nowTicks), _getGlobal,
+                _dudeLevel, GameClock.DayAt(nowTicks), _luck, _outdoorsman, _difficulty);
+            if (r is not null)
+                return new TravelStep(_x, _y, r,
+                    WorldmapTravel.ResolveEncounterMap(_mapList, r, _rng), Arrived);
+        }
+        return new TravelStep(_x, _y, null, null, Arrived);
     }
 }

@@ -97,6 +97,33 @@ public class WorldmapTravelTests
     }
 
     [GameDataFact]
+    public void StepwiseDrainMatchesResolveLeg()
+    {
+        // Phase-17 M0: draining TravelLeg one Step() at a time must reproduce the whole-leg
+        // ResolveLeg exactly — same final pixel, clock, encounter, and map (same RNG order).
+        using var vfs = GameFileSystem.Open(GameData.RequiredDir);
+        WorldmapFile worldmap = WorldmapFile.Parse(Encoding.Latin1.GetString(vfs.ReadAllBytes(@"data\worldmap.txt")));
+        CityList cities = CityList.Load(vfs);
+        MapList mapList = MapList.Load(vfs);
+        WorldArea den = cities.Areas.First(a => a.Index == 1);
+
+        WorldmapTravel.LegOutcome whole = RunArroyoToDenLeg(worldmap, cities, mapList, seed: 2);
+
+        var leg = new TravelLeg(worldmap, cities.Areas, mapList, 184, 133, den.WorldX, den.WorldY,
+            startClockTicks: 302400, new SystemCombatRng(2), _ => 0,
+            dudeLevel: 1, luck: 5, outdoorsman: 0, difficulty: GameDifficulty.Normal);
+        TravelStep s;
+        int steps = 0;
+        do { s = leg.Step(); steps++; } while (s.Encounter is null && !s.Arrived && steps < 5000);
+
+        Assert.Equal(whole.FinalWorldX, s.X);
+        Assert.Equal(whole.FinalWorldY, s.Y);
+        Assert.Equal(whole.ClockTicksAdded, leg.TicksAdded);
+        Assert.Equal(whole.EncounterMap, s.EncounterMap);
+        Assert.Equal(whole.Encounter?.Entry.Spawns.First().Group, s.Encounter?.Entry.Spawns.First().Group);
+    }
+
+    [GameDataFact]
     public void ResolveEncounterMapPicksATransientMapFromTheTablePool()
     {
         using var vfs = GameFileSystem.Open(GameData.RequiredDir);
