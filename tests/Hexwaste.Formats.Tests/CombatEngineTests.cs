@@ -89,6 +89,86 @@ public class CombatEngineTests
     }
 
     [Fact]
+    public void KnockedOutEnemyForfeitsItsTurn()
+    {
+        // P14-M2: a knocked-out enemy skips its turn (combat.cc:3231) and stays
+        // unconscious (EN 0 → 350-tick wake = 7 rounds), so the dude is unharmed.
+        var host = new FakeCombatHost();
+        MapObject dude = host.SetDude(NewCritter(tile: 20100, hp: 30, ap: 10));
+        MapObject enemy = host.AddCritter(NewCritter(tile: HexGrid.TileInDirection(20100, 0), hp: 30, ap: 10));
+        var engine = new CombatEngine(host, new MinRng());
+
+        Assert.True(engine.TryAttack(enemy)); // open combat
+        host.Animating.Clear();
+        engine.ProcessAnimations();
+        engine.KnockOut(enemy);
+        Assert.True((enemy.CombatResults & CriticalTables.DamKnockedOut) != 0);
+
+        engine.EndPlayerTurn();
+        for (int i = 0; i < 200 && engine.Phase == CombatPhase.EnemyTurn; i++)
+        {
+            host.Animating.Clear();
+            engine.Step();
+        }
+
+        Assert.Equal(2, engine.Round);
+        Assert.Equal(30, dude.CurrentHp);                                       // KO'd → never swung
+        Assert.True((enemy.CombatResults & CriticalTables.DamKnockedOut) != 0); // still out (350 > 50)
+        Assert.DoesNotContain(host.Transcripts, t => t.StartsWith("enemy-attack"));
+    }
+
+    [Fact]
+    public void KnockedOutEnemyWakesAfterTheDelayAndFightsAgain()
+    {
+        // EN 10 → 10*(35-30) = 50-tick wake = exactly one round; then it attacks.
+        var host = new FakeCombatHost();
+        MapObject dude = host.SetDude(NewCritter(tile: 20100, hp: 30, ap: 10));
+        MapObject enemy = host.AddCritter(NewCritter(tile: HexGrid.TileInDirection(20100, 0), hp: 30, ap: 10, endurance: 10));
+        var engine = new CombatEngine(host, new MinRng());
+
+        Assert.True(engine.TryAttack(enemy));
+        host.Animating.Clear();
+        engine.ProcessAnimations();
+        engine.KnockOut(enemy);
+
+        engine.EndPlayerTurn();
+        for (int i = 0; i < 400 && !dude.IsDead && dude.CurrentHp == 30; i++)
+        {
+            host.Animating.Clear();
+            engine.Step();
+            if (engine.Phase == CombatPhase.PlayerTurn) engine.EndPlayerTurn(); // skip the player turn
+        }
+
+        Assert.Contains(host.Transcripts, t => t.StartsWith("wake:"));            // it came to
+        Assert.True((enemy.CombatResults & CriticalTables.DamKnockedOut) == 0);   // no longer out
+        Assert.True(dude.CurrentHp < 30);                                         // and resumed attacking
+    }
+
+    [Fact]
+    public void LoseTurnEnemySkipsOneTurnThenActs()
+    {
+        var host = new FakeCombatHost();
+        MapObject dude = host.SetDude(NewCritter(tile: 20100, hp: 30, ap: 10));
+        MapObject enemy = host.AddCritter(NewCritter(tile: HexGrid.TileInDirection(20100, 0), hp: 30, ap: 10));
+        var engine = new CombatEngine(host, new MinRng());
+
+        Assert.True(engine.TryAttack(enemy));
+        host.Animating.Clear();
+        engine.ProcessAnimations();
+        enemy.CombatResults |= CriticalTables.DamLoseTurn; // a crit dazed it
+
+        engine.EndPlayerTurn();                            // round 1 enemy turn: skipped
+        for (int i = 0; i < 200 && engine.Phase == CombatPhase.EnemyTurn; i++)
+        {
+            host.Animating.Clear();
+            engine.Step();
+        }
+        Assert.Equal(30, dude.CurrentHp);                                  // skipped this round
+        Assert.True((enemy.CombatResults & CriticalTables.DamLoseTurn) == 0); // one-shot cleared
+        Assert.Contains(host.Transcripts, t => t.StartsWith("skip-turn:"));
+    }
+
+    [Fact]
     public void WoundedEnemyBelowMinHpFleesInsteadOfAttacking()
     {
         var host = new FakeCombatHost();
@@ -623,11 +703,12 @@ public class CombatEngineTests
     }
 
     private static (MapObject Obj, CritterProtoStats Proto) NewCritter(
-        int tile, int hp, int ap = 10, int seq = 1, int exp = 0, int betterCrit = 0, int meleeDmg = 0, int skill = 0)
+        int tile, int hp, int ap = 10, int seq = 1, int exp = 0, int betterCrit = 0, int meleeDmg = 0, int skill = 0, int endurance = 0)
     {
         int[] b = new int[35];
         b[CritterStat.Strength] = 5;
         b[CritterStat.Agility] = 5;
+        b[CritterStat.Endurance] = endurance;
         b[CritterStat.MaximumHitPoints] = hp;
         b[CritterStat.MaximumActionPoints] = ap;
         b[CritterStat.Sequence] = seq;

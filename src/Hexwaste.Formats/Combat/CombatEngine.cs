@@ -66,6 +66,22 @@ public sealed class CombatEngine
     private const int CRITTER_NO_KNOCKBACK = 0x4000;
     private const int StandUpApCost = 3; // _combat_standup (combat.cc:5391)
 
+    /// <summary>The knockout-wake event queue + a combat-owned monotonic tick that
+    /// advances <see cref="TicksPerRound"/> per round (P14-M2). The wake fires off this
+    /// tick, NOT the saved GameClock — headless --fight loops don't advance wall-time,
+    /// and mutating the saved clock mid-fight would churn day-boundary state. The KO
+    /// delay (10*(35-3*EN)) and EN scaling stay exact; the round cadence is the
+    /// documented divergence (same class as LoF greedy-hex).</summary>
+    private readonly EventQueue _events = new();
+    private long _combatTick;
+    private const int TicksPerRound = 50; // _combat_sequence: 5 game-seconds × 10 ticks/s
+
+    /// <summary>The honored status flags written to MapObject.CombatResults from a crit
+    /// (P14): knockout + lose-turn (combat-transient, cleared on wake/skip/end) and the
+    /// crippled limbs + blind (persist via CombatResults until a Doctor clears them).</summary>
+    private const int StatusFlags = CriticalTables.DamKnockedOut | CriticalTables.DamLoseTurn
+        | CriticalTables.DamCripLimbs | CriticalTables.DamBlind;
+
     private CombatPhase _phase = CombatPhase.Idle;
     private readonly HashSet<MapObject> _hostiles = [];
     private readonly Queue<MapObject> _enemyQueue = new();
@@ -608,6 +624,10 @@ public sealed class CombatEngine
                 else
                     KillCritter(t.Target, t.Thrower);
             }
+            else
+            {
+                ApplyCritStatus(t.Target, t.CritFlags); // P14
+            }
         }
         else
         {
@@ -793,8 +813,8 @@ public sealed class CombatEngine
             toHit = CombatMath.ToHitChance(skill, defender);
         }
 
-        // +40 to hit a prone target (combat.cc:4474).
-        if (_knockedDown.Contains(defender.Critter))
+        // +40 to hit a prone OR knocked-out target (combat.cc:4474).
+        if (_knockedDown.Contains(defender.Critter) || IsKnockedOut(defender.Critter))
             toHit = Math.Min(toHit + 40, 95);
         return toHit;
     }
@@ -872,6 +892,7 @@ public sealed class CombatEngine
         if (attack.Target != dude)
             _host.OnTargetHit(attack.Target);
 
+        ApplyCritStatus(attack.Target, attack.CritFlags); // P14: knockout / lose-turn / crippled / blind
         ApplyKnockback(attack);
     }
 
@@ -983,6 +1004,72 @@ public sealed class CombatEngine
         }
     }
 
+    // ====================================================================
+    //  P14 combat-status: knockout / lose-turn (turn-skip + timed wake)
+    // ====================================================================
+
+    private static bool IsKnockedOut(MapObject c) => (c.CombatResults & CriticalTables.DamKnockedOut) != 0;
+
+    /// <summary>True if the critter may take its turn (not knocked out, not on a
+    /// lose-turn, not dead) — ports critterIsActive (critter.cc:942).</summary>
+    private static bool CanAct(MapObject c) =>
+        (c.CombatResults & (CriticalTables.DamKnockedOut | CriticalTables.DamLoseTurn | CriticalTables.DamDead)) == 0;
+
+    /// <summary>Knock a critter unconscious + queue its wake (combat.cc:4799-4805) —
+    /// public so the crit path, a script external, or a test can drive it.</summary>
+    public void KnockOut(MapObject critter)
+    {
+        if (critter.IsDead || IsKnockedOut(critter))
+            return;
+        critter.CombatResults |= CriticalTables.DamKnockedOut;
+        int en = _host.GetCritterState(critter)?.Stat(CritterStat.Endurance) ?? 5;
+        _events.Schedule(_combatTick, 10 * (35 - 3 * en), critter, EventQueue.EventType.Knockout);
+        _host.Log($"The {_host.ObjectName(critter)} is knocked out!");
+        _host.Transcript($"knockout: {_host.ObjectName(critter)}@{critter.HexTile}");
+    }
+
+    /// <summary>Apply a crit's honored status flags to the target (P14-M2/M3): knockout
+    /// queues a wake; lose-turn/crippled-limb/blind are recorded on CombatResults
+    /// (consumed by the turn loop / CritterState).</summary>
+    private void ApplyCritStatus(MapObject target, int critFlags)
+    {
+        int status = critFlags & StatusFlags;
+        if (status == 0 || target.IsDead)
+            return;
+        target.CombatResults |= status & (CriticalTables.DamLoseTurn | CriticalTables.DamCripLimbs | CriticalTables.DamBlind);
+        if ((status & CriticalTables.DamCripLimbs) != 0 || (status & CriticalTables.DamBlind) != 0)
+            _host.Transcript($"crippled: {_host.ObjectName(target)}@{target.HexTile} flags=0x{status:X}");
+        if ((status & CriticalTables.DamKnockedOut) != 0)
+            KnockOut(target);
+    }
+
+    /// <summary>Knockout-wake handler (queue.cc → critter.cc:1247 knockoutEventProcess):
+    /// clear the KO and leave the critter prone, so it stands (3 AP) at its next turn.</summary>
+    private void OnCombatEvent(MapObject owner, EventQueue.EventType type)
+    {
+        if (type != EventQueue.EventType.Knockout || owner.IsDead)
+            return;
+        owner.CombatResults &= ~CriticalTables.DamKnockedOut;
+        _knockedDown.Add(owner); // wakes prone
+        _host.Log($"The {_host.ObjectName(owner)} comes to.");
+        _host.Transcript($"wake: {_host.ObjectName(owner)}@{owner.HexTile}");
+    }
+
+    /// <summary>True (and consumes a one-shot lose-turn) if the critter must skip its
+    /// turn this round (combat.cc:3231 lose-turn / KO skip). KO persists until the wake.</summary>
+    private bool SkipTurnIfIncapacitated(MapObject c)
+    {
+        if (IsKnockedOut(c))
+            return true;
+        if ((c.CombatResults & CriticalTables.DamLoseTurn) != 0)
+        {
+            c.CombatResults &= ~CriticalTables.DamLoseTurn; // one-shot
+            _host.Transcript($"skip-turn: {_host.ObjectName(c)}@{c.HexTile}");
+            return true;
+        }
+        return false;
+    }
+
     /// <summary>A prone critter stands at its turn (3 AP); returns the AP left, or
     /// -1 if it wasn't prone. Removes the flag.</summary>
     private int StandUpIfProne(MapObject critter, int ap)
@@ -1015,8 +1102,10 @@ public sealed class CombatEngine
         _host.RemovePartyMember(critter);
 
         critter.CombatResults |= 0x80; // DAM_DEAD
+        critter.CombatResults &= ~(CriticalTables.DamKnockedOut | CriticalTables.DamLoseTurn); // dead, not unconscious
         critter.Sid = -1; // the engine removes the script on death (combat.cc:4876)
         _knockedDown.Remove(critter);
+        _events.Remove(critter); // no pending wake for the dead (queue.cc:271)
         _host.OnCritterRemoved(critter);
         _host.Log($"The {_host.ObjectName(critter)} dies.");
 
@@ -1033,6 +1122,8 @@ public sealed class CombatEngine
     {
         _phase = CombatPhase.PlayerTurn;
         _round = 1;
+        _combatTick = 0;
+        _events.ClearAll();
         _hostiles.Clear();
         _enemyQueue.Clear();
         _actingEnemy = null;
@@ -1100,6 +1191,8 @@ public sealed class CombatEngine
         {
             _host.StopDude(); // ambush interrupts the walk
             _round = 1;
+            _combatTick = 0;
+            _events.ClearAll();
             _hostiles.Clear();
             _hostiles.Add(attacker);
             attacker.WhoHitMeCid = -1;
@@ -1124,6 +1217,14 @@ public sealed class CombatEngine
 
     private void EndCombat()
     {
+        // Force-wake every combatant so knockout never leaks past the fight
+        // (combat.cc:2840 _combat_over → knockoutEventProcess); crippled/blind bits
+        // persist on CombatResults (a Doctor clears them).
+        _events.ClearAll();
+        foreach (MapObject c in _hostiles.Concat(_host.PartyMembers).Append(_host.Dude!).Where(c => c is not null).Distinct())
+            c.CombatResults &= ~(CriticalTables.DamKnockedOut | CriticalTables.DamLoseTurn);
+        _knockedDown.Clear();
+
         _phase = CombatPhase.Idle;
         _hostiles.Clear();
         _enemyQueue.Clear();
@@ -1262,11 +1363,24 @@ public sealed class CombatEngine
             _actingAlly = null;
         }
 
-        // Everyone acted: next round.
+        // Everyone acted: next round. Advance the combat tick and fire any due
+        // knockout wakes (P14-M2) before the new round's turns are taken.
         _round++;
+        _combatTick += TicksPerRound;
+        _events.Process(_combatTick, OnCombatEvent);
         AddJoiners();
         if (_host.Dude is { } dude && _host.GetCritterState(dude) is { } stats)
         {
+            // The dude is unconscious / loses this turn: skip straight back to the
+            // enemy turn (the wake fires as rounds advance). Avoids a dead player turn.
+            if (!CanAct(dude))
+            {
+                SkipTurnIfIncapacitated(dude);
+                _host.Transcript($"dude-skip: round {_round}");
+                _phase = CombatPhase.EnemyTurn;
+                BuildEnemyQueue();
+                return;
+            }
             _dudeAp = stats.MaxActionPoints;
             if (StandUpIfProne(dude, _dudeAp) is var afterStand && afterStand >= 0)
                 _dudeAp = afterStand; // the dude stands at the cost of 3 AP
@@ -1281,6 +1395,10 @@ public sealed class CombatEngine
     {
         MapObject? dude = _host.Dude;
         if (dude is null)
+            return false;
+
+        // Knocked out or losing the turn → forfeit it (combat.cc:3231).
+        if (SkipTurnIfIncapacitated(enemy))
             return false;
 
         // Stand up first if prone (3 AP), then act with what's left.
@@ -1431,6 +1549,9 @@ public sealed class CombatEngine
     /// approach it — the same minimal AI the enemies run.</summary>
     private bool TryAllyAction(MapObject ally)
     {
+        if (SkipTurnIfIncapacitated(ally))
+            return false;
+
         if (StandUpIfProne(ally, _actingAllyAp) is var stood && stood >= 0)
         {
             _actingAllyAp = stood;
@@ -1583,6 +1704,8 @@ public sealed class CombatEngine
         _pendingBurst = null;
         _fallingCritters.Clear();
         _knockedDown.Clear();
+        _events.ClearAll();
+        _combatTick = 0;
         _gameOver = false;
     }
 }

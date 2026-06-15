@@ -429,11 +429,22 @@ KEY FINDING: M0 is BYTE-IDENTICAL across ALL 14 combat fixtures incl. the 3 day-
 crit ones — because the new effects (CRIP/BLIND/KNOCKED_OUT) live in the MASSIVE-
 critical column (applied via a secondary stat-roll, wired in M4), NOT the base-row
 flags the day-2 crits actually hit; so widening the mask + tag is pure inert plumbing
-(no CombatResults write yet — that lands in M2 with its clearing). Next: M1 EventQueue
-(pure queue.cc port), M2 knockout-wake + lose-turn/knockout turn-skip (+ ICombatHost.
-ClockTicks, combat-owned 50-tick/round source), M3 crippled-limb + blind effects, M4
-the massive-crit secondary stat-roll (the ONE new RNG draw — isolated, re-records the
-day-2 fixtures), M5 Skilldex Doctor limb-fix (NOT First-Aid — engine-inaccurate premise).
+(no CombatResults write yet — that lands in M2 with its clearing).
+M1 EventQueue (DONE): pure queue.cc port (Schedule/Process/Remove, SFALL dedup,
+snapshot-on-process), 8 unit tests, not wired yet.
+M2 knockout-wake + turn-skip (DONE): a combat-owned _combatTick advances 50/round
+(NOT ICombatHost.ClockTicks — decided against, no clock dep on the engine; headless
+--fight advances rounds so wakes fire); ApplyCritStatus writes KnockedOut/LoseTurn/
+CripLimbs/Blind to CombatResults from a crit (+ schedules the 10*(35-3*EN)-tick wake);
+SkipTurnIfIncapacitated forfeits a KO/lose-turn critter's turn (lose-turn one-shot,
+KO persists); OnCombatEvent wakes (clear KO, leave prone → stands next turn); +40 to
+hit a KO'd target; KillCritter/Reset/EndCombat clear the queue + force-wake. public
+KnockOut(critter) seam for tests/scripts. BYTE-IDENTICAL on all fixtures (status flags
+only originate from the massive roll, M4 — dormant until then); verified by 3 fake-host
+turn-skip/wake tests. Next: M3 crippled-limb + blind effects (leg→move cost, arm→weapon
+gate, blind→-25/PE-5/×12 range), M4 the massive-crit secondary stat-roll (the ONE new
+RNG draw — isolated, re-records day-2 fixtures), M5 Skilldex Doctor limb-fix (NOT
+First-Aid — engine-inaccurate premise).
 
 Phase 10 (DONE, per docs/phase10-research-report.md — "The Wasteland
 Bites Back"): M0 persistence pre-stage (the net: MapList saved=No /
