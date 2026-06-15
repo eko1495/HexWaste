@@ -71,8 +71,10 @@ Prebuilt self-contained builds (Linux x64 / Windows x64) are produced by
 - **HUD**: the authentic Fallout 2 interface bar (`iface.frm`) along the bottom —
   the green scrolling message monitor, the equipped-weapon slot with its attack-mode
   label, lit action-point pips, the HP/AC readout in the original digit font, the END
-  TURN / END COMBAT buttons during a fight, and clickable INV/MAP/CHA tabs (the
-  keyboard shortcuts still work).
+  TURN / END COMBAT buttons during a fight, and clickable INV/MAP/CHA/SKILLDEX tabs
+  (the keyboard shortcuts still work). The SKILLDEX tab opens the use-skill picker —
+  choose a skill (Lockpick, First Aid, Doctor, Steal, Traps, Science, Repair, Sneak)
+  and click a target to apply it.
 
 ## Controls
 
@@ -87,7 +89,8 @@ Prebuilt self-contained builds (Linux x64 / Windows x64) are produced by
 | B | spray a burst at the hovered critter (needs a burst gun: SMG/Tommy/combat shotgun) |
 | V | cycle the called-shot location (aimed shot) |
 | Space | end combat turn |
-| L | lockpick the hovered door |
+| L | lockpick the hovered door (the Skilldex Lockpick skill) |
+| S | Skilldex — pick a skill (1–8), then click a target to use it |
 | I | inventory (1–9 use/equip/consume, Shift+1–9 drop) |
 | C / K | character sheet (spend level-up skill points) |
 | Z | rest to heal (when no enemies are near) |

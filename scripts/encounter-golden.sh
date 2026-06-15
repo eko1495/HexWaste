@@ -37,8 +37,12 @@ SCENARIOS=(
   # GVAR445 handshake); then Vic's talk_p_proc party_add recruits him. The radio
   # ITEM (--give 266) is the one documented content gap — it has no in-slice source.
   "vic-recruit|--map denbus2.map --give 41:2000 --give 266:1 --talk-seq 17070 1,1,1 --talk-seq 15278 2,2,1,1 --talk-seq 17070 2,1 --party-count --rng-seed 1"
-  # P11 M4 — the HUD bar buttons fire their panel actions (INV/MAP/CHA wired).
-  "hud-buttons|--character combat --map denbus2.map --hud-click INV --hud-click MAP --hud-click CHA --rng-seed 1"
+  # P11 M4 — the HUD bar buttons fire their panel actions (INV/MAP/CHA/SKILLDEX wired).
+  "hud-buttons|--character combat --map denbus2.map --hud-click INV --hud-click MAP --hud-click CHA --hud-click SKILLDEX --rng-seed 1"
+  # P12 M0 — the Skilldex use-skill picker: lockpick a scripted door (use_skill_on_p_proc
+  # honours the script — the door stays locked, not blindly unlocked), First Aid self at
+  # full HP (healthy already, no roll), and the Sneak stance toggle. All deterministic.
+  "skilldex-skills|--map denbus2.map --use-skill 9 9510 --use-skill 6 -1 --use-skill 8 -1 --rng-seed 1"
   # #10 M2 — a legitimately-recruited Vic levels up his proto as the dude gains levels
   # (PartyLevelUp wired into AwardXp; party.txt member 13, level_minimum 5).
   "vic-levelup|--map denbus2.map --give 41:2000 --give 266:1 --talk-seq 17070 1,1,1 --talk-seq 15278 2,2,1,1 --talk-seq 17070 2,1 --grant-xp 60000 --party-count --rng-seed 1"
@@ -50,7 +54,7 @@ SCENARIOS=(
 
 # Keep only the deterministic transcript lines (drop map-load / animate / stub /
 # dialog-text noise — NEVER capture REPLY/OPTION game-asset strings).
-FILTER='^(encounter|travel-from|companion|dismiss-persist|trade:|party:|party-count:|set-global:|hud-click:|  spawn|  wait:|  follow:|  dismiss:|  rejoin:)'
+FILTER='^(encounter|travel-from|companion|dismiss-persist|trade:|party:|party-count:|set-global:|hud-click:|use-skill:|  spawn|  wait:|  follow:|  dismiss:|  rejoin:)'
 
 echo "Building viewer..."
 dotnet build src/Hexwaste.Viewer -c Debug >/dev/null || { echo "build failed"; exit 2; }

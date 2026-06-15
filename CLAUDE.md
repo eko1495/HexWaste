@@ -304,6 +304,31 @@ wired to the same actions as the I/M/C keys, additive). M5 active mode-label
 (SWING/SINGLE/BURST), hover highlight, ENDTURNU/ENDCMBTU combat buttons (combat-only).
 Tooling: --hud-click harness + hud-buttons golden; HEXWASTE_HUD_DEBUG=1 rect overlay.
 The bar is Draw-only so every transcript/golden fixture stayed byte-identical.
+P11 POLISH (DONE): button press-art (the DN FRMs overlay the baked UP button
+while the mouse is held; HudButton rects re-derived verbatim from interface.cc
+buttonCreate(x,y,w,h) with gInterfaceBarContentOffset=0 so the art overlays
+exactly) + HP/AC digit-roll (the counters step 1/~25 ms toward the live stat;
+cosmetic, never printed → goldens byte-identical). HEXWASTE_HUD_FORCE_PRESS=<name>
+forces a press for screenshot verification.
+
+Phase 12 (IN PROGRESS — "Operate the Panels", HUD/UI wiring; the 3 SKILLDEX/
+PIP/OPT HUD buttons that only Log'd "not wired"): M0 Skilldex use-skill picker
+(DONE). The SKILLDEX button (or S) opens an 8-skill flyout (Sneak/Lockpick/
+Steal/Traps/First Aid/Doctor/Science/Repair — skilldex.cc gSkilldexSkills
+order); picking one (1-8) arms _pendingUseSkill so the next click applies it via
+TryUseSkillOn, the generalised use_skill_on_p_proc path lockpick already used
+(TryLockpick is now just TryUseSkillOn(9)). Targeted skills (Lockpick/Steal/
+Traps/Science/Repair) run the target's script (a scripted door HONOURS its
+use_skill_on_p_proc — stays locked, NOT blindly unlocked) + the lockpick unlock
+fallback; First Aid/Doctor port skill.cc:546 skillUse (roll dude-skill% vs d100
+→ heal 1-5 HP capped at MaxHp, can't-heal-dead/healthy-already guards, 30/60
+game-min cost, the 3-uses-per-game-day skillGetFreeUsageSlot cap) — DOCUMENTED
+SIMPLIFICATIONS: no Healer perk (min/max heal = 0 → 1-5), no crippled-limb model
+(Doctor's limb-fix is skipped), Sneak is a logged stance toggle with no stealth
+effect. Heal rolls use a dedicated seeded _skillRng (off the combat/party/wm
+streams). Harness: --use-skill <skillId> <hex> (hex<0 = self); golden
+skilldex-skills (scripted-door lockpick + self First-Aid-at-full + Sneak, all
+deterministic) + hud-buttons re-recorded (the hud-click print gained skilldex=).
 
 Phase 10 (DONE, per docs/phase10-research-report.md — "The Wasteland
 Bites Back"): M0 persistence pre-stage (the net: MapList saved=No /

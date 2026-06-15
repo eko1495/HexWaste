@@ -129,6 +129,11 @@ for (int i = 0; i < args.Length; i++)
         case "--hud-click" when i + 1 < args.Length:
             actions.Add(new ViewerGame.StartupAction.HudClick(args[++i]));
             break;
+        case "--use-skill" when i + 2 < args.Length:
+            // --use-skill <skillId> <targetHex> (hex<0 = self): apply a Skilldex skill.
+            actions.Add(new ViewerGame.StartupAction.UseSkill(int.Parse(args[i + 1]), int.Parse(args[i + 2])));
+            i += 2;
+            break;
         case "--set-global" when i + 2 < args.Length:
             // --set-global <id> <value>: force a session GVAR (probe gated dialog).
             actions.Add(new ViewerGame.StartupAction.SetGlobal(int.Parse(args[i + 1]), int.Parse(args[i + 2])));

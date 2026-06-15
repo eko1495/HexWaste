@@ -1,0 +1,3 @@
+use-skill: skill=9 target=Door hp=0 locked=True sneak=False
+use-skill: skill=6 target=Hero Male hp=30 locked=False sneak=False
+use-skill: skill=8 target=Hero Male hp=30 locked=False sneak=True

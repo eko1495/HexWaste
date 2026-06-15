@@ -137,6 +137,24 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
     /// <summary>Armed "use item on object": the next click applies the item.</summary>
     private MapObject? _pendingUseItem;
 
+    /// <summary>Skilldex (P12 M0): the use-skill picker. Open shows the 8-skill flyout;
+    /// picking one arms <see cref="_pendingUseSkill"/> so the next click applies that
+    /// skill to the target (the use_skill_on_p_proc path that lockpick already uses).</summary>
+    private bool _skilldexOpen;
+    private int? _pendingUseSkill;
+    private bool _sneaking;
+    /// <summary>Seeded skill-roll RNG (deterministic under --rng-seed for goldens),
+    /// separate from the combat/party/worldmap streams.</summary>
+    private Formats.Combat.ICombatRng? _skillRng;
+    /// <summary>Per-skill uses counted against <see cref="_skillUsesDay"/> — the engine's
+    /// skillGetFreeUsageSlot "wait a while" cap (3/day), reset on a new game-day.</summary>
+    private readonly Dictionary<int, int> _skillUsesByDay = [];
+    private int _skillUsesDay = -1;
+
+    /// <summary>The Skilldex skill ids in panel order (skilldex.cc gSkilldexSkills):
+    /// Sneak, Lockpick, Steal, Traps, First Aid, Doctor, Science, Repair.</summary>
+    private static readonly int[] SkilldexSkills = [8, 9, 10, 11, 6, 7, 12, 13];
+
     /// <summary>Open trade session (gdialog_barter): merchant + price modifier.</summary>
     private MapObject? _barterNpc;
     private MapObject? _barterStock;
@@ -278,6 +296,7 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
         /// <summary>Fire a HUD bar button by name (INV/OPT/MAP/CHA/PIP/SKILLDEX) and
         /// report the resulting panel state — regression-proofs the M4 click wiring.</summary>
         public sealed record HudClick(string Name) : StartupAction;
+        public sealed record UseSkill(int Skill, int TargetHex) : StartupAction;
         public sealed record Explode(int Hex) : StartupAction;
         public sealed record Throw(int Hex) : StartupAction;
         public sealed record ProjectileCheck(int Hex) : StartupAction;
@@ -750,7 +769,31 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
                         break;
                     }
                     btn.OnClick();
-                    Console.WriteLine($"hud-click: {hudName} -> inv={_inventoryOpen} skills={_skillAllocOpen} worldmap={_worldmapOpen}");
+                    Console.WriteLine($"hud-click: {hudName} -> inv={_inventoryOpen} skills={_skillAllocOpen} worldmap={_worldmapOpen} skilldex={_skilldexOpen}");
+                    break;
+                }
+                case StartupAction.UseSkill(var useSkill, var skillHex):
+                {
+                    // Arm <skill> and apply it to the object at <hex> (self when hex<0):
+                    // exercises the same TryUseSkillOn path the Skilldex picker drives.
+                    MapObject? skillTarget = skillHex < 0
+                        ? _dude?.Dude
+                        : _solidObjects[_elevation].FirstOrDefault(o => o.HexTile == skillHex)
+                          ?? _flatObjects[_elevation].FirstOrDefault(o => o.HexTile == skillHex);
+                    if (skillTarget is null)
+                    {
+                        Console.Error.WriteLine($"use-skill: nothing at hex {skillHex}");
+                        break;
+                    }
+                    if (skillHex >= 0)
+                    {
+                        _camera.SetCenter(skillHex);
+                        if (_dude is not null) // teleport adjacent so range checks pass (test plumbing)
+                            _dude.Dude.HexTile = Formats.Hex.HexGrid.TileInDirection(skillHex, 3);
+                    }
+                    TryUseSkillOn(useSkill, skillTarget);
+                    Console.WriteLine($"use-skill: skill={useSkill} target={ObjectName(skillTarget)} "
+                        + $"hp={skillTarget.CurrentHp} locked={skillTarget.IsLockedState} sneak={_sneaking}");
                     break;
                 }
                 case StartupAction.PartyCount:
@@ -1482,6 +1525,24 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
             return;
         }
 
+        // Skilldex (S / SKILLDEX button): 1-8 pick a skill to arm, Esc/S close.
+        if (_skilldexOpen)
+        {
+            for (int i = 0; i < SkilldexSkills.Length; i++)
+                if (IsKeyPressed(keyboard, Keys.D1 + i) || IsKeyPressed(keyboard, Keys.NumPad1 + i))
+                {
+                    ArmSkill(SkilldexSkills[i]);
+                    break;
+                }
+            if (IsKeyPressed(keyboard, Keys.Escape) || IsKeyPressed(keyboard, Keys.S))
+                _skilldexOpen = false;
+
+            _previousMouse = mouse;
+            _previousKeyboard = keyboard;
+            base.Update(gameTime);
+            return;
+        }
+
         // Barter mode: 1-9 buy, Shift+1-9 sell, Esc close (back to dialog).
         if (_barterNpc is not null)
         {
@@ -1571,6 +1632,10 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
         // C or K opens the character sheet (spend banked points with K's panel).
         if ((IsKeyPressed(keyboard, Keys.C) || IsKeyPressed(keyboard, Keys.K)) && _dudeGcd is not null)
             _skillAllocOpen = true;
+
+        // S opens the Skilldex use-skill picker (engine KEY_LOWERCASE_S).
+        if (IsKeyPressed(keyboard, Keys.S))
+            _skilldexOpen = true;
 
         // Z rests to heal (when it's safe).
         if (IsKeyPressed(keyboard, Keys.Z))
@@ -1799,6 +1864,16 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
             if (TryClickInterfaceBar(mouse.X, mouse.Y))
             {
                 // handled by the bar
+            }
+            else if (_pendingUseSkill is { } armedSkill)
+            {
+                // Armed Skilldex skill: apply to the hovered target, else to the dude
+                // himself (self-heal / self-skill is a click on empty ground).
+                MapObject? skillTarget = _hoveredObject is not null && _hoveredObject != _dude?.Dude
+                    ? _hoveredObject : _dude?.Dude;
+                _pendingUseSkill = null;
+                if (skillTarget is not null)
+                    TryUseSkillOn(armedSkill, skillTarget);
             }
             else if (_pendingUseItem is { } useItem && _hoveredObject is not null && _hoveredObject != _dude?.Dude)
                 UseItemOn(useItem, _hoveredObject);
@@ -3593,35 +3668,120 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
             ToggleDoor(door);
     }
 
-    /// <summary>
-    /// Lockpick the hovered door: the script's use_skill_on_p_proc runs with
-    /// action_being_used = SKILL_LOCKPICK (9); without an override the default
-    /// attempt unlocks (PoC rolls always succeed).
-    /// </summary>
-    private void TryLockpick(MapObject door)
+    /// <summary>Lockpick the hovered door — the L-key shortcut, now just the Skilldex
+    /// Lockpick (skill 9) path.</summary>
+    private void TryLockpick(MapObject door) => TryUseSkillOn(9, door);
+
+    /// <summary>Arm a Skilldex skill: the next click applies it to the target
+    /// (closes the picker first).</summary>
+    private void ArmSkill(int skill)
     {
-        if (!IsAdjacentToDude(door))
+        _pendingUseSkill = skill;
+        _skilldexOpen = false;
+        Log($"Use {SkillName(skill)} on what?");
+    }
+
+    private static string SkillName(int skill) =>
+        skill >= 0 && skill < Formats.Combat.SkillSet.Names.Length ? Formats.Combat.SkillSet.Names[skill] : $"skill {skill}";
+
+    /// <summary>The dude's effective skill % (skillGetValue) for the heal/contest roll;
+    /// a nominal 40 when there's no gcd sheet (the bare default dude).</summary>
+    private int DudeSkillValue(int skill) => _dudeGcd is { } g
+        ? Formats.Combat.SkillSet.Value(g.Stats.BaseStats, g.Stats.BonusStats, g.Stats.Skills, g.TaggedSkills, skill)
+        : 40;
+
+    /// <summary>
+    /// Apply a Skilldex skill to a target (ported from skill.cc skillUse + the
+    /// use_skill_on_p_proc path lockpick already used). Targeted skills (Lockpick/
+    /// Steal/Traps/Science/Repair) run the target's script and fall back to the
+    /// lockpick unlock; First Aid/Doctor heal a critter (no Healer perk → 1-5 HP,
+    /// no crippled-limb model — documented PoC simplifications); Sneak toggles.
+    /// </summary>
+    private void TryUseSkillOn(int skill, MapObject target)
+    {
+        bool self = target == _dude?.Dude;
+        switch (skill)
         {
-            Log("Too far away.");
+            case 6: // First Aid
+            case 7: // Doctor
+                TryHeal(skill, target, self);
+                return;
+            case 8: // Sneak — a stance toggle (the engine's sneak state)
+                _sneaking = !_sneaking;
+                Log($"Sneak mode {(_sneaking ? "on" : "off")}.");
+                return;
+            default: // 9 Lockpick / 10 Steal / 11 Traps / 12 Science / 13 Repair
+                if (self || !IsAdjacentToDude(target))
+                {
+                    Log("Too far away.");
+                    return;
+                }
+                var scripted = _scriptHost?.RunObjectProc(target, _map, _dude?.Dude,
+                    fixedParam: 0, actionBeingUsed: skill, "use_skill_on_p_proc");
+                if (scripted is not null)
+                    foreach (string line in scripted.Messages)
+                        Log(line);
+                if (scripted is { Overridden: true })
+                    return;
+                if (skill == 9) // lockpick default: unlock (PoC rolls succeed)
+                {
+                    if (!target.IsLockedState)
+                        Log("It isn't locked.");
+                    else
+                    {
+                        target.IsLockedState = false;
+                        Log($"You pick the lock on the {ObjectName(target)}.");
+                    }
+                    return;
+                }
+                Log($"You use {SkillName(skill)} on the {ObjectName(target)}. Nothing happens.");
+                return;
+        }
+    }
+
+    /// <summary>First Aid / Doctor heal, ported from skill.cc:546 (skillUse). Rolls the
+    /// dude's skill % vs a d100; success heals 1-5 HP (no Healer perk). First Aid costs
+    /// 30 game-min, Doctor 60; both honour the engine's "wait a while" 3-uses-per-day
+    /// cap (skillGetFreeUsageSlot).</summary>
+    private void TryHeal(int skill, MapObject target, bool self)
+    {
+        if (GetCritterState(target) is not { } cs)
+        {
+            Log("You can't use that there.");
+            return;
+        }
+        if (target.CurrentHp <= 0)
+        {
+            Log("You can't heal the dead.");
+            return;
+        }
+        if (target.CurrentHp >= cs.MaxHp)
+        {
+            Log(self ? "You look healthy already." : $"{ObjectName(target)} looks healthy already.");
             return;
         }
 
-        var scripted = _scriptHost?.RunObjectProc(door, _map, _dude?.Dude,
-            fixedParam: 0, actionBeingUsed: 9, "use_skill_on_p_proc");
-        if (scripted is not null)
-            foreach (string line in scripted.Messages)
-                Log(line);
-        if (scripted is { Overridden: true })
-            return;
-
-        if (!door.IsLockedState)
+        if (_skillUsesDay != _clock.Day) { _skillUsesDay = _clock.Day; _skillUsesByDay.Clear(); }
+        if (_skillUsesByDay.GetValueOrDefault(skill) >= 3)
         {
-            Log("It isn't locked.");
+            Log("You've taxed your ability with that skill. Wait a while.");
             return;
         }
 
-        door.IsLockedState = false;
-        Log($"You pick the lock on the {ObjectName(door)}.");
+        _skillRng ??= new Formats.Combat.SystemCombatRng(RngSeed ?? Environment.TickCount);
+        bool success = _skillRng.Next(1, 101) <= DudeSkillValue(skill);
+        if (success)
+        {
+            int heal = Math.Min(_skillRng.Next(1, 6), cs.MaxHp - target.CurrentHp);
+            target.CurrentHp += heal;
+            _skillUsesByDay[skill] = _skillUsesByDay.GetValueOrDefault(skill) + 1;
+            Log(self ? $"You heal {heal} hit points." : $"You heal the {ObjectName(target)} for {heal} hit points.");
+        }
+        else
+        {
+            Log("You fail to do any healing.");
+        }
+        _clock.Ticks += (skill == 6 ? 1800 : 3600) * Formats.GameClock.TicksPerSecond;
     }
 
     private void ToggleDoor(MapObject door)
@@ -3894,6 +4054,7 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
             DrawDialogPanel();
             DrawItemPanels();
             DrawSkillAllocator();
+            DrawSkilldex();
         }
         _spriteBatch.End();
 
@@ -4434,6 +4595,38 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
         }
     }
 
+    /// <summary>The Skilldex use-skill picker (P12 M0) — a small flyout above the bar,
+    /// bottom-right (skilldex.cc anchors it there). Text-styled like the other gameplay
+    /// panels; the 8 skills numbered 1-8 with the dude's effective % (skillGetValue).</summary>
+    private void DrawSkilldex()
+    {
+        if (!_skilldexOpen || _fontRenderer is null)
+            return;
+
+        _panelPixel ??= CreatePixel();
+        int lh = Math.Max(_fontRenderer.LineHeight, 18);
+        int w = 220, h = (SkilldexSkills.Length + 2) * lh + 12;
+        Rectangle vp = GraphicsDevice.Viewport.Bounds;
+        int x = vp.Width - w - 12;
+        int y = vp.Height - _hudBarHeight - h - 6;
+        _spriteBatch.Draw(_panelPixel, new Rectangle(x, y, w, h), new Color(8, 8, 8, 238));
+
+        var gold = new Color(252, 252, 84);
+        var green = new Color(0, 252, 0);
+        var gray = new Color(150, 150, 150);
+        int ty = y + 8;
+        _fontRenderer.Draw(_spriteBatch, "SKILLDEX", new Vector2(x + 12, ty), gold); ty += lh;
+        for (int i = 0; i < SkilldexSkills.Length; i++)
+        {
+            int skill = SkilldexSkills[i];
+            int value = DudeSkillValue(skill);
+            _fontRenderer.Draw(_spriteBatch, $"{i + 1}. {SkillName(skill)}", new Vector2(x + 12, ty), green);
+            _fontRenderer.Draw(_spriteBatch, $"{value}%", new Vector2(x + w - 50, ty), gray);
+            ty += lh;
+        }
+        _fontRenderer.Draw(_spriteBatch, "1-8 use, Esc/S close", new Vector2(x + 12, y + h - lh - 4), gray);
+    }
+
     private void DrawItemPanels()
     {
         if (_fontRenderer is null)
@@ -4732,7 +4925,7 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
         new("MAP", new Rectangle(526, 39, 41, 19), () => { _worldmapOpen = true; }),                                      // :433
         new("CHA", new Rectangle(526, 58, 41, 19), () => { if (_dudeGcd is not null) _skillAllocOpen = true; }),          // :475
         new("PIP", new Rectangle(526, 77, 41, 19), () => Log("Pip-Boy — not wired in this slice.")),                      // :454
-        new("SKILLDEX", new Rectangle(523, 6, 22, 21), () => Log("Skilldex — not wired in this slice.")),                 // :406
+        new("SKILLDEX", new Rectangle(523, 6, 22, 21), () => { _skilldexOpen = true; }),                                  // :406
         // Combat-mode buttons (shown + clickable only during a fight; M5).
         new("ENDTURN", new Rectangle(590, 43, 38, 22), () => _combat.EndPlayerTurn(), CombatOnly: true),                  // :1903
         new("ENDCOMBAT", new Rectangle(590, 65, 38, 22),                                                                  // :1955
@@ -5478,6 +5671,11 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
         _dudeXp = 0;
         _unspentSkillPoints = 0;
         _skillAllocOpen = false;
+        _skilldexOpen = false;
+        _pendingUseSkill = null;
+        _sneaking = false;
+        _skillUsesByDay.Clear();
+        _skillUsesDay = -1;
         _dudeInventory = [];
         _visitedMaps.Clear();
         _combat.Reset();
