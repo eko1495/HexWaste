@@ -838,8 +838,20 @@ ScriptHost.PerkRankProvider. INERT-BY-DEFAULT holds (zero ranks -> 0 modifier ->
 goldens BYTE-IDENTICAL). VERIFIED: traits + perks STACK (Narg's HeavyHanded +4 melee, then Bonus HtH
 Damage perk +2/rank -> 8->10->12); --perk-probe <index> <level> exercises the gates + effect (golden
 perk-gates: level-gate at lvl2, eligible+stack at lvl3, stat-gate on More Criticals via Narg's LK4).
-16 PerkTests. M3 high-impact (combat/skill-path) perk effects, M4 perk-pick UI + char sheet = PENDING.
-379 Formats tests, 41 encounter + 15 combat goldens green.
+16 PerkTests. M3 high-impact (combat/skill-path) perk effects (DONE): the data-driven STAT perks
+(Toughness/Action Boy/Lifegiver/More+Better Crits/Faster Healing/Bonus HtH Damage/Strong Back/Dodger/
++SPECIAL/rad+poison) already work from M2's StatModifier fold; M3 adds the NON-stat combat/skill perks
+via a new ICombatHost.DudePerkRank(int) (default 0): Swift Learner (+5%/rank XP, viewer AwardXp,
+stat.cc:737), Bonus Rate of Fire / Bonus HtH Attacks (−1 AP ranged/melee, item.cc:1693), Sharpshooter
+(+2 PE/rank ranged to-hit, combat.cc:4355), Slayer (every melee/unarmed hit crits) + Sniper (ranged hit
+crits on d10≤Luck) in RollAttack's crit block (combat.cc:3866/3891) — all DUDE-ONLY + short-circuited on
+rank 0 so a perk-less dude draws no extra RNG (goldens BYTE-IDENTICAL). Formats.Perks.PerkId names the
+wired indices. DEFERRED (documented): Jinxed's crit-FAILURE (Hexwaste doesn't model single-shot crit-fail
+consequences); Educated (+skill points/level); the rest of the 119 are data-present (stat perks live,
+these specific effects pending). VERIFIED: --perk-probe granted Swift Learner -> +1000 XP shows +1050;
+Bonus HtH adds unarmed swings; 3 fake-host CombatEngine tests (Bonus HtH AP 10->8, Slayer forces a crit,
+the no-perk control stays non-crit). M4 perk-pick UI + char sheet = PENDING. 382 Formats tests, 41
+encounter + 15 combat goldens green.
 
 Phase 10 (DONE, per docs/phase10-research-report.md — "The Wasteland
 Bites Back"): M0 persistence pre-stage (the net: MapList saved=No /

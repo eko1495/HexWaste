@@ -178,7 +178,11 @@ public sealed class CombatEngine
         int range = isGun ? weaponProto!.Weapon!.MaxRange1
             : Math.Min(weaponProto?.Weapon?.MaxRange1 ?? 1, 2); // throwers melee-capped until rung (a)
         int apCost = (weaponProto?.Weapon?.ApCost ?? CombatMath.PunchApCost)
-            + (hitLocation != CriticalTables.LocationUncalled ? 1 : 0); // aimed shot +1 AP (item.cc:1706)
+            + (hitLocation != CriticalTables.LocationUncalled ? 1 : 0) // aimed shot +1 AP (item.cc:1706)
+            // P28-M3: Bonus Rate of Fire (−1 ranged) / Bonus HtH Attacks (−1 melee/unarmed) — item.cc:1693.
+            - (isGun
+                ? (_host.DudePerkRank(Perks.PerkId.BonusRateOfFire) > 0 ? 1 : 0)
+                : (_host.DudePerkRank(Perks.PerkId.BonusHthAttacks) > 0 ? 1 : 0));
         int distance = HexGrid.Distance(dude.HexTile, target.HexTile);
         if (distance > range)
         {
@@ -789,7 +793,15 @@ public sealed class CombatEngine
         if (hit && _host.CriticalsEnabled)
         {
             int critModifier = attacker.Stat(CritterStat.CriticalChance) - locPenalty;
-            if (_rng.Next(1, 101) <= delta / 10 + critModifier)
+            bool crit = _rng.Next(1, 101) <= delta / 10 + critModifier;
+            // P28-M3: Slayer (every melee/unarmed hit) / Sniper (ranged hit, d10 <= Luck) force a
+            // crit for the dude when the normal roll didn't. The short-circuit means a perk-less
+            // dude draws no extra RNG — so the combat goldens stay byte-identical.
+            if (!crit && attackerIsDude)
+                crit = isGun
+                    ? _host.DudePerkRank(Perks.PerkId.Sniper) > 0 && _rng.Next(1, 11) <= attacker.Stat(CritterStat.Luck)
+                    : _host.DudePerkRank(Perks.PerkId.Slayer) > 0;
+            if (crit)
             {
                 int severity = CriticalTables.Severity(_rng.Next(1, 101) + attacker.Stat(CritterStat.BetterCriticals));
                 CriticalEffect eff = CriticalTables.Lookup(defender.Proto.KillType, hitLocation, severity, defenderIsDude);
@@ -860,9 +872,13 @@ public sealed class CombatEngine
         if (weaponProto?.Weapon is { } w && w.IsGun(weaponProto.ExtendedFlags))
         {
             AmmoProtoStats? ammo = weaponItem is null ? null : _host.LoadedAmmo(weaponProto, weaponItem);
+            // P28-M3: Sharpshooter adds +2 effective Perception per rank to the ranged to-hit
+            // (combat.cc:4355) — dude only, 0 ranks = no change.
+            int perception = attacker.Perception
+                + (attackerIsDude ? 2 * _host.DudePerkRank(Perks.PerkId.Sharpshooter) : 0);
             toHit = RangedMath.ToHitChance(
                 attacker.SmallGunsSkill, distance,
-                attacker.Perception, attackerIsDude,                 // PE-5 when blind (stat.cc:191)
+                perception, attackerIsDude,                          // PE-5 when blind (stat.cc:191)
                 defender.ArmorClass, ammo?.AcModifier ?? 0,
                 w.MinStrength, attacker.Stat(CritterStat.Strength), crittersInPath,
                 attackerBlind: attacker.Blind);                      // ×12 distance penalty (combat.cc:4383)

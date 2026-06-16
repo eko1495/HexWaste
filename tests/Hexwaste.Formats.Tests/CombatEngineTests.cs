@@ -46,6 +46,53 @@ public class CombatEngineTests
     }
 
     [Fact]
+    public void BonusHthAttacksPerkLowersUnarmedApCost()
+    {
+        // P28-M3: Bonus HtH Attacks → −1 AP per melee/unarmed swing (item.cc:1693). A punch is
+        // 3 AP, so 10 − 2 = 8 left (vs 7 without the perk — the first test's baseline).
+        var host = new FakeCombatHost();
+        host.PerkRanks[Hexwaste.Formats.Perks.PerkId.BonusHthAttacks] = 1;
+        host.SetDude(NewCritter(tile: 20100, hp: 30, ap: 10));
+        MapObject enemy = host.AddCritter(NewCritter(tile: HexGrid.TileInDirection(20100, 0), hp: 1));
+        var engine = new CombatEngine(host, new MinRng());
+
+        Assert.True(engine.TryAttack(enemy));
+        Assert.Equal(8, engine.DudeAp);
+    }
+
+    [Fact]
+    public void SlayerPerkMakesEveryMeleeHitCritical()
+    {
+        // P28-M3: Slayer turns a melee/unarmed SUCCESS into a critical (combat.cc:3866). RNG:
+        // to-hit(1)=hit, normal crit-roll(100)=miss, Slayer forces crit, severity(30), massive(10).
+        var host = new FakeCombatHost { CriticalsEnabled = true };
+        host.PerkRanks[Hexwaste.Formats.Perks.PerkId.Slayer] = 1;
+        host.SetDude(NewCritter(tile: 20100, hp: 30, ap: 10, skill: 100));
+        MapObject enemy = host.AddCritter(NewCritter(tile: HexGrid.TileInDirection(20100, 0), hp: 500));
+        var engine = new CombatEngine(host, new SequenceRng(1, 100, 30, 10));
+
+        Assert.True(engine.TryAttack(enemy));
+        host.Animating.Clear();
+        engine.ProcessAnimations();
+        Assert.Contains(host.Logs, l => l.Contains("Critical hit!"));
+    }
+
+    [Fact]
+    public void WithoutSlayerTheSameRollIsNotCritical()
+    {
+        // Control: the identical RNG without the perk leaves the failed crit-roll a plain hit.
+        var host = new FakeCombatHost { CriticalsEnabled = true };
+        host.SetDude(NewCritter(tile: 20100, hp: 30, ap: 10, skill: 100));
+        MapObject enemy = host.AddCritter(NewCritter(tile: HexGrid.TileInDirection(20100, 0), hp: 500));
+        var engine = new CombatEngine(host, new SequenceRng(1, 100, 30, 10));
+
+        Assert.True(engine.TryAttack(enemy));
+        host.Animating.Clear();
+        engine.ProcessAnimations();
+        Assert.DoesNotContain(host.Logs, l => l.Contains("Critical hit!"));
+    }
+
+    [Fact]
     public void ScriptedAmbushResetsDudeApAndOpensOnEnemyTurn()
     {
         var host = new FakeCombatHost();
@@ -864,6 +911,8 @@ public class CombatEngineTests
 
         public readonly Dictionary<MapObject, AiPacket> AiPackets = [];
         public bool CriticalsEnabled { get; set; }
+        public readonly Dictionary<int, int> PerkRanks = []; // P28-M3 combat perk effects
+        public int DudePerkRank(int perk) => PerkRanks.GetValueOrDefault(perk);
         public CritterState? GetCritterState(MapObject critter) => _states.GetValueOrDefault(critter);
         public AiPacket? GetAiPacket(MapObject critter) => AiPackets.GetValueOrDefault(critter);
         public (ProtoInfo? Proto, MapObject? Item) Equipped = (null, null);

@@ -3034,6 +3034,10 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
     public int DudeEncumbranceApPenalty() =>
         Formats.Map.InventoryWeight.ActionPointPenalty(DudeCarriedWeight(), DudeCarryCapacity());
 
+    /// <summary>ICombatHost (P28-M3): the dude's rank in a perk — drives the combat perk effects
+    /// (Bonus Rate of Fire, Sniper, Slayer, Sharpshooter). 0 by default → inert.</summary>
+    public int DudePerkRank(int perk) => Formats.Perks.PerkRules.Rank(_dudePerkRanks, perk);
+
     private void TakeFromContainer(int index)
     {
         if (_lootContainer is null || index < 0 || index >= _lootContainer.Inventory.Count)
@@ -3724,6 +3728,10 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
     {
         if (amount <= 0)
             return;
+        // P28-M3: Swift Learner adds +5% experience per rank (stat.cc:737). 0 ranks → unchanged.
+        int swift = DudePerkRank(Formats.Perks.PerkId.SwiftLearner);
+        if (swift > 0)
+            amount += swift * 5 * amount / 100;
         _dudeXp += amount;
         Log($"You earn {amount} experience points.");
         Console.WriteLine($"xp: +{amount} (total {_dudeXp}, level {_dudeLevel})");

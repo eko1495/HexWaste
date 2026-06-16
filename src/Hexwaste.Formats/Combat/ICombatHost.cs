@@ -31,6 +31,9 @@ public interface ICombatHost
     /// per 40 lbs over the carry limit, +1). 0 when within capacity. Default 0 so non-viewer hosts
     /// (the combat unit tests) need no inventory model.</summary>
     int DudeEncumbranceApPenalty() => 0;
+    /// <summary>The dude's rank in a perk (P28-M3 combat effects: Bonus Rate of Fire, Sniper,
+    /// Slayer, Sharpshooter, …). Default 0 — a perk-less dude is inert, so goldens hold.</summary>
+    int DudePerkRank(int perk) => 0;
 
     // --- Critter / weapon data resolution --------------------------------
     CritterState? GetCritterState(MapObject critter);                    // :1410
