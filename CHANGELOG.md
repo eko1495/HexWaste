@@ -1,5 +1,32 @@
 # Changelog
 
+## Unreleased — make the chrome click, then watch the world move
+
+The arc beyond v0.11: UI completeness, worldmap authenticity, and the final
+fidelity items from the fallout2-ce gap analysis. The in-scope backlog is now
+exhausted (what's left is out-by-design — see `SCOPE.md`).
+
+- **UI completeness**: every HUD button, item-panel row, and Options/Pip-Boy menu
+  row is mouse-clickable (with PgUp/PgDn paging past the 9th item); the weapon slot
+  cycles the attack mode; a full-window Pip-Boy automap plots the map (fog-of-war as
+  you explore), with the real Fallout 2 calendar date and an embedded mini-map.
+- **Worldmap comes alive**: a party dot crosses the map, paced by terrain, and the
+  trip saves/resumes mid-walk; encounters are named, a high Outdoorsman offers a
+  Yes/No avoid, travel auto-resumes after one, and an X-FIGHTING-Y encounter drops
+  you into a brawl already in progress. Subtile fog-of-war hides where you haven't
+  been and gates the hidden sub-area markers until you explore near them.
+- **Combat movement symmetry**: in-combat movement costs the dude AP per hex (a
+  crippled leg crawls), a crippled arm blocks a two-handed weapon, and fleeing AI
+  uses real retreat pathing.
+- **Carry weight & encumbrance**: items have weight, Strength sets a carry limit
+  (shown red when over), overload blocks pickup/loot/barter and costs combat AP.
+- **Dialogue IQ-gating**: the dude's real Intelligence gates the dumb/smart options.
+- **Gory deaths**: a hefty burst, laser, or explosion leaves a suitably gory corpse
+  (sliced / charred / big-hole / exploded) by damage type, where the art ships.
+- **Render & script fidelity**: object translucency (glass/steam/energy/red/wall),
+  script-driven map lighting (`set_light_level`) and looping `reg_anim`, and the
+  line-of-fire is the engine's screen-space Bresenham.
+
 ## v0.11.0 — the opening hour, fully armed
 
 Closes the last of the backlog (#1–#15) and the post-v0.10 feature arc.

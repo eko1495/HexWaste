@@ -133,12 +133,21 @@ Prebuilt self-contained builds (Linux x64 / Windows x64) are produced by
 A large set of `--flags` exists for headless testing (screenshots, scripted
 dialog/combat transcripts, deterministic RNG); see `src/Hexwaste.Viewer/Program.cs`.
 
-## Building
+## Building & testing
 
 ```sh
 dotnet build          # .NET 10 SDK
 dotnet test           # set FALLOUT2_DIR=/path/to/game for the data-backed tests
+
+# Golden regression nets — deterministic headless transcripts diffed against
+# committed fixtures (need a display + your game data). Run after touching
+# combat or worldmap/encounter code:
+scripts/combat-golden.sh      # combat transcripts (check | record)
+scripts/encounter-golden.sh   # worldmap / encounter / companion / panel state lines
 ```
+
+The data-backed unit tests skip cleanly when `FALLOUT2_DIR` is unset, so a
+plain `dotnet test` passes without any game assets.
 
 ## Layout
 

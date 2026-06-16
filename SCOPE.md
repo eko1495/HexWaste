@@ -60,8 +60,9 @@ filing an issue.
   level-up logic lights up for free when one lands. Per-companion quest *banter*
   is 100% companion-script content gated on those same quests (it already runs
   via `talk_p_proc` when present), so there is no engine work to do.
-- **Perks, traits, skill points beyond the gated skills**, the full character
-  editor, and worldmap car travel.
+- **Perks and traits** (their effects, and the perk-folder / trait-picker
+  character editor — basic creation with SPECIAL/gender/tagged skills and
+  level-up skill-point spending *are* in), and worldmap car travel.
 - **Anything needing assets we can't ship** — Hexwaste requires *your own* legal
   copy of Fallout 2. We never include or distribute game data.
 

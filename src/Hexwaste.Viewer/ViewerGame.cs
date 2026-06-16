@@ -3736,7 +3736,9 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
                 continue;
             try
             {
-                _companionStatOverride[member] = _protos.Get(stagePid).Critter;
+                if (_protos.Get(stagePid).Critter is not { } stageStats)
+                    continue; // a non-critter stage proto can't supply stats (shouldn't happen)
+                _companionStatOverride[member] = stageStats;
                 if (GetCritterState(member) is { } cs)
                     member.CurrentHp = cs.MaxHp; // engine resets HP to the new max on advance
                 Log($"{ObjectName(member)} has gained in some abilities.");
@@ -7525,7 +7527,11 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
                     if (saved.LevelUpLevel > 0 && PartyTable()?.ForPid(saved.Pid) is { } desc
                         && saved.LevelUpLevel <= desc.LevelPids.Count)
                     {
-                        try { _companionStatOverride[member] = _protos.Get(desc.LevelPids[saved.LevelUpLevel - 1]).Critter; }
+                        try
+                        {
+                            if (_protos.Get(desc.LevelPids[saved.LevelUpLevel - 1]).Critter is { } stageStats)
+                                _companionStatOverride[member] = stageStats;
+                        }
                         catch (Exception ex) when (ex is FileNotFoundException or InvalidDataException or NotSupportedException) { }
                     }
                 }
