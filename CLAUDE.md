@@ -759,6 +759,26 @@ BYTE-IDENTICAL (the dude isn't over capacity in any golden -> penalty 0; display
 tests, 32 encounter + 15 combat goldens green. Encumbrance moves from the gap-analysis backlog to DONE.
 Remaining feasible backlog: dialog IQ-gating, blood/gore splats.
 
+Phase 25 (DONE — "Speak Your Mind", dialogue IQ-gating; from the fo2ce gap analysis):
+giq_option's dumb/smart dialogue options were gated against a HARDCODED intelligence of 5
+(DialogIntelligence()=>5 in both IntVm + ScriptHost); now they read the dude's REAL
+STAT_INTELLIGENCE. The comparison logic (interpreter_extra.cc _op_giq_option: positive iq = min
+INT smart option, negative iq = max INT dumb/stupid option, skip otherwise) was ALREADY a faithful
+port (IntVm 0x8121) — only the IN SOURCE was stubbed. M0 research confirmed the engine reads
+critterGetStat(gDude, STAT_INTELLIGENCE) (+ Smooth Talker perk rank, OUT — no perk system) and that
+the slice FIRES it heavily (instrumented denbus2: iq=4 x33 smart + iq=-3 x9 dumb + iq=1/5), so it's
+live content, not dead code. M1: ScriptContext.DialogIntelligence() => _host.CritterStatValue(_dude, 4)
+(null dude -> 5, the neutral default); extracted the gate decision to pure Formats.Int.DialogGate.
+IqOptionVisible(iq, intelligence) (testable + self-documenting; the VM dispatch now calls it). KEY:
+the DEFAULT dude's real IN is 5 — IDENTICAL to the old hardcode — so the vic-recruit/levelup/save
+goldens (which navigate Metzger+Vic dialogue via fixed --talk-seq indices) are BYTE-IDENTICAL, and no
+--character-combat golden navigates giq dialogue, so nothing churned. Verified: --iq-probe <hex>
+<forceIn> reports the greeting's OPTION COUNT (an int — NEVER the copyrighted option text) for a
+forced IN; Vic's greeting offers 1 option at IN 2 (smart options gated out) vs 4 at IN 9 (goldens
+iq-gate-dumb/iq-gate-smart); Metzger 2 vs 4. 10 DialogGateTests; 338 Formats tests, 34 encounter + 15
+combat goldens green. IQ-gating moves from the gap-analysis backlog to DONE. Remaining feasible
+backlog: blood/gore splat FRMs (the last small in-scope item).
+
 Phase 10 (DONE, per docs/phase10-research-report.md — "The Wasteland
 Bites Back"): M0 persistence pre-stage (the net: MapList saved=No /
 random_start_point parse + IsTransient; the 3-clause transient guards as

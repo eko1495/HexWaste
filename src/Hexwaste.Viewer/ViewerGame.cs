@@ -397,6 +397,10 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
         public sealed record CenterHex(int Hex) : StartupAction;
         /// <summary>Report the dude's carried weight / capacity / encumbered / AP-penalty (P24).</summary>
         public sealed record WeightProbe : StartupAction;
+        /// <summary>Open NPC dialogue with the dude's IN forced to ForceIn and report the option
+        /// COUNT at the greeting (P25 IQ-gating; never the copyrighted option text). ForceIn &lt; 0
+        /// leaves IN unchanged.</summary>
+        public sealed record IqProbe(int Hex, int ForceIn) : StartupAction;
         /// <summary>Phase-21: report the ambient light after map_enter — proves the map's
         /// scripted set_light_level took effect.</summary>
         public sealed record LightProbe : StartupAction;
@@ -1010,6 +1014,23 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
                 case StartupAction.CenterHex(var centerHex):
                     _camera.SetCenter(centerHex); // screenshot testing (P23)
                     break;
+                case StartupAction.IqProbe(var iqHex, var forceIn):
+                {
+                    // P25: force the dude's IN, open the NPC's dialogue, report the OPTION COUNT
+                    // (an int — never the copyrighted option text) at the greeting. Different IN ->
+                    // different count proves giq_option dumb/smart gating (low IN loses smart
+                    // options, gains dumb ones).
+                    MapObject? iqNpc = _solidObjects[_elevation]
+                        .FirstOrDefault(o => o.HexTile == iqHex && Fid.Type(o.Fid) is ObjectType.Critter);
+                    if (iqNpc is null) { Console.Error.WriteLine($"iq-probe: no critter at {iqHex}"); break; }
+                    if (_dudeGcd is not null && forceIn >= 0)
+                        _dudeGcd.Stats.BaseStats[4] = forceIn; // STAT_INTELLIGENCE (test plumbing)
+                    int effIn = _dude is not null && GetCritterState(_dude.Dude) is { } cs ? cs.Stat(4) : -1;
+                    TalkTo(iqNpc);
+                    Console.WriteLine($"iq-probe: hex={iqHex} in={effIn} options={_dialog?.Options.Count ?? 0}");
+                    _dialog = null;
+                    break;
+                }
                 case StartupAction.WeightProbe:
                 {
                     // P24: the dude's carried weight vs capacity, plus the over-encumbrance

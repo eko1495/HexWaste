@@ -220,6 +220,10 @@ for (int i = 0; i < args.Length; i++)
         case "--weight-probe":
             actions.Add(new ViewerGame.StartupAction.WeightProbe());
             break;
+        case "--iq-probe" when i + 2 < args.Length:
+            actions.Add(new ViewerGame.StartupAction.IqProbe(int.Parse(args[i + 1]), int.Parse(args[i + 2])));
+            i += 2;
+            break;
         case "--fog-probe" when i + 3 < args.Length:
             // --fog-probe <x> <y> <areaIndex>: travel a worldmap leg from (x,y) toward an
             // area WITH the fog-of-war, reporting the subtile reveal (phase-22).

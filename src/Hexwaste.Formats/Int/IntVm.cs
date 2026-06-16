@@ -1095,9 +1095,9 @@ public sealed class IntVm
                 if (opcode == 0x8121)
                 {
                     int iq = PopInt();
-                    int intelligence = _externals.DialogIntelligence();
-                    // ported from _op_giq_option: negative iq = dumb-only max.
-                    if (iq < 0 ? -intelligence < iq : intelligence < iq)
+                    // ported from _op_giq_option: the dude's real IN gates dumb/smart options
+                    // (positive iq = min, negative = dumb-only max). P25 feeds the real INT.
+                    if (!DialogGate.IqOptionVisible(iq, _externals.DialogIntelligence()))
                         break;
                 }
 

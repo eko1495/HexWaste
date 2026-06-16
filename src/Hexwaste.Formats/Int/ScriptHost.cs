@@ -1052,7 +1052,10 @@ public sealed class ScriptHost(GameFileSystem vfs, ScriptList scripts, Hexwaste.
 
         public void DialogSessionEnd() => SessionEnded = true;
 
-        public int DialogIntelligence() => 5;
+        // ported from fallout2-ce interpreter_extra.cc _op_giq_option: the dude's real
+        // STAT_INTELLIGENCE gates dumb/smart dialogue options (P25). The Smooth Talker perk
+        // bonus is out of scope (no perk system). Null dude → 5 (the pre-P25 neutral default).
+        public int DialogIntelligence() => _dude is { } d ? _host.CritterStatValue(d, 4) : 5;
 
         public void FloatMessage(int objectHandle, string text, int type)
         {

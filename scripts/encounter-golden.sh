@@ -45,6 +45,12 @@ SCENARIOS=(
   # P17-M4: saving MID-travel round-trips the dot worldPos + the in-flight destination
   # (load resumes toward it) — a documented divergence from the engine's drop-stopped reload.
   "travel-save-mid|--character combat --map artemple.map --travel-save-mid 184 133 1 5 --rng-seed 2"
+  # P25: dialogue IQ-gating. The dude's real INT now gates giq_option dumb/smart options
+  # (interpreter_extra.cc _op_giq_option) instead of a hardcoded 5. Vic's greeting offers 1
+  # option to a dim dude (IN 2 — smart options gated out) vs 4 to a bright one (IN 9). The
+  # probe reports only the option COUNT, never the copyrighted option text.
+  "iq-gate-dumb|--map denbus2.map --iq-probe 17070 2 --rng-seed 1"
+  "iq-gate-smart|--map denbus2.map --iq-probe 17070 9 --rng-seed 1"
   # P24: carry weight + encumbrance. A light load (1 SMG = 7 lbs vs the combat char's
   # 250 lb capacity) is unencumbered with no AP penalty; 60 SMGs (420 lbs) is over -> the
   # stat.cc:198 max-AP penalty = (420-250)/40+1 = 5. Proves the weight field parses + the
@@ -117,7 +123,7 @@ SCENARIOS=(
 
 # Keep only the deterministic transcript lines (drop map-load / animate / stub /
 # dialog-text noise — NEVER capture REPLY/OPTION game-asset strings).
-FILTER='^(encounter|travel-from|companion|dismiss-persist|trade:|party:|party-count:|set-global:|hud-click:|use-skill:|hurt:|rest:|automap:|weapon-mode:|panel-click:|menu-click:|travel-resume:|travel-step:|travel-save-mid:|worldmap-fog:|weight:|combat-walk:|light:|reg-anim:|encounter-fight:|brawl:|  spawn|  flat|  wait:|  follow:|  dismiss:|  rejoin:)'
+FILTER='^(encounter|travel-from|companion|dismiss-persist|trade:|party:|party-count:|set-global:|hud-click:|use-skill:|hurt:|rest:|automap:|weapon-mode:|panel-click:|menu-click:|travel-resume:|travel-step:|travel-save-mid:|worldmap-fog:|weight:|iq-probe:|combat-walk:|light:|reg-anim:|encounter-fight:|brawl:|  spawn|  flat|  wait:|  follow:|  dismiss:|  rejoin:)'
 
 echo "Building viewer..."
 dotnet build src/Hexwaste.Viewer -c Debug >/dev/null || { echo "build failed"; exit 2; }

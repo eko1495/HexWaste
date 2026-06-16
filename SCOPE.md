@@ -15,7 +15,8 @@ filing an issue.
   egg-style wall transparency, per-type object translucency (glass/steam/energy/
   red/wall), silhouette outlines.
 - **A micro INT script VM** + script host: map-entry scripts, dialog (`gsay`
-  trees), examine, locks/lockpick, use / use-on-object, pickup, timers, spatial
+  trees, with IQ-gated dumb/smart options keyed to the dude's real Intelligence),
+  examine, locks/lockpick, use / use-on-object, pickup, timers, spatial
   traps, the critter heartbeat, ~70 real engine externals.
 - **Simulation**: A* movement, mouse picking, doors/stairs/exit grids, worldmap
   travel as a moving party dot paced by terrain (mountains slow it), with random
