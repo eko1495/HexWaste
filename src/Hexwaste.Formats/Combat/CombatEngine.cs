@@ -119,6 +119,12 @@ public sealed class CombatEngine
     /// <summary>Load path: seed the dude's AP outside combat (SpawnDude).</summary>
     public void SetDudeAp(int ap) => _dudeAp = ap;
 
+    /// <summary>Set the dude's turn budget to max AP minus the over-encumbrance penalty (P24;
+    /// stat.cc:198 — the engine bakes it into STAT_MAXIMUM_ACTION_POINTS). 0 penalty when within
+    /// capacity, so an un-overloaded dude (every combat golden) is unchanged.</summary>
+    private void ResetDudeAp(CritterState dude) =>
+        _dudeAp = Math.Max(0, dude.MaxActionPoints - _host.DudeEncumbranceApPenalty());
+
     /// <summary>Charge the dude's turn AP for movement (or any non-attack action), clamped
     /// at 0 (phase-18 M0: combat movement costs MovePointCost per hex).</summary>
     public void SpendDudeAp(int amount) => _dudeAp = Math.Max(0, _dudeAp - amount);
@@ -216,7 +222,7 @@ public sealed class CombatEngine
             case CombatPhase.EnemyTurn or CombatPhase.GameOver:
                 return false;
             case CombatPhase.Idle:
-                _dudeAp = attacker.MaxActionPoints;
+                ResetDudeAp(attacker);
                 break;
         }
         _dudeAp -= apCost;
@@ -328,7 +334,7 @@ public sealed class CombatEngine
             case CombatPhase.EnemyTurn or CombatPhase.GameOver:
                 return false;
             case CombatPhase.Idle:
-                _dudeAp = attacker.MaxActionPoints;
+                ResetDudeAp(attacker);
                 break;
         }
         _dudeAp -= apCost;
@@ -580,7 +586,7 @@ public sealed class CombatEngine
             case CombatPhase.EnemyTurn or CombatPhase.GameOver:
                 return false;
             case CombatPhase.Idle:
-                _dudeAp = attacker.MaxActionPoints;
+                ResetDudeAp(attacker);
                 break;
         }
         _dudeAp -= apCost;
@@ -1211,7 +1217,7 @@ public sealed class CombatEngine
                 c.WhoHitMeCid = -1;
             }
         if (_host.GetCritterState(dude) is { } stats)
-            _dudeAp = stats.MaxActionPoints;
+            ResetDudeAp(stats);
         var teams = _hostiles.Select(h => h.Team).Distinct().OrderBy(t => t).ToList();
         _host.Log($"You stumble into a battle! ({_hostiles.Count} combatants).");
         _host.Transcript($"brawl: combatants={_hostiles.Count} teams=[{string.Join(",", teams)}]");
@@ -1283,7 +1289,7 @@ public sealed class CombatEngine
             attacker.WhoHitMeCid = -1;
             AddJoiners();
             if (_host.GetCritterState(dude) is { } stats)
-                _dudeAp = stats.MaxActionPoints;
+                ResetDudeAp(stats);
             _phase = CombatPhase.EnemyTurn;
             BuildEnemyQueue();
             _host.Log($"The {_host.ObjectName(attacker)} attacks you!");
@@ -1315,7 +1321,7 @@ public sealed class CombatEngine
         _enemyQueue.Clear();
         _actingEnemy = null;
         if (_host.Dude is { } dude && _host.GetCritterState(dude) is { } stats)
-            _dudeAp = stats.MaxActionPoints;
+            ResetDudeAp(stats);
         _host.Log("Combat ends.");
 
         if (_xpPending > 0)
@@ -1466,7 +1472,7 @@ public sealed class CombatEngine
                 BuildEnemyQueue();
                 return;
             }
-            _dudeAp = stats.MaxActionPoints;
+            ResetDudeAp(stats);
             if (StandUpIfProne(dude, _dudeAp) is var afterStand && afterStand >= 0)
                 _dudeAp = afterStand; // the dude stands at the cost of 3 AP
         }

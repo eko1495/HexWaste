@@ -66,6 +66,9 @@ Prebuilt self-contained builds (Linux x64 / Windows x64) are produced by
 - **Character**: create your own (SPECIAL, gender, tagged skills) or pick a
   premade; level-ups grant skill points you spend on the character sheet (C),
   and stat-gated dialog runs the right branches. Rest (Z) heals over time.
+- **Encumbrance**: items have weight, and your Strength sets a carry limit
+  (shown on the inventory panel and Pip-Boy, red when you're over). Overload and
+  you can't pick up / loot / buy more, and you lose action points in combat.
 - **Barter**: real shopkeeper trade (Tubby's stock box and all) at the
   engine's price formula.
 - **Worldmap**: click-to-travel between areas (`maps.txt`/`city.txt`) — a party

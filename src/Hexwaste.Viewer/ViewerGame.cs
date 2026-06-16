@@ -395,6 +395,8 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
         public sealed record FogProbe(int X, int Y, int AreaIndex) : StartupAction;
         /// <summary>Center the camera on a hex (screenshot testing, e.g. P23 translucency).</summary>
         public sealed record CenterHex(int Hex) : StartupAction;
+        /// <summary>Report the dude's carried weight / capacity / encumbered / AP-penalty (P24).</summary>
+        public sealed record WeightProbe : StartupAction;
         /// <summary>Phase-21: report the ambient light after map_enter — proves the map's
         /// scripted set_light_level took effect.</summary>
         public sealed record LightProbe : StartupAction;
@@ -1008,6 +1010,16 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
                 case StartupAction.CenterHex(var centerHex):
                     _camera.SetCenter(centerHex); // screenshot testing (P23)
                     break;
+                case StartupAction.WeightProbe:
+                {
+                    // P24: the dude's carried weight vs capacity, plus the over-encumbrance
+                    // combat AP penalty — exercises the whole InventoryWeight stack on real protos.
+                    int carried = DudeCarriedWeight(), cap = DudeCarryCapacity();
+                    Console.WriteLine($"weight: carried={carried} capacity={cap}"
+                        + $" encumbered={Formats.Map.InventoryWeight.IsEncumbered(carried, cap)}"
+                        + $" apPenalty={DudeEncumbranceApPenalty()} items={_dudeInventory.Count}");
+                    break;
+                }
                 case StartupAction.FogProbe(var fx, var fy, var fa):
                 {
                     // Phase-22: drive a real travel leg WITH the fog and report the reveal.
@@ -1586,10 +1598,8 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
                 case StartupAction.TakeAll:
                     if (_lootContainer is not null)
                     {
-                        while (_lootContainer.Inventory.Count > 0)
-                            TakeFromContainer(0);
+                        TakeAllFromContainer();
                         Console.WriteLine($"take-all: bag now {_dudeInventory.Count} stacks");
-                        _lootContainer = null;
                     }
                     break;
                 case StartupAction.Transit(var mapFile, var tile, var elevation):
@@ -2109,8 +2119,7 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
             HandlePanelPaging(keyboard);
 
             if (_lootContainer is not null && IsKeyPressed(keyboard, Keys.A))
-                while (_lootContainer.Inventory.Count > 0)
-                    TakeFromContainer(0);
+                TakeAllFromContainer();
 
             if (IsKeyPressed(keyboard, Keys.Escape) || IsKeyPressed(keyboard, Keys.I))
             {
@@ -2878,6 +2887,12 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
         if (scripted is { Overridden: true })
             return;
 
+        if (!DudeCanCarry(ItemAddedWeight(item, item.StackCount))) // P24 (item.cc:313)
+        {
+            Log("You can't carry that much weight.");
+            return;
+        }
+
         OnScriptObjectRemoved(item);
         foreach (MapElevation? elev in _map.Elevations)
             elev?.Objects.Remove(item);
@@ -2893,14 +2908,70 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
             _dudeInventory.Add(item);
     }
 
+    // --- Encumbrance (P24) -------------------------------------------------
+
+    private Formats.Proto.ProtoInfo? SafeProto(int pid)
+    {
+        try { return _protos.Get(pid); }
+        catch (Exception ex) when (ex is FileNotFoundException or InvalidDataException) { return null; }
+    }
+
+    /// <summary>The dude's total carried weight in pounds (P24; InventoryWeight over _dudeInventory).</summary>
+    private int DudeCarriedWeight() => Formats.Map.InventoryWeight.TotalWeight(_dudeInventory, SafeProto);
+
+    /// <summary>The dude's carry capacity = STAT_CARRY_WEIGHT (25*ST+25); 0 if unresolved.</summary>
+    private int DudeCarryCapacity() =>
+        _dude is not null && GetCritterState(_dude.Dude) is { } s ? s.CarryWeight : 0;
+
+    /// <summary>The weight one item (incl. its stack) would add to the bag.</summary>
+    private int ItemAddedWeight(MapObject item, int count) =>
+        Formats.Map.InventoryWeight.ItemWeight(item, SafeProto) * Math.Max(count, 1);
+
+    /// <summary>Faithful pickup gate (item.cc:313 — currentWeight + add &gt; maxWeight refuses):
+    /// can the dude take <paramref name="extra"/> more pounds? Capacity ≤ 0 (unresolved) never
+    /// blocks. The refusal message is logged by the caller.</summary>
+    private bool DudeCanCarry(int extra)
+    {
+        int cap = DudeCarryCapacity();
+        return cap <= 0 || DudeCarriedWeight() + extra <= cap;
+    }
+
+    /// <summary>ICombatHost (P24): the dude's over-encumbrance max-AP penalty for this turn
+    /// (stat.cc:198). 0 when within capacity, so an un-overloaded dude is unchanged.</summary>
+    public int DudeEncumbranceApPenalty() =>
+        Formats.Map.InventoryWeight.ActionPointPenalty(DudeCarriedWeight(), DudeCarryCapacity());
+
     private void TakeFromContainer(int index)
     {
         if (_lootContainer is null || index < 0 || index >= _lootContainer.Inventory.Count)
             return;
         MapObject item = _lootContainer.Inventory[index];
+        if (!DudeCanCarry(ItemAddedWeight(item, item.StackCount))) // P24 (item.cc:313)
+        {
+            Log("You can't carry that much weight.");
+            return;
+        }
         _lootContainer.Inventory.RemoveAt(index);
         AddToDudeInventory(item);
         Log($"You take: {ObjectName(item)}{(item.StackCount > 1 ? $" x{item.StackCount}" : "")}.");
+    }
+
+    /// <summary>Loot every item from the open container (P24): all-or-nothing on weight, like
+    /// the engine's "take all" (inventory.cc:4360 — refuses the whole grab if it won't fit), which
+    /// also avoids the per-item gate spinning the loop. Closes the loot panel.</summary>
+    private void TakeAllFromContainer()
+    {
+        if (_lootContainer is null)
+            return;
+        int total = Formats.Map.InventoryWeight.TotalWeight(_lootContainer.Inventory, SafeProto);
+        if (!DudeCanCarry(total))
+        {
+            Log("You can't carry that much weight.");
+            return;
+        }
+        while (_lootContainer.Inventory.Count > 0)
+            TakeFromContainer(0);
+        _lootContainer = null;
     }
 
     private void DropFromInventory(int index)
@@ -3257,6 +3328,11 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
 
         MapObject item = stock[index];
         MapObject till = _barterStock ?? npc;
+        if (!DudeCanCarry(ItemAddedWeight(item, 1))) // P24 — one unit per buy (inventory.cc:4706)
+        {
+            Log("You can't carry that much weight.");
+            return;
+        }
         int price = BarterBuyPrice(item);
         if (_scriptHost.CapsAdjust(_dude.Dude, -price) != 0)
         {
@@ -5696,6 +5772,9 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
                 Line($"Hit Points {_dude.Dude.CurrentHp}/{st.MaxHp}", dim);
                 Line($"Armor Class {st.ArmorClass}", dim);
                 Line($"Action Points {st.MaxActionPoints}", dim);
+                int carried = DudeCarriedWeight();
+                Line($"Carry Weight {carried}/{st.CarryWeight}", // red when over (P24)
+                    Formats.Map.InventoryWeight.IsEncumbered(carried, st.CarryWeight) ? new Color(255, 64, 64) : dim);
             }
         }
         else
@@ -5957,7 +6036,24 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
         if (_fontRenderer is null)
             return;
         foreach (ItemPanel panel in CurrentItemPanels())
-            DrawItemList(panel.Title, panel.Items, panel.X, panel.Price);
+        {
+            int bottom = DrawItemList(panel.Title, panel.Items, panel.X, panel.Price);
+            if (ReferenceEquals(panel.Items, _dudeInventory)) // the dude's side carries the weight readout (P24)
+                DrawWeightReadout(panel.X, bottom);
+        }
+    }
+
+    /// <summary>The carried-weight readout, drawn just below the dude's inventory panel (P24;
+    /// inventory.cc:3164 "Total Wt: N/M") — green within capacity, red when over
+    /// (critterIsEncumbered). Below the panel so it never collides with the title/rows.</summary>
+    private void DrawWeightReadout(int panelX, int panelBottom)
+    {
+        if (_fontRenderer is null || _dude is null)
+            return;
+        int carried = DudeCarriedWeight(), cap = DudeCarryCapacity();
+        Color color = Formats.Map.InventoryWeight.IsEncumbered(carried, cap)
+            ? new Color(255, 64, 64) : new Color(0, 252, 0);
+        _fontRenderer.Draw(_spriteBatch, $"Total Wt: {carried}/{cap}", new Vector2(panelX + 10, panelBottom + 4), color);
     }
 
     // The clickable rect for the displayRow-th row (0..8) of the panel at x. Both the
@@ -5969,7 +6065,8 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
         return new Rectangle(x + 6, rowY - 4, 360 - 12, lineHeight);
     }
 
-    private void DrawItemList(string title, List<MapObject> items, int x,
+    /// <summary>Draws the panel and returns the y just below it (P24 — the weight readout sits there).</summary>
+    private int DrawItemList(string title, List<MapObject> items, int x,
         Func<MapObject, int>? price = null)
     {
         _panelPixel ??= CreatePixel();
@@ -6008,6 +6105,7 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
             _fontRenderer.Draw(_spriteBatch, $"(page {Math.Min(_panelPage + 1, pages)}/{pages} - PgUp/PgDn)",
                 new Vector2(x + 10, rowY), Color.Gray);
         }
+        return y + panelHeight;
     }
 
     // Highest page index across the visible panels (shared paging window).

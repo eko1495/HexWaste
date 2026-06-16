@@ -18,6 +18,7 @@ public static class CritterStat
     public const int ArmorClass = 9;
     public const int UnarmedDamage = 10;
     public const int MeleeDamage = 11;
+    public const int CarryWeight = 12; // STAT_CARRY_WEIGHT — derived 25*ST+25 (stat.cc:571)
     public const int Sequence = 13;
     public const int CriticalChance = 15;
     public const int BetterCriticals = 16;
@@ -68,6 +69,9 @@ public sealed class CritterState(MapObject critter, CritterProtoStats proto, int
 
     public int ArmorClass => Stat(CritterStat.ArmorClass);
     public int MaxActionPoints => Stat(CritterStat.MaximumActionPoints);
+    /// <summary>Max carried weight in pounds — derived 25*ST+25 (stat.cc:571); the engine
+    /// applies it with no special-case in critterGetStat (P24).</summary>
+    public int CarryWeight => Stat(CritterStat.CarryWeight);
     public int MeleeDamage => Stat(CritterStat.MeleeDamage);
     public int Sequence => Stat(CritterStat.Sequence);
     public int DamageThreshold => Stat(CritterStat.DamageThreshold);

@@ -728,6 +728,37 @@ TranslucencyTests (each bit, the NONE-wins priority, the engine decode order, ma
 Formats tests, 30 encounter + 15 combat goldens green. Translucency moves from the gap-analysis backlog
 to DONE. Remaining feasible backlog: item encumbrance, dialog IQ-gating, blood/gore splats.
 
+Phase 24 (DONE — "Every Pound Counts", carry weight + encumbrance; from the fo2ce gap analysis):
+item weight was PARSED-THEN-SKIPPED and CARRY_WEIGHT computed-but-never-enforced; now both are
+live. RESEARCH (encumbrance-understand workflow, 5 readers + critic) ground-truthed the enforcement
+so it wasn't guessed: over-encumbered does THREE things in the engine — (1) a max-AP penalty
+(stat.cc:198 — 1 AP per 40 lbs over, +1), (2) run->walk downgrade (animation.cc:646 — N/A here:
+Hexwaste has only WalkTo, no run, so DOCUMENTED inapplicable), (3) pickup/loot/barter BLOCKING
+(item.cc:313 / inventory.cc:4706/4360). NO movement-speed or worldmap penalty (confirmed absent).
+M0 research + design. M1 pure (BYTE-IDENTICAL — the proto read position is unchanged, skip-8+read-4
+== the old skip-12, so weapon/cost parsing stays aligned): ProtoDatabase reads the weight int it used
+to skip -> ProtoInfo.Weight; CritterStat.CarryWeight=12 + CritterState.CarryWeight (25*ST+25,
+stat.cc:571 — no perks [STRONG_BACK/PACK_RAT out], no SMALL_FRAME trait [traits out]); new pure
+Formats.Map.InventoryWeight ports item.cc itemGetWeight (base + power-armor/2 [pids 3/232/348/349] +
+container recursion + weapon loaded-ammo boxWeight*ceil(rounds/boxSize)) + objectGetInventoryWeight
+(sum item*stack; equipped items stay IN the list so they count once, matching the engine's primary
+loop — the separate-slot block is an engine artifact) + IsEncumbered (carried>cap) + ActionPointPenalty.
+M2 enforcement+display: the AP penalty rides a new ICombatHost.DudeEncumbranceApPenalty() DEFAULT
+interface method (0 -> the fake-host combat tests need no inventory model) routed through one
+CombatEngine.ResetDudeAp chokepoint (replaces all 7 dude `_dudeAp = MaxActionPoints` sites);
+DUDE-ONLY (documented — the player is who over-loads; keeps the sensitive combat goldens stable +
+NPCs are authored with sane loadouts). Pickup/loot-single/barter-buy gates (DudeCanCarry; --give
+BYPASSES by design = god-mode); take-all is all-or-nothing (engine inventory.cc:4360 + avoids the
+per-item gate spinning the loop — extracted TakeAllFromContainer shared by the A key + harness).
+Display: "Total Wt: N/M" below the inventory panel + a Carry Weight line on the Pip-Boy status,
+RED when encumbered. VERIFIED: --weight-probe goldens (1 SMG=7lbs/cap 250 unenc; 60 SMGs=420lbs ->
+encumbered, AP penalty (420-250)/40+1=5 EXACT); the loot gate proven on denbus1 hex 18146 (overloaded
+take-all refused, light dude takes all 13); the red readout screenshotted; combat + every other golden
+BYTE-IDENTICAL (the dude isn't over capacity in any golden -> penalty 0; display is Draw-only). Harness
+--weight-probe + --center <hex>; MapDump gained a container census. 12 InventoryWeightTests; 328 Formats
+tests, 32 encounter + 15 combat goldens green. Encumbrance moves from the gap-analysis backlog to DONE.
+Remaining feasible backlog: dialog IQ-gating, blood/gore splats.
+
 Phase 10 (DONE, per docs/phase10-research-report.md — "The Wasteland
 Bites Back"): M0 persistence pre-stage (the net: MapList saved=No /
 random_start_point parse + IsTransient; the 3-clause transient guards as

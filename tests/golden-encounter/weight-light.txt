@@ -1,0 +1,1 @@
+weight: carried=7 capacity=250 encumbered=False apPenalty=0 items=1

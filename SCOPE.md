@@ -37,7 +37,9 @@ filing an issue.
   area explosions, and throwing (spears, grenades, recoverable, can crit);
   armor, drugs, lootable corpses, scripted aggro, same-team joiners, a minimum
   party member, barter, kill XP, level-ups, per-map persistent world, versioned
-  JSON save/load, a main menu, character creation, rest.
+  JSON save/load, a main menu, character creation, rest, and carry weight +
+  encumbrance (item weights, a STAT_CARRY_WEIGHT capacity, an over-limit combat
+  AP penalty, and pickup/loot/barter blocking).
 - **Interface**: the authentic bottom HUD bar plus its panels — inventory,
   character sheet, the Skilldex use-skill picker, the Pip-Boy (status + rest),
   and an in-game options/pause menu.

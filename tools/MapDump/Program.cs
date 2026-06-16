@@ -92,6 +92,11 @@ for (int elevation = 0; elevation < MapFile.ElevationCount; elevation++)
         }
     }
 
+    var containers = elev.Objects.Where(o =>
+        Fid.Type(o.Fid) == ObjectType.Item && TryGetSubType(o.Pid) == 1).ToList(); // ITEM_TYPE_CONTAINER
+    if (containers.Count > 0)
+        Console.WriteLine($"    containers x{containers.Count} (e.g. {string.Join(", ", containers.Take(6).Select(c => $"hex {c.HexTile}"))})");
+
     var doors = elev.Objects.Where(o =>
         Fid.Type(o.Fid) == ObjectType.Scenery
         && Fid.PidType(o.Pid) == (int)ObjectType.Scenery

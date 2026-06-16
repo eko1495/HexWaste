@@ -25,7 +25,10 @@ public sealed record ProtoInfo(
     WeaponProtoStats? Weapon = null,
     ArmorProtoStats? Armor = null,
     DrugProtoStats? Drug = null,
-    AmmoProtoStats? Ammo = null)
+    AmmoProtoStats? Ammo = null,
+    /// <summary>Item base weight in pounds (proto.cc protoItemDataRead, the int after
+    /// material/size); 0 for non-items and weightless items like caps (P24).</summary>
+    int Weight = 0)
 {
     /// <summary>The object's translucency class from its flag bits 0xFC000 (P23) — the engine
     /// sets one OBJECT_TRANS_* from the proto at instantiation (object.cc:943).</summary>
@@ -161,6 +164,7 @@ public sealed class ProtoDatabase(GameFileSystem vfs)
         byte soundId = 0;
         int inventoryFid = -1;
         int cost = 0;
+        int weight = 0;
         CritterProtoStats? critter = null;
         WeaponProtoStats? weapon = null;
         ArmorProtoStats? armor = null;
@@ -198,7 +202,8 @@ public sealed class ProtoDatabase(GameFileSystem vfs)
                 }
                 else if ((ObjectType)type is ObjectType.Item)
                 {
-                    reader.Skip(3 * 4); // material, size, weight
+                    reader.Skip(2 * 4);          // material, size
+                    weight = reader.ReadInt32(); // ported from fallout2-ce proto.cc protoItemDataRead — proto.item.weight (P24)
                     cost = reader.ReadInt32();
                     inventoryFid = reader.ReadInt32();
                     soundId = reader.ReadByte();
@@ -282,7 +287,7 @@ public sealed class ProtoDatabase(GameFileSystem vfs)
                 throw new InvalidDataException($"PID 0x{pid:X8}: unexpected type {type}.");
         }
 
-        return new ProtoInfo(filePid, messageId, fid, flags, extendedFlags, subType, soundId, inventoryFid, critter, cost, weapon, armor, drug, ammo);
+        return new ProtoInfo(filePid, messageId, fid, flags, extendedFlags, subType, soundId, inventoryFid, critter, cost, weapon, armor, drug, ammo, weight);
     }
 
     private string[] GetList(int type)

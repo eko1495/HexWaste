@@ -45,6 +45,12 @@ SCENARIOS=(
   # P17-M4: saving MID-travel round-trips the dot worldPos + the in-flight destination
   # (load resumes toward it) — a documented divergence from the engine's drop-stopped reload.
   "travel-save-mid|--character combat --map artemple.map --travel-save-mid 184 133 1 5 --rng-seed 2"
+  # P24: carry weight + encumbrance. A light load (1 SMG = 7 lbs vs the combat char's
+  # 250 lb capacity) is unencumbered with no AP penalty; 60 SMGs (420 lbs) is over -> the
+  # stat.cc:198 max-AP penalty = (420-250)/40+1 = 5. Proves the weight field parses + the
+  # InventoryWeight stack runs on real protos. (--give bypasses the pickup gate by design.)
+  "weight-light|--character combat --map arcaves.map --give 9 --weight-probe --rng-seed 1"
+  "weight-heavy|--character combat --map arcaves.map --give 9:60 --weight-probe --rng-seed 1"
   # P22: worldmap subtile fog-of-war. Travelling the arroyo->den corridor reveals subtiles
   # along the Bresenham path — the start + destination flip to VISITED (clear), the trail's
   # radius-1 neighbourhood to KNOWN (fogged). The reveal draws no RNG, so every other travel
@@ -111,7 +117,7 @@ SCENARIOS=(
 
 # Keep only the deterministic transcript lines (drop map-load / animate / stub /
 # dialog-text noise — NEVER capture REPLY/OPTION game-asset strings).
-FILTER='^(encounter|travel-from|companion|dismiss-persist|trade:|party:|party-count:|set-global:|hud-click:|use-skill:|hurt:|rest:|automap:|weapon-mode:|panel-click:|menu-click:|travel-resume:|travel-step:|travel-save-mid:|worldmap-fog:|combat-walk:|light:|reg-anim:|encounter-fight:|brawl:|  spawn|  flat|  wait:|  follow:|  dismiss:|  rejoin:)'
+FILTER='^(encounter|travel-from|companion|dismiss-persist|trade:|party:|party-count:|set-global:|hud-click:|use-skill:|hurt:|rest:|automap:|weapon-mode:|panel-click:|menu-click:|travel-resume:|travel-step:|travel-save-mid:|worldmap-fog:|weight:|combat-walk:|light:|reg-anim:|encounter-fight:|brawl:|  spawn|  flat|  wait:|  follow:|  dismiss:|  rejoin:)'
 
 echo "Building viewer..."
 dotnet build src/Hexwaste.Viewer -c Debug >/dev/null || { echo "build failed"; exit 2; }

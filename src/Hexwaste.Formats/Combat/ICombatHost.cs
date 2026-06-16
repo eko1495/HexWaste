@@ -27,6 +27,10 @@ public interface ICombatHost
     MapObject? Dude { get; }
     /// <summary>Stop the dude's current walk (ambush interrupt). ViewerGame _dude.Stop().</summary>
     void StopDude();
+    /// <summary>The dude's over-encumbrance max-AP penalty for this turn (P24; stat.cc:198 — 1 AP
+    /// per 40 lbs over the carry limit, +1). 0 when within capacity. Default 0 so non-viewer hosts
+    /// (the combat unit tests) need no inventory model.</summary>
+    int DudeEncumbranceApPenalty() => 0;
 
     // --- Critter / weapon data resolution --------------------------------
     CritterState? GetCritterState(MapObject critter);                    // :1410
