@@ -97,9 +97,11 @@ public static class RangedMath
     /// mult/div and DR modifier land here. Guns get no melee bonus.</summary>
     public static int RollDamage(ICombatRng rng, int minDamage, int maxDamage, CritterState target,
         int ammoDrModifier, int ammoDamageMultiplier, int ammoDamageDivisor,
-        int critMultiplier = 2, bool bypassArmor = false, int extraDr = 0)
+        int critMultiplier = 2, bool bypassArmor = false, int extraDr = 0, int rangedDamageBonus = 0)
     {
-        int raw = rng.Next(minDamage, Math.Max(minDamage, maxDamage) + 1);
+        // P29-M4 Bonus Ranged Damage (combat.cc:4592): the perk's +2/rank is added to the raw roll
+        // BEFORE the multiplier (so the ÷2 wrapper nets +2/rank in the final). 0 = no perk → unchanged.
+        int raw = rng.Next(minDamage, Math.Max(minDamage, maxDamage) + 1) + rangedDamageBonus;
         // critMultiplier replaces the engine's hardcoded ×2 (default 2 = identity).
         int damage = raw * critMultiplier * Math.Max(ammoDamageMultiplier, 1);
         damage /= Math.Max(ammoDamageDivisor, 1);

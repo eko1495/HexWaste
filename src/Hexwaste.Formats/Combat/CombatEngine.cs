@@ -599,7 +599,10 @@ public sealed class CombatEngine
         }
 
         int strength = attacker.Stat(CritterStat.Strength);
-        int range = Math.Min(rangeMax, 3 * strength); // item.cc:1611 weaponGetRange
+        // P29-M4: Heave Ho raises effective Strength for the THROW RANGE only (item.cc:1613), +2/rank,
+        // capped at 10 (PRIMARY_STAT_MAX). The to-hit min-ST penalty below still uses the raw ST.
+        int throwStrength = Math.Min(10, strength + 2 * _host.DudePerkRank(Perks.PerkId.HeaveHo));
+        int range = Math.Min(rangeMax, 3 * throwStrength); // item.cc:1611 weaponGetRange
         int distance = HexGrid.Distance(dude.HexTile, targetTile);
         if (distance > range)
         {
@@ -844,10 +847,12 @@ public sealed class CombatEngine
             if (isGun)
             {
                 AmmoProtoStats? ammo = weaponItem is null ? null : _host.LoadedAmmo(weaponProto!, weaponItem);
+                // P29-M4: Bonus Ranged Damage (+2/rank) is ranged-only and dude-only (combat.cc:4547).
+                int rangedBonus = attackerIsDude ? 2 * _host.DudePerkRank(Perks.PerkId.BonusRangedDamage) : 0;
                 damage = RangedMath.RollDamage(_rng,
                     weaponProto!.Weapon!.MinDamage, weaponProto.Weapon.MaxDamage, defender,
                     ammo?.DrModifier ?? 0, ammo?.DamageMultiplier ?? 1, ammo?.DamageDivisor ?? 1,
-                    critMultiplier, bypass, extraDr);
+                    critMultiplier, bypass, extraDr, rangedBonus);
             }
             else
             {
@@ -855,6 +860,10 @@ public sealed class CombatEngine
                     ? CombatMath.RollWeaponDamage(_rng, attacker, defender, weapon.MinDamage, weapon.MaxDamage, critMultiplier, bypass, extraDr)
                     : CombatMath.RollDamage(_rng, attacker, defender, critMultiplier, bypass, extraDr);
             }
+
+            // P29-M4 flat post-armor damage perks (combat.cc:4618-4630), dude-only, inert at rank 0.
+            if (attackerIsDude)
+                damage += DudeFlatDamageBonus(weaponProto, defender);
         }
 
         return (accuracy, hit, damage, critFlags);
@@ -870,6 +879,25 @@ public sealed class CombatEngine
         if (eff.MassiveStat != -1 && _rng.Next(1, 11) > defender.Stat(eff.MassiveStat) + eff.StatMod)
             return eff.Flags | eff.MassiveFlags;
         return eff.Flags;
+    }
+
+    // KILL_TYPE_ROBOT / KILL_TYPE_ALIEN (proto_types.h) — Living Anatomy excludes these.
+    private const int KillTypeRobot = 10, KillTypeAlien = 16;
+
+    /// <summary>P29-M4 flat post-armor damage perks for a dude attack (combat.cc:4618-4630), added to
+    /// the final damage: Living Anatomy +5 vs a living (non-robot/alien) target, Pyromaniac +5 with a
+    /// fire weapon. Returns 0 for a perk-less dude — inert by default. Single-attack path only; burst/
+    /// throw flat-bonus is a documented residual (the perks rarely apply on the shippable slice).</summary>
+    private int DudeFlatDamageBonus(ProtoInfo? weaponProto, CritterState defender)
+    {
+        int bonus = 0;
+        if (_host.DudePerkRank(Perks.PerkId.LivingAnatomy) > 0
+            && defender.Proto.KillType is not (KillTypeRobot or KillTypeAlien))
+            bonus += 5;
+        if (_host.DudePerkRank(Perks.PerkId.Pyromaniac) > 0
+            && weaponProto?.Weapon?.DamageType == 2) // DAMAGE_TYPE_FIRE
+            bonus += 5;
+        return bonus;
     }
 
     /// <summary>Transcript suffix marking a critical (and its honoured effects, P14).</summary>
@@ -903,11 +931,15 @@ public sealed class CombatEngine
             // (combat.cc:4355) — dude only, 0 ranks = no change.
             int perception = attacker.Perception
                 + (attackerIsDude ? 2 * _host.DudePerkRank(Perks.PerkId.Sharpshooter) : 0);
+            // P29-M4: Weapon Handling adds +3 effective Strength vs the weapon min-ST to-hit penalty
+            // (combat.cc:4414 — minStrengthMod -= 3). Dude only, 0 ranks = no change.
+            int effectiveStrength = attacker.Stat(CritterStat.Strength)
+                + (attackerIsDude && _host.DudePerkRank(Perks.PerkId.WeaponHandling) > 0 ? 3 : 0);
             toHit = RangedMath.ToHitChance(
                 attacker.SmallGunsSkill, distance,
                 perception, attackerIsDude,                          // PE-5 when blind (stat.cc:191)
                 defender.ArmorClass, ammo?.AcModifier ?? 0,
-                w.MinStrength, attacker.Stat(CritterStat.Strength), crittersInPath,
+                w.MinStrength, effectiveStrength, crittersInPath,
                 attackerBlind: attacker.Blind);                      // ×12 distance penalty (combat.cc:4383)
         }
         else

@@ -851,9 +851,9 @@ public class CombatEngineTests
 
     /// <summary>A melee weapon proto+item with the given extended flags (0x001 one-handed,
     /// 0x201 two-handed; low nibble 1 = a melee swing, not a gun).</summary>
-    private static (ProtoInfo Proto, MapObject Item) MakeMeleeWeapon(int ext, int minDmg = 1, int maxDmg = 6, int ap = 3)
+    private static (ProtoInfo Proto, MapObject Item) MakeMeleeWeapon(int ext, int minDmg = 1, int maxDmg = 6, int ap = 3, int dmgType = 0)
     {
-        var w = new WeaponProtoStats(1, minDmg, maxDmg, 0, 1, 0, 0, 1, ap, 0, 0, 0, -1, 0, 0);
+        var w = new WeaponProtoStats(1, minDmg, maxDmg, dmgType, 1, 0, 0, 1, ap, 0, 0, 0, -1, 0, 0);
         var proto = new ProtoInfo(8, 0, 0x01000000, 0, ext, 3, Weapon: w);
         var item = new MapObject { Id = 8, HexTile = 0, X = 0, Y = 0, Frame = 0, Rotation = 0, Fid = 0, Flags = 0, Pid = 8, Sid = -1 };
         return (proto, item);
@@ -959,8 +959,117 @@ public class CombatEngineTests
         Assert.Equal(7, ApAfterMiss(false)); // no trait: 10 − 3 punch, no d2 drawn
     }
 
+    // ====================================================================
+    //  Curated perk effects (P29-M4): Bonus Ranged Damage, Living Anatomy,
+    //  Pyromaniac, Weapon Handling, Heave Ho. All dude-only, inert at rank 0.
+    // ====================================================================
+
+    private int GunDamage(int bonusRangedRank)
+    {
+        var host = new FakeCombatHost { CriticalsEnabled = false, LoadedAmmoCount = 10, Equipped = MakeGun() };
+        host.PerkRanks[Perks.PerkId.BonusRangedDamage] = bonusRangedRank;
+        host.SetDude(NewCritter(20100, hp: 30, ap: 10, skill: 100));
+        MapObject enemy = host.AddCritter(NewCritter(HexGrid.TileInDirection(20100, 0), hp: 500));
+        var engine = new CombatEngine(host, new MinRng()); // min gun damage = 5
+        Assert.True(engine.TryAttack(enemy));
+        host.Animating.Clear();
+        engine.ProcessAnimations();
+        return 500 - enemy.CurrentHp;
+    }
+
+    [Fact]
+    public void BonusRangedDamageAddsTwoPerRankToAGunHit()
+    {
+        // P29-M4 (combat.cc:4547): +2 damage/rank, ranged only. Gun min damage 5 → 5; +2/rank final.
+        int baseDmg = GunDamage(0);
+        Assert.Equal(5, baseDmg);
+        Assert.Equal(baseDmg + 4, GunDamage(2)); // 2 ranks → +4
+    }
+
+    private int UnarmedDamage(int livingAnatomyRank, int killType)
+    {
+        var host = new FakeCombatHost { CriticalsEnabled = false };
+        host.PerkRanks[Perks.PerkId.LivingAnatomy] = livingAnatomyRank;
+        host.SetDude(NewCritter(20100, hp: 30, ap: 10)); // unarmed, floor damage 1
+        MapObject enemy = host.AddCritter(NewCritter(HexGrid.TileInDirection(20100, 0), hp: 500, killType: killType));
+        var engine = new CombatEngine(host, new MinRng());
+        Assert.True(engine.TryAttack(enemy));
+        host.Animating.Clear();
+        engine.ProcessAnimations();
+        return 500 - enemy.CurrentHp;
+    }
+
+    [Fact]
+    public void LivingAnatomyAddsFiveVsLivingButNotRobotsOrAliens()
+    {
+        // P29-M4 (combat.cc:4619): +5 to the final damage vs a living target, skipped for robot/alien.
+        Assert.Equal(1, UnarmedDamage(0, killType: 0));   // KILL_TYPE_MAN, no perk → floor 1
+        Assert.Equal(6, UnarmedDamage(1, killType: 0));   // living → +5
+        Assert.Equal(1, UnarmedDamage(1, killType: 10));  // KILL_TYPE_ROBOT → no bonus
+        Assert.Equal(1, UnarmedDamage(1, killType: 16));  // KILL_TYPE_ALIEN → no bonus
+    }
+
+    [Fact]
+    public void PyromaniacAddsFiveWithAFireWeaponOnly()
+    {
+        int Damage(int rank, int dmgType)
+        {
+            var host = new FakeCombatHost { CriticalsEnabled = false, Equipped = MakeMeleeWeapon(0x001, minDmg: 5, maxDmg: 5, dmgType: dmgType) };
+            host.PerkRanks[Perks.PerkId.Pyromaniac] = rank;
+            host.SetDude(NewCritter(20100, hp: 30, ap: 10, skill: 50));
+            MapObject enemy = host.AddCritter(NewCritter(HexGrid.TileInDirection(20100, 0), hp: 500));
+            var engine = new CombatEngine(host, new MinRng());
+            Assert.True(engine.TryAttack(enemy));
+            host.Animating.Clear();
+            engine.ProcessAnimations();
+            return 500 - enemy.CurrentHp;
+        }
+        // melee weapon damage 5 (min=max=5). Pyromaniac only fires for a fire weapon (dmgType 2).
+        Assert.Equal(5, Damage(0, 2));      // fire weapon, no perk
+        Assert.Equal(10, Damage(1, 2));     // fire + perk → +5
+        Assert.Equal(5, Damage(1, 0));      // perk but normal damage → no bonus
+    }
+
+    [Fact]
+    public void WeaponHandlingCancelsTheMinStrengthToHitPenalty()
+    {
+        // P29-M4 (combat.cc:4414): +3 effective ST vs the min-ST penalty. A min-ST 8 gun on a ST-5 dude
+        // takes −20*(8−5) = −60 to hit; Weapon Handling makes the effective ST 8 → no penalty (+60).
+        int Chance(int rank)
+        {
+            var w = new WeaponProtoStats(0, 5, 12, 0, 40, 0, 0, 8, 5, 0, 0, 0, -1, 12, 0); // min-ST 8
+            var item = new MapObject { Id = 8, HexTile = 0, X = 0, Y = 0, Frame = 0, Rotation = 0, Fid = 0x06000000, Flags = 0, Pid = 8, Sid = -1, AmmoQuantity = -1 };
+            var host = new FakeCombatHost { CriticalsEnabled = false, LoadedAmmoCount = 10, Equipped = (new ProtoInfo(8, 0, 0x06000000, 0, 0x06, 3, Weapon: w), item) };
+            host.PerkRanks[Perks.PerkId.WeaponHandling] = rank;
+            host.SetDude(NewCritter(20100, hp: 30, ap: 10, skill: 75)); // Small Guns = 5 + 4*5 + 75 = 100
+            return AttackChance(host);
+        }
+        // PE 0 → the distance term is −20: 100−20−60 = 20 without; 100−20 = 80 with (penalty cancelled).
+        Assert.Equal(20, Chance(0));
+        Assert.Equal(80, Chance(1));
+    }
+
+    [Fact]
+    public void HeaveHoExtendsThrowRange()
+    {
+        // P29-M4 (item.cc:1613): +2 effective ST/rank for the throw range. ST 5 → 3*5 = 15; a target at
+        // 16 is out of range, but Heave Ho rank 1 → ST 7 → 3*7 = 21 reaches it.
+        bool CanThrow(int rank, int dist)
+        {
+            var host = new FakeCombatHost();
+            host.PerkRanks[Perks.PerkId.HeaveHo] = rank;
+            host.SetDude(NewCritter(20100, hp: 30, ap: 10));
+            int target = Step(20100, 0, dist);
+            host.AddCritter(NewCritter(target, hp: 100));
+            host.Equipped = MakeThrowWeapon(pid: 0x07, ext: 0x50, dmgType: 0, r1: 2, r2: 40, min: 3, max: 10);
+            return new CombatEngine(host, new MinRng()).TryThrow(target);
+        }
+        Assert.False(CanThrow(0, 16)); // ST 5 → range 15, out of reach
+        Assert.True(CanThrow(1, 16));  // Heave Ho → range 21, reaches
+    }
+
     private static (MapObject Obj, CritterProtoStats Proto) NewCritter(
-        int tile, int hp, int ap = 10, int seq = 1, int exp = 0, int betterCrit = 0, int meleeDmg = 0, int skill = 0, int endurance = 0, int dr = 0)
+        int tile, int hp, int ap = 10, int seq = 1, int exp = 0, int betterCrit = 0, int meleeDmg = 0, int skill = 0, int endurance = 0, int dr = 0, int killType = 0)
     {
         int[] b = new int[35];
         b[CritterStat.Strength] = 5;
@@ -974,7 +1083,7 @@ public class CombatEngineTests
         b[CritterStat.DamageResistance] = dr;
         int[] sk = new int[18];
         for (int i = 0; i < sk.Length; i++) sk[i] = skill; // ranged tests need a usable gun skill
-        var proto = new CritterProtoStats(0, 0, 0, b, new int[35], sk, 0, exp, 0, 0);
+        var proto = new CritterProtoStats(0, 0, 0, b, new int[35], sk, 0, exp, killType, 0);
         var obj = new MapObject
         {
             Id = tile, HexTile = tile, X = 0, Y = 0, Frame = 0, Rotation = 0,

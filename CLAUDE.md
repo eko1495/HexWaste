@@ -908,6 +908,21 @@ Create is byte-identical, so all goldens hold. 3 GcdCreate unit tests (Gifted ba
 live read, Bruiser ST-bake/AP-live split, no-traits-unchanged). DOCUMENTED RESIDUAL: the Gifted +1
 primary→SKILL-VALUE propagation isn't applied for created chars (SkillSet.Value reads the unmodified
 base — a pre-existing P28 skill model, not new here); premades load their pre-baked skills.
+M4 curated perk-effects batch (DONE): wired the feasible combat/skill perks that touch existing
+systems, each via ICombatHost.DudePerkRank, dude-only, inert at rank 0. Bonus Ranged Damage (+2/rank,
+ranged only — combat.cc:4547; threaded as a rangedDamageBonus param added to the raw roll BEFORE the
+×2/÷2 wrapper in RangedMath.RollDamage, so it nets +2/rank). Living Anatomy (+5 vs a living non-robot/
+alien target — combat.cc:4619) + Pyromaniac (+5 with a fire weapon — combat.cc:4626): flat post-armor
+adds in RollAttack via DudeFlatDamageBonus. Weapon Handling (+3 effective ST vs the gun min-ST to-hit
+penalty — combat.cc:4414) in ComputeToHit. Heave Ho (+2 effective ST/rank for the THROW RANGE only,
+cap 10 — item.cc:1613) in TryThrow. PerkId gained the 6 indices (BonusRangedDamage=4, HeaveHo=35,
+QuickPockets=48, LivingAnatomy=97, Pyromaniac=101, WeaponHandling=106). DOCUMENTED CUTS: Quick Pockets
+(−2 inventory-access AP) is inert — we have no in-combat inventory-access AP model; the flat +5 perks
+(Living Anatomy/Pyromaniac) + Bonus Ranged Damage are wired on the SINGLE-attack path only (burst/throw
+flat-bonus is a residual — they rarely apply on the shippable slice); the remaining ~80 perks stay
+data-present (the table is complete, the stat perks + this curated set are wired). 5 fake-host
+CombatEngineTests (each perk's effect + its rank-0 control); all 15 combat + 42 encounter goldens
+BYTE-IDENTICAL (every perk short-circuits at rank 0).
 
 Phase 10 (DONE, per docs/phase10-research-report.md — "The Wasteland
 Bites Back"): M0 persistence pre-stage (the net: MapList saved=No /

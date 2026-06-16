@@ -49,8 +49,10 @@ filing an issue.
   **perks** — the full 119-perk table, with selection every 3 levels (4 with
   Skilled) gated on level/stats/skills, the data-driven stat perks (Toughness,
   Action Boy, Lifegiver, More/Better Criticals, …) plus wired combat/skill perks
-  (Bonus Rate of Fire, Bonus HtH Attacks, Sniper, Slayer, Sharpshooter, Swift
-  Learner). A character-sheet display + a level-up perk picker.
+  (Bonus Rate of Fire, Bonus HtH Attacks, Bonus Ranged Damage, Sniper, Slayer,
+  Sharpshooter, Swift Learner, Educated, Living Anatomy, Pyromaniac, Weapon
+  Handling, Heave Ho). A character-sheet display + a level-up perk picker. Per-level
+  skill points follow the full engine formula (Educated/Skilled/Gifted).
 - **Interface**: the authentic bottom HUD bar plus its panels — inventory,
   character sheet, the Skilldex use-skill picker, the Pip-Boy (status + rest),
   and an in-game options/pause menu.
@@ -69,9 +71,10 @@ filing an issue.
   level-up logic lights up for free when one lands. Per-companion quest *banter*
   is 100% companion-script content gated on those same quests (it already runs
   via `talk_p_proc` when present), so there is no engine work to do.
-- **The remaining ~90 perks' specific effects** (the table is complete and the
-  stat perks + a curated combat/skill set are wired; the rest are data-present),
-  the authentic perk-window art (a text picker stands in), companion perks, and
+- **The remaining ~80 perks' specific effects** (the table is complete and the
+  stat perks + a curated combat/skill set are wired; the rest — sneak, timed
+  buffs, content/dialog, addiction, mutation perks — are data-present), the
+  authentic perk-window art (a text picker stands in), companion perks, and
   worldmap car travel.
 - **Anything needing assets we can't ship** — Hexwaste requires *your own* legal
   copy of Fallout 2. We never include or distribute game data.
