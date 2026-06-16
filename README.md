@@ -41,7 +41,8 @@ Prebuilt self-contained builds (Linux x64 / Windows x64) are produced by
 - **Combat**: turn-based fights with engine-accurate sequencing (outcome
   rolled before the animation, damage applied when it completes), AP
   budgets, melee weapons and armor (equip flags straight from the MAP
-  files — enemies use their own spears), healing items, death falls and
+  files — enemies use their own spears), healing items, death falls (a
+  hefty burst, laser, or explosion leaves a suitably gory corpse) and
   lootable corpses that stay dead across map travel, AI turns, same-team
   joiners, and script-driven aggro — temple ants jump you on sight. Enemies
   read their `ai.txt` packets: they close to a viable shot and flee when badly

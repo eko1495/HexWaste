@@ -1,0 +1,1 @@
+death-probe: pid=0x1000005 burst(desired=26 resolved=20 gore=False) laser(desired=28 resolved=20 gore=False) explode(desired=23 resolved=20 gore=False)

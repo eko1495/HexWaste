@@ -891,7 +891,7 @@ public class CombatEngineTests
         public int ExplosionMarkers;
         public void SpawnExplosionMarker(int tile) => ExplosionMarkers++;
         public void OnTargetHit(MapObject target) { }
-        public int PickDeathAnim(MapObject critter) => 20;
+        public int PickDeathAnim(MapObject critter, int desiredAnim) => 20;
         public bool StartDeathFall(MapObject critter, int deathAnim) => false; // no fall art → corpse now
         public void ConvertToCorpse(MapObject critter, int deathAnim) { }
         public void OnCritterRemoved(MapObject critter) { }

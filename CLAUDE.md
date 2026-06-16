@@ -779,6 +779,34 @@ iq-gate-dumb/iq-gate-smart); Metzger 2 vs 4. 10 DialogGateTests; 338 Formats tes
 combat goldens green. IQ-gating moves from the gap-analysis backlog to DONE. Remaining feasible
 backlog: blood/gore splat FRMs (the last small in-scope item).
 
+Phase 26 (DONE — "Messy Deaths", gory death animations; the last in-scope gap-analysis item):
+corpses always used a fixed FALL_BACK/FALL_FRONT; now a kill picks a GORE variant (sliced /
+charred / electrified / dancing-autofire / big-hole / exploded) by the killing blow. RESEARCH
+finding: "blood splat" in FO2 is NOT a separate ground object — it's the death ANIMATION (the
+corpse FID), chosen by actions.cc _pick_death from damage type + damage + attacker animation, art-
+checked by _check_death, gated by the violence-level preference. M0 research. M1: pure Formats.
+Combat.DeathAnims.Pick (the _pick_death port: gNormalDeathAnimations/gMaximumBloodDeathAnimations
+tables by DAMAGE_TYPE; single normal shots + melee stay FALL_BACK [no gibbing], bursts/lasers/
+explosions/thrown-explosives use the table at damage>=15; the BLOODY_MESS trait + Pyro/Flameboy
+perks + Molotov + CRITTER_SPECIAL_DEATH are OUT — no trait/perk system) + AttackAnimFor helper.
+Threaded the gore context (DamageType + AttackerAnim) into PendingAttack/Burst/Throw + KillCritter
+(+damage/damageType/attackerAnim, defaults FALL_BACK for script kills) at all 3 attack sites
+(dude/ally/enemy) + 5 KillCritter callers (single FIRE_SINGLE, burst FIRE_BURST, throw THROW_ANIM,
+explosion EXPLOSION). The host's PickDeathAnim generalised to the _check_death art-resolve
+(desired gore anim if it ships, else FALL_BACK/FRONT) via a new ICombatHost.PickDeathAnim(critter,
+desiredAnim) — the corpse SF art is still deathAnim+28 (FALL_BACK 20 -> SF 48, holds for the gore
+anims). VIOLENCE fixed at NORMAL (no preferences screen — documented; shows gNormalDeathAnimations
+gore without MAX_BLOOD obliteration). SCOPE finding (the translucency-style de-risk): denbus2 humans
+(pid 0x1000003/4) SHIP the gore art (burst->DancingAutofire, laser->SlicedInHalf, explode->BigHole,
+all gore=True) so it's LIVE; arcaves scorpions (0x1000005) lack it -> faithfully fall back to
+FALL_BACK (gore=False) — which is WHY the combat goldens (scorpion kills) stayed BYTE-IDENTICAL, plus
+the corpse FID is cosmetic (never in a transcript). VERIFIED: --death-probe <hex> reports the picked
++ art-resolved anim per damage kind (goldens gore-human=gore / gore-scorpion=fallback); a burst-killed
+Villager screenshotted as a DancingAutofire gore corpse. 15 DeathAnimsTests; 353 Formats tests, 36
+encounter + 15 combat goldens green. GORE moves the LAST feasible in-scope item from the gap-analysis
+backlog to DONE — what remains is out-by-design (perks/karma/quests/content) or a scope expansion past
+the Arroyo->Klamath->Den slice.
+
 Phase 10 (DONE, per docs/phase10-research-report.md — "The Wasteland
 Bites Back"): M0 persistence pre-stage (the net: MapList saved=No /
 random_start_point parse + IsTransient; the 3-clause transient guards as

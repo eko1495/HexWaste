@@ -35,7 +35,8 @@ filing an issue.
   brawls (two spawned groups fight each other and you), critical hits + aimed
   called shots with their consequences (knockout + timed wake, lose-turn, crippled
   limbs, blindness — a Doctor mends limbs/eyes), knockback + persisting knockdown,
-  area explosions, and throwing (spears, grenades, recoverable, can crit);
+  area explosions, throwing (spears, grenades, recoverable, can crit), and gory
+  death animations (sliced/charred/big-hole/exploded corpses by damage type);
   armor, drugs, lootable corpses, scripted aggro, same-team joiners, a minimum
   party member, barter, kill XP, level-ups, per-map persistent world, versioned
   JSON save/load, a main menu, character creation, rest, and carry weight +

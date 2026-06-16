@@ -91,8 +91,10 @@ public interface ICombatHost
     void OnTargetHit(MapObject target);
 
     // --- Death + corpse ---------------------------------------------------
-    /// <summary>FALL_BACK vs FALL_FRONT probe (PickDeathAnim). :2574</summary>
-    int PickDeathAnim(MapObject critter);
+    /// <summary>Resolve the gory death anim the combat picked (P26 DeathAnims.Pick) against the
+    /// critter's available art (actions.cc _check_death): the desired gore anim if it ships, else
+    /// FALL_BACK, else FALL_FRONT.</summary>
+    int PickDeathAnim(MapObject critter, int desiredAnim);
     /// <summary>Death scream + start the fall animation; returns true if a fall is
     /// playing (caller waits), false if no fall art (convert immediately). :2541-2551</summary>
     bool StartDeathFall(MapObject critter, int deathAnim);

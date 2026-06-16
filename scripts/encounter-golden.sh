@@ -45,6 +45,12 @@ SCENARIOS=(
   # P17-M4: saving MID-travel round-trips the dot worldPos + the in-flight destination
   # (load resumes toward it) — a documented divergence from the engine's drop-stopped reload.
   "travel-save-mid|--character combat --map artemple.map --travel-save-mid 184 133 1 5 --rng-seed 2"
+  # P26: gory death animations (actions.cc _pick_death). A solid burst/laser/explosion kill
+  # gives the corpse a gore variant by damage type — DancingAutofire(26)/SlicedInHalf(28)/
+  # BigHole(23) — when the critter ships that art. A denbus2 human (pid 0x1000004) does (gore=True);
+  # an arcaves scorpion does NOT, so it faithfully falls back to FALL_BACK (gore=False).
+  "gore-human|--map denbus2.map --death-probe 8667 --rng-seed 1"
+  "gore-scorpion|--map arcaves.map --death-probe 20529 --rng-seed 1"
   # P25: dialogue IQ-gating. The dude's real INT now gates giq_option dumb/smart options
   # (interpreter_extra.cc _op_giq_option) instead of a hardcoded 5. Vic's greeting offers 1
   # option to a dim dude (IN 2 — smart options gated out) vs 4 to a bright one (IN 9). The
@@ -123,7 +129,7 @@ SCENARIOS=(
 
 # Keep only the deterministic transcript lines (drop map-load / animate / stub /
 # dialog-text noise — NEVER capture REPLY/OPTION game-asset strings).
-FILTER='^(encounter|travel-from|companion|dismiss-persist|trade:|party:|party-count:|set-global:|hud-click:|use-skill:|hurt:|rest:|automap:|weapon-mode:|panel-click:|menu-click:|travel-resume:|travel-step:|travel-save-mid:|worldmap-fog:|weight:|iq-probe:|combat-walk:|light:|reg-anim:|encounter-fight:|brawl:|  spawn|  flat|  wait:|  follow:|  dismiss:|  rejoin:)'
+FILTER='^(encounter|travel-from|companion|dismiss-persist|trade:|party:|party-count:|set-global:|hud-click:|use-skill:|hurt:|rest:|automap:|weapon-mode:|panel-click:|menu-click:|travel-resume:|travel-step:|travel-save-mid:|worldmap-fog:|weight:|iq-probe:|death-probe:|combat-walk:|light:|reg-anim:|encounter-fight:|brawl:|  spawn|  flat|  wait:|  follow:|  dismiss:|  rejoin:)'
 
 echo "Building viewer..."
 dotnet build src/Hexwaste.Viewer -c Debug >/dev/null || { echo "build failed"; exit 2; }

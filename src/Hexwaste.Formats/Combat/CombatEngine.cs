@@ -31,7 +31,9 @@ public sealed class CombatEngine
 
     /// <summary>The rolled-but-not-applied attack: damage lands when the punch
     /// animation completes (engine: _apply_damage in _combat_anim_finished).</summary>
-    private sealed record PendingAttack(MapObject Attacker, MapObject Target, int Chance, bool Hit, int Damage, int CritFlags, bool CanKnockback);
+    private sealed record PendingAttack(MapObject Attacker, MapObject Target, int Chance, bool Hit, int Damage, int CritFlags, bool CanKnockback,
+        // P26 gore: the killing blow's damage type + attacker animation feed DeathAnims.Pick.
+        int DamageType = 0, int AttackerAnim = DeathAnims.FallBack);
     private PendingAttack? _pendingAttack;
 
     /// <summary>A thrown weapon in flight: lands when the throw animation finishes —
@@ -235,7 +237,9 @@ public sealed class CombatEngine
             distance, crittersInPath, attackerIsDude: true, defenderIsDude: target == dude, hitLocation);
         if (isGun)
             weaponItem!.AmmoQuantity = _host.WeaponAmmo(weaponProto!, weaponItem) - 1;
-        _pendingAttack = new PendingAttack(dude, target, chance, hit, damage, critFlags, CanKnockback: !isGun);
+        _pendingAttack = new PendingAttack(dude, target, chance, hit, damage, critFlags, CanKnockback: !isGun,
+            DamageType: weaponProto?.Weapon?.DamageType ?? 0, // P26 gore context
+            AttackerAnim: DeathAnims.AttackAnimFor(isGun, weaponProto?.Weapon is not null));
         _host.Transcript($"attack {_host.ObjectName(target)}@{target.HexTile}"
             + $"{(weaponProto is null ? "" : $" [{_host.ObjectNameByPid(weaponProto.Pid)}{(isGun ? $" {weaponItem!.AmmoQuantity}rnd d{distance}" : "")}]")}: chance={chance}% hit={hit} damage={damage}{CritTag(critFlags)}");
 
@@ -664,8 +668,8 @@ public sealed class CombatEngine
             {
                 if (t.Target == _host.Dude)
                     GameOver();
-                else
-                    KillCritter(t.Target, t.Thrower);
+                else // P26: a thrown weapon's death uses THROW_ANIM (gibs only if explosive)
+                    KillCritter(t.Target, t.Thrower, t.Damage, t.Proto.Weapon?.DamageType ?? 0, DeathAnims.ThrowAnim);
             }
             else
             {
@@ -714,8 +718,8 @@ public sealed class CombatEngine
         {
             if (b.Target == dude)
                 GameOver();
-            else
-                KillCritter(b.Target, b.Attacker);
+            else // P26: a burst death uses FIRE_BURST (gibs on a solid hit, unlike a single shot)
+                KillCritter(b.Target, b.Attacker, b.TotalDamage, b.WeaponProto.Weapon?.DamageType ?? 0, DeathAnims.FireBurst);
         }
         else if (b.Target != dude)
         {
@@ -746,7 +750,7 @@ public sealed class CombatEngine
                 if (ex.Victim == dude)
                     GameOver();
                 else
-                    KillCritter(ex.Victim, b.Attacker);
+                    KillCritter(ex.Victim, b.Attacker, ex.Damage, b.WeaponProto.Weapon?.DamageType ?? 0, DeathAnims.FireBurst);
             }
             else if (ex.Victim != dude)
             {
@@ -945,7 +949,7 @@ public sealed class CombatEngine
             if (attack.Target == dude)
                 GameOver();
             else
-                KillCritter(attack.Target, attack.Attacker);
+                KillCritter(attack.Target, attack.Attacker, attack.Damage, attack.DamageType, attack.AttackerAnim);
             return;
         }
 
@@ -1052,8 +1056,8 @@ public sealed class CombatEngine
             {
                 if (victim == _host.Dude)
                     GameOver();
-                else
-                    KillCritter(victim, killer);
+                else // P26: blast deaths are EXPLOSION-typed -> BIG_HOLE/exploded gore
+                    KillCritter(victim, killer, damage, 6 /* DAMAGE_TYPE_EXPLOSION */, DeathAnims.FireSingle);
             }
         }
 
@@ -1140,7 +1144,8 @@ public sealed class CombatEngine
         return Math.Max(ap - StandUpApCost, 0);
     }
 
-    private void KillCritter(MapObject critter, MapObject? killer = null)
+    private void KillCritter(MapObject critter, MapObject? killer = null,
+        int damage = 0, int damageType = 0, int attackerAnim = DeathAnims.FallBack)
     {
         // Engine death order (combat.cc:4850-4876): destroy_p_proc with source =
         // killer, then proto XP accrues for the dude's kills unless the script
@@ -1169,7 +1174,10 @@ public sealed class CombatEngine
         _host.OnCritterRemoved(critter);
         _host.Log($"The {_host.ObjectName(critter)} dies.");
 
-        int deathAnim = _host.PickDeathAnim(critter);
+        // P26 gore: pick the gory death anim from the killing blow (violence fixed at NORMAL —
+        // no preferences screen), then let the host fall back if the critter lacks that art.
+        int desired = DeathAnims.Pick(damageType, damage, attackerAnim, DeathAnims.ViolenceNormal);
+        int deathAnim = _host.PickDeathAnim(critter, desired);
         if (_host.StartDeathFall(critter, deathAnim))
             _fallingCritters[critter] = deathAnim;
     }
@@ -1714,7 +1722,9 @@ public sealed class CombatEngine
                 distance, crittersInPath, attackerIsDude: false, defenderIsDude: false, CriticalTables.LocationUncalled);
             if (isGun && weaponItem is not null)
                 weaponItem.AmmoQuantity = _host.WeaponAmmo(weaponProto!, weaponItem) - 1;
-            _pendingAttack = new PendingAttack(ally, target, chance, hit, damage, critFlags, CanKnockback: !isGun);
+            _pendingAttack = new PendingAttack(ally, target, chance, hit, damage, critFlags, CanKnockback: !isGun,
+                DamageType: weaponProto?.Weapon?.DamageType ?? 0,
+                AttackerAnim: DeathAnims.AttackAnimFor(isGun, weaponProto?.Weapon is not null));
             _host.Transcript($"ally-attack {_host.ObjectName(ally)} -> {_host.ObjectName(target)}@{target.HexTile}"
                 + $"{(weaponProto is null ? "" : $" [{_host.ObjectNameByPid(weaponProto.Pid)}]")}: chance={chance}% hit={hit} damage={damage}{CritTag(critFlags)}");
             _host.OnAttackStarted(ally, target, weaponProto);
@@ -1749,7 +1759,9 @@ public sealed class CombatEngine
             CriticalTables.LocationUncalled);
         if (isGun && weaponItem is not null)
             weaponItem.AmmoQuantity = _host.WeaponAmmo(weaponProto!, weaponItem) - 1;
-        _pendingAttack = new PendingAttack(enemy, defenderObj, chance, hit, damage, critFlags, CanKnockback: !isGun);
+        _pendingAttack = new PendingAttack(enemy, defenderObj, chance, hit, damage, critFlags, CanKnockback: !isGun,
+            DamageType: weaponProto?.Weapon?.DamageType ?? 0,
+            AttackerAnim: DeathAnims.AttackAnimFor(isGun, weaponProto?.Weapon is not null));
         _host.Transcript($"enemy-attack {_host.ObjectName(enemy)}@{enemy.HexTile}"
             + $"{(weaponProto is null ? "" : $" [{_host.ObjectNameByPid(weaponProto.Pid)}{(isGun ? $" d{distance}" : "")}]")}: chance={chance}% hit={hit} damage={damage}{CritTag(critFlags)}");
 

@@ -220,6 +220,9 @@ for (int i = 0; i < args.Length; i++)
         case "--weight-probe":
             actions.Add(new ViewerGame.StartupAction.WeightProbe());
             break;
+        case "--death-probe" when i + 1 < args.Length:
+            actions.Add(new ViewerGame.StartupAction.DeathProbe(int.Parse(args[++i])));
+            break;
         case "--iq-probe" when i + 2 < args.Length:
             actions.Add(new ViewerGame.StartupAction.IqProbe(int.Parse(args[i + 1]), int.Parse(args[i + 2])));
             i += 2;

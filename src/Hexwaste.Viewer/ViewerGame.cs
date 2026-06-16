@@ -397,6 +397,9 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
         public sealed record CenterHex(int Hex) : StartupAction;
         /// <summary>Report the dude's carried weight / capacity / encumbered / AP-penalty (P24).</summary>
         public sealed record WeightProbe : StartupAction;
+        /// <summary>Report the gore death-anim a burst/explosion/laser kill would give the critter
+        /// at Hex — the picked anim + the art-resolved anim (P26), proving gore art availability.</summary>
+        public sealed record DeathProbe(int Hex) : StartupAction;
         /// <summary>Open NPC dialogue with the dude's IN forced to ForceIn and report the option
         /// COUNT at the greeting (P25 IQ-gating; never the copyrighted option text). ForceIn &lt; 0
         /// leaves IN unchanged.</summary>
@@ -1029,6 +1032,28 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
                     TalkTo(iqNpc);
                     Console.WriteLine($"iq-probe: hex={iqHex} in={effIn} options={_dialog?.Options.Count ?? 0}");
                     _dialog = null;
+                    break;
+                }
+                case StartupAction.DeathProbe(var dpHex):
+                {
+                    // P26: for the critter at <hex>, report the gore death anim a solid (dmg 20)
+                    // burst / explosion / laser kill picks (DeathAnims.Pick) and the art-RESOLVED
+                    // anim (PickDeathAnim's _check_death) — proving whether the critter ships gore art.
+                    MapObject? dpc = _solidObjects[_elevation].Concat(_flatObjects[_elevation])
+                        .FirstOrDefault(o => o.HexTile == dpHex && Fid.Type(o.Fid) is ObjectType.Critter);
+                    if (dpc is null) { Console.Error.WriteLine($"death-probe: no critter at {dpHex}"); break; }
+                    string Probe(string label, int dmgType, int atkAnim)
+                    {
+                        int desired = Formats.Combat.DeathAnims.Pick(dmgType, 20, atkAnim, Formats.Combat.DeathAnims.ViolenceNormal);
+                        int resolved = PickDeathAnim(dpc, desired);
+                        // gore = the gore anim survived art-resolution (not a plain FALL_BACK/FRONT fallback).
+                        bool gore = resolved != Formats.Combat.DeathAnims.FallBack && resolved != Formats.Combat.DeathAnims.FallFront;
+                        return $"{label}(desired={desired} resolved={resolved} gore={gore})";
+                    }
+                    Console.WriteLine($"death-probe: pid=0x{dpc.Pid:X} "
+                        + $"{Probe("burst", 0, Formats.Combat.DeathAnims.FireBurst)} "
+                        + $"{Probe("laser", 1, Formats.Combat.DeathAnims.FireBurst)} "
+                        + $"{Probe("explode", 6, Formats.Combat.DeathAnims.FireSingle)}");
                     break;
                 }
                 case StartupAction.WeightProbe:
@@ -3576,14 +3601,17 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
     public string ObjectNameByPid(int pid) =>
         _protoMessages.GetName(pid) ?? $"0x{pid:X8}";
 
-    /// <summary>FALL_BACK first, FALL_FRONT when that art doesn't ship (the
-    /// engine's behind-check flip is out of PoC scope).</summary>
-    public int PickDeathAnim(MapObject critter)
+    /// <summary>Resolve the death anim against the critter's art (ported from fallout2-ce
+    /// src/actions.cc _check_death): the gore anim DeathAnims.Pick chose (P26) if its art ships,
+    /// else FALL_BACK, else FALL_FRONT. The engine's hit-from-front flip is out of PoC scope.</summary>
+    public int PickDeathAnim(MapObject critter, int desiredAnim = Formats.Combat.DeathAnims.FallBack)
     {
-        const int animFallBack = 20;
-        const int animFallFront = 21;
-        int fallFid = Fid.Build(ObjectType.Critter, Fid.Index(critter.Fid), animFallBack, 0);
-        return _vfs.Exists(_artIndex.GetFrmPath(fallFid)) ? animFallBack : animFallFront;
+        const int animFallBack = 20, animFallFront = 21;
+        bool Exists(int anim) =>
+            _vfs.Exists(_artIndex.GetFrmPath(Fid.Build(ObjectType.Critter, Fid.Index(critter.Fid), anim, 0)));
+        if (desiredAnim != animFallBack && desiredAnim != animFallFront && Exists(desiredAnim))
+            return desiredAnim;
+        return Exists(animFallBack) ? animFallBack : animFallFront;
     }
 
     /// <summary>ported from fallout2-ce src/critter.cc critterKill(): the
