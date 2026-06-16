@@ -21,24 +21,25 @@ public static class CombatMath
 
     /// <summary>Unarmed: damage = rand(1, 2 + meleeDmg), ×critMult/2 (default 2 =
     /// identity; the crit multiplier slots where the engine's hardcoded 2 lives),
-    /// then DT/DR. BYPASS cuts DT/DR to 20% (combat.cc:4530).</summary>
+    /// then DT/DR. BYPASS cuts DT/DR to 20% (combat.cc:4530). <paramref name="extraDr"/>
+    /// (P29-M1 Finesse) is added to the defender's DR on the non-bypass path.</summary>
     public static int RollDamage(ICombatRng rng, CritterState attacker, CritterState target,
-        int critMultiplier = 2, bool bypassArmor = false)
+        int critMultiplier = 2, bool bypassArmor = false, int extraDr = 0)
     {
         int raw = rng.Next(1, attacker.MeleeDamage + 3); // inclusive 1 .. 2+meleeDmg
-        return ReduceByArmor(raw * critMultiplier / 2, target, bypassArmor);
+        return ReduceByArmor(raw * critMultiplier / 2, target, bypassArmor, extraDr);
     }
 
     /// <summary>Melee weapon: rand(min, max) + the attacker's melee-damage
     /// bonus (item.cc:1244), ×critMult/2, then DT/DR.</summary>
     public static int RollWeaponDamage(ICombatRng rng, CritterState attacker, CritterState target,
-        int minDamage, int maxDamage, int critMultiplier = 2, bool bypassArmor = false)
+        int minDamage, int maxDamage, int critMultiplier = 2, bool bypassArmor = false, int extraDr = 0)
     {
         int raw = rng.Next(minDamage, Math.Max(minDamage, maxDamage) + 1) + attacker.MeleeDamage;
-        return ReduceByArmor(raw * critMultiplier / 2, target, bypassArmor);
+        return ReduceByArmor(raw * critMultiplier / 2, target, bypassArmor, extraDr);
     }
 
-    private static int ReduceByArmor(int raw, CritterState target, bool bypassArmor = false)
+    private static int ReduceByArmor(int raw, CritterState target, bool bypassArmor = false, int extraDr = 0)
     {
         int dt = target.DamageThreshold;
         int dr = target.DamageResistance;
@@ -46,6 +47,10 @@ public static class CombatMath
         {
             dt = 20 * dt / 100;
             dr = 20 * dr / 100;
+        }
+        else
+        {
+            dr += extraDr; // P29-M1 Finesse: a dude attacker raises the defender's DR +30 (combat.cc:4540)
         }
         int afterThreshold = Math.Max(raw - dt, 0);
         return afterThreshold * (100 - Math.Clamp(dr, 0, 100)) / 100;
@@ -92,7 +97,7 @@ public static class RangedMath
     /// mult/div and DR modifier land here. Guns get no melee bonus.</summary>
     public static int RollDamage(ICombatRng rng, int minDamage, int maxDamage, CritterState target,
         int ammoDrModifier, int ammoDamageMultiplier, int ammoDamageDivisor,
-        int critMultiplier = 2, bool bypassArmor = false)
+        int critMultiplier = 2, bool bypassArmor = false, int extraDr = 0)
     {
         int raw = rng.Next(minDamage, Math.Max(minDamage, maxDamage) + 1);
         // critMultiplier replaces the engine's hardcoded ×2 (default 2 = identity).
@@ -106,6 +111,10 @@ public static class RangedMath
         {
             dt = 20 * dt / 100;
             dr = 20 * dr / 100;
+        }
+        else
+        {
+            dr += extraDr; // P29-M1 Finesse: a dude attacker raises the defender's DR +30 (combat.cc:4540)
         }
         damage -= dt;
         if (damage <= 0)

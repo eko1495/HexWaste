@@ -844,8 +844,123 @@ public class CombatEngineTests
         Assert.True(CanAttack(CriticalTables.DamCripArmAny, unarmed));              // both arms but unarmed → punch
     }
 
+    // ====================================================================
+    //  Combat-path traits (P29-M1): One Hander, Fast Shot, Finesse, Jinxed.
+    //  All are dude-only and inert without the trait → goldens unchanged.
+    // ====================================================================
+
+    /// <summary>A melee weapon proto+item with the given extended flags (0x001 one-handed,
+    /// 0x201 two-handed; low nibble 1 = a melee swing, not a gun).</summary>
+    private static (ProtoInfo Proto, MapObject Item) MakeMeleeWeapon(int ext, int minDmg = 1, int maxDmg = 6, int ap = 3)
+    {
+        var w = new WeaponProtoStats(1, minDmg, maxDmg, 0, 1, 0, 0, 1, ap, 0, 0, 0, -1, 0, 0);
+        var proto = new ProtoInfo(8, 0, 0x01000000, 0, ext, 3, Weapon: w);
+        var item = new MapObject { Id = 8, HexTile = 0, X = 0, Y = 0, Frame = 0, Rotation = 0, Fid = 0, Flags = 0, Pid = 8, Sid = -1 };
+        return (proto, item);
+    }
+
+    /// <summary>A single-shot gun (ext 0x06 = primary SINGLE) with range 40 and AP cost 5.</summary>
+    private static (ProtoInfo Proto, MapObject Item) MakeGun(int ap = 5)
+    {
+        var w = new WeaponProtoStats(0, 5, 12, 0, 40, 0, 0, 0, ap, 0, 0, 0, -1, 12, 0);
+        var proto = new ProtoInfo(8, 0, 0x06000000, 0, 0x06, 3, Weapon: w);
+        var item = new MapObject { Id = 8, HexTile = 0, X = 0, Y = 0, Frame = 0, Rotation = 0, Fid = 0x06000000, Flags = 0, Pid = 8, Sid = -1, AmmoQuantity = -1 };
+        return (proto, item);
+    }
+
+    private static int AttackChance(FakeCombatHost host)
+    {
+        MapObject enemy = host.AddCritter(NewCritter(HexGrid.TileInDirection(20100, 0), hp: 100));
+        new CombatEngine(host, new MinRng()).TryAttack(enemy);
+        string line = host.Transcripts.First(t => t.StartsWith("attack "));
+        return int.Parse(line.Split("chance=")[1].Split('%')[0]);
+    }
+
+    [Fact]
+    public void OneHanderHelpsOneHandedAndHurtsTwoHandedToHit()
+    {
+        // P29-M1 (combat.cc:4404): a One Hander dude gets +20 to hit with a one-handed weapon
+        // and −40 with a two-handed one. Base melee to-hit here is 50 (melee skill 50, AC 0).
+        int Chance(bool oneHander, int ext)
+        {
+            var host = new FakeCombatHost { Equipped = MakeMeleeWeapon(ext) };
+            if (oneHander) host.Traits.Add(TraitModifiers.OneHander);
+            host.SetDude(NewCritter(20100, hp: 30, ap: 10, skill: 10)); // melee skill = 20 + 2*(5+5) + 10 = 50
+            return AttackChance(host);
+        }
+
+        Assert.Equal(50, Chance(false, 0x001)); // baseline, no trait
+        Assert.Equal(70, Chance(true, 0x001));  // +20 one-handed
+        Assert.Equal(10, Chance(true, 0x201));  // −40 two-handed
+    }
+
+    [Fact]
+    public void FastShotLowersRangedApAndCannotAim()
+    {
+        // P29-M1 (item.cc:1679/1825): Fast Shot trims 1 AP off a long-range (>2) shot and forbids
+        // aiming. A 5-AP gun → 4 AP; an aimed Fast Shot is coerced to uncalled (no +1 AP).
+        int Ap(bool fastShot, int hitLocation)
+        {
+            var host = new FakeCombatHost { CriticalsEnabled = false, LoadedAmmoCount = 10, Equipped = MakeGun() };
+            if (fastShot) host.Traits.Add(TraitModifiers.FastShot);
+            host.SetDude(NewCritter(20100, hp: 30, ap: 10, skill: 50));
+            MapObject enemy = host.AddCritter(NewCritter(HexGrid.TileInDirection(20100, 0), hp: 100));
+            var engine = new CombatEngine(host, new MinRng());
+            Assert.True(engine.TryAttack(enemy, hitLocation));
+            return engine.DudeAp;
+        }
+
+        Assert.Equal(5, Ap(false, CriticalTables.LocationUncalled)); // 10 − 5
+        Assert.Equal(6, Ap(true, CriticalTables.LocationUncalled));  // 10 − (5 − 1 Fast Shot)
+        Assert.Equal(4, Ap(false, 6));                              // aimed EYES: 10 − (5 + 1)
+        Assert.Equal(6, Ap(true, 6));                               // aim blocked → same as uncalled Fast Shot
+    }
+
+    [Fact]
+    public void FinesseRaisesDefenderDamageResistanceForADudeAttack()
+    {
+        // P29-M1 (combat.cc:4540): a Finesse dude raises the defender's DR +30. With a fixed-100
+        // melee weapon and DR 50, damage = 100*(100−50)/100 = 50 normally, 100*(100−80)/100 = 20 finessed.
+        int Damage(bool finesse)
+        {
+            var host = new FakeCombatHost { CriticalsEnabled = false, Equipped = MakeMeleeWeapon(0x001, minDmg: 100, maxDmg: 100) };
+            if (finesse) host.Traits.Add(TraitModifiers.Finesse);
+            host.SetDude(NewCritter(20100, hp: 30, ap: 10, skill: 50));
+            MapObject enemy = host.AddCritter(NewCritter(HexGrid.TileInDirection(20100, 0), hp: 500, dr: 50));
+            var engine = new CombatEngine(host, new MinRng());
+            Assert.True(engine.TryAttack(enemy));
+            host.Animating.Clear();
+            engine.ProcessAnimations();
+            return 500 - enemy.CurrentHp;
+        }
+
+        Assert.Equal(50, Damage(false));
+        Assert.Equal(20, Damage(true));
+    }
+
+    [Fact]
+    public void JinxedDudeFumblesAMissIntoALostTurn()
+    {
+        // P29-M1 (combat.cc:3857, simplified): on a MISS a Jinxed dude rolls d2 — a 1 fumbles into a
+        // lost turn (AP → 0). Gated on CriticalsEnabled (our day-2 proxy for the engine's day-6 gate).
+        int ApAfterMiss(bool jinxed)
+        {
+            var host = new FakeCombatHost { CriticalsEnabled = true }; // unarmed
+            if (jinxed) host.Traits.Add(TraitModifiers.Jinxed);
+            host.SetDude(NewCritter(20100, hp: 30, ap: 10));
+            MapObject enemy = host.AddCritter(NewCritter(HexGrid.TileInDirection(20100, 0), hp: 100));
+            // SequenceRng: to-hit roll 100 (a miss), then the Jinxed d2 = 1 (fumble).
+            var engine = new CombatEngine(host, new SequenceRng(100, 1));
+            Assert.True(engine.TryAttack(enemy));
+            return engine.DudeAp;
+        }
+
+        Assert.Equal(0, ApAfterMiss(true));  // fumbled → turn lost
+        Assert.Equal(7, ApAfterMiss(false)); // no trait: 10 − 3 punch, no d2 drawn
+    }
+
     private static (MapObject Obj, CritterProtoStats Proto) NewCritter(
-        int tile, int hp, int ap = 10, int seq = 1, int exp = 0, int betterCrit = 0, int meleeDmg = 0, int skill = 0, int endurance = 0)
+        int tile, int hp, int ap = 10, int seq = 1, int exp = 0, int betterCrit = 0, int meleeDmg = 0, int skill = 0, int endurance = 0, int dr = 0)
     {
         int[] b = new int[35];
         b[CritterStat.Strength] = 5;
@@ -856,6 +971,7 @@ public class CombatEngineTests
         b[CritterStat.Sequence] = seq;
         b[CritterStat.BetterCriticals] = betterCrit;
         b[CritterStat.MeleeDamage] = meleeDmg;
+        b[CritterStat.DamageResistance] = dr;
         int[] sk = new int[18];
         for (int i = 0; i < sk.Length; i++) sk[i] = skill; // ranged tests need a usable gun skill
         var proto = new CritterProtoStats(0, 0, 0, b, new int[35], sk, 0, exp, 0, 0);
@@ -913,6 +1029,8 @@ public class CombatEngineTests
         public bool CriticalsEnabled { get; set; }
         public readonly Dictionary<int, int> PerkRanks = []; // P28-M3 combat perk effects
         public int DudePerkRank(int perk) => PerkRanks.GetValueOrDefault(perk);
+        public readonly HashSet<int> Traits = []; // P29-M1 combat-path trait effects
+        public bool DudeHasTrait(int trait) => Traits.Contains(trait);
         public CritterState? GetCritterState(MapObject critter) => _states.GetValueOrDefault(critter);
         public AiPacket? GetAiPacket(MapObject critter) => AiPackets.GetValueOrDefault(critter);
         public (ProtoInfo? Proto, MapObject? Item) Equipped = (null, null);

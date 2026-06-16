@@ -34,6 +34,10 @@ public interface ICombatHost
     /// <summary>The dude's rank in a perk (P28-M3 combat effects: Bonus Rate of Fire, Sniper,
     /// Slayer, Sharpshooter, …). Default 0 — a perk-less dude is inert, so goldens hold.</summary>
     int DudePerkRank(int perk) => 0;
+    /// <summary>True if the dude selected this optional trait (P29-M1 combat-path effects: One Hander,
+    /// Fast Shot, Finesse, Jinxed — TraitModifiers ids). Default false — a trait-less dude is inert,
+    /// so the combat goldens stay byte-identical. The engine's trait checks are all <c>== gDude</c>.</summary>
+    bool DudeHasTrait(int trait) => false;
 
     // --- Critter / weapon data resolution --------------------------------
     CritterState? GetCritterState(MapObject critter);                    // :1410

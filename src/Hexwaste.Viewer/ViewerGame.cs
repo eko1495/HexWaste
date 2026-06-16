@@ -3100,6 +3100,11 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
     /// (Bonus Rate of Fire, Sniper, Slayer, Sharpshooter). 0 by default → inert.</summary>
     public int DudePerkRank(int perk) => Formats.Perks.PerkRules.Rank(_dudePerkRanks, perk);
 
+    /// <summary>ICombatHost (P29-M1): the dude's selected optional traits — drives the combat-path
+    /// trait effects (One Hander, Fast Shot, Finesse, Jinxed). False by default → inert.</summary>
+    public bool DudeHasTrait(int trait) =>
+        _dudeGcd is { } g && Formats.Combat.TraitModifiers.Has(g.Traits, trait);
+
     private void TakeFromContainer(int index)
     {
         if (_lootContainer is null || index < 0 || index >= _lootContainer.Inventory.Count)

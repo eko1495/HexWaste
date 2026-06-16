@@ -864,6 +864,26 @@ the picker + char-sheet display + save persistence; the marquee character-progre
 382 Formats tests, 42 encounter + 15 combat goldens green. Spillover: PERKWIN.FRM art, the combat-crit
 trait spillover (One Hander/Fast Shot/Finesse-DR/Jinxed), Educated skill points, companion perks.
 
+Phase 29 (IN PROGRESS — "Finish the Character", the P28 traits + perks spillover): complete the six
+consciously-deferred items so the character-progression layer is whole. Everything keeps the INERT-BY-
+DEFAULT invariant (a trait-less/perk-less dude yields zero modifiers → combat + encounter goldens byte-
+identical). M1 combat-path trait leftovers (DONE): new ICombatHost.DudeHasTrait(int) (default false;
+ViewerGame reads _dudeGcd.Traits) mirrors DudePerkRank. One Hander (combat.cc:4404 — in ComputeToHit,
+dude + any WIELDED weapon: two-handed −40 else +20; skipped unarmed/NPC). Fast Shot (item.cc:1679/1825 —
+−1 AP for a range>2 weapon in TryAttack's apCost, now floored at 1 like the engine; AND can't aim: a
+called shot from a Fast Shot dude is coerced to uncalled, mirroring critterCanAim). Finesse (combat.cc:
+4540 — a dude attacker raises the DEFENDER's DR +30 on the non-bypass path; threaded as an extraDr param
+through CombatMath.RollDamage/RollWeaponDamage + RangedMath.RollDamage, set at the RollAttack damage
+site; the +10 crit-chance UPSIDE was already live via CritterState/TraitModifiers). Jinxed (combat.cc:
+3857 — on a dude MISS, d2==1 fumbles into a lost turn, _dudeAp=0). SIMPLIFIED + DOCUMENTED: Jinxed
+honours only DAM_LOSE_TURN (not the 7×5 _cf_table drop/explode/cripple/on-fire), is dude-only (the
+engine fumbles EVERY combatant when the dude is Jinxed), and gates on CriticalsEnabled (our day-2 proxy)
+vs the engine's day-6 crit-failure gate. Finesse-DR is wired on the single-attack RollAttack path only
+(burst/throw/explosion Finesse is a documented residual). The d2/extraDr are taken ONLY when the trait
+is set, so a trait-less dude draws no extra RNG. Proven by 4 fake-host CombatEngineTests (One Hander
+to-hit +20/−40, Fast Shot AP + aim-block, Finesse defender-DR 50→20, Jinxed lose-turn); all 15 combat +
+42 encounter goldens BYTE-IDENTICAL (Narg's traits are HeavyHanded+Gifted, none of the M1 four).
+
 Phase 10 (DONE, per docs/phase10-research-report.md — "The Wasteland
 Bites Back"): M0 persistence pre-stage (the net: MapList saved=No /
 random_start_point parse + IsTransient; the 3-clause transient guards as

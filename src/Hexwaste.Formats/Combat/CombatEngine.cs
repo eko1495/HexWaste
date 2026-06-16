@@ -168,6 +168,12 @@ public sealed class CombatEngine
         if (_host.GetCritterState(dude) is not { } attacker || _host.GetCritterState(target) is not { } defender)
             return false;
 
+        // P29-M1: Fast Shot can't aim (item.cc:1825 critterCanAim) — the engine never offers the
+        // aim dialog to a Fast Shot dude, so we coerce any called shot back to uncalled (no +1 AP,
+        // no aimed crit bonus). Inert without the trait.
+        if (hitLocation != CriticalTables.LocationUncalled && _host.DudeHasTrait(TraitModifiers.FastShot))
+            hitLocation = CriticalTables.LocationUncalled;
+
         (ProtoInfo? weaponProto, MapObject? weaponItem) = _host.EquippedWeapon(dude);
         if (WeaponBlockedByCrippledArms(dude, weaponProto) is { } crippleReason)
         {
@@ -177,12 +183,15 @@ public sealed class CombatEngine
         bool isGun = weaponProto?.Weapon is { } wstats && wstats.IsGun(weaponProto.ExtendedFlags);
         int range = isGun ? weaponProto!.Weapon!.MaxRange1
             : Math.Min(weaponProto?.Weapon?.MaxRange1 ?? 1, 2); // throwers melee-capped until rung (a)
-        int apCost = (weaponProto?.Weapon?.ApCost ?? CombatMath.PunchApCost)
+        int apCost = Math.Max(1, (weaponProto?.Weapon?.ApCost ?? CombatMath.PunchApCost)
             + (hitLocation != CriticalTables.LocationUncalled ? 1 : 0) // aimed shot +1 AP (item.cc:1706)
             // P28-M3: Bonus Rate of Fire (−1 ranged) / Bonus HtH Attacks (−1 melee/unarmed) — item.cc:1693.
             - (isGun
                 ? (_host.DudePerkRank(Perks.PerkId.BonusRateOfFire) > 0 ? 1 : 0)
-                : (_host.DudePerkRank(Perks.PerkId.BonusHthAttacks) > 0 ? 1 : 0));
+                : (_host.DudePerkRank(Perks.PerkId.BonusHthAttacks) > 0 ? 1 : 0))
+            // P29-M1: Fast Shot − 1 AP for a long-range weapon (range > 2; item.cc:1679). Inert
+            // without the trait; the Math.Max(1) floor mirrors the engine's "actionPoints < 1 → 1".
+            - (range > 2 && _host.DudeHasTrait(TraitModifiers.FastShot) ? 1 : 0));
         int distance = HexGrid.Distance(dude.HexTile, target.HexTile);
         if (distance > range)
         {
@@ -239,6 +248,20 @@ public sealed class CombatEngine
 
         (int chance, bool hit, int damage, int critFlags) = RollAttack(attacker, defender, weaponProto, weaponItem,
             distance, crittersInPath, attackerIsDude: true, defenderIsDude: target == dude, hitLocation);
+
+        // P29-M1: Jinxed — a missed dude attack can fumble into a critical failure (combat.cc:3857
+        // rolls randomBetween(0,1) on every ROLL_FAILURE when the dude has the trait). SIMPLIFIED:
+        // we honour only DAM_LOSE_TURN (the most common _cf_table low-severity effect) by zeroing the
+        // dude's AP — not the full 7×5 table (drop/explode/cripple/on-fire), and dude-only (the engine
+        // fumbles EVERY combatant when the dude is Jinxed). Gated on CriticalsEnabled (our day-2 signal;
+        // the engine gates the dude's crit-failures at day 6 — a documented divergence). The d2 draw is
+        // taken ONLY when the trait is set, so a trait-less dude draws nothing → goldens byte-identical.
+        if (!hit && _host.CriticalsEnabled && _host.DudeHasTrait(TraitModifiers.Jinxed) && _rng.Next(0, 2) == 1)
+        {
+            _dudeAp = 0;
+            _host.Log("Jinxed! You fumble and lose your turn.");
+        }
+
         if (isGun)
             weaponItem!.AmmoQuantity = _host.WeaponAmmo(weaponProto!, weaponItem) - 1;
         _pendingAttack = new PendingAttack(dude, target, chance, hit, damage, critFlags, CanKnockback: !isGun,
@@ -814,19 +837,23 @@ public sealed class CombatEngine
         if (hit)
         {
             bool bypass = (critFlags & CriticalTables.DamBypass) != 0;
+            // P29-M1 Finesse: a dude attacker raises the defender's DR by +30 (combat.cc:4540), but
+            // only on the non-bypass path (the engine skips it under DAM_BYPASS). Inert for NPC
+            // attackers and a trait-less dude, so the combat goldens stay byte-identical.
+            int extraDr = !bypass && attackerIsDude && _host.DudeHasTrait(TraitModifiers.Finesse) ? 30 : 0;
             if (isGun)
             {
                 AmmoProtoStats? ammo = weaponItem is null ? null : _host.LoadedAmmo(weaponProto!, weaponItem);
                 damage = RangedMath.RollDamage(_rng,
                     weaponProto!.Weapon!.MinDamage, weaponProto.Weapon.MaxDamage, defender,
                     ammo?.DrModifier ?? 0, ammo?.DamageMultiplier ?? 1, ammo?.DamageDivisor ?? 1,
-                    critMultiplier, bypass);
+                    critMultiplier, bypass, extraDr);
             }
             else
             {
                 damage = weaponProto?.Weapon is { } weapon
-                    ? CombatMath.RollWeaponDamage(_rng, attacker, defender, weapon.MinDamage, weapon.MaxDamage, critMultiplier, bypass)
-                    : CombatMath.RollDamage(_rng, attacker, defender, critMultiplier, bypass);
+                    ? CombatMath.RollWeaponDamage(_rng, attacker, defender, weapon.MinDamage, weapon.MaxDamage, critMultiplier, bypass, extraDr)
+                    : CombatMath.RollDamage(_rng, attacker, defender, critMultiplier, bypass, extraDr);
             }
         }
 
@@ -888,6 +915,12 @@ public sealed class CombatEngine
             int skill = weaponProto is null ? attacker.UnarmedSkill : attacker.MeleeWeaponsSkill;
             toHit = CombatMath.ToHitChance(skill, defender);
         }
+
+        // P29-M1: One Hander (dude, any wielded weapon) — a two-handed weapon costs −40 to hit,
+        // anything one-handed gains +20 (combat.cc:4404). Skipped when unarmed (no weapon) and for
+        // NPCs; a trait-less dude is inert, so the combat goldens stay byte-identical.
+        if (attackerIsDude && weaponProto is not null && _host.DudeHasTrait(TraitModifiers.OneHander))
+            toHit += WeaponProtoStats.IsTwoHanded(weaponProto.ExtendedFlags) ? -40 : 20;
 
         // A blind attacker: -25 to hit, melee or ranged (combat.cc:4470).
         if (attacker.Blind)
