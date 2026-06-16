@@ -62,6 +62,21 @@ for (int elevation = 0; elevation < MapFile.ElevationCount; elevation++)
     Console.WriteLine($"  elevation {elevation}: {floorTiles} floor tiles, {roofTiles} roof tiles, "
         + $"{elev.Objects.Count} objects ({string.Join(", ", byType)})");
 
+    // Translucency census (P23): objects the engine alpha-blends (glass/steam/energy/red/wall).
+    // TRANS_NONE (0x8000) is OPAQUE ("never fade near the dude") so it's excluded from the count.
+    var trans = new Dictionary<string, List<(int Pid, int Hex)>>();
+    foreach (var o in elev.Objects)
+    {
+        Hexwaste.Formats.Proto.TransType t;
+        try { t = protos.Get(o.Pid).Translucency; } catch { continue; }
+        if (t == Hexwaste.Formats.Proto.TransType.None)
+            continue;
+        string kind = t.ToString();
+        (trans.TryGetValue(kind, out var l) ? l : trans[kind] = []).Add((o.Pid, o.HexTile));
+    }
+    if (trans.Count > 0)
+        Console.WriteLine($"    translucent: {string.Join(", ", trans.OrderBy(k => k.Key).Select(k => $"{k.Key} x{k.Value.Count} (e.g. pid 0x{k.Value[0].Pid:X} hex {k.Value[0].Hex})"))}");
+
     var critters = elev.Objects.Where(o => Fid.Type(o.Fid) == ObjectType.Critter).ToList();
     if (critters.Count > 0)
     {

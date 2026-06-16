@@ -12,7 +12,8 @@ filing an issue.
   AAF fonts, MSG, ACM audio, GCD character sheets, worldmap/city/maps tables.
 - **Rendering**: hex/square grids with correct z-sorting and draw order, roofs,
   per-vertex floor lighting, static light pools with occlusion, day/night clock,
-  egg-style wall transparency, silhouette outlines.
+  egg-style wall transparency, per-type object translucency (glass/steam/energy/
+  red/wall), silhouette outlines.
 - **A micro INT script VM** + script host: map-entry scripts, dialog (`gsay`
   trees), examine, locks/lockpick, use / use-on-object, pickup, timers, spatial
   traps, the critter heartbeat, ~70 real engine externals.

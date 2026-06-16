@@ -25,7 +25,12 @@ public sealed record ProtoInfo(
     WeaponProtoStats? Weapon = null,
     ArmorProtoStats? Armor = null,
     DrugProtoStats? Drug = null,
-    AmmoProtoStats? Ammo = null);
+    AmmoProtoStats? Ammo = null)
+{
+    /// <summary>The object's translucency class from its flag bits 0xFC000 (P23) — the engine
+    /// sets one OBJECT_TRANS_* from the proto at instantiation (object.cc:943).</summary>
+    public TransType Translucency => Proto.Translucency.FromFlags(Flags);
+}
 
 /// <summary>Weapon payload, ported from fallout2-ce src/proto.cc
 /// protoItemDataRead() ITEM_TYPE_WEAPON. The attack animation comes from

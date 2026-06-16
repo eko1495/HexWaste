@@ -705,6 +705,29 @@ mouse-gate -> goldens byte-identical. 7 WorldmapFog unit tests (ring/centre/W-sp
 off-grid + a GameDataFact TravelLeg-reveals-the-real-arroyo->den-path); 304 Formats tests, 30
 encounter + 15 combat goldens green. The worldmap fog moves from the gap-analysis backlog to DONE.
 
+Phase 23 (DONE — "See-Through", object translucency; from the fo2ce gap analysis): glass/steam/
+energy/red/wall objects rendered OPAQUE; now they alpha-blend. DE-RISK FINDING (the headline): the
+whole shippable slice has EXACTLY ONE genuinely-translucent object — a TRANS_STEAM at denbus1 hex
+28105 (pid 0x100001D). The hundreds of "TRANS_NONE" objects across every map are OPAQUE — TRANS_NONE
+(0x8000) is the engine's "render solid, never fade near the dude" flag, NOT a translucent effect
+(object.cc:5067 switch has no NONE case -> default opaque blit). Glass/energy/red/wall: ZERO slice
+objects. User opted for the full faithful impl anyway (the 4 empty types light up for free if content
+appears). M0 (DONE): pure Formats.Proto.TransType {None,Wall,Glass,Steam,Energy,Red} + Translucency.
+FromFlags (the object.cc:943 priority: TRANS_NONE wins->opaque, else wall/glass/steam/energy/red);
+ProtoInfo.Translucency computed from the already-parsed Flags. M1 (DONE): DrawObjects folds a per-type
+(tint,alpha) into the object's light tint before the existing premultiplied-AlphaBlend Draw (the same
+Color*float path the egg-fade uses). The 5 tints are the engine's _colorTable blend SEEDS (object.cc:
+3467-3471 RGB555 -> RGB8) softened halfway to white; the per-pixel luminance weighting + exact 8-bit
+palette composite COLLAPSE to one uniform alpha per type — a DOCUMENTED DIVERGENCE (SpriteBatch over
+RGBA has no 8-bit destination buffer to blend into; the real _dark_translucent_trans_buf_to_buf reads
+grayTable[src]<<8 + dst through the blend table). TransType cached per-pid in the viewer. VERIFIED: a
+before/after screenshot diff shows ONLY the steam object's pixels changed (the wisp now ~50% see-
+through) and nothing else regressed. Draw-only -> all goldens byte-identical. Harness --center <hex>
+(screenshot camera); MapDump gained a translucency census (skips the TRANS_NONE noise). 12
+TranslucencyTests (each bit, the NONE-wins priority, the engine decode order, mask, ProtoInfo); 316
+Formats tests, 30 encounter + 15 combat goldens green. Translucency moves from the gap-analysis backlog
+to DONE. Remaining feasible backlog: item encumbrance, dialog IQ-gating, blood/gore splats.
+
 Phase 10 (DONE, per docs/phase10-research-report.md — "The Wasteland
 Bites Back"): M0 persistence pre-stage (the net: MapList saved=No /
 random_start_point parse + IsTransient; the 3-clause transient guards as

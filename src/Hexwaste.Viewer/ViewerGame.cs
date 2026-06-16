@@ -393,6 +393,8 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
         /// prompt) and report the fog-of-war reveal — proves subtiles get marked VISITED/KNOWN
         /// as the party walks, and that the destination subtile becomes clear.</summary>
         public sealed record FogProbe(int X, int Y, int AreaIndex) : StartupAction;
+        /// <summary>Center the camera on a hex (screenshot testing, e.g. P23 translucency).</summary>
+        public sealed record CenterHex(int Hex) : StartupAction;
         /// <summary>Phase-21: report the ambient light after map_enter — proves the map's
         /// scripted set_light_level took effect.</summary>
         public sealed record LightProbe : StartupAction;
@@ -1003,6 +1005,9 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
                         + $" worldPos=({_worldPosX},{_worldPosY}) spawned={spawnedCount}");
                     break;
                 }
+                case StartupAction.CenterHex(var centerHex):
+                    _camera.SetCenter(centerHex); // screenshot testing (P23)
+                    break;
                 case StartupAction.FogProbe(var fx, var fy, var fa):
                 {
                     // Phase-22: drive a real travel leg WITH the fog and report the reveal.
@@ -5122,6 +5127,11 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
             // uniform intensity per object, max(ambient, tile light).
             Color tint = LightTint(obj.HexTile);
 
+            // Translucency (P23): glass/steam/energy/red/wall objects blend over the
+            // background instead of drawing opaque (the engine's per-type blend tables).
+            if (TranslucencyOf(obj) is { } trans and not Formats.Proto.TransType.None)
+                tint = ApplyTranslucency(tint, trans);
+
             // Egg-style transparency (approximation of the engine's masked
             // blend): solids drawn in front of the dude that cover him fade,
             // keeping him visible behind walls.
@@ -5136,6 +5146,45 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
                 _spriteBatch.Draw(outline, new Vector2(sprite.Left, sprite.Top), new Color(0, 252, 0));
             }
         }
+    }
+
+    private readonly Dictionary<int, Formats.Proto.TransType> _transByPid = [];
+
+    /// <summary>The object's translucency class (P23), cached per pid — the proto carries the
+    /// 0xFC000 trans bits (object.cc:943). Unknown protos → None (opaque).</summary>
+    private Formats.Proto.TransType TranslucencyOf(MapObject obj)
+    {
+        if (_transByPid.TryGetValue(obj.Pid, out Formats.Proto.TransType cached))
+            return cached;
+        Formats.Proto.TransType t;
+        try { t = _protos.Get(obj.Pid).Translucency; }
+        catch (Exception ex) when (ex is FileNotFoundException or InvalidDataException) { t = Formats.Proto.TransType.None; }
+        return _transByPid[obj.Pid] = t;
+    }
+
+    // Per-type translucency blend (P23): a GPU approximation of the engine's 8-bit blend tables
+    // (object.cc:3467-3471 _dark_translucent_trans_buf_to_buf). The tint is each type's _colorTable
+    // seed (RGB555 -> RGB8) softened halfway to white so it reads as a tint not a full multiply;
+    // the per-pixel luminance weighting + exact palette composite collapse to one uniform alpha —
+    // a documented divergence (SpriteBatch over RGBA has no 8-bit destination buffer to blend into).
+    private static readonly Dictionary<Formats.Proto.TransType, (Color Tint, float Alpha)> TransBlend = new()
+    {
+        [Formats.Proto.TransType.Wall] = (new Color(226, 234, 255), 0.55f),   // seed _colorTable[25439]
+        [Formats.Proto.TransType.Glass] = (new Color(164, 255, 255), 0.42f),  // seed _colorTable[10239]
+        [Formats.Proto.TransType.Steam] = (new Color(255, 255, 255), 0.50f),  // seed _colorTable[32767]
+        [Formats.Proto.TransType.Energy] = (new Color(247, 255, 131), 0.60f), // seed _colorTable[30689]
+        [Formats.Proto.TransType.Red] = (new Color(255, 127, 127), 0.50f),    // seed _colorTable[31744]
+    };
+
+    /// <summary>Fold a translucency type's tint + alpha into the object's light tint (P23). The
+    /// SpriteBatch premultiplied AlphaBlend then composites the lit, type-tinted sprite over the
+    /// background at the type's alpha (the same Color*float path the egg-fade uses).</summary>
+    private static Color ApplyTranslucency(Color light, Formats.Proto.TransType trans)
+    {
+        if (!TransBlend.TryGetValue(trans, out (Color Tint, float Alpha) b))
+            return light;
+        var tinted = new Color(light.R * b.Tint.R / 255, light.G * b.Tint.G / 255, light.B * b.Tint.B / 255, 255);
+        return tinted * b.Alpha;
     }
 
     /// <summary>

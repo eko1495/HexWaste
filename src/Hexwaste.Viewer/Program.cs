@@ -214,6 +214,9 @@ for (int i = 0; i < args.Length; i++)
                 int.Parse(args[i + 1]), int.Parse(args[i + 2]), int.Parse(args[i + 3])));
             i += 3;
             break;
+        case "--center" when i + 1 < args.Length:
+            actions.Add(new ViewerGame.StartupAction.CenterHex(int.Parse(args[++i])));
+            break;
         case "--fog-probe" when i + 3 < args.Length:
             // --fog-probe <x> <y> <areaIndex>: travel a worldmap leg from (x,y) toward an
             // area WITH the fog-of-war, reporting the subtile reveal (phase-22).
