@@ -24,13 +24,28 @@ public sealed class GcdFile
     /// <summary>Builds an in-memory sheet from a created character (no .gcd
     /// write). Derived stats recompute per fallout2-ce stat.cc
     /// critterUpdateDerivedStats(). special = the 7 SPECIAL values; tags = the
-    /// chosen skill indices (padded to 4 with -1); gender 0/1.</summary>
-    public static GcdFile Create(int[] special, int[] tags, int gender, string name = "Wanderer")
+    /// chosen skill indices (padded to 4 with -1); gender 0/1; traits = up to two
+    /// selected trait ids (P29-M3; null/empty = none).</summary>
+    public static GcdFile Create(int[] special, int[] tags, int gender, int[]? traits = null, string name = "Wanderer")
     {
+        // Normalise to exactly two trait slots (-1 = empty), the .gcd trailer layout.
+        int[] traitArr = [traits is { Length: > 0 } ? traits[0] : -1, traits is { Length: > 1 } ? traits[1] : -1];
+
         int[] baseStats = new int[35];
         for (int i = 0; i < 7; i++)
-            baseStats[i] = special[i];
-        int st = special[0], pe = special[1], en = special[2], ag = special[5], lk = special[6];
+            baseStats[i] = special[i]; // base SPECIAL stays UNMODIFIED — the engine adds the trait live
+
+        // P29-M3: bake the SPECIAL→derived propagation from the TRAIT-modified primaries (the engine's
+        // critterUpdateDerivedStats reads critterGetStat = base + trait mod), so Gifted/Bruiser/Small
+        // Frame raise HP/AP/AC/melee/carry/sequence at creation. The DIRECT derived trait modifiers
+        // (Kamikaze AC, Heavy Handed melee, Fast Metabolism heal/rad/poison, Finesse crit) are added
+        // LIVE by CritterState.Stat — so Traits is STORED, not folded into the base here (no double count).
+        int Mod(int stat) => TraitModifiers.GetStatModifier(stat, traitArr, baseStats);
+        int st = special[0] + Mod(CritterStat.Strength);
+        int pe = special[1] + Mod(CritterStat.Perception);
+        int en = special[2] + Mod(CritterStat.Endurance);
+        int ag = special[5] + Mod(CritterStat.Agility);
+        int lk = special[6] + Mod(CritterStat.Luck);
         baseStats[7] = st + 2 * en + 15;          // MAXIMUM_HIT_POINTS
         baseStats[8] = ag / 2 + 5;                // MAXIMUM_ACTION_POINTS
         baseStats[9] = ag;                        // ARMOR_CLASS
@@ -53,7 +68,7 @@ public sealed class GcdFile
                 BodyType: 0, Experience: 0, KillType: 0, DamageType: 0),
             Name = name,
             TaggedSkills = tagged,
-            Traits = [-1, -1],
+            Traits = traitArr,
             RemainingCharPoints = 0,
         };
     }

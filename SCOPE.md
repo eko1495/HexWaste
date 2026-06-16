@@ -43,7 +43,9 @@ filing an issue.
   encumbrance (item weights, a STAT_CARRY_WEIGHT capacity, an over-limit combat
   AP penalty, and pickup/loot/barter blocking).
 - **Character progression**: the 16 optional **traits** apply real effects
-  (Gifted, Bruiser, Small Frame, Kamikaze, Heavy Handed, Good Natured, …) and
+  (Gifted, Bruiser, Small Frame, Kamikaze, Heavy Handed, Good Natured, One Hander,
+  Fast Shot, Finesse, Jinxed, …), picked in character creation (up to two) or carried
+  by a premade, and
   **perks** — the full 119-perk table, with selection every 3 levels (4 with
   Skilled) gated on level/stats/skills, the data-driven stat perks (Toughness,
   Action Boy, Lifegiver, More/Better Criticals, …) plus wired combat/skill perks
@@ -69,9 +71,8 @@ filing an issue.
   via `talk_p_proc` when present), so there is no engine work to do.
 - **The remaining ~90 perks' specific effects** (the table is complete and the
   stat perks + a curated combat/skill set are wired; the rest are data-present),
-  the trait picker in character *creation* (created characters start trait-less;
-  premade traits apply), the authentic perk-window art (a text picker stands in),
-  companion perks, and worldmap car travel.
+  the authentic perk-window art (a text picker stands in), companion perks, and
+  worldmap car travel.
 - **Anything needing assets we can't ship** — Hexwaste requires *your own* legal
   copy of Fallout 2. We never include or distribute game data.
 

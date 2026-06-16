@@ -117,4 +117,62 @@ public class GcdCreateTests
         Assert.Equal(5 + 4 * 7 + 20, Hexwaste.Formats.Combat.SkillSet.Value(
             bs, g.Stats.BonusStats, g.Stats.Skills, g.TaggedSkills, 0)); // Small Guns tagged = 53
     }
+
+    private static MapObject NewDude() => new()
+    {
+        Id = 1, HexTile = 100, X = 0, Y = 0, Frame = 0, Rotation = 0,
+        Fid = 0x01000000, Pid = 0x01000001, Flags = 0, Sid = -1,
+    };
+
+    [Fact]
+    public void CreateBakesGiftedPropagationButKeepsBasePrimaryUnmodified()
+    {
+        // P29-M3: Gifted (+1 to every SPECIAL) propagates into the derived BASE at creation, while the
+        // base primary stays unmodified — the engine adds the trait modifier LIVE on each stat read.
+        int[] special = [5, 5, 5, 5, 5, 5, 5];
+        GcdFile g = GcdFile.Create(special, [0, 4, 5], gender: 0, traits: [TraitModifiers.Gifted]);
+        int[] bs = g.Stats.BaseStats;
+
+        Assert.Equal(5, bs[0]);                 // base ST UNMODIFIED (Gifted is live, not baked)
+        Assert.Equal(6 + 2 * 6 + 15, bs[7]);    // HP from the +1 (6) primaries = 33
+        Assert.Equal(6 / 2 + 5, bs[8]);         // AP from AG 6 = 8
+        Assert.Equal(6, bs[9]);                 // AC = AG 6
+        Assert.Equal(2 * 6, bs[13]);            // Sequence = 2*PE(6) = 12
+        Assert.Equal(6, bs[15]);                // Crit % = LK 6
+        Assert.Equal([TraitModifiers.Gifted, -1], g.Traits);
+
+        // A live read adds the trait modifier on top of the unmodified base (no double count).
+        var cs = new CritterState(NewDude(), g.Stats, g.TaggedSkills, g.Traits);
+        Assert.Equal(6, cs.Stat(CritterStat.Strength)); // base 5 + Gifted 1
+    }
+
+    [Fact]
+    public void CreateBakesBruiserStrengthButLeavesMaxApPenaltyLive()
+    {
+        // Bruiser is a PROPAGATION trait for ST (+2) but a DIRECT modifier for MaxAP (−2): the ST raise
+        // bakes into HP/melee/carry; the AP penalty is added live, so the base AP stays AG-derived.
+        int[] special = [5, 5, 5, 5, 5, 5, 5];
+        GcdFile g = GcdFile.Create(special, [0, 4, 5], gender: 0, traits: [TraitModifiers.Bruiser]);
+        int[] bs = g.Stats.BaseStats;
+
+        Assert.Equal(7 + 2 * 5 + 15, bs[7]);      // HP from ST 7 = 32
+        Assert.Equal(Math.Max(7 - 5, 1), bs[11]); // Melee from ST 7 = 2
+        Assert.Equal(25 * 7 + 25, bs[12]);        // Carry from ST 7 = 200
+        Assert.Equal(5 / 2 + 5, bs[8]);           // base AP from AG 5 = 7 (Bruiser −2 is a live modifier)
+
+        var cs = new CritterState(NewDude(), g.Stats, g.TaggedSkills, g.Traits);
+        Assert.Equal(7, cs.Stat(CritterStat.Strength));                  // base 5 + Bruiser 2
+        Assert.Equal(7 - 2, cs.Stat(CritterStat.MaximumActionPoints));   // base 7 + Bruiser −2 = 5
+    }
+
+    [Fact]
+    public void CreateWithNoTraitsIsUnchanged()
+    {
+        // The inert default: a trait-less created character matches the pre-P29 derived stats exactly.
+        int[] special = [6, 5, 7, 3, 4, 8, 5];
+        GcdFile baseline = GcdFile.Create(special, [0, 4, 5], gender: 0);
+        GcdFile explicitNone = GcdFile.Create(special, [0, 4, 5], gender: 0, traits: []);
+        Assert.Equal(baseline.Stats.BaseStats, explicitNone.Stats.BaseStats);
+        Assert.Equal([-1, -1], baseline.Traits);
+    }
 }

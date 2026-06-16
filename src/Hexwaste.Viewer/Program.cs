@@ -399,17 +399,23 @@ for (int i = 0; i < args.Length; i++)
             break;
         case "--create" when i + 1 < args.Length:
         {
-            // "S,P,E,C,I,A,L:t,t,t:g"
+            // "S,P,E,C,I,A,L:t,t,t:g[:trait,trait]" — the optional 4th section is P29-M3 traits.
             string[] parts = args[++i].Split(':');
             int[] special = parts[0].Split(',').Select(int.Parse).ToArray();
             int[] tags = parts[1].Split(',').Select(int.Parse).ToArray();
-            int gender = parts.Length > 2 ? int.Parse(parts[2]) : 0;
-            actions.Add(new ViewerGame.StartupAction.CreateCharacter(special, tags, gender));
+            int gender = parts.Length > 2 && parts[2].Length > 0 ? int.Parse(parts[2]) : 0;
+            int[] traits = parts.Length > 3 && parts[3].Length > 0
+                ? parts[3].Split(',').Select(int.Parse).ToArray() : [];
+            actions.Add(new ViewerGame.StartupAction.CreateCharacter(special, tags, gender, traits));
             break;
         }
         case "--show-create":
-            actions.Add(new ViewerGame.StartupAction.ShowCreate());
+        {
+            // Optional step: --show-create [stats|traits|tags] (for creation-screen screenshots).
+            string step = i + 1 < args.Length && !args[i + 1].StartsWith("--") ? args[++i] : "";
+            actions.Add(new ViewerGame.StartupAction.ShowCreate(step));
             break;
+        }
         case "--advance-days" when i + 1 < args.Length:
             actions.Add(new ViewerGame.StartupAction.AdvanceDays(int.Parse(args[++i])));
             break;

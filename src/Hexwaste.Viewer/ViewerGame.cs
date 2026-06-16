@@ -123,7 +123,7 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
     /// Headless/test flags skip it entirely.</summary>
     public bool StartInMenu { get; set; }
 
-    private enum MenuState { None, Title, CharacterPick, CreateStats, CreateTags }
+    private enum MenuState { None, Title, CharacterPick, CreateStats, CreateTraits, CreateTags }
 
     private MenuState _menu = MenuState.None;
     private int _menuIndex;
@@ -136,6 +136,11 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
     private int _createCursor; // 0-6 = SPECIAL stat, 7 = gender
     private int _createGender;
     private readonly List<int> _createTags = [];
+    // P29-M3: up to two optional traits, picked between SPECIAL and tag skills (the engine's
+    // optional-trait step). Empty = a trait-less character (premade traits still apply on Load).
+    private readonly List<int> _createTraits = [];
+    private int _createTraitIndex;
+    private const int TraitCount = 16; // trait_defs.h Trait enum: Fast Metabolism (0) … Gifted (15)
 
     /// <summary>Movie caption card (play_gmovie): title + .sve subtitle lines.</summary>
     private List<string>? _movieCard;
@@ -499,8 +504,8 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
         public sealed record OpenSkills : StartupAction;
         public sealed record Rest : StartupAction;
         public sealed record Hurt(int Amount) : StartupAction;
-        public sealed record CreateCharacter(int[] Special, int[] Tags, int Gender) : StartupAction;
-        public sealed record ShowCreate : StartupAction;
+        public sealed record CreateCharacter(int[] Special, int[] Tags, int Gender, int[] Traits) : StartupAction;
+        public sealed record ShowCreate(string Step = "") : StartupAction;
         public sealed record AdvanceDays(int Days) : StartupAction;
     }
 
@@ -1765,15 +1770,21 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
                     _dude.Dude.CurrentHp = Math.Max(1, _dude.Dude.CurrentHp - dmg);
                     Console.WriteLine($"hurt: dude HP now {_dude.Dude.CurrentHp}");
                     break;
-                case StartupAction.CreateCharacter(var special, var tags, var gender):
-                    _dudeGcd = Formats.Combat.GcdFile.Create(special, tags, gender);
+                case StartupAction.CreateCharacter(var special, var tags, var gender, var traits):
+                    _dudeGcd = Formats.Combat.GcdFile.Create(special, tags, gender, traits);
                     _activeCharacter = "custom";
-                    Console.WriteLine($"create: SPECIAL {string.Join("/", special)} gender {gender} tags [{string.Join(",", tags)}] HP {_dudeGcd.Stats.BaseStats[7]} AP {_dudeGcd.Stats.BaseStats[8]}");
+                    Console.WriteLine($"create: SPECIAL {string.Join("/", special)} gender {gender} tags [{string.Join(",", tags)}]"
+                        + $" traits [{string.Join(",", traits)}] HP {_dudeGcd.Stats.BaseStats[7]} AP {_dudeGcd.Stats.BaseStats[8]}");
                     StartNewGame();
                     break;
-                case StartupAction.ShowCreate:
+                case StartupAction.ShowCreate(var step):
                     EnterCreation();
-                    _menu = MenuState.CreateStats;
+                    _menu = step switch
+                    {
+                        "traits" => MenuState.CreateTraits,
+                        "tags" => MenuState.CreateTags,
+                        _ => MenuState.CreateStats,
+                    };
                     break;
                 case StartupAction.AdvanceDays(var days):
                     _clock.AdvanceHours(days * 24);
@@ -6909,9 +6920,24 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
             Row(dx, dy + lh * 6, $"Heal Rate {Math.Max(en / 3, 1)}", gray);
 
             string hint = _createPoints == 0
-                ? "Left/Right adjust · Enter: tag skills · Esc back"
+                ? "Left/Right adjust · Enter: choose traits · Esc back"
                 : "Left/Right adjust · spend all points to continue · Esc back";
             Row(center.X - 200, center.Y + 150, hint, gray);
+        }
+        else if (_menu == MenuState.CreateTraits)
+        {
+            Row(center.X - 200, center.Y - 130, $"OPTIONAL TRAITS — {_createTraits.Count}/2 chosen (optional)", gold);
+            int perColT = 8;
+            for (int i = 0; i < TraitCount; i++)
+            {
+                bool sel = i == _createTraitIndex;
+                bool picked = _createTraits.Contains(i);
+                float cx = center.X - 200 + (i / perColT) * 230;
+                float cy = center.Y - 100 + (i % perColT) * lh;
+                Row(cx, cy, $"{(sel ? ">" : " ")} [{(picked ? "x" : " ")}] {TraitName(i)}",
+                    sel ? green : (picked ? gold : gray));
+            }
+            Row(center.X - 200, center.Y + 90, "Space toggles a trait (max 2) · Enter: tag skills · Esc back", gray);
         }
         else // CreateTags
         {
@@ -7232,19 +7258,28 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
                 }
                 if (IsKeyPressed(k, Keys.Enter))
                 {
-                    if (_createPoints == 0) { _menu = MenuState.CreateTags; _skillAllocIndex = 0; }
+                    if (_createPoints == 0) { _menu = MenuState.CreateTraits; _createTraitIndex = 0; }
                     else Console.WriteLine("create: spend all character points first");
                 }
                 if (IsKeyPressed(k, Keys.Escape)) { _menu = MenuState.CharacterPick; _menuIndex = 0; }
                 break;
             }
 
+            case MenuState.CreateTraits:
+                if (IsKeyPressed(k, Keys.Up)) _createTraitIndex = (_createTraitIndex + TraitCount - 1) % TraitCount;
+                if (IsKeyPressed(k, Keys.Down)) _createTraitIndex = (_createTraitIndex + 1) % TraitCount;
+                if (IsKeyPressed(k, Keys.Space)) ToggleCreateTrait(_createTraitIndex);
+                // Traits are optional — Enter advances even with 0 picked.
+                if (IsKeyPressed(k, Keys.Enter)) { _menu = MenuState.CreateTags; _skillAllocIndex = 0; }
+                if (IsKeyPressed(k, Keys.Escape)) _menu = MenuState.CreateStats;
+                break;
+
             case MenuState.CreateTags:
                 if (IsKeyPressed(k, Keys.Up)) _skillAllocIndex = (_skillAllocIndex + 17) % 18;
                 if (IsKeyPressed(k, Keys.Down)) _skillAllocIndex = (_skillAllocIndex + 1) % 18;
                 if (IsKeyPressed(k, Keys.Space)) ToggleCreateTag(_skillAllocIndex);
                 if (IsKeyPressed(k, Keys.Enter)) FinishCreation();
-                if (IsKeyPressed(k, Keys.Escape)) _menu = MenuState.CreateStats;
+                if (IsKeyPressed(k, Keys.Escape)) _menu = MenuState.CreateTraits;
                 break;
         }
     }
@@ -7289,6 +7324,8 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
         _createCursor = 0;
         _createGender = 0;
         _createTags.Clear();
+        _createTraits.Clear();
+        _createTraitIndex = 0;
         _skillAllocIndex = 0;
         _menu = MenuState.CreateStats;
     }
@@ -7311,6 +7348,13 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
             _createTags.Add(skill);
     }
 
+    /// <summary>Toggle an optional trait, capped at two (the engine's selectable-trait limit).</summary>
+    private void ToggleCreateTrait(int trait)
+    {
+        if (!_createTraits.Remove(trait) && _createTraits.Count < 2)
+            _createTraits.Add(trait);
+    }
+
     private void FinishCreation()
     {
         if (_createTags.Count != 3)
@@ -7318,11 +7362,11 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
             Console.WriteLine("create: pick exactly 3 tag skills (Space)");
             return;
         }
-        _dudeGcd = Formats.Combat.GcdFile.Create(_createSpecial, [.. _createTags], _createGender);
+        _dudeGcd = Formats.Combat.GcdFile.Create(_createSpecial, [.. _createTags], _createGender, [.. _createTraits]);
         _dudePerkRanks = new int[Formats.Perks.PerkTable.Count]; // a new character has no perks (P28-M2)
         _activeCharacter = "custom";
         Console.WriteLine($"create: SPECIAL {string.Join("/", _createSpecial)} gender {_createGender}"
-            + $" tags [{string.Join(",", _createTags)}] HP {_dudeGcd.Stats.BaseStats[7]}");
+            + $" tags [{string.Join(",", _createTags)}] traits [{string.Join(",", _createTraits)}] HP {_dudeGcd.Stats.BaseStats[7]}");
         StartNewGame();
         _menu = MenuState.None;
     }

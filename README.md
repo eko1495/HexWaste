@@ -64,13 +64,16 @@ Prebuilt self-contained builds (Linux x64 / Windows x64) are produced by
   rounds — in a duel a few find the target and the rest chew up the scenery,
   the same spread the engine rolls. Kills pay XP at combat end;
   levels raise your HP. Lose, and F9 puts you back.
-- **Character**: create your own (SPECIAL, gender, tagged skills) or pick a
-  premade; level-ups grant skill points you spend on the character sheet (C),
+- **Character**: create your own (SPECIAL, gender, optional traits, tagged skills)
+  or pick a premade; level-ups grant skill points you spend on the character sheet (C),
   and stat-gated dialog runs the right branches — including IQ-gated options, so a
   low-Intelligence character gets the dumb lines and a bright one the smart ones.
   Rest (Z) heals over time.
 - **Traits & perks**: the 16 optional traits do real things (Gifted, Bruiser,
-  Heavy Handed, Good Natured…), and you pick a perk every 3 levels (G on the
+  Heavy Handed, Good Natured, One Hander, Fast Shot, Finesse, Jinxed…) — chosen at
+  character creation or baked into a premade, and they feed combat (to-hit, AP,
+  damage, criticals) and your per-level skill points (Educated, Skilled, Gifted).
+  You pick a perk every 3 levels (G on the
   character sheet) from the ones you qualify for — Toughness, Action Boy, Sniper,
   Bonus Rate of Fire, Lifegiver and more, shown on the sheet with your traits.
 - **Encumbrance**: items have weight, and your Strength sets a carry limit

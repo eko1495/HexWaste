@@ -893,6 +893,21 @@ penalty. VERIFIED end-to-end: a default IN-5 dude grants 15/level, Skilled 20, G
 grant line (level-up: skillPoints=) is in NO golden filter + skill points are never spent in a fixture,
 so all goldens stay byte-identical; a trait-/perk-less dude is unchanged (defaults = the old 5+2·IN).
 6 SkillSet unit tests.
+M3 trait picker in character creation (DONE): a new MenuState.CreateTraits step (Stats → TRAITS →
+Tags → finish) — a 2-column grid of the 16 trait names (the P28-M4 TraitName/trait.msg loader), Space
+toggles (cap 2, OPTIONAL — Enter advances with 0), Esc backs out. GcdFile.Create gained a traits param:
+it BAKES the SPECIAL→derived propagation from the TRAIT-modified primaries (Gifted/Bruiser/Small Frame
+raise HP/AP/AC/melee/carry/sequence at creation, mirroring critterUpdateDerivedStats), while the base
+primary SPECIAL stays UNMODIFIED so CritterState.Stat adds the trait modifier LIVE (no double count) —
+and the DIRECT derived modifiers (Kamikaze AC, Heavy Handed melee, Fast Metabolism heal/rad/poison,
+Finesse crit) are added live too. Traits is STORED on the sheet. VERIFIED end-to-end: a 5/5/5/5/5/5/5
+dude is HP30/AP7; Gifted → HP33/AP8; Bruiser+Small Frame → HP32/AP8 (the screenshot confirms the picker
+UI). Harness --create gained an optional 4th ":trait,trait" section; --show-create [stats|traits|tags]
+jumps to a step for screenshots. NO golden uses --create + GcdFile.Load is untouched + empty-traits
+Create is byte-identical, so all goldens hold. 3 GcdCreate unit tests (Gifted bake + base-unmodified +
+live read, Bruiser ST-bake/AP-live split, no-traits-unchanged). DOCUMENTED RESIDUAL: the Gifted +1
+primary→SKILL-VALUE propagation isn't applied for created chars (SkillSet.Value reads the unmodified
+base — a pre-existing P28 skill model, not new here); premades load their pre-baked skills.
 
 Phase 10 (DONE, per docs/phase10-research-report.md — "The Wasteland
 Bites Back"): M0 persistence pre-stage (the net: MapList saved=No /
