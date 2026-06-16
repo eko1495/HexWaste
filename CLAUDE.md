@@ -675,6 +675,36 @@ max+pinned + 2 firepits). 297 Formats tests (+ AmbientFromLightLevel), 29 encoun
 goldens green (all byte-identical bar the new script-light; the silent callbacks were the key).
 Spillover: the reg_anim movement ops + begin/end sequencing (light up when a map uses them).
 
+Phase 22 (DONE — "The Map Remembers Where You've Been", worldmap subtile fog-of-war; the
+"lone remaining worldmap simplification" from the gap analysis): M0 reveal model + persistence
+(DONE). New pure Formats.Map.WorldmapFog = the per-subtile UNKNOWN/KNOWN/VISITED grid the engine
+keeps on wmTileInfoList[].subtiles[][].state (840 cells = 20 worldmap tiles x 7x6 subtiles).
+Ported wmSubTileMarkRadiusVisited (radius 1 — the PERK_SCOUT radius-2 branch is OUT, no perks):
+the 3x3 ring -> KNOWN (never downgrading an already-VISITED cell, the wmMarkSubTileOffsetVisitedFunc
+guard), the centre -> VISITED, + the SUBTILE_FILL_S/W strip spread (the real worldmap.txt uses ONLY
+Fill_W, the western ocean columns — so the W-spread is the only one that fires; ported both anyway).
+Subtile.Fill parsed from worldmap.txt field f[1] (was dropped before) via SubtileFill.Parse. The
+reveal rides INSIDE the pure TravelLeg: ctor reveals the start, Step() reveals each new Bresenham
+pixel — so BOTH the synchronous ResolveLeg drain (goldens) AND the animated dot reveal the SAME
+subtiles, and ArriveAt covers the roll-less first travel. CRITICAL: the fog draws ZERO RNG (pure
+position math), so passing it never perturbs the encounter stream — every existing travel golden
+stayed BYTE-IDENTICAL (verified). Persistence: SaveState.RevealedSubtiles (sparse flat-index->state
+dict, additive within V2 — a fresh game saves {}); _worldFog nulled alongside _worldmap on new-game/
+load then re-imported (same lazy-reparse pattern as EncounterCounters). Harness --fog-probe <x> <y>
+<area> drains a leg WITH the fog (ignoring encounter outcomes so the WHOLE corridor maps) -> the
+"worldmap-fog:" golden line (arroyo->den seed 2: 289 steps, start+arrived VISITED, 10 visited/26
+known). M1 render + marker gate (DONE): WorldmapScreen.Draw overlays per-subtile veils (UNKNOWN =
+opaque black, KNOWN = alpha-120 black ~ the engine's intensityColorTable[..][75] dim, VISITED =
+clear), drawn over terrain but UNDER markers/dot. Area markers + HitTest now gated on IsDiscovered
+= city.txt start_state=On (the 14 major cities, visible from game start like the real game — the
+engine's city->state init) OR the location subtile revealed (the 35 Off sub-areas: Car Outta Gas /
+Klamath Toxic Caves appear once you explore near them). DOCUMENTED APPROXIMATION: marker discovery
+is tied to subtile reveal rather than the engine's separate circle-hotspot detect (worldmap.cc:3068)
+— a clean derive-from-fog choice, no second city-state subsystem / save field. Draw-only + additive
+mouse-gate -> goldens byte-identical. 7 WorldmapFog unit tests (ring/centre/W-spread/export-import/
+off-grid + a GameDataFact TravelLeg-reveals-the-real-arroyo->den-path); 304 Formats tests, 30
+encounter + 15 combat goldens green. The worldmap fog moves from the gap-analysis backlog to DONE.
+
 Phase 10 (DONE, per docs/phase10-research-report.md — "The Wasteland
 Bites Back"): M0 persistence pre-stage (the net: MapList saved=No /
 random_start_point parse + IsTransient; the 3-clause transient guards as

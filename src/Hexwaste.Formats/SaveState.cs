@@ -93,6 +93,13 @@ public sealed class SaveState
     /// (WorldmapFile.ImportCounters).</summary>
     public Dictionary<string, int[]> EncounterCounters { get; set; } = [];
 
+    /// <summary>Explored worldmap subtiles (P22 fog-of-war): flat subtile index → reveal
+    /// state (1=KNOWN/fogged, 2=VISITED/clear). Sparse — only non-UNKNOWN subtiles are
+    /// stored, so a game that never left a town saves an empty dict. Additive within V2
+    /// (absent → an all-UNKNOWN fog, matching a fresh game). Re-applied over a freshly
+    /// constructed fog on load (WorldmapFog.Import).</summary>
+    public Dictionary<int, int> RevealedSubtiles { get; set; } = [];
+
     /// <summary>Flags carries the equip bits (in-hand 0x3000000, worn 0x4000000).
     /// Ammo sentinels: -1 = derive from the prototype on load (V2).</summary>
     public sealed record SavedItem(int Pid, int Count, int Flags = 0,

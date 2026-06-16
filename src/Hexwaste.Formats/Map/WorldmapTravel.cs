@@ -46,13 +46,16 @@ public static class WorldmapTravel
         WorldmapFile worldmap, IReadOnlyList<WorldArea> areas, MapList mapList,
         int startX, int startY, int destX, int destY, long startClockTicks,
         ICombatRng rng, Func<int, int> getGlobal,
-        int dudeLevel, int luck, int outdoorsman, GameDifficulty difficulty)
+        int dudeLevel, int luck, int outdoorsman, GameDifficulty difficulty,
+        WorldmapFog? fog = null)
     {
         // Phase-17 M0: the whole-leg walk is now a DRAIN of the stepwise TravelLeg — one
         // Step() == one old loop iteration, in the same RNG draw order, so this stays
         // byte-identical while the viewer can also drive Step() per frame for the dot.
+        // The optional fog reveals subtiles along the path (phase-22) — pure position math,
+        // no RNG, so passing it never perturbs the encounter stream.
         var leg = new TravelLeg(worldmap, areas, mapList, startX, startY, destX, destY,
-            startClockTicks, rng, getGlobal, dudeLevel, luck, outdoorsman, difficulty);
+            startClockTicks, rng, getGlobal, dudeLevel, luck, outdoorsman, difficulty, fog);
         while (true)
         {
             TravelStep s = leg.Step();
@@ -122,6 +125,7 @@ public sealed class TravelLeg
     private readonly MapList _mapList;
     private readonly ICombatRng _rng;
     private readonly Func<int, int> _getGlobal;
+    private readonly WorldmapFog? _fog;
     private readonly int _destX, _destY, _dudeLevel, _luck, _outdoorsman;
     private readonly long _startClockTicks;
     private readonly GameDifficulty _difficulty;
@@ -139,13 +143,15 @@ public sealed class TravelLeg
         WorldmapFile worldmap, IReadOnlyList<WorldArea> areas, MapList mapList,
         int startX, int startY, int destX, int destY, long startClockTicks,
         ICombatRng rng, Func<int, int> getGlobal,
-        int dudeLevel, int luck, int outdoorsman, GameDifficulty difficulty)
+        int dudeLevel, int luck, int outdoorsman, GameDifficulty difficulty,
+        WorldmapFog? fog = null)
     {
         _enc = new WorldEncounters(worldmap, rng, startX, startY);
         _areas = areas;
         _mapList = mapList;
         _rng = rng;
         _getGlobal = getGlobal;
+        _fog = fog;
         _destX = destX;
         _destY = destY;
         _dudeLevel = dudeLevel;
@@ -160,6 +166,7 @@ public sealed class TravelLeg
         _sx = startX < destX ? 1 : -1;
         _sy = startY < destY ? 1 : -1;
         _err = _dx - _dy;
+        _fog?.MarkRadiusVisited(startX, startY); // reveal where the leg begins (phase-22)
     }
 
     /// <summary>Advance one pixel-step toward the destination, rolling an encounter on the
@@ -175,6 +182,7 @@ public sealed class TravelLeg
         if (e2 > -_dy) { _err -= _dy; _x += _sx; }
         if (e2 < _dx) { _err += _dx; _y += _sy; }
         TicksAdded += WorldmapTravel.TicksPerStep;
+        _fog?.MarkRadiusVisited(_x, _y); // reveal the new pixel's neighbourhood (phase-22)
 
         if (!WorldmapTravel.IsNearKnownArea(_areas, _x, _y)) // worldmap.cc:3340-3343
         {

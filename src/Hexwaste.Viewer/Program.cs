@@ -214,6 +214,13 @@ for (int i = 0; i < args.Length; i++)
                 int.Parse(args[i + 1]), int.Parse(args[i + 2]), int.Parse(args[i + 3])));
             i += 3;
             break;
+        case "--fog-probe" when i + 3 < args.Length:
+            // --fog-probe <x> <y> <areaIndex>: travel a worldmap leg from (x,y) toward an
+            // area WITH the fog-of-war, reporting the subtile reveal (phase-22).
+            actions.Add(new ViewerGame.StartupAction.FogProbe(
+                int.Parse(args[i + 1]), int.Parse(args[i + 2]), int.Parse(args[i + 3])));
+            i += 3;
+            break;
         case "--encounter-answer" when i + 1 < args.Length:
             // --encounter-answer <yes|no>: pre-answer a detected encounter's avoid prompt.
             actions.Add(new ViewerGame.StartupAction.EncounterAnswer(

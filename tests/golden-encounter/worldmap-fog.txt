@@ -1,0 +1,1 @@
+worldmap-fog: start=(184,133) startState=2 steps=289 encounters=13 arrived=(473,272) arrivedState=2 visited=10 known=26

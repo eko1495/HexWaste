@@ -216,7 +216,7 @@ public sealed class WorldmapFile
             if (f.Length < 6)
                 continue;
             int Pct(string name) => freq.GetValueOrDefault(name.Trim(), 0);
-            grid[r, c] = new Subtile(f[0].Trim(), f[5].Trim(), Pct(f[2]), Pct(f[3]), Pct(f[4]));
+            grid[r, c] = new Subtile(f[0].Trim(), f[5].Trim(), Pct(f[2]), Pct(f[3]), Pct(f[4]), SubtileFill.Parse(f[1]));
         }
         return new WorldTile(index, difficulty, grid);
     }
@@ -355,9 +355,35 @@ public sealed class WorldmapFile
 
 public sealed record WorldTile(int Index, int Difficulty, Subtile[,] Subtiles);
 
-/// <summary>A worldmap subtile: terrain, the encounter table it points at, and the
-/// per-daypart encounter % (resolved from the frequency names).</summary>
-public sealed record Subtile(string Terrain, string EncTable, int MorningChance, int AfternoonChance, int NightChance);
+/// <summary>A worldmap subtile: terrain, the encounter table it points at, the per-daypart
+/// encounter % (resolved from the frequency names), and the <see cref="SubtileFill"/> spread
+/// code (drives the fog-of-war reveal of contiguous water/coast strips — phase-22).</summary>
+public sealed record Subtile(string Terrain, string EncTable, int MorningChance, int AfternoonChance,
+    int NightChance, int Fill = SubtileFill.None);
+
+/// <summary>The subtile <c>fill</c> spread codes (worldmap.cc:614 <c>wmFillStrs</c> /
+/// SUBTILE_FILL_* enum) — when the party reaches a subtile, the engine spreads VISITED along
+/// the named direction so a coastline/river reveals as one strip (phase-22 fog-of-war). Only
+/// <see cref="S"/> and <see cref="W"/> have spread logic in the engine; the real worldmap.txt
+/// uses only <c>Fill_W</c> (the western ocean columns).</summary>
+public static class SubtileFill
+{
+    public const int None = 0, N = 1, S = 2, E = 3, W = 4, NW = 5, NE = 6, SW = 7, SE = 8;
+
+    private static readonly string[] Names =
+        ["no_fill", "fill_n", "fill_s", "fill_e", "fill_w", "fill_nw", "fill_ne", "fill_sw", "fill_se"];
+
+    /// <summary>Map a worldmap.txt fill token (e.g. "Fill_W") to its SUBTILE_FILL_* code;
+    /// unknown/empty → <see cref="None"/>. Case-insensitive (the engine's strParseStrFromList).</summary>
+    public static int Parse(string token)
+    {
+        token = token.Trim();
+        for (int i = 0; i < Names.Length; i++)
+            if (token.Equals(Names[i], StringComparison.OrdinalIgnoreCase))
+                return i;
+        return None;
+    }
+}
 
 /// <summary><see cref="Index"/> is the table's 0-based load order ("[Encounter Table N]"),
 /// which is what a subtile's encounterType references AND the table id in the encounter-name

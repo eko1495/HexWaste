@@ -287,6 +287,12 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
     private Formats.Map.WorldmapFile Worldmap => _worldmap ??=
         Formats.Map.WorldmapFile.Parse(System.Text.Encoding.Latin1.GetString(_vfs.ReadAllBytes(@"data\worldmap.txt")));
 
+    /// <summary>Subtile fog-of-war (P22): the explored-subtile state the party reveals as it
+    /// walks the worldmap. Lazy + tied to <see cref="Worldmap"/>; nulled alongside _worldmap on
+    /// new-game/load so it re-creates against the freshly parsed file (then imports the save).</summary>
+    private Formats.Map.WorldmapFog? _worldFog;
+    private Formats.Map.WorldmapFog WorldFog => _worldFog ??= new Formats.Map.WorldmapFog(Worldmap);
+
     /// <summary>worldmap.msg — the encounter display names (phase-16 M0); lazy, null if
     /// absent. Indexed by <see cref="Formats.Map.EncounterResult.MessageId"/>.</summary>
     private Formats.Text.MessageFile? _worldmapMsg;
@@ -383,6 +389,10 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
         public sealed record UseSkill(int Skill, int TargetHex) : StartupAction;
         public sealed record RestFor(int Minutes) : StartupAction;
         public sealed record OpenAutomap : StartupAction;
+        /// <summary>Phase-22: travel a worldmap leg from (X,Y) toward AreaIndex (avoiding the
+        /// prompt) and report the fog-of-war reveal — proves subtiles get marked VISITED/KNOWN
+        /// as the party walks, and that the destination subtile becomes clear.</summary>
+        public sealed record FogProbe(int X, int Y, int AreaIndex) : StartupAction;
         /// <summary>Phase-21: report the ambient light after map_enter — proves the map's
         /// scripted set_light_level took effect.</summary>
         public sealed record LightProbe : StartupAction;
@@ -991,6 +1001,31 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
                     string outcome = _currentMapTransient ? "encounter" : "arrived";
                     Console.WriteLine($"travel-from: ({tx},{ty})->area{ai} {outcome} map={_currentMapName}"
                         + $" worldPos=({_worldPosX},{_worldPosY}) spawned={spawnedCount}");
+                    break;
+                }
+                case StartupAction.FogProbe(var fx, var fy, var fa):
+                {
+                    // Phase-22: drive a real travel leg WITH the fog and report the reveal.
+                    // Drains TravelLeg.Step() directly (not TravelTo, so no transient-map load),
+                    // ignoring encounter outcomes so the WHOLE corridor to the destination is
+                    // mapped — proves subtiles flip to VISITED/KNOWN along the Bresenham path and
+                    // the destination subtile becomes clear. Deterministic (the fog draws no RNG;
+                    // the encounter rolls still advance the same seeded stream each run).
+                    WorldArea? fdest = _cities.Areas.FirstOrDefault(a => a.Index == fa);
+                    if (fdest is null) { Console.Error.WriteLine($"fog-probe: no area {fa}"); break; }
+                    _wmRng ??= new Formats.Combat.SystemCombatRng(RngSeed ?? Environment.TickCount);
+                    int getGlobalF(int g) => _scriptHost?.GlobalVars.GetValueOrDefault(g, 0) ?? 0;
+                    var fleg = new Formats.Map.TravelLeg(Worldmap, _cities.Areas, _mapList,
+                        fx, fy, fdest.WorldX, fdest.WorldY, _clock.Ticks, _wmRng, getGlobalF,
+                        _dudeLevel, 5, 0, Difficulty, WorldFog);
+                    int startState = WorldFog.StateAt(fx, fy);
+                    Formats.Map.TravelStep fs;
+                    int legSteps = 0, encounters = 0;
+                    do { fs = fleg.Step(); legSteps++; if (fs.Encounter is not null) encounters++; } while (!fs.Arrived && legSteps < 5000);
+                    Console.WriteLine($"worldmap-fog: start=({fx},{fy}) startState={startState} steps={legSteps} encounters={encounters}"
+                        + $" arrived=({fs.X},{fs.Y}) arrivedState={WorldFog.StateAt(fs.X, fs.Y)}"
+                        + $" visited={WorldFog.CountState(Formats.Map.WorldmapFog.Visited)}"
+                        + $" known={WorldFog.CountState(Formats.Map.WorldmapFog.Known)}");
                     break;
                 }
                 case StartupAction.ProjectileCheck(var projHex):
@@ -2211,7 +2246,7 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
                 if (IsKeyPressed(keyboard, Keys.Escape) || IsKeyPressed(keyboard, Keys.M))
                     _worldmapOpen = false;
 
-                _hoveredArea = _worldmapScreen?.HitTest(mouse.X, mouse.Y, GraphicsDevice.Viewport.Bounds);
+                _hoveredArea = _worldmapScreen?.HitTest(mouse.X, mouse.Y, GraphicsDevice.Viewport.Bounds, WorldFog);
                 if (mouse.LeftButton == ButtonState.Pressed && _previousMouse.LeftButton == ButtonState.Released
                     && _hoveredArea is not null)
                     TravelTo(_hoveredArea);
@@ -4561,7 +4596,7 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
             {
                 _activeTravel = (new Formats.Map.TravelLeg(Worldmap, _cities.Areas, _mapList,
                     _worldPosX, _worldPosY, area.WorldX, area.WorldY, _clock.Ticks, _wmRng,
-                    getGlobal, _dudeLevel, luck, outdoorsman, Difficulty), area);
+                    getGlobal, _dudeLevel, luck, outdoorsman, Difficulty, WorldFog), area);
                 _travelCadence = new Formats.Map.TerrainCadence();
                 _travelStepAccumMs = 0;
                 _worldmapOpen = true;
@@ -4570,7 +4605,7 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
 
             Formats.Map.WorldmapTravel.LegOutcome leg = Formats.Map.WorldmapTravel.ResolveLeg(
                 Worldmap, _cities.Areas, _mapList, _worldPosX, _worldPosY, area.WorldX, area.WorldY,
-                _clock.Ticks, _wmRng, getGlobal, _dudeLevel, luck, outdoorsman, Difficulty);
+                _clock.Ticks, _wmRng, getGlobal, _dudeLevel, luck, outdoorsman, Difficulty, WorldFog);
 
             _clock.Ticks += leg.ClockTicksAdded; // the per-step travel time across the leg
             _worldPosX = leg.FinalWorldX;
@@ -4683,6 +4718,7 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
         _currentAreaId = area.Index;
         _worldPosX = area.WorldX;
         _worldPosY = area.WorldY;
+        WorldFog.MarkRadiusVisited(area.WorldX, area.WorldY); // reveal the destination (P22; covers the roll-less first travel that has no leg)
         _travelDestination = null; // clean arrival — the leg is over, nothing to auto-resume
         Console.WriteLine($"travelling to {area.Name} -> {mapFile}");
         LoadMap(mapFile, new MapDestination(mapIndex, entrance.Tile, entrance.Elevation, entrance.Rotation));
@@ -4838,7 +4874,7 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
         _spriteBatch.Begin(samplerState: SamplerState.PointClamp);
         if (_worldmapOpen)
         {
-            _worldmapScreen?.Draw(_spriteBatch, GraphicsDevice.Viewport.Bounds, _hoveredArea);
+            _worldmapScreen?.Draw(_spriteBatch, GraphicsDevice.Viewport.Bounds, _hoveredArea, WorldFog);
             // The party dot: "you are here" whenever a worldmap position is known, and the
             // moving marker mid-travel (phase-17 M2/M3 — one dot, the unified position).
             if (_worldPosX >= 0 && _worldPosY >= 0)
@@ -7027,6 +7063,7 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
         _worldPosX = _worldPosY = -1;
         _currentAreaId = -1;
         _worldmap = null;
+        _worldFog = null; // a new game starts with the whole worldmap unexplored (P22)
         if (_scriptHost is not null)
         {
             _scriptHost.GlobalVars.Clear();
@@ -7085,6 +7122,9 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
             // _worldmap (not Worldmap): only export if worldmap.txt was actually
             // touched this session — never force-parse it just to save.
             EncounterCounters = _worldmap?.ExportCounters() ?? [],
+            // _worldFog (not WorldFog): only export explored subtiles if the fog was
+            // touched (any travel) — a fresh game saves an empty dict (P22).
+            RevealedSubtiles = _worldFog?.Export() ?? [],
         };
         state.Save(SavePath);
         Log($"Game saved ({Path.GetFileName(SavePath)}).");
@@ -7140,8 +7180,14 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
         _worldPosY = state.WorldPosY;
         _currentAreaId = state.CurrentAreaId;
         _worldmap = null;
+        _worldFog = null; // re-create against the freshly parsed worldmap, then import the save
         if (state.EncounterCounters.Count > 0)
             Worldmap.ImportCounters(state.EncounterCounters);
+        // Restore explored worldmap subtiles (P22 fog). Like the counters: a non-empty save
+        // forces the lazy fog to materialise (against pristine Worldmap) and imports the deltas;
+        // an empty save leaves it unmaterialised (a fresh all-UNKNOWN fog on first access).
+        if (state.RevealedSubtiles.Count > 0)
+            WorldFog.Import(state.RevealedSubtiles);
 
         // Mid-travel state (P17-M4): drop any stale in-flight leg (its Bresenham cursor is
         // meaningless after a reload) + a pending avoid prompt. If the save was taken mid-

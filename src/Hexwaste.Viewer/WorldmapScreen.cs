@@ -14,8 +14,9 @@ namespace Hexwaste.Viewer;
 /// city.txt shown as labeled markers, plus the moving party dot (<see cref="DrawPartyDot"/>).
 /// This is render + hit-test only: a click routes through the ONE unified travel path
 /// (ViewerGame.TravelTo), which rolls encounters (phase-10/16) and advances the clock and
-/// animates the dot (phase-17). The lone remaining simplification is no subtile fog-of-war
-/// reveal (the whole worldmap is always visible) — a separate worldmap-exploration feature.
+/// animates the dot (phase-17). Subtile fog-of-war (phase-22): a <see cref="Formats.Map.WorldmapFog"/>
+/// hides UNKNOWN subtiles (solid black), dims KNOWN ones (fogged), and shows VISITED ones clear;
+/// area markers are gated on discovery (city.txt start_state=On, or a revealed location subtile).
 /// </summary>
 public sealed class WorldmapScreen : IDisposable
 {
@@ -23,6 +24,7 @@ public sealed class WorldmapScreen : IDisposable
     private const int TileWidth = 350;
     private const int TileHeight = 300;
     private const int TileCount = 20;
+    private const int SubtileSize = 50; // WM_SUBTILE_SIZE — the fog reveal granularity
     private const int WorldWidth = TileColumns * TileWidth; // 1400
     private const int WorldHeight = TileCount / TileColumns * TileHeight; // 1500
 
@@ -66,7 +68,8 @@ public sealed class WorldmapScreen : IDisposable
         return (scale, offsetX, offsetY);
     }
 
-    public void Draw(SpriteBatch spriteBatch, Rectangle viewport, WorldArea? hovered)
+    public void Draw(SpriteBatch spriteBatch, Rectangle viewport, WorldArea? hovered,
+        Formats.Map.WorldmapFog? fog = null)
     {
         (float scale, int offsetX, int offsetY) = Layout(viewport);
 
@@ -82,10 +85,16 @@ public sealed class WorldmapScreen : IDisposable
             spriteBatch.Draw(tile, destination, Color.White);
         }
 
+        // Phase-22 fog: hide UNKNOWN subtiles (solid black), dim KNOWN ones (a translucent
+        // black veil ≈ the engine's intensityColorTable[..][75]), leave VISITED clear. Drawn
+        // over the terrain but under the markers/dot so discovered cities stay legible.
+        if (fog is not null)
+            DrawFog(spriteBatch, scale, offsetX, offsetY, fog);
+
         var green = new Color(0, 252, 0);
         foreach (WorldArea area in _cities.Areas)
         {
-            if (area.Entrances.Count == 0)
+            if (!IsDiscovered(area, fog))
                 continue;
 
             int x = offsetX + (int)(area.WorldX * scale);
@@ -95,6 +104,46 @@ public sealed class WorldmapScreen : IDisposable
             spriteBatch.Draw(_marker, new Rectangle(x - 3, y - 3, 6, 6), color);
             _font?.Draw(spriteBatch, area.Name, new Vector2(x + 6, y - 6), color);
         }
+    }
+
+    private static readonly Color FogUnknown = new(0, 0, 0, 255);  // hidden — opaque black
+    private static readonly Color FogKnown = new(0, 0, 0, 120);    // seen from afar — fogged veil
+
+    private void DrawFog(SpriteBatch spriteBatch, float scale, int offsetX, int offsetY,
+        Formats.Map.WorldmapFog fog)
+    {
+        int subPx = (int)Math.Ceiling(SubtileSize * scale);
+        for (int i = 0; i < TileCount; i++)
+        {
+            int tileX = i % TileColumns * TileWidth, tileY = i / TileColumns * TileHeight;
+            for (int sx = 0; sx < Formats.Map.WorldmapFile.SubtileGridWidth; sx++)
+                for (int sy = 0; sy < Formats.Map.WorldmapFile.SubtileGridHeight; sy++)
+                {
+                    int worldX = tileX + sx * SubtileSize, worldY = tileY + sy * SubtileSize;
+                    Color? veil = fog.StateAt(worldX + SubtileSize / 2, worldY + SubtileSize / 2) switch
+                    {
+                        Formats.Map.WorldmapFog.Unknown => FogUnknown,
+                        Formats.Map.WorldmapFog.Known => FogKnown,
+                        _ => null, // VISITED — clear
+                    };
+                    if (veil is { } v)
+                        spriteBatch.Draw(_marker, new Rectangle(
+                            offsetX + (int)(worldX * scale), offsetY + (int)(worldY * scale), subPx, subPx), v);
+                }
+        }
+    }
+
+    /// <summary>A city marker shows once the area is "known" — its city.txt start_state was On
+    /// (visible from game start, e.g. Arroyo) OR the party has explored its location subtile
+    /// (worldmap.cc gates markers on city->state != UNKNOWN; we derive that state from the
+    /// subtile fog, a documented approximation of the engine's separate circle-hotspot detect).</summary>
+    private static bool IsDiscovered(WorldArea area, Formats.Map.WorldmapFog? fog)
+    {
+        if (area.Entrances.Count == 0)
+            return false;
+        if (fog is null || area.StartsOn)
+            return true;
+        return fog.StateAt(area.WorldX, area.WorldY) != Formats.Map.WorldmapFog.Unknown;
     }
 
     /// <summary>Draw the moving party dot at a worldmap pixel position, using the same
@@ -107,7 +156,8 @@ public sealed class WorldmapScreen : IDisposable
         spriteBatch.Draw(_marker, new Rectangle(x - 4, y - 4, 8, 8), Color.White);
     }
 
-    public WorldArea? HitTest(int mouseX, int mouseY, Rectangle viewport)
+    public WorldArea? HitTest(int mouseX, int mouseY, Rectangle viewport,
+        Formats.Map.WorldmapFog? fog = null)
     {
         (float scale, int offsetX, int offsetY) = Layout(viewport);
 
@@ -115,7 +165,7 @@ public sealed class WorldmapScreen : IDisposable
         double bestDistance = 18 * 18; // generous click radius in screen px
         foreach (WorldArea area in _cities.Areas)
         {
-            if (area.Entrances.Count == 0)
+            if (!IsDiscovered(area, fog)) // can only travel to a discovered city (phase-22)
                 continue;
             double dx = offsetX + area.WorldX * scale - mouseX;
             double dy = offsetY + area.WorldY * scale - mouseY;

@@ -45,6 +45,11 @@ SCENARIOS=(
   # P17-M4: saving MID-travel round-trips the dot worldPos + the in-flight destination
   # (load resumes toward it) — a documented divergence from the engine's drop-stopped reload.
   "travel-save-mid|--character combat --map artemple.map --travel-save-mid 184 133 1 5 --rng-seed 2"
+  # P22: worldmap subtile fog-of-war. Travelling the arroyo->den corridor reveals subtiles
+  # along the Bresenham path — the start + destination flip to VISITED (clear), the trail's
+  # radius-1 neighbourhood to KNOWN (fogged). The reveal draws no RNG, so every other travel
+  # golden stayed byte-identical (silent reveal + this dedicated probe, the P21 pattern).
+  "worldmap-fog|--fog-probe 184 133 1 --rng-seed 2"
   # P16-M3: an X-FIGHTING-Y encounter spawns its two groups on DISTINCT teams (1 & 2) and
   # opens a brawl — the factions fight each other (cross-team targeting), not just the dude.
   "encounter-fight|--encounter-fight desert1.map ARRO_Spore_Plants 3 ARRO_Silver_Geckos 2 --rng-seed 3"
@@ -106,7 +111,7 @@ SCENARIOS=(
 
 # Keep only the deterministic transcript lines (drop map-load / animate / stub /
 # dialog-text noise — NEVER capture REPLY/OPTION game-asset strings).
-FILTER='^(encounter|travel-from|companion|dismiss-persist|trade:|party:|party-count:|set-global:|hud-click:|use-skill:|hurt:|rest:|automap:|weapon-mode:|panel-click:|menu-click:|travel-resume:|travel-step:|travel-save-mid:|combat-walk:|light:|reg-anim:|encounter-fight:|brawl:|  spawn|  flat|  wait:|  follow:|  dismiss:|  rejoin:)'
+FILTER='^(encounter|travel-from|companion|dismiss-persist|trade:|party:|party-count:|set-global:|hud-click:|use-skill:|hurt:|rest:|automap:|weapon-mode:|panel-click:|menu-click:|travel-resume:|travel-step:|travel-save-mid:|worldmap-fog:|combat-walk:|light:|reg-anim:|encounter-fight:|brawl:|  spawn|  flat|  wait:|  follow:|  dismiss:|  rejoin:)'
 
 echo "Building viewer..."
 dotnet build src/Hexwaste.Viewer -c Debug >/dev/null || { echo "build failed"; exit 2; }
