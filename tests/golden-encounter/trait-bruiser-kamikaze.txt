@@ -1,0 +1,1 @@
+trait-probe: traits=[1,5] STR=10 AG=7 maxAP=7 AC=0 SEQ=17 carry=250 crit=5 heal=3 melee=4 smallGuns=53 firstAid=18 hasGifted=0

@@ -3,9 +3,9 @@ animating 0 multi-frame scenery/misc object(s)
 override_map_start: tile=18932 elevation=0 rotation=1
 give: 10mm SMG x1
 equip: 10mm SMG readied
-burst Healthy Slave@11670 [10mm SMG 30rnd d8]: chance=30% rounds=10 hit=1 damage=12
+burst Healthy Slave@11670 [10mm SMG 30rnd d8]: chance=28% rounds=10 hit=1 damage=12
 burst-extra: Handsome Slave@12670 hit=2 damage=26
-burst-extra: Cute Slave@11272 hit=2 damage=33
+burst-extra: Cute Slave@11272 hit=1 damage=11
 joins: Cute Slave@9876 (team 25)
 joins: Villager@10070 (team 25)
 joins: Villager@10270 (team 25)

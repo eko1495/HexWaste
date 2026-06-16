@@ -400,6 +400,9 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
         /// <summary>Report the gore death-anim a burst/explosion/laser kill would give the critter
         /// at Hex — the picked anim + the art-resolved anim (P26), proving gore art availability.</summary>
         public sealed record DeathProbe(int Hex) : StartupAction;
+        /// <summary>Set the dude's two traits (id&lt;0 = none) and report the live effect on his
+        /// stats/skills + has_trait (P28-M1).</summary>
+        public sealed record TraitProbe(int Trait1, int Trait2) : StartupAction;
         /// <summary>Open NPC dialogue with the dude's IN forced to ForceIn and report the option
         /// COUNT at the greeting (P25 IQ-gating; never the copyrighted option text). ForceIn &lt; 0
         /// leaves IN unchanged.</summary>
@@ -1054,6 +1057,21 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
                         + $"{Probe("burst", 0, Formats.Combat.DeathAnims.FireBurst)} "
                         + $"{Probe("laser", 1, Formats.Combat.DeathAnims.FireBurst)} "
                         + $"{Probe("explode", 6, Formats.Combat.DeathAnims.FireSingle)}");
+                    break;
+                }
+                case StartupAction.TraitProbe(var t1, var t2):
+                {
+                    // P28-M1: set the dude's traits (the array is shared with ScriptHost.DudeTraits,
+                    // so has_trait stays consistent) and report the live stat/skill effects via
+                    // GetCritterState — proves traitGetStatModifier/SkillModifier are wired.
+                    if (_dudeGcd is null || _dude is null) { Console.Error.WriteLine("trait-probe: no dude"); break; }
+                    _dudeGcd.Traits[0] = t1; _dudeGcd.Traits[1] = t2;
+                    if (GetCritterState(_dude.Dude) is { } ts)
+                        Console.WriteLine($"trait-probe: traits=[{t1},{t2}]"
+                            + $" STR={ts.Stat(0)} AG={ts.Stat(5)} maxAP={ts.MaxActionPoints} AC={ts.ArmorClass}"
+                            + $" SEQ={ts.Sequence} carry={ts.CarryWeight} crit={ts.Stat(15)} heal={ts.Stat(14)}"
+                            + $" melee={ts.MeleeDamage} smallGuns={ts.SkillValue(0)} firstAid={ts.SkillValue(6)}"
+                            + $" hasGifted={(_scriptHost?.DudeTraits.Contains(Formats.Combat.TraitModifiers.Gifted) == true ? 1 : 0)}");
                     break;
                 }
                 case StartupAction.WeightProbe:
@@ -2598,7 +2616,7 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
         // _dude, which isn't assigned until below — without this the dude took
         // the generic proto's 30 HP regardless of his SPECIAL.
         Formats.Combat.CritterState? stats = _dudeGcd is not null
-            ? new Formats.Combat.CritterState(dude, _dudeGcd.Stats, _dudeGcd.TaggedSkills)
+            ? new Formats.Combat.CritterState(dude, _dudeGcd.Stats, _dudeGcd.TaggedSkills, _dudeGcd.Traits)
             : GetCritterState(dude);
         if (stats is not null)
         {
@@ -5385,7 +5403,7 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
     public Formats.Combat.CritterState? GetCritterState(MapObject obj)
     {
         if (obj == _dude?.Dude && _dudeGcd is not null)
-            return new Formats.Combat.CritterState(obj, _dudeGcd.Stats, _dudeGcd.TaggedSkills);
+            return new Formats.Combat.CritterState(obj, _dudeGcd.Stats, _dudeGcd.TaggedSkills, _dudeGcd.Traits);
         if (Fid.PidType(obj.Pid) != (int)ObjectType.Critter)
             return null;
         // A leveled-up companion reads its swapped-in stage proto, not the base

@@ -807,6 +807,26 @@ encounter + 15 combat goldens green. GORE moves the LAST feasible in-scope item 
 backlog to DONE — what remains is out-by-design (perks/karma/quests/content) or a scope expansion past
 the Arroyo->Klamath->Den slice.
 
+Phase 28 (IN PROGRESS — "The Character Sheet Grows Teeth", traits + perks; the first big
+scope-expansion past the gap-analysis backlog): the marquee FO2 character-progression layer.
+M0 research (traits-perks-understand workflow, 5 readers + design critic). M1 trait effects (DONE):
+ported trait.cc traitGetStatModifier + traitGetSkillModifier verbatim into pure Formats.Combat.
+TraitModifiers (16 traits; Chem Reliant/Resistant OUT — no addiction system; Sex Appeal has no engine
+impl). Applied LIVE in CritterState.Stat/SkillValue via a new traits param (4th, after taggedSkills) —
+exactly the engine's per-read critterGetStat behaviour; the SPECIAL->derived propagation (Gifted/
+Bruiser raising HP/melee) is baked at character-creation in the engine, NOT at stat-read, so it's a
+documented future GcdFile.Create concern (no trait picker yet). The dude's traits flow from _dudeGcd.
+Traits at both GetCritterState sites; NPCs/no-traits pass null -> 0 modifier (the INERT-BY-DEFAULT
+invariant). has_trait was already wired (type 2 -> DudeTraits). KEY FINDING: the combat premade Narg
+(combat.gcd) carries traits [6,15] = HeavyHanded + Gifted, silently ignored until now; M1 makes them
+apply, so the 6 --character-combat COMBAT goldens shifted (Gifted -10 all skills -> 57%->47% to-hit,
+the RNG stream then cascades) and were RE-RECORDED to the correct trait-applied behaviour. The default-
+dude combat goldens + the --character-combat UI/movement/weight encounter goldens stayed byte-identical
+(they don't read the combat skill). Harness --trait-probe <id1> <id2> (sets the dude's traits, reports
+the live stat/skill effect); 4 goldens (none/gifted/bruiser+kamikaze/goodnatured) + 10 TraitModifiers
+tests. M2 perk infrastructure + selection, M3 high-impact perk effects, M4 perk-pick UI + char sheet =
+PENDING. 363 Formats tests, 40 encounter + 15 combat goldens green.
+
 Phase 10 (DONE, per docs/phase10-research-report.md — "The Wasteland
 Bites Back"): M0 persistence pre-stage (the net: MapList saved=No /
 random_start_point parse + IsTransient; the 3-clause transient guards as

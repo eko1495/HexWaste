@@ -31,13 +31,17 @@ public static class CritterStat
 /// non-dude path of fallout2-ce src/stat.cc critterGetStat()) over the MAP
 /// instance's per-critter state (current HP, team, result flags).
 /// </summary>
-public sealed class CritterState(MapObject critter, CritterProtoStats proto, int[]? taggedSkills = null)
+public sealed class CritterState(MapObject critter, CritterProtoStats proto, int[]? taggedSkills = null,
+    int[]? traits = null)
 {
     public MapObject Critter => critter;
     public CritterProtoStats Proto => proto;
 
-    /// <summary>Effective stat = base + bonus (src/stat.cc critterGetStat()).</summary>
-    public int Stat(int stat) => proto.BaseStats[stat] + proto.BonusStats[stat];
+    /// <summary>Effective stat = base + bonus + trait modifier (src/stat.cc critterGetStat()
+    /// applies traitGetStatModifier live; P28-M1). <paramref name="traits"/> is the dude's two
+    /// selected traits — null for NPCs / no traits, so the modifier is 0 (inert by default).</summary>
+    public int Stat(int stat) =>
+        proto.BaseStats[stat] + proto.BonusStats[stat] + TraitModifiers.GetStatModifier(stat, traits, proto.BaseStats);
 
     /// <summary>True if this critter is blinded by a crit (CombatResults DAM_BLIND).</summary>
     public bool Blind => (critter.CombatResults & CriticalTables.DamBlind) != 0;
@@ -56,10 +60,12 @@ public sealed class CritterState(MapObject critter, CritterProtoStats proto, int
         return left && right ? 8 : (left || right) ? 4 : 1;
     }
 
-    /// <summary>Effective % of any skill (delegates to the canonical
-    /// <see cref="SkillSet"/>); the dude's tags (taggedSkills) feed the bonus.</summary>
+    /// <summary>Effective % of any skill (delegates to the canonical <see cref="SkillSet"/>) plus
+    /// the trait skill modifier (skillGetValue adds traitGetSkillModifier on top of the base —
+    /// Gifted −10 all, Good Natured ±combat/social; P28-M1). The dude's tags feed the base bonus.</summary>
     public int SkillValue(int skill) =>
-        SkillSet.Value(proto.BaseStats, proto.BonusStats, proto.Skills, taggedSkills, skill);
+        SkillSet.Value(proto.BaseStats, proto.BonusStats, proto.Skills, taggedSkills, skill)
+        + TraitModifiers.GetSkillModifier(skill, traits);
 
     public int MaxHp => Stat(CritterStat.MaximumHitPoints);
 

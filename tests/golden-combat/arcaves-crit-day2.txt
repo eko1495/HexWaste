@@ -1,15 +1,10 @@
 dude sheet: Narg (gender 0), SPECIAL 8/5/9/3/4/7/4, tags [4,0,5]
 animating 2 multi-frame scenery/misc object(s)
 advance: now day 2
-attack Radscorpion@20529: chance=57% hit=False damage=0
+attack Radscorpion@20529: chance=47% hit=False damage=0
 joins: Radscorpion@21729 (team 4)
-attack Radscorpion@20529: chance=57% hit=True damage=6
-attack Radscorpion@20529: chance=57% hit=True damage=5
-attack Radscorpion@20729: chance=57% hit=True damage=1
-attack Radscorpion@20729: chance=57% hit=False damage=0
-attack Radscorpion@20729: chance=57% hit=True damage=6 CRITICAL
-enemy-attack Radscorpion@20729: chance=67% hit=True damage=2
-attack Radscorpion@20729: chance=57% hit=False damage=0
-attack Radscorpion@20729: chance=57% hit=True damage=3 CRITICAL
+attack Radscorpion@20529: chance=47% hit=True damage=10
+attack Radscorpion@20729: chance=47% hit=True damage=9
+attack Radscorpion@20729: chance=47% hit=True damage=1
 xp: +120 (total 120, level 1)
-fight-result: rounds=3 dudeHp=42 gameOver=False targetDead=True hostilesLeft=0
+fight-result: rounds=2 dudeHp=44 gameOver=False targetDead=True hostilesLeft=0
