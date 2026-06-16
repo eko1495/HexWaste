@@ -32,16 +32,19 @@ public static class CritterStat
 /// instance's per-critter state (current HP, team, result flags).
 /// </summary>
 public sealed class CritterState(MapObject critter, CritterProtoStats proto, int[]? taggedSkills = null,
-    int[]? traits = null)
+    int[]? traits = null, int[]? perkRanks = null)
 {
     public MapObject Critter => critter;
     public CritterProtoStats Proto => proto;
 
-    /// <summary>Effective stat = base + bonus + trait modifier (src/stat.cc critterGetStat()
-    /// applies traitGetStatModifier live; P28-M1). <paramref name="traits"/> is the dude's two
-    /// selected traits — null for NPCs / no traits, so the modifier is 0 (inert by default).</summary>
+    /// <summary>Effective stat = base + bonus + trait modifier + perk modifier (src/stat.cc
+    /// critterGetStat() applies traitGetStatModifier + the perk stat bonuses live; P28-M1/M2).
+    /// <paramref name="traits"/>/<paramref name="perkRanks"/> are the dude's — null for NPCs / none,
+    /// so the modifiers are 0 (inert by default).</summary>
     public int Stat(int stat) =>
-        proto.BaseStats[stat] + proto.BonusStats[stat] + TraitModifiers.GetStatModifier(stat, traits, proto.BaseStats);
+        proto.BaseStats[stat] + proto.BonusStats[stat]
+        + TraitModifiers.GetStatModifier(stat, traits, proto.BaseStats)
+        + Perks.PerkRules.StatModifier(stat, perkRanks);
 
     /// <summary>True if this critter is blinded by a crit (CombatResults DAM_BLIND).</summary>
     public bool Blind => (critter.CombatResults & CriticalTables.DamBlind) != 0;

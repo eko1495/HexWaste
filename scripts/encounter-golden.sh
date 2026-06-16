@@ -45,6 +45,11 @@ SCENARIOS=(
   # P17-M4: saving MID-travel round-trips the dot worldPos + the in-flight destination
   # (load resumes toward it) — a documented divergence from the engine's drop-stopped reload.
   "travel-save-mid|--character combat --map artemple.map --travel-save-mid 184 133 1 5 --rng-seed 2"
+  # P28-M2: perk infrastructure + selection (perk.cc perkCanAdd + the table-driven stat perks).
+  # Bonus HtH Damage (idx 2, melee +2/rank, needs ST6/AG6/level3) is level-GATED at lvl 2, eligible
+  # at 3 (melee 8->10, atop Narg's Heavy Handed +4), STACKS to rank 2 (->12); More Criticals (idx 8)
+  # stays stat-GATED (Narg LK4 < req6) even at lvl99. picks = level/3.
+  "perk-gates|--character combat --map arcaves.map --perk-probe 2 2 --perk-probe 2 3 --perk-probe 2 3 --perk-probe 8 99 --rng-seed 1"
   # P28-M1: optional-trait effects (trait.cc traitGetStatModifier/SkillModifier), applied live.
   # No traits is inert (baseline); Gifted +1 all SPECIAL & -10 all skills; Bruiser+Kamikaze stack
   # (STR+2/AP-2/AC->0/SEQ+5); Good Natured shifts combat (-10) vs social (+15) skills.
@@ -136,7 +141,7 @@ SCENARIOS=(
 
 # Keep only the deterministic transcript lines (drop map-load / animate / stub /
 # dialog-text noise — NEVER capture REPLY/OPTION game-asset strings).
-FILTER='^(encounter|travel-from|companion|dismiss-persist|trade:|party:|party-count:|set-global:|hud-click:|use-skill:|hurt:|rest:|automap:|weapon-mode:|panel-click:|menu-click:|travel-resume:|travel-step:|travel-save-mid:|worldmap-fog:|weight:|iq-probe:|death-probe:|trait-probe:|combat-walk:|light:|reg-anim:|encounter-fight:|brawl:|  spawn|  flat|  wait:|  follow:|  dismiss:|  rejoin:)'
+FILTER='^(encounter|travel-from|companion|dismiss-persist|trade:|party:|party-count:|set-global:|hud-click:|use-skill:|hurt:|rest:|automap:|weapon-mode:|panel-click:|menu-click:|travel-resume:|travel-step:|travel-save-mid:|worldmap-fog:|weight:|iq-probe:|death-probe:|trait-probe:|perk-probe:|combat-walk:|light:|reg-anim:|encounter-fight:|brawl:|  spawn|  flat|  wait:|  follow:|  dismiss:|  rejoin:)'
 
 echo "Building viewer..."
 dotnet build src/Hexwaste.Viewer -c Debug >/dev/null || { echo "build failed"; exit 2; }

@@ -1,0 +1,4 @@
+perk-probe: index=2 frm=74 level=2 minLevel=3 picks=0 canAdd=False rank=0 stat=11 before=8 after=8
+perk-probe: index=2 frm=74 level=3 minLevel=3 picks=1 canAdd=True rank=1 stat=11 before=8 after=10
+perk-probe: index=2 frm=74 level=3 minLevel=3 picks=1 canAdd=True rank=2 stat=11 before=10 after=12
+perk-probe: index=8 frm=80 level=99 minLevel=6 picks=33 canAdd=False rank=0 stat=15 before=5 after=5

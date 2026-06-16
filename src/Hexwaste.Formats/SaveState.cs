@@ -41,6 +41,10 @@ public sealed class SaveState
     /// premade as-is). Captures level-up spends over the base sheet.</summary>
     public int[]? DudeSkills { get; set; }
 
+    /// <summary>The dude's per-perk ranks (P28-M2; 119, indexed by perk id). null on
+    /// pre-P28 saves → no perks (inert), so old saves load unchanged (additive within V2).</summary>
+    public int[]? DudePerkRanks { get; set; }
+
     /// <summary>The dude's base stat block (35; null = reload the named
     /// premade). Self-contained so a created character round-trips without a
     /// .gcd file. Level-up HP lives in bonus stats and is replayed from level.</summary>

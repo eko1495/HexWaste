@@ -824,8 +824,22 @@ the RNG stream then cascades) and were RE-RECORDED to the correct trait-applied 
 dude combat goldens + the --character-combat UI/movement/weight encounter goldens stayed byte-identical
 (they don't read the combat skill). Harness --trait-probe <id1> <id2> (sets the dude's traits, reports
 the live stat/skill effect); 4 goldens (none/gifted/bruiser+kamikaze/goodnatured) + 10 TraitModifiers
-tests. M2 perk infrastructure + selection, M3 high-impact perk effects, M4 perk-pick UI + char sheet =
-PENDING. 363 Formats tests, 40 encounter + 15 combat goldens green.
+tests. M2 perk infrastructure + selection (DONE): tools/gen_perk_table.py parses perk.cc's hardcoded
+gPerkDescriptions array -> Formats.Perks.PerkTable.g.cs (119 perks, FNV-1a checksum-guarded, the
+gen_critical_tables.py pattern; PerkData record). PerkRules ports perkCanAdd (maxRank cap, minLevel,
+the skill/gvar param gates with FIRST_ONLY/OR/AND modes + negative-value "at most", the per-SPECIAL
+reqs positive=min/negative=max) + the cadence (3 levels/perk, 4 with Skilled, cap 37 — character_
+editor.cc:5713) + the DATA-DRIVEN stat perks via StatModifier (each perk's stat/statModifier × rank:
+Toughness->DR, Action Boy->AP, More Criticals->crit, Lifegiver->HP, ...) folded into CritterState.Stat
+alongside traits (so M3's stat perks are FREE — only combat/skill-path perks need wiring). DudePerkRanks
+(int[119]) on the viewer, passed as CritterState's 5th param, persisted (SaveState.DudePerkRanks,
+additive-V2 sparse — null when no perk taken); has_trait(type 0) now returns the dude's perkGetRank via
+ScriptHost.PerkRankProvider. INERT-BY-DEFAULT holds (zero ranks -> 0 modifier -> all combat + encounter
+goldens BYTE-IDENTICAL). VERIFIED: traits + perks STACK (Narg's HeavyHanded +4 melee, then Bonus HtH
+Damage perk +2/rank -> 8->10->12); --perk-probe <index> <level> exercises the gates + effect (golden
+perk-gates: level-gate at lvl2, eligible+stack at lvl3, stat-gate on More Criticals via Narg's LK4).
+16 PerkTests. M3 high-impact (combat/skill-path) perk effects, M4 perk-pick UI + char sheet = PENDING.
+379 Formats tests, 41 encounter + 15 combat goldens green.
 
 Phase 10 (DONE, per docs/phase10-research-report.md — "The Wasteland
 Bites Back"): M0 persistence pre-stage (the net: MapList saved=No /

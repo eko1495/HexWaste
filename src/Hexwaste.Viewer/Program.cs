@@ -224,6 +224,10 @@ for (int i = 0; i < args.Length; i++)
             actions.Add(new ViewerGame.StartupAction.TraitProbe(int.Parse(args[i + 1]), int.Parse(args[i + 2])));
             i += 2;
             break;
+        case "--perk-probe" when i + 2 < args.Length:
+            actions.Add(new ViewerGame.StartupAction.PerkProbe(int.Parse(args[i + 1]), int.Parse(args[i + 2])));
+            i += 2;
+            break;
         case "--death-probe" when i + 1 < args.Length:
             actions.Add(new ViewerGame.StartupAction.DeathProbe(int.Parse(args[++i])));
             break;

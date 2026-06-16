@@ -66,6 +66,10 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
     private int _dudeXp = 0; // accrues in P6-M3 (kill XP at combat end)
     private int _unspentSkillPoints;
 
+    /// <summary>The dude's per-perk ranks (P28-M2; one slot per perk id). All-zero = no perks,
+    /// so the perk stat modifiers are inert by default. Persisted (SaveState.DudePerkRanks).</summary>
+    private int[] _dudePerkRanks = new int[Formats.Perks.PerkTable.Count];
+
     /// <summary>Game-days before a script-stocked merchant container restocks
     /// (P8-M5 — the engine's box scripts use a 1-2 day timer; ours approximates).</summary>
     private const int RestockDays = 3;
@@ -403,6 +407,9 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
         /// <summary>Set the dude's two traits (id&lt;0 = none) and report the live effect on his
         /// stats/skills + has_trait (P28-M1).</summary>
         public sealed record TraitProbe(int Trait1, int Trait2) : StartupAction;
+        /// <summary>At dude level Level, test whether perk Index can be taken (the gates) and, if so,
+        /// add a rank and report the live stat effect (P28-M2).</summary>
+        public sealed record PerkProbe(int Index, int Level) : StartupAction;
         /// <summary>Open NPC dialogue with the dude's IN forced to ForceIn and report the option
         /// COUNT at the greeting (P25 IQ-gating; never the copyrighted option text). ForceIn &lt; 0
         /// leaves IN unchanged.</summary>
@@ -658,6 +665,7 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
                     2 => _dudeXp,     // PC_STAT_EXPERIENCE
                     _ => 0,
                 },
+                PerkRankProvider = perk => Formats.Perks.PerkRules.Rank(_dudePerkRanks, perk),
             };
             if (RngSeed is { } scriptSeed)
                 _scriptHost.Rng = new Random(scriptSeed);
@@ -1072,6 +1080,27 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
                             + $" SEQ={ts.Sequence} carry={ts.CarryWeight} crit={ts.Stat(15)} heal={ts.Stat(14)}"
                             + $" melee={ts.MeleeDamage} smallGuns={ts.SkillValue(0)} firstAid={ts.SkillValue(6)}"
                             + $" hasGifted={(_scriptHost?.DudeTraits.Contains(Formats.Combat.TraitModifiers.Gifted) == true ? 1 : 0)}");
+                    break;
+                }
+                case StartupAction.PerkProbe(var perkIndex, var perkLevel):
+                {
+                    // P28-M2: at the given level, test the perk gates (PerkRules.CanAdd) and, if
+                    // eligible, add a rank — reporting the live stat effect via GetCritterState.
+                    if (_dude is null || perkIndex < 0 || perkIndex >= Formats.Perks.PerkTable.Count)
+                    { Console.Error.WriteLine($"perk-probe: bad index {perkIndex}"); break; }
+                    _dudeLevel = perkLevel;
+                    Formats.Perks.PerkData pd = Formats.Perks.PerkTable.Get(perkIndex);
+                    int GetStat(int s) => GetCritterState(_dude.Dude)?.Stat(s) ?? 0;
+                    int GetSkill(int s) => GetCritterState(_dude.Dude)?.SkillValue(s) ?? 0;
+                    int GetGlobal(int g) => _scriptHost?.GlobalVars.GetValueOrDefault(g, 0) ?? 0;
+                    int before = pd.Stat >= 0 ? GetStat(pd.Stat) : -1;
+                    bool canAdd = Formats.Perks.PerkRules.CanAdd(pd, _dudePerkRanks, _dudeLevel, GetStat, GetSkill, GetGlobal);
+                    if (canAdd)
+                        _dudePerkRanks[perkIndex]++;
+                    int after = pd.Stat >= 0 ? GetStat(pd.Stat) : -1;
+                    Console.WriteLine($"perk-probe: index={perkIndex} frm={pd.FrmId} level={perkLevel} minLevel={pd.MinLevel}"
+                        + $" picks={Formats.Perks.PerkRules.PicksEarned(perkLevel, false)} canAdd={canAdd}"
+                        + $" rank={_dudePerkRanks[perkIndex]} stat={pd.Stat} before={before} after={after}");
                     break;
                 }
                 case StartupAction.WeightProbe:
@@ -2616,7 +2645,7 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
         // _dude, which isn't assigned until below — without this the dude took
         // the generic proto's 30 HP regardless of his SPECIAL.
         Formats.Combat.CritterState? stats = _dudeGcd is not null
-            ? new Formats.Combat.CritterState(dude, _dudeGcd.Stats, _dudeGcd.TaggedSkills, _dudeGcd.Traits)
+            ? new Formats.Combat.CritterState(dude, _dudeGcd.Stats, _dudeGcd.TaggedSkills, _dudeGcd.Traits, _dudePerkRanks)
             : GetCritterState(dude);
         if (stats is not null)
         {
@@ -5403,7 +5432,7 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
     public Formats.Combat.CritterState? GetCritterState(MapObject obj)
     {
         if (obj == _dude?.Dude && _dudeGcd is not null)
-            return new Formats.Combat.CritterState(obj, _dudeGcd.Stats, _dudeGcd.TaggedSkills, _dudeGcd.Traits);
+            return new Formats.Combat.CritterState(obj, _dudeGcd.Stats, _dudeGcd.TaggedSkills, _dudeGcd.Traits, _dudePerkRanks);
         if (Fid.PidType(obj.Pid) != (int)ObjectType.Critter)
             return null;
         // A leveled-up companion reads its swapped-in stage proto, not the base
@@ -7128,6 +7157,7 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
             return;
         }
         _dudeGcd = Formats.Combat.GcdFile.Create(_createSpecial, [.. _createTags], _createGender);
+        _dudePerkRanks = new int[Formats.Perks.PerkTable.Count]; // a new character has no perks (P28-M2)
         _activeCharacter = "custom";
         Console.WriteLine($"create: SPECIAL {string.Join("/", _createSpecial)} gender {_createGender}"
             + $" tags [{string.Join(",", _createTags)}] HP {_dudeGcd.Stats.BaseStats[7]}");
@@ -7308,6 +7338,9 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
             UnspentSkillPoints = _unspentSkillPoints,
             Character = _activeCharacter,
             DudeSkills = _dudeGcd is not null ? [.. _dudeGcd.Stats.Skills] : null,
+            // Only persist perk ranks when something was taken (sparse; a fresh game saves null,
+            // which loads as no perks — old-save compatible).
+            DudePerkRanks = _dudePerkRanks.Any(r => r > 0) ? [.. _dudePerkRanks] : null,
             DudeBaseStats = _dudeGcd is not null ? [.. _dudeGcd.Stats.BaseStats] : null,
             DudeTaggedSkills = _dudeGcd is not null ? [.. _dudeGcd.TaggedSkills] : null,
             Elevation = _elevation,
@@ -7470,6 +7503,11 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
             _dudeGcd.Stats.BonusStats[Formats.Combat.CritterStat.MaximumHitPoints] +=
                 (_dudeLevel - 1) * Formats.Combat.Progression.HpPerLevel(endurance);
         }
+
+        // Restore perk ranks (P28-M2); null/short save → no perks (inert).
+        _dudePerkRanks = new int[Formats.Perks.PerkTable.Count];
+        if (state.DudePerkRanks is { } savedPerks)
+            Array.Copy(savedPerks, _dudePerkRanks, Math.Min(savedPerks.Length, _dudePerkRanks.Length));
         if (_dude is not null)
             _dude.Dude.CurrentHp = state.DudeHp > 0
                 ? state.DudeHp

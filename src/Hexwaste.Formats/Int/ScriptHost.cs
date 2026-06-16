@@ -202,6 +202,10 @@ public sealed class ScriptHost(GameFileSystem vfs, ScriptList scripts, Hexwaste.
     /// <summary>get_pc_stat values (1=level, 2=experience); host-provided.</summary>
     public Func<int, int>? PcStatProvider { get; set; }
 
+    /// <summary>The dude's rank in a perk (perkGetRank); host-provided. Drives has_trait(type 0)
+    /// (P28-M2). Null → 0 (no perk system).</summary>
+    public Func<int, int>? PerkRankProvider { get; set; }
+
     /// <summary>Rolls for do_check/statRoll (seedable by the host).</summary>
     public Random Rng { get; set; } = new();
 
@@ -912,7 +916,7 @@ public sealed class ScriptHost(GameFileSystem vfs, ScriptList scripts, Hexwaste.
                 return 0;
             return type switch
             {
-                0 => 0, // CRITTER_TRAIT_PERK — no perk system in the PoC
+                0 => obj == _dude ? _host.PerkRankProvider?.Invoke(param) ?? 0 : 0, // CRITTER_TRAIT_PERK (P28-M2)
                 1 => param switch // CRITTER_TRAIT_OBJECT
                 {
                     5 => obj.AiPacket,
