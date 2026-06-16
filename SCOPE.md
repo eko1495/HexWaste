@@ -42,6 +42,13 @@ filing an issue.
   JSON save/load, a main menu, character creation, rest, and carry weight +
   encumbrance (item weights, a STAT_CARRY_WEIGHT capacity, an over-limit combat
   AP penalty, and pickup/loot/barter blocking).
+- **Character progression**: the 16 optional **traits** apply real effects
+  (Gifted, Bruiser, Small Frame, Kamikaze, Heavy Handed, Good Natured, …) and
+  **perks** — the full 119-perk table, with selection every 3 levels (4 with
+  Skilled) gated on level/stats/skills, the data-driven stat perks (Toughness,
+  Action Boy, Lifegiver, More/Better Criticals, …) plus wired combat/skill perks
+  (Bonus Rate of Fire, Bonus HtH Attacks, Sniper, Slayer, Sharpshooter, Swift
+  Learner). A character-sheet display + a level-up perk picker.
 - **Interface**: the authentic bottom HUD bar plus its panels — inventory,
   character sheet, the Skilldex use-skill picker, the Pip-Boy (status + rest),
   and an in-game options/pause menu.
@@ -60,9 +67,11 @@ filing an issue.
   level-up logic lights up for free when one lands. Per-companion quest *banter*
   is 100% companion-script content gated on those same quests (it already runs
   via `talk_p_proc` when present), so there is no engine work to do.
-- **Perks and traits** (their effects, and the perk-folder / trait-picker
-  character editor — basic creation with SPECIAL/gender/tagged skills and
-  level-up skill-point spending *are* in), and worldmap car travel.
+- **The remaining ~90 perks' specific effects** (the table is complete and the
+  stat perks + a curated combat/skill set are wired; the rest are data-present),
+  the trait picker in character *creation* (created characters start trait-less;
+  premade traits apply), the authentic perk-window art (a text picker stands in),
+  companion perks, and worldmap car travel.
 - **Anything needing assets we can't ship** — Hexwaste requires *your own* legal
   copy of Fallout 2. We never include or distribute game data.
 

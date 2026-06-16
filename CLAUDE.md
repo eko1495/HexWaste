@@ -850,8 +850,19 @@ wired indices. DEFERRED (documented): Jinxed's crit-FAILURE (Hexwaste doesn't mo
 consequences); Educated (+skill points/level); the rest of the 119 are data-present (stat perks live,
 these specific effects pending). VERIFIED: --perk-probe granted Swift Learner -> +1000 XP shows +1050;
 Bonus HtH adds unarmed swings; 3 fake-host CombatEngine tests (Bonus HtH AP 10->8, Slayer forces a crit,
-the no-perk control stays non-crit). M4 perk-pick UI + char sheet = PENDING. 382 Formats tests, 41
-encounter + 15 combat goldens green.
+the no-perk control stays non-crit). M4 perk-pick UI + char sheet (DONE — P28 COMPLETE): the character
+sheet (C/K) now shows the dude's Traits + Perks (names from trait.msg id 100+i / perk.msg id 101+i,
+loaded lazily; trait.cc:74 / perk.cc:218) and the effective trait/perk-modified SPECIAL (was the base);
+when picks are available (G) a modal perk picker lists the eligible perks (PerkRules.CanAdd-filtered),
+1-9 selects one. AvailablePerkPicks = PicksEarned − ranks-taken; EligiblePerks/ChoosePerk are the
+selection core. Text-panel picker (the authentic PERKWIN.FRM art is deferred polish, like the early
+Skilldex text fallback — documented). Harness --perk-pick <level> <row> drives the real picker
+(golden perk-pick: lvl3 1-pick/14-eligible/closes, lvl6 stays open, lvl1 0). Draw-only + harness-gated
++ inert-by-default -> all combat + encounter goldens BYTE-IDENTICAL. P28 COMPLETE: traits (16, live) +
+perks (119 table, ~20 stat perks live via the fold + 6 combat/skill perks wired, rest data-present) +
+the picker + char-sheet display + save persistence; the marquee character-progression layer is in.
+382 Formats tests, 42 encounter + 15 combat goldens green. Spillover: PERKWIN.FRM art, the combat-crit
+trait spillover (One Hander/Fast Shot/Finesse-DR/Jinxed), Educated skill points, companion perks.
 
 Phase 10 (DONE, per docs/phase10-research-report.md — "The Wasteland
 Bites Back"): M0 persistence pre-stage (the net: MapList saved=No /

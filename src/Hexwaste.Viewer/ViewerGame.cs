@@ -297,6 +297,28 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
     private Formats.Map.WorldmapFog? _worldFog;
     private Formats.Map.WorldmapFog WorldFog => _worldFog ??= new Formats.Map.WorldmapFog(Worldmap);
 
+    /// <summary>perk.msg / trait.msg display names (P28-M4); lazy. perk i → msg 101+i, trait i →
+    /// msg 100+i (perk.cc:218 / trait.cc:74). Fall back to a generic label if the file is absent.</summary>
+    private Formats.Text.MessageFile? _perkMsg; private bool _perkMsgTried;
+    private Formats.Text.MessageFile? _traitMsg; private bool _traitMsgTried;
+    private Formats.Text.MessageFile? LazyMsg(string path, ref bool tried, ref Formats.Text.MessageFile? cache)
+    {
+        if (!tried)
+        {
+            tried = true;
+            if (_vfs.Exists(path))
+            {
+                using Stream s = _vfs.OpenRead(path);
+                cache = Formats.Text.MessageFile.Load(s);
+            }
+        }
+        return cache;
+    }
+    private string PerkName(int i) =>
+        LazyMsg(@"text\english\game\perk.msg", ref _perkMsgTried, ref _perkMsg)?.GetText(101 + i) is { Length: > 0 } n ? n : $"Perk {i}";
+    private string TraitName(int i) =>
+        i < 0 ? "" : LazyMsg(@"text\english\game\trait.msg", ref _traitMsgTried, ref _traitMsg)?.GetText(100 + i) is { Length: > 0 } n ? n : $"Trait {i}";
+
     /// <summary>worldmap.msg — the encounter display names (phase-16 M0); lazy, null if
     /// absent. Indexed by <see cref="Formats.Map.EncounterResult.MessageId"/>.</summary>
     private Formats.Text.MessageFile? _worldmapMsg;
@@ -410,6 +432,9 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
         /// <summary>At dude level Level, test whether perk Index can be taken (the gates) and, if so,
         /// add a rank and report the live stat effect (P28-M2).</summary>
         public sealed record PerkProbe(int Index, int Level) : StartupAction;
+        /// <summary>At dude level Level, open the perk picker and select the Row-th eligible perk
+        /// (P28-M4) — drives the real AvailablePerkPicks/EligiblePerks/ChoosePerk path.</summary>
+        public sealed record PerkPick(int Level, int Row) : StartupAction;
         /// <summary>Open NPC dialogue with the dude's IN forced to ForceIn and report the option
         /// COUNT at the greeting (P25 IQ-gating; never the copyrighted option text). ForceIn &lt; 0
         /// leaves IN unchanged.</summary>
@@ -1101,6 +1126,25 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
                     Console.WriteLine($"perk-probe: index={perkIndex} frm={pd.FrmId} level={perkLevel} minLevel={pd.MinLevel}"
                         + $" picks={Formats.Perks.PerkRules.PicksEarned(perkLevel, false)} canAdd={canAdd}"
                         + $" rank={_dudePerkRanks[perkIndex]} stat={pd.Stat} before={before} after={after}");
+                    break;
+                }
+                case StartupAction.PerkPick(var ppLevel, var ppRow):
+                {
+                    // P28-M4: drive the real perk picker — set level, open it (if a pick is available),
+                    // select the Row-th eligible perk, report index/count (not the name text).
+                    if (_dude is null || _dudeGcd is null) { Console.Error.WriteLine("perk-pick: no dude"); break; }
+                    _dudeLevel = ppLevel;
+                    int avail = AvailablePerkPicks();
+                    _perkPickOpen = avail > 0;
+                    List<int> elig = EligiblePerks();
+                    int picked = -1;
+                    if (_perkPickOpen && ppRow >= 0 && ppRow < elig.Count)
+                    {
+                        picked = elig[ppRow];
+                        ChoosePerk(picked);
+                    }
+                    Console.WriteLine($"perk-pick: level={ppLevel} available={avail} eligible={elig.Count}"
+                        + $" pickedRow={ppRow} pickedIndex={picked} rank={(picked >= 0 ? _dudePerkRanks[picked] : 0)} open={_perkPickOpen}");
                     break;
                 }
                 case StartupAction.WeightProbe:
@@ -2027,8 +2071,26 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
 
         // Skill allocator (K): arrows pick a skill, Right/Enter/+ spends a
         // point, Esc/K closes.
+        // Perk picker (G from the char sheet when a pick is available): a modal over the sheet.
+        if (_perkPickOpen)
+        {
+            List<int> elig = EligiblePerks();
+            for (int i = 0; i < 9 && i < elig.Count; i++)
+                if (IsKeyPressed(keyboard, Keys.D1 + i) || IsKeyPressed(keyboard, Keys.NumPad1 + i))
+                    ChoosePerk(elig[i]);
+            if (IsKeyPressed(keyboard, Keys.Escape) || IsKeyPressed(keyboard, Keys.G))
+                _perkPickOpen = false;
+
+            _previousMouse = mouse;
+            _previousKeyboard = keyboard;
+            base.Update(gameTime);
+            return;
+        }
+
         if (_skillAllocOpen)
         {
+            if (IsKeyPressed(keyboard, Keys.G) && AvailablePerkPicks() > 0)
+                _perkPickOpen = true;
             if (IsKeyPressed(keyboard, Keys.Up))
                 _skillAllocIndex = (_skillAllocIndex + Formats.Combat.SkillSet.SkillCount - 1) % Formats.Combat.SkillSet.SkillCount;
             if (IsKeyPressed(keyboard, Keys.Down))
@@ -5080,6 +5142,7 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
             DrawDialogPanel();
             DrawItemPanels();
             DrawSkillAllocator();
+            DrawPerkPicker();
             DrawSkilldex();
             DrawPipboy();
             DrawAutomap();
@@ -5636,7 +5699,7 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
             ly += 4;
             string[] sp = ["ST", "PE", "EN", "CH", "IN", "AG", "LK"];
             for (int i = 0; i < 7; i++)
-                _fontRenderer.Draw(_spriteBatch, $"{sp[i]} {Stat(i)}",
+                _fontRenderer.Draw(_spriteBatch, $"{sp[i]} {cs.Stat(i)}", // effective (trait/perk-modified), like the derived stats
                     new Vector2(lx + (i % 2) * 130, ly + i / 2 * lh), gold);
             ly += 4 * lh + 6;
             Line($"Armor Class {cs.ArmorClass}", gray);
@@ -5646,9 +5709,18 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
             Line($"Healing Rate {Math.Max(Stat(Formats.Combat.CritterStat.Endurance) / 3, 1)}", gray);
         }
         ly += 6;
+        // Traits + perks (P28-M4): the character-progression payoff.
+        string traitStr = string.Join(", ", _dudeGcd.Traits.Where(t => t >= 0).Select(TraitName));
+        Line($"Traits: {(traitStr.Length > 0 ? traitStr : "none")}", gray);
+        var takenPerks = Enumerable.Range(0, _dudePerkRanks.Length).Where(i => _dudePerkRanks[i] > 0)
+            .Select(i => _dudePerkRanks[i] > 1 ? $"{PerkName(i)} ({_dudePerkRanks[i]})" : PerkName(i)).ToList();
+        Line($"Perks: {(takenPerks.Count > 0 ? string.Join(", ", takenPerks) : "none")}", gray);
+        if (AvailablePerkPicks() > 0)
+            Line($"{AvailablePerkPicks()} perk(s) available — press G", green);
+        ly += 6;
         if (_unspentSkillPoints > 0)
             Line($"{_unspentSkillPoints} skill points — raise →", green);
-        _fontRenderer.Draw(_spriteBatch, "C / K / Esc close", new Vector2(lx, y + h - lh - 8), gray);
+        _fontRenderer.Draw(_spriteBatch, "C / K / G perk / Esc close", new Vector2(lx, y + h - lh - 8), gray);
 
         // ---- right column: the 18 skills ----
         int rx = x + 330;
@@ -5666,6 +5738,74 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
                 selected ? green : gray);
             rowY += lh;
         }
+    }
+
+    // --- Perk selection (P28-M4) -----------------------------------------
+
+    private bool _perkPickOpen;
+    private const int PerkPickRows = 12; // perks shown in the picker (the slice never offers more)
+
+    private bool DudeHasSkilled() =>
+        _dudeGcd is not null && Formats.Combat.TraitModifiers.Has(_dudeGcd.Traits, Formats.Combat.TraitModifiers.Skilled);
+
+    /// <summary>Perk picks earned by the dude's level minus the ones already taken (one per 3
+    /// levels, 4 with Skilled; PerkRules cadence).</summary>
+    private int AvailablePerkPicks() => _dudeGcd is null
+        ? 0
+        : Math.Max(0, Formats.Perks.PerkRules.PicksEarned(_dudeLevel, DudeHasSkilled()) - _dudePerkRanks.Sum());
+
+    /// <summary>The perk indices the dude currently qualifies for (PerkRules.CanAdd over the live
+    /// stats/skills/globals), in enum order.</summary>
+    private List<int> EligiblePerks()
+    {
+        var list = new List<int>();
+        if (_dude is null)
+            return list;
+        int GetStat(int s) => GetCritterState(_dude.Dude)?.Stat(s) ?? 0;
+        int GetSkill(int s) => GetCritterState(_dude.Dude)?.SkillValue(s) ?? 0;
+        int GetGlobal(int g) => _scriptHost?.GlobalVars.GetValueOrDefault(g, 0) ?? 0;
+        for (int i = 0; i < Formats.Perks.PerkTable.Count; i++)
+            if (Formats.Perks.PerkRules.CanAdd(Formats.Perks.PerkTable.Get(i), _dudePerkRanks, _dudeLevel, GetStat, GetSkill, GetGlobal))
+                list.Add(i);
+        return list;
+    }
+
+    /// <summary>Take a rank of <paramref name="perkIndex"/> if it's eligible and a pick is
+    /// available (the picker's commit). Closes the picker when no picks remain.</summary>
+    private void ChoosePerk(int perkIndex)
+    {
+        if (AvailablePerkPicks() <= 0 || !EligiblePerks().Contains(perkIndex))
+            return;
+        _dudePerkRanks[perkIndex]++;
+        Log($"You gain a new perk: {PerkName(perkIndex)}.");
+        if (AvailablePerkPicks() <= 0)
+            _perkPickOpen = false;
+    }
+
+    private void DrawPerkPicker()
+    {
+        if (!_perkPickOpen || _fontRenderer is null)
+            return;
+        _panelPixel ??= CreatePixel();
+        int lh = Math.Max(_fontRenderer.LineHeight, 22);
+        List<int> elig = EligiblePerks();
+        int shown = Math.Min(elig.Count, PerkPickRows);
+        int x = 360, y = 40, w = 320, h = (shown + 3) * lh + 16;
+        _spriteBatch.Draw(_panelPixel, new Rectangle(x, y, w, h), new Color(8, 8, 8, 240));
+        var green = new Color(0, 252, 0);
+        var gray = new Color(150, 150, 150);
+        _fontRenderer.Draw(_spriteBatch, $"Pick a perk ({AvailablePerkPicks()} available)", new Vector2(x + 12, y + 10), new Color(252, 252, 84));
+        int rowY = y + 10 + lh + 6;
+        for (int row = 0; row < shown; row++)
+        {
+            int pi = elig[row];
+            string rank = _dudePerkRanks[pi] > 0 ? $" ({_dudePerkRanks[pi]}/{Formats.Perks.PerkTable.Get(pi).MaxRank})" : "";
+            _fontRenderer.Draw(_spriteBatch, $"{row + 1}. {PerkName(pi)}{rank}", new Vector2(x + 12, rowY), green);
+            rowY += lh;
+        }
+        if (elig.Count == 0)
+            _fontRenderer.Draw(_spriteBatch, "(none qualify)", new Vector2(x + 12, rowY), gray);
+        _fontRenderer.Draw(_spriteBatch, "1-9 pick / Esc close", new Vector2(x + 12, y + h - lh - 8), gray);
     }
 
     /// <summary>Top-left of the Skilldex box: bottom-right, just above the HUD bar

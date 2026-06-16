@@ -1,0 +1,3 @@
+perk-pick: level=3 available=1 eligible=14 pickedRow=0 pickedIndex=0 rank=1 open=False
+perk-pick: level=6 available=1 eligible=21 pickedRow=0 pickedIndex=2 rank=1 open=False
+perk-pick: level=1 available=0 eligible=0 pickedRow=0 pickedIndex=-1 rank=0 open=False
