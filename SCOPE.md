@@ -51,8 +51,9 @@ filing an issue.
   Action Boy, Lifegiver, More/Better Criticals, …) plus wired combat/skill perks
   (Bonus Rate of Fire, Bonus HtH Attacks, Bonus Ranged Damage, Sniper, Slayer,
   Sharpshooter, Swift Learner, Educated, Living Anatomy, Pyromaniac, Weapon
-  Handling, Heave Ho). A character-sheet display + a level-up perk picker. Per-level
-  skill points follow the full engine formula (Educated/Skilled/Gifted).
+  Handling, Heave Ho). A character-sheet display + a level-up perk picker (the
+  authentic PERKWIN window). Per-level skill points follow the full engine formula
+  (Educated/Skilled/Gifted).
 - **Interface**: the authentic bottom HUD bar plus its panels — inventory,
   character sheet, the Skilldex use-skill picker, the Pip-Boy (status + rest),
   and an in-game options/pause menu.
@@ -73,9 +74,8 @@ filing an issue.
   via `talk_p_proc` when present), so there is no engine work to do.
 - **The remaining ~80 perks' specific effects** (the table is complete and the
   stat perks + a curated combat/skill set are wired; the rest — sneak, timed
-  buffs, content/dialog, addiction, mutation perks — are data-present), the
-  authentic perk-window art (a text picker stands in), companion perks, and
-  worldmap car travel.
+  buffs, content/dialog, addiction, mutation perks — are data-present), companion
+  perks, and worldmap car travel.
 - **Anything needing assets we can't ship** — Hexwaste requires *your own* legal
   copy of Fallout 2. We never include or distribute game data.
 

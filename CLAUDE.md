@@ -923,6 +923,14 @@ flat-bonus is a residual — they rarely apply on the shippable slice); the rema
 data-present (the table is complete, the stat perks + this curated set are wired). 5 fake-host
 CombatEngineTests (each perk's effect + its rank-0 control); all 15 combat + 42 encounter goldens
 BYTE-IDENTICAL (every perk short-circuits at rank 0).
+M5 PERKWIN.FRM art picker (DONE): DrawPerkPicker now renders the authentic PERKWIN.FRM (573x230,
+centred) — the eligible-perk list on the left (window-local 45,43 192x129; the hovered row lights), the
+hovered perk's name (280,27) + wrapped DESCRIPTION (perk.msg 1101+i, the new PerkDescription loader;
+280,70) on the parchment card — falling back to the pre-art text flyout when the FRM is absent (the
+Skilldex pattern). PerkWindowOrigin/PerkPickerRowAt are the shared render+hit-test geometry (the
+SkilldexRowAt pattern); a left-click on a row takes that perk (additive to the 1-9 keys). Screenshot-
+verified over the real art. Draw-only + additive mouse → the perk-pick golden (driven by the PerkPick
+harness ACTION, not Draw) is unchanged; all goldens BYTE-IDENTICAL.
 
 Phase 10 (DONE, per docs/phase10-research-report.md — "The Wasteland
 Bites Back"): M0 persistence pre-stage (the net: MapList saved=No /

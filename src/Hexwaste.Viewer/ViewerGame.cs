@@ -183,6 +183,11 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
     private Texture2D? _skilldexBtnOff;
     private Texture2D? _skilldexBtnOn;
 
+    /// <summary>Perk-picker authentic art (P29-M5): PERKWIN.FRM (573x230) background
+    /// (character_editor.cc perkDialogShow). Null if the art is missing → text fallback.</summary>
+    private Texture2D? _perkWin;
+    private bool _perkWinTried;
+
     /// <summary>Full-window automap (P15 M0): the AUTOMAP.FRM (519x480) view, opened from
     /// the Pip-Boy (A), plotting the current elevation's objects as colored dots
     /// (automap.cc automapRenderInMapWindow).</summary>
@@ -321,6 +326,9 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
     }
     private string PerkName(int i) =>
         LazyMsg(@"text\english\game\perk.msg", ref _perkMsgTried, ref _perkMsg)?.GetText(101 + i) is { Length: > 0 } n ? n : $"Perk {i}";
+    /// <summary>The perk's description text (perk.msg 1101+i; perk.cc:223). Empty if absent.</summary>
+    private string PerkDescription(int i) =>
+        LazyMsg(@"text\english\game\perk.msg", ref _perkMsgTried, ref _perkMsg)?.GetText(1101 + i) ?? "";
     private string TraitName(int i) =>
         i < 0 ? "" : LazyMsg(@"text\english\game\trait.msg", ref _traitMsgTried, ref _traitMsg)?.GetText(100 + i) is { Length: > 0 } n ? n : $"Trait {i}";
 
@@ -2089,6 +2097,10 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
             for (int i = 0; i < 9 && i < elig.Count; i++)
                 if (IsKeyPressed(keyboard, Keys.D1 + i) || IsKeyPressed(keyboard, Keys.NumPad1 + i))
                     ChoosePerk(elig[i]);
+            // P29-M5: click a row in the PERKWIN list to take that perk (additive to 1-9).
+            if (mouse.LeftButton == ButtonState.Pressed && _previousMouse.LeftButton == ButtonState.Released
+                && PerkPickerRowAt(mouse.X, mouse.Y) is var prow && prow >= 0 && prow < elig.Count)
+                ChoosePerk(elig[prow]);
             if (IsKeyPressed(keyboard, Keys.Escape) || IsKeyPressed(keyboard, Keys.G))
                 _perkPickOpen = false;
 
@@ -5807,12 +5819,90 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
             _perkPickOpen = false;
     }
 
+    // PERKWIN.FRM layout (character_editor.cc:89-95): window 573x230, perk list at window-local
+    // (45,43) 192x129, the perk card name at (280,27) / description at (280,70).
+    private const int PerkWinW = 573, PerkWinH = 230;
+    private const int PerkWinListX = 45, PerkWinListY = 43, PerkWinListW = 192, PerkWinListH = 129;
+    private const int PerkWinCardX = 280;
+
+    /// <summary>Top-left of the centred PERKWIN window + the per-row height (the list area divided so
+    /// up to ~11 perks fit). One source the render + hit-test share (the SkilldexRowAt pattern).</summary>
+    private Point PerkWindowOrigin(out int rowH, out int rowsShown, int eligCount)
+    {
+        rowH = Math.Max(_fontRenderer!.LineHeight + 1, 11);
+        rowsShown = Math.Min(eligCount, PerkWinListH / rowH);
+        Rectangle vp = GraphicsDevice.Viewport.Bounds;
+        return new Point(Math.Max(0, (vp.Width - PerkWinW) / 2), Math.Max(0, (vp.Height - PerkWinH) / 2));
+    }
+
+    /// <summary>The eligible-perk row under (mx,my), or -1 — the list rows at
+    /// (origin + 45, 43 + i*rowH), width 192.</summary>
+    private int PerkPickerRowAt(int mx, int my)
+    {
+        if (!_perkPickOpen || _fontRenderer is null || _perkWin is null)
+            return -1;
+        List<int> elig = EligiblePerks();
+        Point o = PerkWindowOrigin(out int rowH, out int rowsShown, elig.Count);
+        for (int i = 0; i < rowsShown; i++)
+        {
+            var r = new Rectangle(o.X + PerkWinListX, o.Y + PerkWinListY + i * rowH, PerkWinListW, rowH);
+            if (r.Contains(mx, my))
+                return i;
+        }
+        return -1;
+    }
+
+    /// <summary>The level-up perk picker. P29-M5: the authentic PERKWIN.FRM panel (the perk list on
+    /// the left, the hovered perk's name + wrapped description card on the right), falling back to the
+    /// text flyout when the art is absent (the Skilldex pattern). Click a row (or 1-9) to take it.</summary>
     private void DrawPerkPicker()
     {
         if (!_perkPickOpen || _fontRenderer is null)
             return;
+        if (!_perkWinTried) { _perkWinTried = true; _perkWin = InterfaceBar.LoadFrm(GraphicsDevice, _vfs, _palette, @"art\intrface\PERKWIN.frm"); }
+        if (_perkWin is null)
+        {
+            DrawPerkPickerTextFallback();
+            return;
+        }
+
+        List<int> elig = EligiblePerks();
+        Point o = PerkWindowOrigin(out int rowH, out int rowsShown, elig.Count);
+        _spriteBatch.Draw(_perkWin, new Vector2(o.X, o.Y), Color.White);
+
+        var green = new Color(0, 252, 0);
+        var hi = new Color(252, 252, 84);
+        var cardColor = new Color(0, 0, 0); // the card area is parchment — dark text reads on it
+        int hovered = PerkPickerRowAt(Mouse.GetState().X, Mouse.GetState().Y);
+        for (int i = 0; i < rowsShown; i++)
+        {
+            int pi = elig[i];
+            string rank = _dudePerkRanks[pi] > 0 ? $" ({_dudePerkRanks[pi]}/{Formats.Perks.PerkTable.Get(pi).MaxRank})" : "";
+            _fontRenderer.Draw(_spriteBatch, PerkName(pi) + rank,
+                new Vector2(o.X + PerkWinListX + 4, o.Y + PerkWinListY + i * rowH), i == hovered ? hi : green);
+        }
+
+        // The perk card for the hovered (or first) eligible perk: name + wrapped description.
+        int card = hovered >= 0 ? elig[hovered] : (elig.Count > 0 ? elig[0] : -1);
+        if (card >= 0)
+        {
+            _fontRenderer.Draw(_spriteBatch, PerkName(card), new Vector2(o.X + PerkWinCardX, o.Y + 27), cardColor);
+            float dy = o.Y + 70;
+            foreach (string line in _fontRenderer.WrapText(PerkDescription(card), PerkWinW - PerkWinCardX - 24))
+            {
+                _fontRenderer.Draw(_spriteBatch, line, new Vector2(o.X + PerkWinCardX, dy), cardColor);
+                dy += _fontRenderer.LineHeight;
+            }
+        }
+        if (elig.Count == 0)
+            _fontRenderer.Draw(_spriteBatch, "(none qualify)", new Vector2(o.X + PerkWinListX + 4, o.Y + PerkWinListY), green);
+    }
+
+    /// <summary>The pre-art text flyout, kept as the fallback when PERKWIN.FRM is absent.</summary>
+    private void DrawPerkPickerTextFallback()
+    {
         _panelPixel ??= CreatePixel();
-        int lh = Math.Max(_fontRenderer.LineHeight, 22);
+        int lh = Math.Max(_fontRenderer!.LineHeight, 22);
         List<int> elig = EligiblePerks();
         int shown = Math.Min(elig.Count, PerkPickRows);
         int x = 360, y = 40, w = 320, h = (shown + 3) * lh + 16;
