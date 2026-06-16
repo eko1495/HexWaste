@@ -75,7 +75,18 @@ public static class SkillSet
         _ => 6,
     };
 
-    /// <summary>Skill points granted per level: 5 + 2 × IN
-    /// (character_editor.cc:5686, before perk/trait modifiers).</summary>
-    public static int PointsPerLevel(int intelligence) => 5 + 2 * intelligence;
+    /// <summary>Skill points granted per level, ported verbatim from character_editor.cc:5686-5699:
+    /// <c>5 + 2·IN + 2·rank(Educated) + 5·Skilled − (Gifted ? 5 : 0)</c>, floored at 0.
+    /// <paramref name="intelligence"/> must be the TRAIT-modified Intelligence (Gifted's +1 IN already
+    /// folded in, like the engine's critterGetBaseStatWithTraitModifier; bonuses from drugs/perks are
+    /// NOT counted) — so Gifted has two effects here: +1 IN → +2 SP, then the explicit −5. The 99 cap
+    /// is on the banked unspent TOTAL (PointsBankCap), applied by the caller, not on a single grant.
+    /// Defaults leave the pre-P29 5+2·IN behaviour for a trait-/perk-less dude (the inert invariant).</summary>
+    public static int PointsPerLevel(int intelligence, int educatedRank = 0, bool skilled = false, bool gifted = false)
+    {
+        int sp = 5 + 2 * intelligence + 2 * educatedRank + (skilled ? 5 : 0);
+        if (gifted)
+            sp = Math.Max(0, sp - 5);
+        return sp;
+    }
 }

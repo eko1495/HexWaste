@@ -883,6 +883,16 @@ vs the engine's day-6 crit-failure gate. Finesse-DR is wired on the single-attac
 is set, so a trait-less dude draws no extra RNG. Proven by 4 fake-host CombatEngineTests (One Hander
 to-hit +20/−40, Fast Shot AP + aim-block, Finesse defender-DR 50→20, Jinxed lose-turn); all 15 combat +
 42 encounter goldens BYTE-IDENTICAL (Narg's traits are HeavyHanded+Gifted, none of the M1 four).
+M2 Educated + Skilled/Gifted skill points (DONE): ported the FULL per-level skill-point grant
+(character_editor.cc:5686) into SkillSet.PointsPerLevel — 5 + 2·IN(with trait mod) + 2·rank(Educated) +
+5·Skilled − (Gifted ? 5), floored at 0; the banked cap 99 stays in AwardXp. KEY: the IN is the TRAIT-
+modified Intelligence (Gifted's +1 IN, NOT drug/perk bonuses — critterGetBaseStatWithTraitModifier), so
+Gifted hits skill points twice (+1 IN → +2 SP, then the explicit −5 = net −3/level). The P28 note's
+"−10" was the skill-VALUE penalty (TraitModifiers.GetSkillModifier), DISTINCT from this −5 skill-POINT
+penalty. VERIFIED end-to-end: a default IN-5 dude grants 15/level, Skilled 20, Gifted 12 (5+12−5). The
+grant line (level-up: skillPoints=) is in NO golden filter + skill points are never spent in a fixture,
+so all goldens stay byte-identical; a trait-/perk-less dude is unchanged (defaults = the old 5+2·IN).
+6 SkillSet unit tests.
 
 Phase 10 (DONE, per docs/phase10-research-report.md — "The Wasteland
 Bites Back"): M0 persistence pre-stage (the net: MapList saved=No /

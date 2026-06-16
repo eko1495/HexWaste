@@ -17,6 +17,20 @@ public class SkillSetTests
         Assert.Equal(points, SkillSet.PointsPerLevel(intelligence));
 
     [Fact]
+    public void PointsPerLevelAddsEducatedSkilledAndGiftedPenalty()
+    {
+        // P29-M2 (character_editor.cc:5686): 5 + 2·IN + 2·Educated + 5·Skilled − (Gifted ? 5).
+        Assert.Equal(15, SkillSet.PointsPerLevel(5));                                      // base: 5 + 10
+        Assert.Equal(21, SkillSet.PointsPerLevel(5, educatedRank: 3));                     // +2·3 Educated
+        Assert.Equal(20, SkillSet.PointsPerLevel(5, skilled: true));                       // +5 Skilled
+        Assert.Equal(10, SkillSet.PointsPerLevel(5, gifted: true));                        // −5 Gifted
+        // Gifted IN 6 (base 5 + the +1 the caller folds in): 5 + 12 − 5 = 12.
+        Assert.Equal(12, SkillSet.PointsPerLevel(6, gifted: true));
+        // Everything together: IN 6, Educated 2, Skilled, Gifted = 5 + 12 + 4 + 5 − 5 = 21.
+        Assert.Equal(21, SkillSet.PointsPerLevel(6, educatedRank: 2, skilled: true, gifted: true));
+    }
+
+    [Fact]
     public void ValueAppliesTagBonusAndClamps()
     {
         int[] baseStats = new int[35];

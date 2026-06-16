@@ -3814,10 +3814,19 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
                 _dudeGcd.Stats.BonusStats[Formats.Combat.CritterStat.MaximumHitPoints] += gain;
                 _dude.Dude.CurrentHp += gain; // the engine heals the delta
 
-                // Skill points: 5 + 2×IN per level, banked cap 99.
-                int intel = _dudeGcd.Stats.BaseStats[Formats.Combat.CritterStat.Intelligence];
+                // Skill points (P29-M2, character_editor.cc:5686): 5 + 2×IN(with trait mod) +
+                // 2×rank(Educated) + 5×Skilled − (Gifted ? 5), banked cap 99. The IN includes the
+                // trait modifier (Gifted +1) but not bonuses, matching critterGetBaseStatWithTraitModifier.
+                int[] traits = _dudeGcd.Traits;
+                int[] baseStats = _dudeGcd.Stats.BaseStats;
+                int intel = baseStats[Formats.Combat.CritterStat.Intelligence]
+                    + Formats.Combat.TraitModifiers.GetStatModifier(Formats.Combat.CritterStat.Intelligence, traits, baseStats);
+                int grant = Formats.Combat.SkillSet.PointsPerLevel(intel,
+                    educatedRank: DudePerkRank(Formats.Perks.PerkId.Educated),
+                    skilled: Formats.Combat.TraitModifiers.Has(traits, Formats.Combat.TraitModifiers.Skilled),
+                    gifted: Formats.Combat.TraitModifiers.Has(traits, Formats.Combat.TraitModifiers.Gifted));
                 _unspentSkillPoints = Math.Min(Formats.Combat.SkillSet.PointsBankCap,
-                    _unspentSkillPoints + Formats.Combat.SkillSet.PointsPerLevel(intel));
+                    _unspentSkillPoints + grant);
             }
             Log($"You have reached level {_dudeLevel}! ({_unspentSkillPoints} skill points — press K)");
             Console.WriteLine($"level-up: now level {_dudeLevel}, skillPoints={_unspentSkillPoints}");
