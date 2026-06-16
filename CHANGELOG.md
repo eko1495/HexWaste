@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased — make the chrome click, then watch the world move
+## v0.12.0 — 2026-06-16 — make the chrome click, then watch the world move
 
 The arc beyond v0.11: UI completeness, worldmap authenticity, and the final
 fidelity items from the fallout2-ce gap analysis. The in-scope backlog is now
