@@ -931,6 +931,19 @@ Skilldex pattern). PerkWindowOrigin/PerkPickerRowAt are the shared render+hit-te
 SkilldexRowAt pattern); a left-click on a row takes that perk (additive to the 1-9 keys). Screenshot-
 verified over the real art. Draw-only + additive mouse → the perk-pick golden (driven by the PerkPick
 harness ACTION, not Draw) is unchanged; all goldens BYTE-IDENTICAL.
+M6 companion perks infrastructure (DONE — inert on the slice, by design): SaveState.PartyMemberState
+gained int[]? PerkRanks (additive within V2 — null on old saves AND on the shippable slice, so no
+version bump); a _companionPerkRanks dict on the viewer; GetCritterState's companion branch now passes
+the member's ranks as CritterState's 5th arg (the SAME path the dude uses), so any future companion
+perk applies for free. Save/restore wired. FLAGGED: no shippable companion gains perks (party.txt
+level-ups advance proto STAGES, not perks — like the #13 party-level-up logic), so this is forward-
+looking infrastructure with NO UI; it lights up only when future content levels a companion's perks.
+2 tests (a companion CritterState with Toughness rank 2 → DR +20; a PerkRanks save round-trip + the
+null-on-legacy default); all goldens BYTE-IDENTICAL (the slice never sets a rank → null → inert). P29
+COMPLETE: the six P28 spillover items are done — combat-path traits, the full skill-point formula, the
+creation trait picker, a curated perk-effects batch, the authentic PERKWIN art, and companion-perk
+infrastructure; the trait/perk character layer is now whole. 392 Formats tests, 42 encounter + 15
+combat goldens green.
 
 Phase 10 (DONE, per docs/phase10-research-report.md — "The Wasteland
 Bites Back"): M0 persistence pre-stage (the net: MapList saved=No /

@@ -102,6 +102,21 @@ public class SaveStateRoundTripTests
         SaveState.PartyMemberState lm = Assert.Single(legacy.Party);
         Assert.False(lm.Waiting);
         Assert.Equal(-1, lm.OriginalTeam);
+        Assert.Null(lm.PerkRanks); // P29-M6: absent on a pre-M6 save → null (inert)
+    }
+
+    [Fact]
+    public void PartyMemberPerkRanksRoundTrip()
+    {
+        // P29-M6: per-companion perk ranks survive save/load (additive within V2 — inert on the slice).
+        var state = new SaveState
+        {
+            Version = SaveState.CurrentVersion,
+            Party = { new SaveState.PartyMemberState(0x1000005, 18, 30, 0, -1, [], PerkRanks: [0, 0, 3]) },
+        };
+
+        SaveState.PartyMemberState m = Assert.Single(SaveState.FromJson(state.ToJson())!.Party);
+        Assert.Equal([0, 0, 3], m.PerkRanks);
     }
 
     [Fact]

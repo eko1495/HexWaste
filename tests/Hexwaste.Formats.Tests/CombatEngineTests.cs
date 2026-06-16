@@ -1068,6 +1068,19 @@ public class CombatEngineTests
         Assert.True(CanThrow(1, 16));  // Heave Ho → range 21, reaches
     }
 
+    [Fact]
+    public void CompanionPerkRanksApplyToItsStats()
+    {
+        // P29-M6: a companion's perk ranks feed CritterState's 5th arg (the same path the dude uses),
+        // so the stat modifier applies to a non-dude critter. Inert when null — the slice default.
+        (MapObject obj, CritterProtoStats proto) = NewCritter(20100, hp: 30, dr: 10); // base DR 10
+        int[] ranks = new int[Hexwaste.Formats.Perks.PerkTable.Count];
+        ranks[12] = 2; // Toughness → +10 DR/rank
+
+        Assert.Equal(10, new CritterState(obj, proto).DamageResistance);                   // no ranks → base
+        Assert.Equal(30, new CritterState(obj, proto, perkRanks: ranks).DamageResistance); // +20 from Toughness
+    }
+
     private static (MapObject Obj, CritterProtoStats Proto) NewCritter(
         int tile, int hp, int ap = 10, int seq = 1, int exp = 0, int betterCrit = 0, int meleeDmg = 0, int skill = 0, int endurance = 0, int dr = 0, int killType = 0)
     {

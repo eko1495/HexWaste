@@ -71,11 +71,15 @@ filing an issue.
   recruit (Sulik/Marcus/etc.) needs its out-of-scope recruitment quest; the
   level-up logic lights up for free when one lands. Per-companion quest *banter*
   is 100% companion-script content gated on those same quests (it already runs
-  via `talk_p_proc` when present), so there is no engine work to do.
+  via `talk_p_proc` when present), so there is no engine work to do. Per-companion
+  *perks* have save + stat-application infrastructure (it reads the same
+  `CritterState` path as the dude), but no shippable companion gains a perk —
+  `party.txt` level-ups advance proto stages, not perks — so it stays inert until
+  future content lands one.
 - **The remaining ~80 perks' specific effects** (the table is complete and the
   stat perks + a curated combat/skill set are wired; the rest — sneak, timed
-  buffs, content/dialog, addiction, mutation perks — are data-present), companion
-  perks, and worldmap car travel.
+  buffs, content/dialog, addiction, mutation perks — are data-present), and
+  worldmap car travel.
 - **Anything needing assets we can't ship** — Hexwaste requires *your own* legal
   copy of Fallout 2. We never include or distribute game data.
 

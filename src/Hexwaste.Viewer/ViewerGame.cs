@@ -261,6 +261,9 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
     private Formats.Party.PartyTable? _partyTable;
     private readonly Dictionary<MapObject, Formats.Party.PartyLevelUpState> _companionLevelState = [];
     private readonly Dictionary<MapObject, Formats.Proto.CritterProtoStats> _companionStatOverride = [];
+    // P29-M6: per-companion perk ranks (forward-looking infrastructure). Empty on the shippable slice —
+    // no companion levels up perks today — so GetCritterState passes null (inert). Persisted in the save.
+    private readonly Dictionary<MapObject, int[]> _companionPerkRanks = [];
     private Formats.Combat.ICombatRng? _partyRng;
 
     private readonly Random _ambientRandom = new(20260612);
@@ -5545,12 +5548,15 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
             return null;
         // A leveled-up companion reads its swapped-in stage proto, not the base
         // (#10 M2 / #13). Per-instance, so the shared proto cache stays pristine.
+        // P29-M6: a recruited companion's perk ranks (null on the slice → inert) feed the same
+        // CritterState 5th arg the dude uses, so any future companion perk applies for free.
+        int[]? companionPerks = _companionPerkRanks.GetValueOrDefault(obj);
         if (_companionStatOverride.TryGetValue(obj, out Formats.Proto.CritterProtoStats? overrideStats))
-            return new Formats.Combat.CritterState(obj, overrideStats);
+            return new Formats.Combat.CritterState(obj, overrideStats, perkRanks: companionPerks);
         try
         {
             return _protos.Get(obj.Pid).Critter is { } stats
-                ? new Formats.Combat.CritterState(obj, stats)
+                ? new Formats.Combat.CritterState(obj, stats, perkRanks: companionPerks)
                 : null;
         }
         catch (Exception ex) when (ex is FileNotFoundException or InvalidDataException)
@@ -7659,7 +7665,8 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
                 OriginalTeam: _originalTeam.GetValueOrDefault(m, m.Team),
                 LevelUpLevel: _companionLevelState.GetValueOrDefault(m)?.Level ?? 0,
                 LevelUpNumLevelUps: _companionLevelState.GetValueOrDefault(m)?.NumLevelUps ?? 0,
-                LevelUpIsEarly: _companionLevelState.GetValueOrDefault(m)?.IsEarly ?? 0))],
+                LevelUpIsEarly: _companionLevelState.GetValueOrDefault(m)?.IsEarly ?? 0,
+                PerkRanks: _companionPerkRanks.GetValueOrDefault(m)))], // P29-M6 (null on the slice)
             WorldPosX = _worldPosX,
             WorldPosY = _worldPosY,
             CurrentAreaId = _currentAreaId,
@@ -7858,6 +7865,9 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
                 _scriptHost.PartyMembers.Add(member);
                 if (saved.ScriptListIndex >= 0)
                     _partyScriptIndex[member] = saved.ScriptListIndex;
+                // P29-M6: restore per-companion perk ranks (null/empty on the slice → nothing to do).
+                if (saved.PerkRanks is { Length: > 0 })
+                    _companionPerkRanks[member] = saved.PerkRanks;
                 // Restore the companion control state (phase-10 #2): the "wait here"
                 // flag and the pre-recruit team so a later dismiss restores it (not 0).
                 if (saved.Waiting)

@@ -127,7 +127,11 @@ public sealed class SaveState
         // Companion proto level-up bookkeeping (#10 M3; party_member.cc:520-538's 3-int
         // struct). Additive within V2 — old saves deserialize these as 0 (= never
         // levelled, pristine), so no version bump.
-        int LevelUpLevel = 0, int LevelUpNumLevelUps = 0, int LevelUpIsEarly = 0);
+        int LevelUpLevel = 0, int LevelUpNumLevelUps = 0, int LevelUpIsEarly = 0,
+        // Per-companion perk ranks (P29-M6; gPartyMemberPerkRanks). Additive within V2 — null on old
+        // saves and on the shippable slice (no companion gains perks today), so it's inert
+        // infrastructure that lights up for free when future content levels a companion's perks.
+        int[]? PerkRanks = null);
 
     /// <summary>A dismissed companion left standing on a map: enough to recreate the
     /// inert body and rejoin it (P10 #3).</summary>
