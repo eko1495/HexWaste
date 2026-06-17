@@ -344,6 +344,20 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
     /// <summary>The perk's description text (perk.msg 1101+i; perk.cc:223). Empty if absent.</summary>
     private string PerkDescription(int i) =>
         LazyMsg(@"text\english\game\perk.msg", ref _perkMsgTried, ref _perkMsg)?.GetText(1101 + i) ?? "";
+
+    // P31 B-M1: data\genrep.txt generic-reputation thresholds, lazily parsed (empty if absent).
+    private IReadOnlyList<Formats.Map.ReputationEntry>? _genrep; private bool _genrepTried;
+    private IReadOnlyList<Formats.Map.ReputationEntry> GenrepTable()
+    {
+        if (!_genrepTried)
+        {
+            _genrepTried = true;
+            if (_vfs.Exists(@"data\genrep.txt"))
+                _genrep = Formats.Map.GenericReputation.Parse(
+                    System.Text.Encoding.Latin1.GetString(_vfs.ReadAllBytes(@"data\genrep.txt")));
+        }
+        return _genrep ?? [];
+    }
     private string TraitName(int i) =>
         i < 0 ? "" : LazyMsg(@"text\english\game\trait.msg", ref _traitMsgTried, ref _traitMsg)?.GetText(100 + i) is { Length: > 0 } n ? n : $"Trait {i}";
 
@@ -461,6 +475,8 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
         public sealed record DetectProbe(int Perception, int Distance, int CanSee, int Flag, int Working) : StartupAction;
         /// <summary>Report the dude's PC stats read via get_pc_stat — karma/reputation/level/xp (P31 B-M0).</summary>
         public sealed record KarmaProbe : StartupAction;
+        /// <summary>Report the generic-reputation title message id for a value (P31 B-M1; id only).</summary>
+        public sealed record RepTitle(int Value) : StartupAction;
         /// <summary>Report the gore death-anim a burst/explosion/laser kill would give the critter
         /// at Hex — the picked anim + the art-resolved anim (P26), proving gore art availability.</summary>
         public sealed record DeathProbe(int Hex) : StartupAction;
@@ -1254,6 +1270,13 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
                     int Pc(int s) => _scriptHost?.PcStatProvider?.Invoke(s) ?? 0;
                     Console.WriteLine($"karma-probe: karma={Pc(Formats.Int.PcStat.Karma)} rep={Pc(Formats.Int.PcStat.Reputation)}"
                         + $" level={Pc(Formats.Int.PcStat.Level)} xp={Pc(Formats.Int.PcStat.Experience)} unspent={Pc(Formats.Int.PcStat.UnspentSkillPoints)}");
+                    break;
+                }
+                case StartupAction.RepTitle(var repValue):
+                {
+                    // P31 B-M1: the generic-reputation title MESSAGE ID for a value (never the copyrighted
+                    // string); -1 = below every threshold.
+                    Console.WriteLine($"rep-title: value={repValue} msg={Formats.Map.GenericReputation.TitleFor(repValue, GenrepTable())}");
                     break;
                 }
                 case StartupAction.FogProbe(var fx, var fy, var fa):

@@ -1012,6 +1012,15 @@ returns 0 EXACTLY like the stub, so inert; the new 0→unspent route is byte-ide
 vic-levelup golden grants XP/unspent but no slice script reads get_pc_stat(0)). Harness --karma-probe
 reads through the provider (proves the 0x80A6 seam). PcStatTests locks the index map; all 15 combat + 44
 encounter goldens BYTE-IDENTICAL.
+M1 generic reputation titles (DONE): pure Formats.Map.GenericReputation.Parse + TitleFor port
+character_editor.cc genericReputationInit (7077) + the lookup (5509): data\genrep.txt "threshold msgId"
+rows (ws/comma-delimited, '#' comments), sorted DESCENDING by threshold; the title is the highest-
+threshold row the value meets (−1 below all). The value is the dude's _dudeReputation PC-stat (the engine
+reads GVAR_PLAYER_REPUTATION — a documented unification to one source of truth). Lazy genrep.txt loader
+(only on the probe / the M3 char-sheet). Harness --rep-title <value> prints the MESSAGE ID only (never
+the copyrighted title string). 4 GenericReputationTests incl. a GameDataFact that parses the real
+genrep.txt (descending + valid msg ids). Pure parser + lazy probe → no golden-exercised path changed,
+all goldens BYTE-IDENTICAL.
 
 Phase 10 (DONE, per docs/phase10-research-report.md — "The Wasteland
 Bites Back"): M0 persistence pre-stage (the net: MapList saved=No /
