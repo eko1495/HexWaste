@@ -971,6 +971,17 @@ short-circuits at rank 0 / no-flag, drawing NO extra RNG, so a perk-less or non-
 Narg (combat.gcd) has no Silent Death and never sneaks, so the 6 --character-combat goldens are unchanged.
 3 fake-host tests (4x backstab / the behind+sneaking+fresh gate / the x2 crit stack) + --backstab-probe
 <attRot> <defRot>. All 15 combat + 42 encounter goldens BYTE-IDENTICAL.
+M2 periodic sneak roll + persistence (DONE): a SKILL_SNEAK roll (d100 ≤ the dude's Sneak skill, the
+randomRoll success test, skill.cc:479) now sets Working — on flag-enable (dudeEnableState →
+sneakEventProcess, immediate) and on the 100 ms critter heartbeat (one reschedule "tick" = one heartbeat,
+a documented approximation of the engine's game-time EVENT_TYPE_SNEAK queue). The roll uses a DEDICATED
+seeded _sneakRng (the _skillRng/_partyRng/_wmRng isolation pattern) so enabling sneak draws ZERO from the
+combat/worldmap/party/script streams — every existing golden stays byte-identical (verified: a record
+pass changed ONLY the new fixture). The flag toggle now rolls on enable / clears Working on disable; the
+Skilldex golden still prints only the FLAG so it's unchanged. Persisted: SaveState.SneakFlag/SneakWorking
+(additive-V2 nullable, null→false on old saves; sparse — null when not sneaking). Harness --sneak-roll
+<seed> (deterministic). New golden sneak-state (the roll + flag/working state + the A-M1 facing probes;
+default dude Sneak 20 → working=0/next=600). SaveStateRoundTrip + 12 SneakState tests; all goldens green.
 
 Phase 10 (DONE, per docs/phase10-research-report.md — "The Wasteland
 Bites Back"): M0 persistence pre-stage (the net: MapList saved=No /

@@ -106,6 +106,19 @@ public class SaveStateRoundTripTests
     }
 
     [Fact]
+    public void SneakStateRoundTrips()
+    {
+        // P30 A-M2: the two-layer sneak state survives save/load; absent on a pre-P30 save → not sneaking.
+        var state = new SaveState { Version = SaveState.CurrentVersion, SneakFlag = true, SneakWorking = true };
+        SaveState loaded = SaveState.FromJson(state.ToJson())!;
+        Assert.True(loaded.SneakFlag);
+        Assert.True(loaded.SneakWorking);
+
+        Assert.Null(new SaveState().SneakFlag);    // additive default
+        Assert.Null(new SaveState().SneakWorking);
+    }
+
+    [Fact]
     public void PartyMemberPerkRanksRoundTrip()
     {
         // P29-M6: per-companion perk ranks survive save/load (additive within V2 — inert on the slice).

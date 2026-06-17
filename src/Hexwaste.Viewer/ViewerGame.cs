@@ -158,8 +158,14 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
     private bool _skilldexOpen;
     private int? _pendingUseSkill;
     /// <summary>The dude's two-layer sneak state (P29 A-M0; critter.cc): the FLAG (Skilldex/S toggle)
-    /// + Working (the periodic SKILL_SNEAK roll, wired in A-M2). IsSneaking = flag &amp;&amp; Working.</summary>
+    /// + Working (the periodic SKILL_SNEAK roll, A-M2). IsSneaking = flag &amp;&amp; Working.</summary>
     private readonly Formats.Combat.SneakState _sneak = new();
+    /// <summary>Heartbeats until the next periodic sneak re-roll (A-M2; one reschedule "tick" = one
+    /// 100 ms heartbeat — a documented approximation of the engine's game-time EVENT_TYPE_SNEAK queue).</summary>
+    private int _sneakTicksRemaining;
+    /// <summary>Dedicated seeded RNG for the sneak roll (A-M2) — isolated from the combat/worldmap/
+    /// party/skill streams so enabling sneak never perturbs an existing golden.</summary>
+    private Formats.Combat.ICombatRng? _sneakRng;
     /// <summary>Seeded skill-roll RNG (deterministic under --rng-seed for goldens),
     /// separate from the combat/party/worldmap streams.</summary>
     private Formats.Combat.ICombatRng? _skillRng;
@@ -445,6 +451,8 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
         public sealed record SneakProbe(int Flag) : StartupAction;
         /// <summary>Report the Silent Death facing test for two rotations (P30 A-M1).</summary>
         public sealed record BackstabProbe(int AttackerRotation, int DefenderRotation) : StartupAction;
+        /// <summary>Seed the sneak RNG, enable the flag, do one periodic roll, report it (P30 A-M2).</summary>
+        public sealed record SneakRoll(int Seed) : StartupAction;
         /// <summary>Report the gore death-anim a burst/explosion/laser kill would give the critter
         /// at Hex — the picked anim + the art-resolved anim (P26), proving gore art availability.</summary>
         public sealed record DeathProbe(int Hex) : StartupAction;
@@ -1195,6 +1203,16 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
                     // would apply (front → no bonus → 2; behind → 4).
                     bool front = Formats.Combat.SneakAttack.IsHitFromFront(attRot, defRot);
                     Console.WriteLine($"backstab-probe: att={attRot} def={defRot} front={(front ? 1 : 0)} mult={(front ? 2 : 4)}");
+                    break;
+                }
+                case StartupAction.SneakRoll(var sneakSeed):
+                {
+                    // P30 A-M2: a deterministic periodic SKILL_SNEAK roll under a fixed seed → Working +
+                    // the next reschedule tick count (the isolated _sneakRng).
+                    _sneakRng = new Formats.Combat.SystemCombatRng(sneakSeed);
+                    _sneak.FlagSet = true;
+                    RollSneak();
+                    Console.WriteLine($"sneak-roll: skill={DudeSkillValue(8)} working={(_sneak.Working ? 1 : 0)} next={_sneakTicksRemaining}");
                     break;
                 }
                 case StartupAction.FogProbe(var fx, var fy, var fa):
@@ -3158,6 +3176,18 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
     /// <summary>ICombatHost (P30 A-M1): the dude's sneaking FLAG — gates the Silent Death backstab.</summary>
     public bool DudeSneakFlag => _sneak.FlagSet;
 
+    /// <summary>One periodic SKILL_SNEAK roll (P30 A-M2; critter.cc:1195 sneakEventProcess): a d100 vs the
+    /// dude's Sneak skill on the isolated _sneakRng sets Working and reschedules the next re-check. Run on
+    /// flag-enable and on the heartbeat timer.</summary>
+    private void RollSneak()
+    {
+        _sneakRng ??= new Formats.Combat.SystemCombatRng(RngSeed ?? Environment.TickCount);
+        int skill = DudeSkillValue(8); // SKILL_SNEAK
+        bool success = _sneakRng.Next(1, 101) <= skill;
+        _sneak.Working = success;
+        _sneakTicksRemaining = Formats.Combat.SneakState.RescheduleTicks(skill, success);
+    }
+
     private void TakeFromContainer(int index)
     {
         if (_lootContainer is null || index < 0 || index >= _lootContainer.Inventory.Count)
@@ -3827,6 +3857,12 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
         if (_critterProcTimerMs < 100)
             return;
         _critterProcTimerMs = 0;
+
+        // P30 A-M2: the periodic sneak re-check (sneakEventProcess) on the 100 ms heartbeat — one
+        // reschedule "tick" = one heartbeat. Fires only while the flag is set; uses the isolated
+        // _sneakRng so it can't perturb any other stream.
+        if (_sneak.FlagSet && --_sneakTicksRemaining <= 0)
+            RollSneak();
 
         // A "wait here" companion is skipped, so its follow critter_p_proc never runs
         // and it holds position until told to follow again (phase-10 M4).
@@ -4686,9 +4722,14 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
             case 7: // Doctor
                 TryHeal(skill, target, self);
                 return;
-            case 8: // Sneak — toggle the sneaking FLAG (dudeToggleState, critter.cc:1176). The
-                    // periodic roll that sets Working is wired in A-M2; A-M0 just flips the flag.
+            case 8: // Sneak — toggle the sneaking FLAG (dudeToggleState, critter.cc:1176). Enabling
+                    // does an immediate SKILL_SNEAK roll (dudeEnableState → sneakEventProcess, A-M2);
+                    // disabling clears Working. The roll draws from the isolated _sneakRng only.
                 _sneak.FlagSet = !_sneak.FlagSet;
+                if (_sneak.FlagSet)
+                    RollSneak();
+                else
+                    _sneak.Working = false;
                 Log($"Sneak mode {(_sneak.FlagSet ? "on" : "off")}.");
                 return;
             default: // 9 Lockpick / 10 Steal / 11 Traps / 12 Science / 13 Repair
@@ -7672,6 +7713,9 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
             // Only persist perk ranks when something was taken (sparse; a fresh game saves null,
             // which loads as no perks — old-save compatible).
             DudePerkRanks = _dudePerkRanks.Any(r => r > 0) ? [.. _dudePerkRanks] : null,
+            // P30 A-M2: persist the sneak state, sparse (null when not sneaking → old-save compatible).
+            SneakFlag = _sneak.FlagSet ? true : null,
+            SneakWorking = _sneak.Working ? true : null,
             DudeBaseStats = _dudeGcd is not null ? [.. _dudeGcd.Stats.BaseStats] : null,
             DudeTaggedSkills = _dudeGcd is not null ? [.. _dudeGcd.TaggedSkills] : null,
             Elevation = _elevation,
@@ -7840,6 +7884,10 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
         _dudePerkRanks = new int[Formats.Perks.PerkTable.Count];
         if (state.DudePerkRanks is { } savedPerks)
             Array.Copy(savedPerks, _dudePerkRanks, Math.Min(savedPerks.Length, _dudePerkRanks.Length));
+
+        // Restore the sneak state (P30 A-M2); null on a pre-P30 save → not sneaking.
+        _sneak.FlagSet = state.SneakFlag ?? false;
+        _sneak.Working = state.SneakWorking ?? false;
         if (_dude is not null)
             _dude.Dude.CurrentHp = state.DudeHp > 0
                 ? state.DudeHp

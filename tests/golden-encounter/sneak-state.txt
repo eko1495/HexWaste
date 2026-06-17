@@ -1,0 +1,4 @@
+sneak-roll: skill=20 working=0 next=600
+sneak-probe: flag=1 working=0 sneaking=0 skill=20
+backstab-probe: att=0 def=0 front=0 mult=4
+backstab-probe: att=0 def=3 front=1 mult=2

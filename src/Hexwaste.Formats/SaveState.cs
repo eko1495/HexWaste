@@ -45,6 +45,11 @@ public sealed class SaveState
     /// pre-P28 saves → no perks (inert), so old saves load unchanged (additive within V2).</summary>
     public int[]? DudePerkRanks { get; set; }
 
+    /// <summary>The dude's two-layer sneak state (P30 A-M2): the FLAG (dudeHasState) + Working
+    /// (_sneak_working). null on pre-P30 saves → not sneaking (additive within V2).</summary>
+    public bool? SneakFlag { get; set; }
+    public bool? SneakWorking { get; set; }
+
     /// <summary>The dude's base stat block (35; null = reload the named
     /// premade). Self-contained so a created character round-trips without a
     /// .gcd file. Level-up HP lives in bonus stats and is replayed from level.</summary>
