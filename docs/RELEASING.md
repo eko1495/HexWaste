@@ -46,9 +46,23 @@ scripts/release.sh 0.5.0
 
 This publishes self-contained **folder** builds (MonoGame recommends against
 single-file; trimming is off because the JSON save system uses reflection)
-for `linux-x64` and `win-x64`, copies the license files in, and produces
+for `linux-x64` and `win-x64`, copies `LICENSE.md`, `NOTICE.md`, `README.md`
+and `CHANGELOG.md` into each build folder (`release.sh:22`), and produces
 `hexwaste-<v>-linux-x64.tar.gz` (tar preserves the exec bit) and
 `hexwaste-<v>-win-x64.zip` under `artifacts/`.
+
+Before uploading, confirm the SUL files (and no game assets) made it into each
+archive:
+
+```sh
+tar tzf artifacts/hexwaste-<v>-linux-x64.tar.gz | grep -E "NOTICE.md|LICENSE.md"
+# expect both; then verify no game data slipped in:
+tar tzf artifacts/hexwaste-<v>-linux-x64.tar.gz | grep -iE "\.(dat|map|frm|pal|pro|gam|msg|acm)$" || echo "clean"
+```
+
+`NOTICE.md` (the modification notice + fallout2-ce attribution) shipping inside
+every artifact is a hard SUL requirement — the build fails the audit if it is
+missing.
 
 Upload both archives to a GitHub Release. Release notes should repeat the
 one-liner: *requires an original copy of Fallout 2 (GOG/Steam); no game data
