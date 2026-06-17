@@ -1270,7 +1270,12 @@ public class CombatEngineTests
         public void DropThrownWeapon(MapObject item, int tile) => Dropped.Add((item.Pid, tile));
         public int ExplosionMarkers;
         public void SpawnExplosionMarker(int tile) => ExplosionMarkers++;
-        public void OnTargetHit(MapObject target) { }
+        public List<(MapObject Target, bool KnockedDown)> Hits { get; } = [];
+        public List<MapObject> Dodges { get; } = [];
+        public List<MapObject> GetUps { get; } = [];
+        public void OnTargetHit(MapObject target, MapObject attacker, bool knockedDown) => Hits.Add((target, knockedDown));
+        public void OnTargetDodge(MapObject target) => Dodges.Add(target);
+        public void OnGetUp(MapObject critter) => GetUps.Add(critter);
         public int PickDeathAnim(MapObject critter, int desiredAnim) => 20;
         public bool StartDeathFall(MapObject critter, int deathAnim) => false; // no fall art → corpse now
         public void ConvertToCorpse(MapObject critter, int deathAnim) { }

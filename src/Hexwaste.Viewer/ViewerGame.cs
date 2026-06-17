@@ -583,6 +583,9 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
         /// <summary>Report the composed combat-sfx names for the critter at Hex (swing/hit/die) +
         /// a weapon name + the map's first ambient entry (P34-M5).</summary>
         public sealed record SfxProbe(int Hex) : StartupAction;
+        /// <summary>Report the reaction-anim codes (hit/dodge/fall/getup) the critter at Hex would get
+        /// from an attacker at AttackerRotation (P34-M6).</summary>
+        public sealed record ReactionProbe(int Hex, int AttackerRotation) : StartupAction;
         /// <summary>Set the dude's two traits (id&lt;0 = none) and report the live effect on his
         /// stats/skills + has_trait (P28-M1).</summary>
         public sealed record TraitProbe(int Trait1, int Trait2) : StartupAction;
@@ -1285,6 +1288,21 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
                         + $"die={Sfx(20, Formats.Sound.SfxName.CharacterSoundEffect.Die)} "
                         + $"reload={Formats.Sound.SfxName.WeaponName(Formats.Sound.SfxName.WeaponSoundEffect.Ready, (byte)'1', true)} "
                         + $"ambient={ambient}");
+                    break;
+                }
+                case StartupAction.ReactionProbe(var rpHex, var attRot):
+                {
+                    // P34-M6: the reaction-anim codes the critter would get from an attacker at attRot.
+                    MapObject? rc = _solidObjects[_elevation].Concat(_flatObjects[_elevation])
+                        .FirstOrDefault(o => o.HexTile == rpHex && Fid.Type(o.Fid) is ObjectType.Critter);
+                    if (rc is null) { Console.Error.WriteLine($"reaction-probe: no critter at {rpHex}"); break; }
+                    bool front = Formats.Combat.SneakAttack.IsHitFromFront(attRot, rc.Rotation);
+                    bool backArt = _vfs.Exists(_artIndex.GetFrmPath(
+                        Fid.Build(ObjectType.Critter, Fid.Index(rc.Fid), 15 /*HIT_FROM_BACK*/, Fid.WeaponCode(rc.Fid))));
+                    Console.WriteLine($"reaction-probe: pid=0x{rc.Pid:X} att={attRot} def={rc.Rotation} front={(front ? 1 : 0)} "
+                        + $"hit={Formats.Combat.ReactionAnims.HitReaction(front, backArt)} "
+                        + $"dodge={Formats.Combat.ReactionAnims.Dodge} fall={Formats.Combat.ReactionAnims.KnockdownFall(front)} "
+                        + $"getup={Formats.Combat.ReactionAnims.StandUp(Formats.Combat.ReactionAnims.FallBack)} backArt={(backArt ? 1 : 0)}");
                     break;
                 }
                 case StartupAction.TraitProbe(var t1, var t2):
@@ -4868,19 +4886,65 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
     }
 
     /// <summary>Hit-react FRM (anim 14) on a surviving, non-dude target.</summary>
-    public void OnTargetHit(MapObject target)
+    public void OnTargetHit(MapObject target, MapObject attacker, bool knockedDown)
     {
-        const int animHitFromFront = 14;
+        const int animHitFromFront = 14, animHitFromBack = 15;
         // Got-hit grunt (actions.cc:431 sfxBuildCharName(defender, ANIM_HIT_FROM_FRONT, UNUSED)) —
         // audio-only, plays for any target incl. the dude; null/silent when the base is unresolvable (P34-M5).
         if (Formats.Sound.SfxName.CharName(_artIndex.CritterBaseName(target.Fid), animHitFromFront,
                 Formats.Sound.SfxName.CharacterSoundEffect.Unused, Fid.WeaponCode(target.Fid)) is { } grunt)
             _audio?.PlaySfx(grunt);
 
-        int hitFid = Fid.Build(ObjectType.Critter, Fid.Index(target.Fid), animHitFromFront,
-            Fid.WeaponCode(target.Fid));
-        if (target != _dude?.Dude && _vfs.Exists(_artIndex.GetFrmPath(hitFid)))
+        // The dude's reaction sprite is deferred (the engine reacts him too, but Hexwaste's
+        // camera-anchor dude historically doesn't — documented divergence, P34-M6 spillover).
+        if (target == _dude?.Dude)
+            return;
+        // Already mid-fall (Once-mode = a held FALL)? Don't override it with a hit-react
+        // (actions.cc:438 early-returns for a prone defender). P34-M6.
+        if (_animator.TryGetState(target, out AnimationState falling) && falling.Mode == AnimationMode.Once)
+            return;
+
+        bool front = Formats.Combat.SneakAttack.IsHitFromFront(attacker.Rotation, target.Rotation);
+        int weaponCode = Fid.WeaponCode(target.Fid);
+
+        if (knockedDown) // a crit that knocks the target down plays a FALL, not a hit-react (P34-M6).
+        {
+            int fallFid = Fid.Build(ObjectType.Critter, Fid.Index(target.Fid),
+                Formats.Combat.ReactionAnims.KnockdownFall(front), 0);
+            if (_vfs.Exists(_artIndex.GetFrmPath(fallFid)))
+                _animator.PlayFall(target, fallFid);
+            return;
+        }
+
+        // Hit-from-front vs back (back only if the critter ships ANIM_HIT_FROM_BACK art — actions.cc:425).
+        bool backArt = _vfs.Exists(_artIndex.GetFrmPath(
+            Fid.Build(ObjectType.Critter, Fid.Index(target.Fid), animHitFromBack, weaponCode)));
+        int anim = Formats.Combat.ReactionAnims.HitReaction(front, backArt);
+        int hitFid = Fid.Build(ObjectType.Critter, Fid.Index(target.Fid), anim, weaponCode);
+        if (_vfs.Exists(_artIndex.GetFrmPath(hitFid)))
             _animator.PlayActionOnce(target, hitFid);
+    }
+
+    /// <summary>Dodge reaction on a miss (P34-M6) — non-dude only (the dude reaction is deferred).</summary>
+    public void OnTargetDodge(MapObject target)
+    {
+        if (target == _dude?.Dude)
+            return;
+        int fid = Fid.Build(ObjectType.Critter, Fid.Index(target.Fid),
+            Formats.Combat.ReactionAnims.Dodge, Fid.WeaponCode(target.Fid));
+        if (_vfs.Exists(_artIndex.GetFrmPath(fid)))
+            _animator.PlayActionOnce(target, fid);
+    }
+
+    /// <summary>Stand-up sprite when a prone critter gets up (P34-M6) — the prone flag is already cleared.</summary>
+    public void OnGetUp(MapObject critter)
+    {
+        if (critter == _dude?.Dude)
+            return;
+        int anim = Formats.Combat.ReactionAnims.StandUp(Fid.AnimType(critter.Fid));
+        int fid = Fid.Build(ObjectType.Critter, Fid.Index(critter.Fid), anim, Fid.WeaponCode(critter.Fid));
+        if (_vfs.Exists(_artIndex.GetFrmPath(fid)))
+            _animator.PlayActionOnce(critter, fid);
     }
 
     /// <summary>Death scream + start the fall; true if a fall is playing (caller

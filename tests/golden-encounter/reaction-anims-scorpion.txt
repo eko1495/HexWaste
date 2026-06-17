@@ -1,0 +1,1 @@
+reaction-probe: pid=0x1000005 att=3 def=1 front=1 hit=14 dodge=13 fall=20 getup=37 backArt=0

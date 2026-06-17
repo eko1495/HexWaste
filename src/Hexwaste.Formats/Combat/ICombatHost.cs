@@ -98,8 +98,18 @@ public interface ICombatHost
     /// <summary>Muzzle/punch FRM + weapon sfx (PlayWeaponSfx + StartAttackAnimation),
     /// and a flying projectile attacker→target for ranged/thrown shots (phase-10 #11).</summary>
     void OnAttackStarted(MapObject attacker, MapObject target, ProtoInfo? weaponProto);
-    /// <summary>Hit-react FRM (anim 14) on a surviving target. :2494-2498</summary>
-    void OnTargetHit(MapObject target);
+    /// <summary>Hit reaction on a surviving target (actions.cc:424 _show_damage_to_object): a hit-from-
+    /// front/back FRM, or a FALL when <paramref name="knockedDown"/>. The host picks the anim by facing
+    /// (attacker vs target rotation) + art existence (P34-M6). :2494-2498</summary>
+    void OnTargetHit(MapObject target, MapObject attacker, bool knockedDown);
+
+    /// <summary>Dodge reaction on a MISS for a non-prone defender (actions.cc:906 _action_ranged /
+    /// _action_melee). Default no-op so the fake test host needs no override (P34-M6).</summary>
+    void OnTargetDodge(MapObject target) { }
+
+    /// <summary>Stand-up animation when a prone critter gets up (animation.cc:3182 _dude_standup) —
+    /// the logical AP/prone-clear already ran in StandUpIfProne. Default no-op (P34-M6).</summary>
+    void OnGetUp(MapObject critter) { }
 
     /// <summary>Out-of-ammo on an attack attempt (combat.cc:5745) — the host may play the empty-click
     /// sfx. Default no-op so the fake test host needs no override (P34-M5).</summary>

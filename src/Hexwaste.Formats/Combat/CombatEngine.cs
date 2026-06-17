@@ -755,7 +755,7 @@ public sealed class CombatEngine
         }
         else if (b.Target != dude)
         {
-            _host.OnTargetHit(b.Target);
+            _host.OnTargetHit(b.Target, b.Attacker, knockedDown: false); // bursts/guns never knock back (combat.cc:4633)
         }
 
         ApplyBurstExtras(b);
@@ -786,7 +786,7 @@ public sealed class CombatEngine
             }
             else if (ex.Victim != dude)
             {
-                _host.OnTargetHit(ex.Victim);
+                _host.OnTargetHit(ex.Victim, b.Attacker, knockedDown: false);
             }
         }
     }
@@ -1023,6 +1023,9 @@ public sealed class CombatEngine
         if (!attack.Hit)
         {
             _host.Log(byDude ? $"You missed the {targetName}." : $"The {attackerName} misses you.");
+            // Dodge reaction (actions.cc:906) — only a non-prone, non-KO'd defender dodges (P34-M6).
+            if (attack.Target != dude && !_knockedDown.Contains(attack.Target) && !IsKnockedOut(attack.Target))
+                _host.OnTargetDodge(attack.Target);
             return;
         }
 
@@ -1050,7 +1053,9 @@ public sealed class CombatEngine
         }
 
         if (attack.Target != dude)
-            _host.OnTargetHit(attack.Target);
+            // P34-M6: pass the attacker (for facing) + whether THIS blow knocks the target down (a FALL
+            // instead of a hit-react). DamKnockedDown is read before ApplyKnockback consumes it below.
+            _host.OnTargetHit(attack.Target, attack.Attacker, (attack.CritFlags & CriticalTables.DamKnockedDown) != 0);
 
         ApplyCritStatus(attack.Target, attack.CritFlags); // P14: knockout / lose-turn / crippled / blind
         ApplyKnockback(attack);
@@ -1237,6 +1242,7 @@ public sealed class CombatEngine
         if (!_knockedDown.Remove(critter))
             return -1;
         _host.Transcript($"getup: {_host.ObjectName(critter)} (-{StandUpApCost} AP)");
+        _host.OnGetUp(critter); // P34-M6: the visible stand-up sprite (the prone flag is already cleared)
         return Math.Max(ap - StandUpApCost, 0);
     }
 

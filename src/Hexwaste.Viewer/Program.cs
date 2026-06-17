@@ -291,6 +291,10 @@ for (int i = 0; i < args.Length; i++)
         case "--sfx-probe" when i + 1 < args.Length:
             actions.Add(new ViewerGame.StartupAction.SfxProbe(int.Parse(args[++i])));
             break;
+        case "--reaction-probe" when i + 2 < args.Length:
+            actions.Add(new ViewerGame.StartupAction.ReactionProbe(int.Parse(args[i + 1]), int.Parse(args[i + 2])));
+            i += 2;
+            break;
         case "--death-probe" when i + 1 < args.Length:
             actions.Add(new ViewerGame.StartupAction.DeathProbe(int.Parse(args[++i])));
             break;

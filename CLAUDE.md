@@ -1201,6 +1201,26 @@ sfx-probe-human (NFPRIM* + dogbark). DECISIONS: faithful CharName everywhere (hu
 game) except the dude death keeps HumanDeath; weapon-HIT material defers to 'F' flesh (combat never shoots
 scenery/walls — the proto-material parse is deferred). Tests: SfxNameTests (CharName/WeaponName) + AmbientSfx
 Tests (roll/bird-remap) + the GameDataFact (MASCRPAO ships, HMWARR* doesn't, denbus2 ambient parses).
+M6 reaction animations (DONE — P34 COMPLETE): the defender now visibly REACTS on an attack resolve.
+Pure Formats.Combat.ReactionAnims ports actions.cc _show_damage_to_object + animation.cc _dude_standup:
+HitReaction (front→ANIM_HIT_FROM_FRONT 14; from behind→HIT_FROM_BACK 15 only if the critter ships that
+art, else front), KnockdownFall (front→FALL_BACK 20 else FALL_FRONT 21), StandUp (fell-back→BACK_TO_STANDING
+37 else PRONE_TO_STANDING 36), Dodge (ANIM_DODGE_ANIM 13). ICombatHost.OnTargetHit WIDENED to (target,
+attacker, knockedDown) — the host picks front/back via SneakAttack.IsHitFromFront(attacker.Rotation, target.
+Rotation) + plays a FALL when knockedDown; new default no-op hooks OnTargetDodge (a miss on a non-prone/non-KO
+defender, ResolveAttack miss branch) + OnGetUp (StandUpIfProne, after the getup transcript). The viewer
+plays the chosen FRM via the animator (PlayActionOnce / PlayFall), guarded by art existence + an already-
+mid-fall check (don't override a held FALL with a hit-react, actions.cc:438). NO RNG + NO transcript +
+Draw/anim-only → all 15 combat + 48 encounter goldens BYTE-IDENTICAL (the widened call sites only pass extra
+args; the fake host's hooks are no-ops/recorders). DOCUMENTED: the DUDE is excluded from reactions (the
+engine reacts him too — Hexwaste's camera-anchor dude historically doesn't; a spillover); the _pick_fall
+blocked-tile flip is out of scope. Harness --reaction-probe <hex> <attRot>; goldens reaction-anims-human
+(denbus2 critter ships back art → 14/fall-20 from front, 15/fall-21 from behind) + reaction-anims-scorpion
+(lacks back art → stays 14 even from behind, the fallback). 5 ReactionAnimsTests lock the codes + branches.
+P34 COMPLETE — Tier 1 (is_in_combat/critter_state, hurt_too_much flee, run animation, typed combat outlines)
++ Tier-2 sfx/reaction polish (combat sfx + ambient, reaction anims) all shipped; every milestone byte-
+identical bar its own new probe fixture. 8 new encounter goldens (56 encounter + 15 combat total); 482
+Formats tests green.
 
 Phase 10 (DONE, per docs/phase10-research-report.md — "The Wasteland
 Bites Back"): M0 persistence pre-stage (the net: MapList saved=No /
