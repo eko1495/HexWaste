@@ -358,6 +358,20 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
         }
         return _genrep ?? [];
     }
+
+    // P31 B-M2: data\karmavar.txt karma-title GVAR rows, lazily parsed (empty if absent).
+    private IReadOnlyList<Formats.Map.KarmaEntry>? _karmavar; private bool _karmavarTried;
+    private IReadOnlyList<Formats.Map.KarmaEntry> KarmavarTable()
+    {
+        if (!_karmavarTried)
+        {
+            _karmavarTried = true;
+            if (_vfs.Exists(@"data\karmavar.txt"))
+                _karmavar = Formats.Map.KarmaTitles.Parse(
+                    System.Text.Encoding.Latin1.GetString(_vfs.ReadAllBytes(@"data\karmavar.txt")));
+        }
+        return _karmavar ?? [];
+    }
     private string TraitName(int i) =>
         i < 0 ? "" : LazyMsg(@"text\english\game\trait.msg", ref _traitMsgTried, ref _traitMsg)?.GetText(100 + i) is { Length: > 0 } n ? n : $"Trait {i}";
 
@@ -477,6 +491,10 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
         public sealed record KarmaProbe : StartupAction;
         /// <summary>Report the generic-reputation title message id for a value (P31 B-M1; id only).</summary>
         public sealed record RepTitle(int Value) : StartupAction;
+        /// <summary>Report the town-reputation band for a value (P31 B-M2).</summary>
+        public sealed record TownRep(int Value) : StartupAction;
+        /// <summary>Report the count + name-ids of the currently-earned karma titles (P31 B-M2).</summary>
+        public sealed record KarmaTitlesProbe : StartupAction;
         /// <summary>Report the gore death-anim a burst/explosion/laser kill would give the critter
         /// at Hex — the picked anim + the art-resolved anim (P26), proving gore art availability.</summary>
         public sealed record DeathProbe(int Hex) : StartupAction;
@@ -1277,6 +1295,21 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
                     // P31 B-M1: the generic-reputation title MESSAGE ID for a value (never the copyrighted
                     // string); -1 = below every threshold.
                     Console.WriteLine($"rep-title: value={repValue} msg={Formats.Map.GenericReputation.TitleFor(repValue, GenrepTable())}");
+                    break;
+                }
+                case StartupAction.TownRep(var townValue):
+                {
+                    // P31 B-M2: the town-reputation standing band for a value.
+                    Formats.Map.TownRepLevel level = Formats.Map.TownReputation.LevelFor(townValue);
+                    Console.WriteLine($"town-rep: value={townValue} level={level} msg={Formats.Map.TownReputation.MessageId(level)}");
+                    break;
+                }
+                case StartupAction.KarmaTitlesProbe:
+                {
+                    // P31 B-M2: the earned karma titles — rows whose GVAR is non-zero (message IDs only).
+                    int Gv(int g) => _scriptHost?.GlobalVars.GetValueOrDefault(g, 0) ?? 0;
+                    var active = Formats.Map.KarmaTitles.Active(KarmavarTable(), Gv).ToList();
+                    Console.WriteLine($"karma-titles: active={active.Count} ids=[{string.Join(",", active.Select(t => t.NameMessageId))}]");
                     break;
                 }
                 case StartupAction.FogProbe(var fx, var fy, var fa):

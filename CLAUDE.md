@@ -1021,6 +1021,16 @@ reads GVAR_PLAYER_REPUTATION — a documented unification to one source of truth
 the copyrighted title string). 4 GenericReputationTests incl. a GameDataFact that parses the real
 genrep.txt (descending + valid msg ids). Pure parser + lazy probe → no golden-exercised path changed,
 all goldens BYTE-IDENTICAL.
+M2 town reputation + karma-title GVARs (DONE): pure Formats.Map.TownReputation.LevelFor ports the 7-band
+thresholds (character_editor.cc:5574 — <-30 Vilified … ==0 Neutral … >=30 Idolized; note the asymmetry at
+0) + MessageId; Formats.Map.KarmaTitles.Parse ports karmaInit (karmavar.txt: gvar/art/name/desc rows) +
+Active (rows whose GVAR is non-zero — character_editor.cc:5537, excluding the gvar-0 generic-rep row).
+KEY FINDING: karmavar.txt binds the REAL vault13.gam GVAR ids (0,3,2,1,11,…), NOT the game_vars.h enum
+order — and KarmaTitles reads the gvar FROM the file, so it's robust (verified: --set-global 3 1 →
+karma-titles active=1 id=1001; the town/karma GVARs the VM already maintains, so reading them adds no
+writes/RNG). Both pure + inert (no slice script sets a town/karma GVAR → all 0/Neutral/none). Harness
+--town-rep <value> + --karma-titles (message IDs only). 15 TownReputationTests incl. a GameDataFact real
+karmavar.txt parse; all goldens BYTE-IDENTICAL.
 
 Phase 10 (DONE, per docs/phase10-research-report.md — "The Wasteland
 Bites Back"): M0 persistence pre-stage (the net: MapList saved=No /

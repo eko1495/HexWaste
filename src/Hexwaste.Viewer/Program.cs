@@ -242,6 +242,12 @@ for (int i = 0; i < args.Length; i++)
         case "--rep-title" when i + 1 < args.Length:
             actions.Add(new ViewerGame.StartupAction.RepTitle(int.Parse(args[++i])));
             break;
+        case "--town-rep" when i + 1 < args.Length:
+            actions.Add(new ViewerGame.StartupAction.TownRep(int.Parse(args[++i])));
+            break;
+        case "--karma-titles":
+            actions.Add(new ViewerGame.StartupAction.KarmaTitlesProbe());
+            break;
         case "--trait-probe" when i + 2 < args.Length:
             actions.Add(new ViewerGame.StartupAction.TraitProbe(int.Parse(args[i + 1]), int.Parse(args[i + 2])));
             i += 2;
