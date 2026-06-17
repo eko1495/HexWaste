@@ -230,6 +230,12 @@ for (int i = 0; i < args.Length; i++)
         case "--sneak-roll" when i + 1 < args.Length:
             actions.Add(new ViewerGame.StartupAction.SneakRoll(int.Parse(args[++i])));
             break;
+        case "--detect-probe" when i + 5 < args.Length:
+            actions.Add(new ViewerGame.StartupAction.DetectProbe(
+                int.Parse(args[i + 1]), int.Parse(args[i + 2]), int.Parse(args[i + 3]),
+                int.Parse(args[i + 4]), int.Parse(args[i + 5])));
+            i += 5;
+            break;
         case "--trait-probe" when i + 2 < args.Length:
             actions.Add(new ViewerGame.StartupAction.TraitProbe(int.Parse(args[i + 1]), int.Parse(args[i + 2])));
             i += 2;

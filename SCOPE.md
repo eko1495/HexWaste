@@ -37,7 +37,10 @@ filing an issue.
   limbs, blindness — a Doctor mends limbs/eyes), knockback + persisting knockdown,
   area explosions, throwing (spears, grenades, recoverable, can crit), and gory
   death animations (sliced/charred/big-hole/exploded corpses by damage type);
-  armor, drugs, lootable corpses, scripted aggro, same-team joiners, a minimum
+  stealth (a two-layer Sneak state with a periodic skill roll; active sneaking
+  shrinks an NPC's perception range so you can slip past scripted aggro; the Silent
+  Death perk quadruples a melee backstab); armor, drugs, lootable corpses, scripted
+  aggro, same-team joiners, a minimum
   party member, barter, kill XP, level-ups, per-map persistent world, versioned
   JSON save/load, a main menu, character creation, rest, and carry weight +
   encumbrance (item weights, a STAT_CARRY_WEIGHT capacity, an over-limit combat
@@ -50,8 +53,8 @@ filing an issue.
   Skilled) gated on level/stats/skills, the data-driven stat perks (Toughness,
   Action Boy, Lifegiver, More/Better Criticals, …) plus wired combat/skill perks
   (Bonus Rate of Fire, Bonus HtH Attacks, Bonus Ranged Damage, Sniper, Slayer,
-  Sharpshooter, Swift Learner, Educated, Living Anatomy, Pyromaniac, Weapon
-  Handling, Heave Ho). A character-sheet display + a level-up perk picker (the
+  Silent Death, Sharpshooter, Swift Learner, Educated, Living Anatomy, Pyromaniac,
+  Weapon Handling, Heave Ho). A character-sheet display + a level-up perk picker (the
   authentic PERKWIN window). Per-level skill points follow the full engine formula
   (Educated/Skilled/Gifted).
 - **Interface**: the authentic bottom HUD bar plus its panels — inventory,

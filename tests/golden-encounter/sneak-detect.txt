@@ -1,0 +1,4 @@
+detect-probe: pe=7 dist=30 canSee=1 sneak=20 flag=0 working=0 detected=1
+detect-probe: pe=7 dist=30 canSee=1 sneak=20 flag=1 working=1 detected=0
+detect-probe: pe=7 dist=5 canSee=1 sneak=20 flag=1 working=1 detected=1
+detect-probe: pe=7 dist=7 canSee=0 sneak=20 flag=0 working=0 detected=1

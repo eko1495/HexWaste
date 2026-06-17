@@ -982,6 +982,22 @@ Skilldex golden still prints only the FLAG so it's unchanged. Persisted: SaveSta
 (additive-V2 nullable, null→false on old saves; sparse — null when not sneaking). Harness --sneak-roll
 <seed> (deterministic). New golden sneak-state (the roll + flag/working state + the A-M1 facing probes;
 default dude Sneak 20 → working=0/next=600). SaveStateRoundTrip + 12 SneakState tests; all goldens green.
+M3 NPC detection gate — LIVE (DONE; the behavioral milestone, the user's "full faithful, live" choice):
+pure Formats.Combat.PerceptionDetect ports isWithinPerception (combat_ai.cc:3499) — the two-tier range
+(with-LoS PE×5 / halved through glass; without-LoS PE×2 in combat else PE) + CanSee (actions.cc:1523
+frontal-arc {0,1,5}) + the dude-sneak reduction (actively sneaking ÷4, −1 if Sneak>120; flag-but-not-
+working ×2/3). Wired into the scripted-aggro path (ViewerGame AttackRequested → BeginScriptAggro) via
+DudePerceivedBy: a scripted attacker that can't perceive the dude does NOT engage. KEY de-risk: the gate
+is GATED ON THE SNEAK FLAG (`target==dude && _sneak.FlagSet && !DudePerceivedBy`), so a non-sneaking dude
+short-circuits PAST it → every existing golden is BYTE-IDENTICAL (verified by a clean check BEFORE
+recording the new fixture, the P13-M1 pattern); only an actively-sneaking dude out of the NPC's reduced
+range goes unnoticed. Zero RNG (pure distance/facing). DOCUMENTED CUTS: NPC-vs-NPC sneak is OUT (only the
+dude→NPC direction is gated — the engine's target==gDude branch); no lighting/PERK_GHOST term; the forced-
+walk-while-sneaking animation is N/A (WalkTo only). Harness --detect-probe <pe> <dist> <canSee> <flag>
+<working>; new golden sneak-detect (not-sneaking→detected, sneaking-far→UNDETECTED, sneaking-close→
+detected). 6 PerceptionDetectTests; all combat + encounter goldens BYTE-IDENTICAL. P30 (stealth/sneak)
+COMPLETE: the two-layer state, Silent Death backstab, the periodic roll + persistence, and live
+detection are in. 420 Formats tests.
 
 Phase 10 (DONE, per docs/phase10-research-report.md — "The Wasteland
 Bites Back"): M0 persistence pre-stage (the net: MapList saved=No /

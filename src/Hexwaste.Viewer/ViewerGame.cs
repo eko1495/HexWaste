@@ -453,6 +453,8 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
         public sealed record BackstabProbe(int AttackerRotation, int DefenderRotation) : StartupAction;
         /// <summary>Seed the sneak RNG, enable the flag, do one periodic roll, report it (P30 A-M2).</summary>
         public sealed record SneakRoll(int Seed) : StartupAction;
+        /// <summary>Report the isWithinPerception detection decision for a controlled setup (P30 A-M3).</summary>
+        public sealed record DetectProbe(int Perception, int Distance, int CanSee, int Flag, int Working) : StartupAction;
         /// <summary>Report the gore death-anim a burst/explosion/laser kill would give the critter
         /// at Hex — the picked anim + the art-resolved anim (P26), proving gore art availability.</summary>
         public sealed record DeathProbe(int Hex) : StartupAction;
@@ -705,7 +707,16 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
                         Console.Error.WriteLine(name);
                 },
                 StatsResolver = obj => obj == _dude?.Dude ? _dudeGcd?.Stats : null,
-                AttackRequested = (attacker, target) => _combat.BeginScriptAggro(attacker, target),
+                AttackRequested = (attacker, target) =>
+                {
+                    // P30 A-M3: a sneaking dude can slip past scripted aggro (isWithinPerception,
+                    // combat_ai.cc:3499). GATED on the sneak FLAG so a non-sneaking dude ALWAYS engages
+                    // (the gate short-circuits → every existing golden is byte-identical); only an
+                    // actively-sneaking dude out of the NPC's (reduced) perception range goes undetected.
+                    if (target == _dude?.Dude && _sneak.FlagSet && !DudePerceivedBy(attacker))
+                        return;
+                    _combat.BeginScriptAggro(attacker, target);
+                },
                 ExpAwarded = amount => AwardXp(amount),
                 MapStartOverridden = (tile, elevation, rotation) => OverrideDudeStart(tile, elevation, rotation),
                 MoviePlayed = movieId => ShowMovieCard(movieId),
@@ -1213,6 +1224,18 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
                     _sneak.FlagSet = true;
                     RollSneak();
                     Console.WriteLine($"sneak-roll: skill={DudeSkillValue(8)} working={(_sneak.Working ? 1 : 0)} next={_sneakTicksRemaining}");
+                    break;
+                }
+                case StartupAction.DetectProbe(var pe, var dist, var canSee, var flag, var working):
+                {
+                    // P30 A-M3: the detection decision an NPC would make against the dude for a controlled
+                    // perception/distance/facing + sneak state (the dude's real Sneak skill).
+                    _sneak.FlagSet = flag != 0;
+                    _sneak.Working = working != 0;
+                    bool detected = Formats.Combat.PerceptionDetect.IsWithinPerception(dist, pe, DudeSkillValue(8),
+                        canSee != 0, targetIsGlass: false, targetIsDude: true, _sneak.IsSneaking, _sneak.FlagSet, inCombat: false);
+                    Console.WriteLine($"detect-probe: pe={pe} dist={dist} canSee={canSee} sneak={DudeSkillValue(8)}"
+                        + $" flag={(_sneak.FlagSet ? 1 : 0)} working={(_sneak.Working ? 1 : 0)} detected={(detected ? 1 : 0)}");
                     break;
                 }
                 case StartupAction.FogProbe(var fx, var fy, var fa):
@@ -3186,6 +3209,22 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
         bool success = _sneakRng.Next(1, 101) <= skill;
         _sneak.Working = success;
         _sneakTicksRemaining = Formats.Combat.SneakState.RescheduleTicks(skill, success);
+    }
+
+    /// <summary>True if <paramref name="npc"/> perceives the dude (P30 A-M3; isWithinPerception): the
+    /// NPC's Perception + facing + distance vs the dude's (sneak-reduced) detection range. Used to gate
+    /// scripted aggro so an actively-sneaking dude can go unnoticed.</summary>
+    private bool DudePerceivedBy(MapObject npc)
+    {
+        if (_dude is null)
+            return true;
+        int perception = GetCritterState(npc)?.Perception ?? 5;
+        int dudeTile = _dude.Dude.HexTile;
+        bool canSee = Formats.Combat.PerceptionDetect.CanSee(npc.Rotation, npc.HexTile, dudeTile);
+        int distance = Formats.Hex.HexGrid.Distance(npc.HexTile, dudeTile);
+        bool inCombat = _combat.Phase != Formats.Combat.CombatPhase.Idle;
+        return Formats.Combat.PerceptionDetect.IsWithinPerception(distance, perception, DudeSkillValue(8),
+            canSee, targetIsGlass: false, targetIsDude: true, _sneak.IsSneaking, _sneak.FlagSet, inCombat);
     }
 
     private void TakeFromContainer(int index)
