@@ -562,6 +562,9 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
         /// <summary>Report is_in_combat + critter_state(critter@Hex) — the two heartbeat externals
         /// (P34-M1). Hex&lt;0 reports is_in_combat only.</summary>
         public sealed record CritterStateProbe(int Hex) : StartupAction;
+        /// <summary>OR Flags (DAM_* mask) into the critter@Hex's CombatResults, then report whether
+        /// its AI packet's hurt_too_much mask would now make it flee (P34-M2).</summary>
+        public sealed record HurtTooMuchProbe(int Hex, int Flags) : StartupAction;
         /// <summary>Report the gore death-anim a burst/explosion/laser kill would give the critter
         /// at Hex — the picked anim + the art-resolved anim (P26), proving gore art availability.</summary>
         public sealed record DeathProbe(int Hex) : StartupAction;
@@ -1409,6 +1412,24 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
                         : _solidObjects[_elevation].FirstOrDefault(o => o.HexTile == csHex && Fid.Type(o.Fid) is ObjectType.Critter);
                     int state = csHex < 0 ? -1 : Formats.Int.ScriptHost.CritterStateOf(c);
                     Console.WriteLine($"critter-state: inCombat={inCombat} hex={csHex} state={state}");
+                    break;
+                }
+                case StartupAction.HurtTooMuchProbe(var htmHex, var htmFlags):
+                {
+                    // P34-M2: set a crip/blind bit on a real critter, then report whether its AI
+                    // packet's hurt_too_much mask now triggers the flee gate (combat_ai.cc:3076).
+                    MapObject? htmC = _solidObjects[_elevation].FirstOrDefault(o =>
+                        o.HexTile == htmHex && Fid.Type(o.Fid) is ObjectType.Critter);
+                    if (htmC is null)
+                    {
+                        Console.WriteLine($"hurt-too-much: no critter at {htmHex}");
+                        break;
+                    }
+                    htmC.CombatResults |= htmFlags;
+                    int packetHurt = GetAiPacket(htmC)?.HurtTooMuch ?? 0;
+                    int wouldFlee = (htmC.CombatResults & packetHurt) != 0 ? 1 : 0;
+                    Console.WriteLine($"hurt-too-much: pid=0x{htmC.Pid:X} hex={htmHex} "
+                        + $"results=0x{htmC.CombatResults:X} packetHurt=0x{packetHurt:X} wouldFlee={wouldFlee}");
                     break;
                 }
                 case StartupAction.RepTitle(var repValue):

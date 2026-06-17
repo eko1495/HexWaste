@@ -1136,6 +1136,22 @@ script branches on it in a golden-visible way (the OnStubbedExternal census is s
 fixtures where is_in_combat now returns 1 mid-fight). Harness --critter-state-probe <hex> (hex<0 = is_in_
 combat only); golden critter-state (denbus2 merchant 14716 un-engaged → inCombat=0/state=0 NORMAL). 8
 CritterStateExternalTests lock the bitfield truth table.
+M2 hurt_too_much flee gate (DONE): the engine flees on a SECOND condition besides min_hp — when
+(CombatResults & ai.hurt_too_much) != 0 (combat_ai.cc:3076). AiPacket gained HurtTooMuch (a DAM_* mask
+parsed from ai.txt's hurt_too_much column via AiPacketTable.ParseHurt = the _parse_hurt_str port:
+"blind"→DamBlind, "crippled"→DamCripLimbs[0x3C, legs+arms NOT blind], "crippled_legs"→DamCripLegAny,
+"crippled_arms"→DamCripArmAny; comma-split, lowercased, trimmed). CombatEngine.TryEnemyAction gained the
+clause next to the min_hp gate: if (ai is { HurtTooMuch: not 0 } && (enemy.CombatResults & ai.HurtTooMuch)
+!= 0) return TryFlee(...). INERT by default (HurtTooMuch defaults 0 + the AND-gate short-circuits unless a
+crip/blind bit is actually set), and no slice golden enemy carries such a bit on a turn it takes (the dude
+only blinds via a MASSIVE eye/uncalled crit, which the fixtures never land on a scorpion mid-fight) — all 15
+combat + 48 encounter goldens BYTE-IDENTICAL (verified by a clean check). Real ai.txt values confirmed:
+packet 8 (Animals/scorpion) "blind"=0x40, packet 14 (Peasants) "crippled, blind"=0x7C, packet 33 (Den slave
+coward) "blind"=0x40. Harness --hurt-too-much-probe <hex> <flags> (ORs the flag bits, reports wouldFlee);
+golden hurt-too-much-flee (arcaves scorpion 20529 + blind → wouldFlee=1). Tests: AiPacketTests.ParsesHurt
+TooMuch* + the GameDataFact real-mask asserts; CombatEngineTests Blind-enemy-flees + the no-matching-bit-
+still-attacks control (the AND-gate / byte-identical invariant). DOCUMENTED CUT: the engine's third OR-clause
+(CRITTER_MANUEVER_FLEEING) stays unported — Hexwaste has no maneuver model (pre-existing simplification).
 
 Phase 10 (DONE, per docs/phase10-research-report.md — "The Wasteland
 Bites Back"): M0 persistence pre-stage (the net: MapList saved=No /

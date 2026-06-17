@@ -1641,6 +1641,13 @@ public sealed class CombatEngine
         if (ai is { MinHp: > 0 } && (_host.GetCritterState(enemy)?.CurrentHp ?? int.MaxValue) < ai.MinHp)
             return TryFlee(enemy, dudeTile);
 
+        // hurt_too_much flee (combat_ai.cc:3076): a crippled/blinded critter whose AI packet lists
+        // that damage flag flees. INERT by default — HurtTooMuch defaults 0 and no slice golden enemy
+        // carries a crip/blind bit on a turn it takes. (Order vs min_hp is immaterial — both OR into TryFlee.)
+        // ported from fallout2-ce src/combat_ai.cc _combat_ai()
+        if (ai is { HurtTooMuch: not 0 } && (enemy.CombatResults & ai.HurtTooMuch) != 0)
+            return TryFlee(enemy, dudeTile);
+
         (ProtoInfo? enemyWeapon, MapObject? enemyWeaponItem) = _host.EquippedWeapon(enemy);
         bool enemyGun = enemyWeapon?.Weapon is { } ew && ew.IsGun(enemyWeapon.ExtendedFlags);
         int enemyDistance = HexGrid.Distance(enemy.HexTile, dudeTile);

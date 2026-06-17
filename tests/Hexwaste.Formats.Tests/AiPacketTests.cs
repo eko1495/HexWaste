@@ -60,6 +60,29 @@ public class AiPacketTests
         Assert.Equal(7, p.MinHp);
     }
 
+    [Fact]
+    public void ParsesHurtTooMuchKeywordListIntoDamMask()
+    {
+        // ported keyword->mask: "crippled" = legs+arms (0x3C, NOT blind), "blind" = 0x40.
+        const string text = """
+            [Both]
+            packet_num=1
+            hurt_too_much=crippled, blind
+
+            [Arms]
+            packet_num=2
+            hurt_too_much=crippled_arms
+
+            [None]
+            packet_num=3
+            min_hp=5
+            """;
+        AiPacketTable table = AiPacketTable.Parse(text);
+        Assert.Equal(CriticalTables.DamCripLimbs | CriticalTables.DamBlind, table.Get(1)!.HurtTooMuch); // 0x7C
+        Assert.Equal(CriticalTables.DamCripArmAny, table.Get(2)!.HurtTooMuch); // 0x30
+        Assert.Equal(0, table.Get(3)!.HurtTooMuch); // absent → never flee on hurt
+    }
+
     [GameDataFact]
     public void RealAiTxtParsesAllPacketsWithKnownSliceValues()
     {
@@ -74,5 +97,10 @@ public class AiPacketTests
         Assert.Equal(4, table.Get(12)!.MinHp);
         Assert.Equal(40, table.Get(13)!.MinToHit); // Thugs
         Assert.Equal(34, table.Get(14)!.MinToHit); // Peasants
+
+        // P34-M2: the real hurt_too_much masks (read from the shipped ai.txt).
+        Assert.Equal(CriticalTables.DamBlind, table.Get(8)!.HurtTooMuch);                          // Animals: "blind"
+        Assert.Equal(CriticalTables.DamCripLimbs | CriticalTables.DamBlind, table.Get(14)!.HurtTooMuch); // Peasants: "crippled, blind"
+        Assert.Equal(CriticalTables.DamBlind, table.Get(33)!.HurtTooMuch);                         // Den slave coward: "blind"
     }
 }

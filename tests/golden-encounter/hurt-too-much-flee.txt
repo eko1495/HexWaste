@@ -1,0 +1,1 @@
+hurt-too-much: pid=0x1000005 hex=20529 results=0x40 packetHurt=0x40 wouldFlee=1

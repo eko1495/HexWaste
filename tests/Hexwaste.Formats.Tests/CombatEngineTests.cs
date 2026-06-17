@@ -305,6 +305,46 @@ public class CombatEngineTests
     }
 
     [Fact]
+    public void BlindEnemyWithBlindHurtFlagFleesInsteadOfAttacking()
+    {
+        // P34-M2: a critter at full HP but carrying a DAM_BLIND result bit flees when its
+        // AI packet's hurt_too_much mask matches (combat_ai.cc:3076) — independent of min_hp.
+        var host = new FakeCombatHost();
+        MapObject dude = host.SetDude(NewCritter(tile: 20100, hp: 30, ap: 10));
+        MapObject enemy = host.AddCritter(NewCritter(tile: HexGrid.TileInDirection(20100, 0), hp: 30, ap: 10));
+        host.AiPackets[enemy] = new AiPacket(8, "Scorpion", MinToHit: 0, MinHp: 0, 0, "", "",
+            HurtTooMuch: CriticalTables.DamBlind);
+        enemy.CombatResults |= CriticalTables.DamBlind;
+        var engine = new CombatEngine(host, new MinRng());
+
+        engine.BeginScriptAggro(enemy, dude);
+        engine.Step();
+
+        Assert.Contains(host.Transcripts, t => t.StartsWith("flee:"));
+        Assert.Equal(30, dude.CurrentHp); // did not attack
+    }
+
+    [Fact]
+    public void EnemyWithHurtFlagButNoMatchingResultBitStillAttacks()
+    {
+        // The AND-gate: hurt_too_much is set but no matching crip/blind bit on CombatResults,
+        // so the enemy still attacks (the inert-by-default invariant — goldens stay byte-identical).
+        var host = new FakeCombatHost();
+        MapObject dude = host.SetDude(NewCritter(tile: 20100, hp: 30, ap: 10));
+        MapObject enemy = host.AddCritter(NewCritter(tile: HexGrid.TileInDirection(20100, 0), hp: 30, ap: 10));
+        host.AiPackets[enemy] = new AiPacket(8, "Scorpion", MinToHit: 0, MinHp: 0, 0, "", "",
+            HurtTooMuch: CriticalTables.DamBlind);
+        // CombatResults left 0 → the gate short-circuits.
+        var engine = new CombatEngine(host, new MinRng());
+
+        engine.BeginScriptAggro(enemy, dude);
+        engine.Step();
+
+        Assert.Contains(host.Transcripts, t => t.StartsWith("enemy-attack"));
+        Assert.DoesNotContain(host.Transcripts, t => t.StartsWith("flee:"));
+    }
+
+    [Fact]
     public void CriticalsStayOffUntilEnabled()
     {
         // Same MinRng, criticals disabled: a plain swing, no crit tag, base damage.

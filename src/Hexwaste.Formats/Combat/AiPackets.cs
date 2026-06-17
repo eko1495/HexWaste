@@ -17,7 +17,10 @@ public sealed record AiPacket(
     int MinHp,
     int MaxDist,
     string Distance,
-    string Disposition);
+    string Disposition,
+    /// <summary>The DAM_* damage-flags mask parsed from ai.txt's <c>hurt_too_much</c> column;
+    /// an enemy with <c>(CombatResults &amp; HurtTooMuch) != 0</c> flees (combat_ai.cc:3076). 0 = never.</summary>
+    int HurtTooMuch = 0);
 
 /// <summary>
 /// The parsed <c>data\ai.txt</c> table, keyed by <c>packet_num</c>. Built once and
@@ -51,7 +54,7 @@ public sealed class AiPacketTable
         {
             if (fields.TryGetValue("packet_num", out string? pn) && int.TryParse(pn, out int num))
                 packets.Add(new AiPacket(num, name, I("min_to_hit"), I("min_hp"), I("max_dist"),
-                    S("distance"), S("disposition")));
+                    S("distance"), S("disposition"), ParseHurt(S("hurt_too_much"))));
             fields.Clear();
         }
 
@@ -78,5 +81,28 @@ public sealed class AiPacketTable
         Flush();
 
         return new AiPacketTable(packets);
+    }
+
+    /// <summary>
+    /// ported from fallout2-ce src/combat_ai.cc _parse_hurt_str(): the comma-delimited
+    /// keyword list in ai.txt's <c>hurt_too_much</c> column, OR-ing each keyword's DAM_* mask.
+    /// NOTE "crippled" is legs+arms ONLY (0x3C), NOT the obj_types.h DAM_CRIP macro that also
+    /// includes blind — blind is its own keyword. An empty/absent field → 0 (never flee on hurt).
+    /// </summary>
+    internal static int ParseHurt(string list)
+    {
+        int mask = 0;
+        foreach (string token in list.ToLowerInvariant().Split(','))
+        {
+            mask |= token.Trim() switch
+            {
+                "blind" => CriticalTables.DamBlind,             // 0x40
+                "crippled" => CriticalTables.DamCripLimbs,      // 0x3C (legs + arms, NOT blind)
+                "crippled_legs" => CriticalTables.DamCripLegAny, // 0x0C
+                "crippled_arms" => CriticalTables.DamCripArmAny, // 0x30
+                _ => 0, // unrecognized / empty token — the engine logs and skips
+            };
+        }
+        return mask;
     }
 }
