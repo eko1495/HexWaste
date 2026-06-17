@@ -65,6 +65,10 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
     private int _dudeLevel = 1;
     private int _dudeXp = 0; // accrues in P6-M3 (kill XP at combat end)
     private int _unspentSkillPoints;
+    // P31 B-M0: the PC-stat karma + generic reputation (gPcStatValues[4]/[3]). Read-only in the engine
+    // (no auto-award), so script-/harness-set; default 0 → get_pc_stat(3/4) returns 0 like the old stub.
+    private int _dudeKarma;
+    private int _dudeReputation;
 
     /// <summary>The dude's per-perk ranks (P28-M2; one slot per perk id). All-zero = no perks,
     /// so the perk stat modifiers are inert by default. Persisted (SaveState.DudePerkRanks).</summary>
@@ -455,6 +459,8 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
         public sealed record SneakRoll(int Seed) : StartupAction;
         /// <summary>Report the isWithinPerception detection decision for a controlled setup (P30 A-M3).</summary>
         public sealed record DetectProbe(int Perception, int Distance, int CanSee, int Flag, int Working) : StartupAction;
+        /// <summary>Report the dude's PC stats read via get_pc_stat — karma/reputation/level/xp (P31 B-M0).</summary>
+        public sealed record KarmaProbe : StartupAction;
         /// <summary>Report the gore death-anim a burst/explosion/laser kill would give the critter
         /// at Hex — the picked anim + the art-resolved anim (P26), proving gore art availability.</summary>
         public sealed record DeathProbe(int Hex) : StartupAction;
@@ -727,8 +733,11 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
                 DudeTraits = _dudeGcd?.Traits ?? [-1, -1],
                 PcStatProvider = stat => stat switch
                 {
-                    1 => _dudeLevel,  // PC_STAT_LEVEL
-                    2 => _dudeXp,     // PC_STAT_EXPERIENCE
+                    Formats.Int.PcStat.UnspentSkillPoints => _unspentSkillPoints,
+                    Formats.Int.PcStat.Level => _dudeLevel,
+                    Formats.Int.PcStat.Experience => _dudeXp,
+                    Formats.Int.PcStat.Reputation => _dudeReputation, // P31 B-M0 (0 by default → inert)
+                    Formats.Int.PcStat.Karma => _dudeKarma,
                     _ => 0,
                 },
                 PerkRankProvider = perk => Formats.Perks.PerkRules.Rank(_dudePerkRanks, perk),
@@ -1236,6 +1245,15 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
                         canSee != 0, targetIsGlass: false, targetIsDude: true, _sneak.IsSneaking, _sneak.FlagSet, inCombat: false);
                     Console.WriteLine($"detect-probe: pe={pe} dist={dist} canSee={canSee} sneak={DudeSkillValue(8)}"
                         + $" flag={(_sneak.FlagSet ? 1 : 0)} working={(_sneak.Working ? 1 : 0)} detected={(detected ? 1 : 0)}");
+                    break;
+                }
+                case StartupAction.KarmaProbe:
+                {
+                    // P31 B-M0: read the PC meta-stats through the get_pc_stat provider (proves the
+                    // 0x80A6 seam: 3=reputation, 4=karma, was stubbed to 0).
+                    int Pc(int s) => _scriptHost?.PcStatProvider?.Invoke(s) ?? 0;
+                    Console.WriteLine($"karma-probe: karma={Pc(Formats.Int.PcStat.Karma)} rep={Pc(Formats.Int.PcStat.Reputation)}"
+                        + $" level={Pc(Formats.Int.PcStat.Level)} xp={Pc(Formats.Int.PcStat.Experience)} unspent={Pc(Formats.Int.PcStat.UnspentSkillPoints)}");
                     break;
                 }
                 case StartupAction.FogProbe(var fx, var fy, var fa):

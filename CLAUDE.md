@@ -999,6 +999,20 @@ detected). 6 PerceptionDetectTests; all combat + encounter goldens BYTE-IDENTICA
 COMPLETE: the two-layer state, Silent Death backstab, the periodic roll + persistence, and live
 detection are in. 420 Formats tests.
 
+Phase 31 (IN PROGRESS — "Reputation Precedes You", karma/reputation; researched in the same stealth-
+karma-research workflow). USER DECISION: the faithful PC-STAT model (engine stores karma=gPcStatValues[4],
+reputation=[3], NOT GVARs; the reputation GVARs are the display layer). KEY engine truth: karma is
+READ-ONLY — no engine code auto-awards it on kills/quests, and there is NO karma-gated dialog opcode
+(giq is IQ only) — so karma/town/generic-rep are 100% script-driven (set_global_var) or harness-set; the
+whole feature is display + script-read, never a combat/dialog behaviour change. M0 get_pc_stat seam
+(DONE): pure Formats.Int.PcStat (the stat_defs.h PcStat index map: 0 unspent / 1 level / 2 xp / 3 rep /
+4 karma); the dude's _dudeKarma/_dudeReputation fields (default 0) + PcStatProvider now routes 3→rep,
+4→karma, 0→unspent (were stubbed to 0; 1/2 were already wired). Karma/rep default 0 → get_pc_stat(3/4)
+returns 0 EXACTLY like the stub, so inert; the new 0→unspent route is byte-identical too (verified — the
+vic-levelup golden grants XP/unspent but no slice script reads get_pc_stat(0)). Harness --karma-probe
+reads through the provider (proves the 0x80A6 seam). PcStatTests locks the index map; all 15 combat + 44
+encounter goldens BYTE-IDENTICAL.
+
 Phase 10 (DONE, per docs/phase10-research-report.md — "The Wasteland
 Bites Back"): M0 persistence pre-stage (the net: MapList saved=No /
 random_start_point parse + IsTransient; the 3-clause transient guards as
