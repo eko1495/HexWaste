@@ -836,6 +836,19 @@ public sealed class CombatEngine
             }
         }
 
+        // P30 A-M1: Silent Death backstab (combat.cc:3870-3875 on-hit / 3913-3921 on-crit). A melee/
+        // unarmed dude striking from BEHIND while the sneaking FLAG is set, against a target it hasn't
+        // engaged yet (WhoHitMeCid != -1 — our proxy for the engine's whoHitMe != gDude, since Hexwaste
+        // doesn't track live whoHitMe), deals 4x on a plain hit / doubles the crit multiplier. Dude-only +
+        // perk-gated + sneak-flag-gated, drawing NO extra RNG, so a perk-less/non-sneaking dude is inert.
+        if (hit && attackerIsDude && !isGun
+            && _host.DudePerkRank(Perks.PerkId.SilentDeath) > 0 && _host.DudeSneakFlag
+            && defender.Critter.WhoHitMeCid != -1
+            && !SneakAttack.IsHitFromFront(attacker.Critter.Rotation, defender.Critter.Rotation))
+        {
+            critMultiplier = (critFlags & CriticalTables.DamCritical) != 0 ? critMultiplier * 2 : 4;
+        }
+
         int damage = 0;
         if (hit)
         {

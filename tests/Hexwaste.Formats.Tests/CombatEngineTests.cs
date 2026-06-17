@@ -1068,6 +1068,55 @@ public class CombatEngineTests
         Assert.True(CanThrow(1, 16));  // Heave Ho → range 21, reaches
     }
 
+    // ====================================================================
+    //  Silent Death backstab (P30 A-M1): melee/unarmed, sneaking, from behind,
+    //  target not yet engaged → 4x dmg / x2 on a crit. Dude-only, perk + flag gated.
+    // ====================================================================
+
+    private int SilentDeathMelee(bool perk, bool flag, int enemyRotation, int whoHitMe, bool criticals = false)
+    {
+        var host = new FakeCombatHost { CriticalsEnabled = criticals, SneakFlag = flag,
+            Equipped = MakeMeleeWeapon(0x001, minDmg: 10, maxDmg: 10) };
+        if (perk) host.PerkRanks[Perks.PerkId.SilentDeath] = 1;
+        host.SetDude(NewCritter(20100, hp: 30, ap: 10, skill: 100)); // melee skill -> always hits
+        MapObject enemy = host.AddCritter(NewCritter(HexGrid.TileInDirection(20100, 0), hp: 500));
+        enemy.Rotation = enemyRotation;   // the dude faces dir 0 (toward the enemy); rot 0 = a backstab
+        enemy.WhoHitMeCid = whoHitMe;     // != -1 → not yet engaged by the dude → surprise allowed
+        var engine = new CombatEngine(host, new MinRng());
+        Assert.True(engine.TryAttack(enemy));
+        host.Animating.Clear();
+        engine.ProcessAnimations();
+        return 500 - enemy.CurrentHp;
+    }
+
+    [Fact]
+    public void SilentDeathQuadruplesAMeleeBackstab()
+    {
+        // From behind (enemy faces the same dir 0 the dude does → diff 0 → not from front): 10*4/2 = 20
+        // vs the base 10*2/2 = 10.
+        Assert.Equal(20, SilentDeathMelee(perk: true, flag: true, enemyRotation: 0, whoHitMe: 0));
+        Assert.Equal(10, SilentDeathMelee(perk: false, flag: true, enemyRotation: 0, whoHitMe: 0)); // no perk
+    }
+
+    [Fact]
+    public void SilentDeathRequiresBehindSneakingAndAFreshTarget()
+    {
+        Assert.Equal(10, SilentDeathMelee(perk: true, flag: true, enemyRotation: 3, whoHitMe: 0));  // from front
+        Assert.Equal(10, SilentDeathMelee(perk: true, flag: false, enemyRotation: 0, whoHitMe: 0)); // not sneaking
+        Assert.Equal(10, SilentDeathMelee(perk: true, flag: true, enemyRotation: 0, whoHitMe: -1)); // already engaged
+    }
+
+    [Fact]
+    public void SilentDeathDoublesACriticalBackstab()
+    {
+        // On a crit, Silent Death doubles the crit multiplier (combat.cc:3919), so a backstab crit deals
+        // exactly twice a normal crit (the perk draws no extra RNG → identical crit/severity rolls).
+        int normalCrit = SilentDeathMelee(perk: false, flag: true, enemyRotation: 0, whoHitMe: 0, criticals: true);
+        int silentCrit = SilentDeathMelee(perk: true, flag: true, enemyRotation: 0, whoHitMe: 0, criticals: true);
+        Assert.True(normalCrit > 0);
+        Assert.Equal(2 * normalCrit, silentCrit);
+    }
+
     [Fact]
     public void CompanionPerkRanksApplyToItsStats()
     {
@@ -1153,6 +1202,8 @@ public class CombatEngineTests
         public int DudePerkRank(int perk) => PerkRanks.GetValueOrDefault(perk);
         public readonly HashSet<int> Traits = []; // P29-M1 combat-path trait effects
         public bool DudeHasTrait(int trait) => Traits.Contains(trait);
+        public bool SneakFlag; // P30 A-M1 Silent Death gate
+        public bool DudeSneakFlag => SneakFlag;
         public CritterState? GetCritterState(MapObject critter) => _states.GetValueOrDefault(critter);
         public AiPacket? GetAiPacket(MapObject critter) => AiPackets.GetValueOrDefault(critter);
         public (ProtoInfo? Proto, MapObject? Item) Equipped = (null, null);

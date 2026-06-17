@@ -443,6 +443,8 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
         public sealed record WeightProbe : StartupAction;
         /// <summary>Set the sneaking flag (P29 A-M0) and report the two-layer state + Sneak skill.</summary>
         public sealed record SneakProbe(int Flag) : StartupAction;
+        /// <summary>Report the Silent Death facing test for two rotations (P30 A-M1).</summary>
+        public sealed record BackstabProbe(int AttackerRotation, int DefenderRotation) : StartupAction;
         /// <summary>Report the gore death-anim a burst/explosion/laser kill would give the critter
         /// at Hex — the picked anim + the art-resolved anim (P26), proving gore art availability.</summary>
         public sealed record DeathProbe(int Hex) : StartupAction;
@@ -1185,6 +1187,14 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
                     _sneak.FlagSet = sneakFlag != 0;
                     Console.WriteLine($"sneak-probe: flag={(_sneak.FlagSet ? 1 : 0)} working={(_sneak.Working ? 1 : 0)}"
                         + $" sneaking={(_sneak.IsSneaking ? 1 : 0)} skill={DudeSkillValue(8)}");
+                    break;
+                }
+                case StartupAction.BackstabProbe(var attRot, var defRot):
+                {
+                    // P30 A-M1: the pure facing predicate + the multiplier a qualifying non-crit backstab
+                    // would apply (front → no bonus → 2; behind → 4).
+                    bool front = Formats.Combat.SneakAttack.IsHitFromFront(attRot, defRot);
+                    Console.WriteLine($"backstab-probe: att={attRot} def={defRot} front={(front ? 1 : 0)} mult={(front ? 2 : 4)}");
                     break;
                 }
                 case StartupAction.FogProbe(var fx, var fy, var fa):
@@ -3144,6 +3154,9 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
     /// trait effects (One Hander, Fast Shot, Finesse, Jinxed). False by default → inert.</summary>
     public bool DudeHasTrait(int trait) =>
         _dudeGcd is { } g && Formats.Combat.TraitModifiers.Has(g.Traits, trait);
+
+    /// <summary>ICombatHost (P30 A-M1): the dude's sneaking FLAG — gates the Silent Death backstab.</summary>
+    public bool DudeSneakFlag => _sneak.FlagSet;
 
     private void TakeFromContainer(int index)
     {

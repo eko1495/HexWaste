@@ -959,6 +959,18 @@ reads the flag, NOT Working): new IVmExternals.IsUsingSkill + ScriptHost.SneakFl
 dispatch (was the arity stub → 0; no slice script branches on it, so inert). Harness --sneak-probe
 <flag> prints sneak-probe: flag=/working=/sneaking=/skill=. 12 SneakStateTests (the truth table + the
 7-bucket ladder); all goldens BYTE-IDENTICAL.
+M1 Silent Death backstab + facing (DONE): pure Formats.Combat.SneakAttack.IsHitFromFront ports
+actions.cc:1512 _is_hit_from_front verbatim (diff=abs(attRot-defRot); front = diff ∉ {0,1,5} → a
+behind/side hit is the backstab). Wired the Silent Death multiplier into RollAttack's melee block
+(combat.cc:3870-3875 on-hit / 3913-3921 on-crit): a melee/unarmed DUDE hit, with DudePerkRank(SilentDeath)
+>0 + the sneak FLAG (new ICombatHost.DudeSneakFlag, NOT active Working — the engine checks the flag) +
+from behind + the target not yet engaged (defender.WhoHitMeCid != -1, our proxy for whoHitMe != gDude
+since Hexwaste doesn't track live whoHitMe — combat sets it -1 at engage, so the bonus fires once on the
+surprise strike) → critMultiplier = 4 on a plain hit, ×2 on a crit. PerkId.SilentDeath=25. Every clause
+short-circuits at rank 0 / no-flag, drawing NO extra RNG, so a perk-less or non-sneaking dude is inert —
+Narg (combat.gcd) has no Silent Death and never sneaks, so the 6 --character-combat goldens are unchanged.
+3 fake-host tests (4x backstab / the behind+sneaking+fresh gate / the x2 crit stack) + --backstab-probe
+<attRot> <defRot>. All 15 combat + 42 encounter goldens BYTE-IDENTICAL.
 
 Phase 10 (DONE, per docs/phase10-research-report.md — "The Wasteland
 Bites Back"): M0 persistence pre-stage (the net: MapList saved=No /

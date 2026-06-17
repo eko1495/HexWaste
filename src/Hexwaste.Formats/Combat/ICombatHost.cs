@@ -38,6 +38,10 @@ public interface ICombatHost
     /// Fast Shot, Finesse, Jinxed — TraitModifiers ids). Default false — a trait-less dude is inert,
     /// so the combat goldens stay byte-identical. The engine's trait checks are all <c>== gDude</c>.</summary>
     bool DudeHasTrait(int trait) => false;
+    /// <summary>The dude's sneaking FLAG (dudeHasState DUDE_STATE_SNEAKING; P30 A-M1). Drives the
+    /// Silent Death backstab gate (combat.cc:3872 reads the flag, NOT active _sneak_working). Default
+    /// false — a non-sneaking dude is inert, so the combat goldens stay byte-identical.</summary>
+    bool DudeSneakFlag => false;
 
     // --- Critter / weapon data resolution --------------------------------
     CritterState? GetCritterState(MapObject critter);                    // :1410

@@ -15,6 +15,7 @@ public static class PerkId
     public const int Educated = 18;         // +2 skill points per level-up (character_editor.cc:5689)
     public const int Slayer = 23;           // every melee/unarmed hit is a critical (combat.cc:3866)
     public const int Sniper = 24;           // a ranged hit crits on a d10 ≤ Luck roll (combat.cc:3891)
+    public const int SilentDeath = 25;      // melee/unarmed backstab while sneaking: 4x dmg / x2 on a crit (combat.cc:3870)
     public const int HeaveHo = 35;          // +2 effective Strength per rank for throw range (item.cc:1613)
     public const int QuickPockets = 48;     // −2 inventory-access AP/rank (inventory.cc:572) — NOT modeled (no in-combat inventory AP)
     public const int SwiftLearner = 50;     // +5% experience per rank (stat.cc:737)
