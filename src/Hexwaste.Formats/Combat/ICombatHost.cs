@@ -101,6 +101,10 @@ public interface ICombatHost
     /// <summary>Hit-react FRM (anim 14) on a surviving target. :2494-2498</summary>
     void OnTargetHit(MapObject target);
 
+    /// <summary>Out-of-ammo on an attack attempt (combat.cc:5745) — the host may play the empty-click
+    /// sfx. Default no-op so the fake test host needs no override (P34-M5).</summary>
+    void OnWeaponOutOfAmmo(ProtoInfo weaponProto) { }
+
     // --- Death + corpse ---------------------------------------------------
     /// <summary>Resolve the gory death anim the combat picked (P26 DeathAnims.Pick) against the
     /// critter's available art (actions.cc _check_death): the desired gore anim if it ships, else

@@ -1,0 +1,1 @@
+sfx-probe: pid=0x1000005 swing=MASCP2ZQ hit=MASCP2AO die=MASCP2ZA reload=WR11XXX1 ambient=water:40

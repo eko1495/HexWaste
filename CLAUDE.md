@@ -1181,6 +1181,26 @@ in the harness) + zero RNG → all 15 combat + 48 encounter goldens BYTE-IDENTIC
 the classification is phase-independent); golden outline-typed (arcaves: 2 clear-LoS scorpions hostile, the
 rest blocked/far → none). 6 CombatOutlineTests lock the team/LoS/perception/glass branches + the palette
 indices. DOCUMENTED: flat red/green for the engine's 5-band gradient; fog-of-war not modeled (all-visible).
+M5 combat sfx (DONE — Tier-2 sfx polish): faithful sfxBuild* name composers + combat-event + ambient
+wiring. SfxName gained CharName (sfxBuildCharName port: FRM base + the _art_get_code (weapon,anim) pair +
+the death/knockout/contact override on the WEAPON char — FALL+Die→'Z', punch/kick+Contact→'Z'; null when
+the base is unresolvable) + WeaponName (sfxBuildWeaponName: W{R|A|O|F|H}{soundCode}{variant}{material}XX1;
+variant 1 for ready/oota/primary else 2; the old WeaponAttack/WeaponHit are now byte-identical shims).
+Wired: OnTargetHit got-hit grunt (anim 14), StartDeathFall death scream (NPCs use faithful CharName —
+scorpions→MASCP2*/MASCRP* which SHIP, humans→HMWARR* which DON'T = engine-faithful silence; the DUDE keeps
+the P8 HumanDeath HM/HFXXXX fallback so player death audio isn't regressed), OnAttackStarted unarmed-swing
+grunt, TryReload weapon-ready, and out-of-ammo via a new default ICombatHost.OnWeaponOutOfAmmo hook (no-op
+for the fake host). Ambient: MapList parses ambient_sfx= (a malformed "animal:15 animal:10" token drops
+gracefully via first-':' split) → GetAmbientSfx; pure Formats.Map.AmbientSfx.RollIndex (wmSfxRollNextIdx
+weighted pick) + RemapBirdForNight (brdchir1/brdchirp→cricket/cricket1 at hhmm hour ≤600/≥1800); a wall-time
+TickAmbientSfx in Update (combat-gated, a DEDICATED seeded _ambientRng off the other streams, ~17 s cadence).
+ALL sfx is _audio?.PlaySfx → --no-audio makes it headless-inert; the ambient timer is wall-time (the harness
+never pumps it) → all 15 combat + 48 encounter goldens BYTE-IDENTICAL. Harness --sfx-probe <hex> (composed
+NAMES only — asset identifiers, like object names); goldens sfx-probe-scorpion (MASCP2* + water ambient) +
+sfx-probe-human (NFPRIM* + dogbark). DECISIONS: faithful CharName everywhere (humans silent = the original
+game) except the dude death keeps HumanDeath; weapon-HIT material defers to 'F' flesh (combat never shoots
+scenery/walls — the proto-material parse is deferred). Tests: SfxNameTests (CharName/WeaponName) + AmbientSfx
+Tests (roll/bird-remap) + the GameDataFact (MASCRPAO ships, HMWARR* doesn't, denbus2 ambient parses).
 
 Phase 10 (DONE, per docs/phase10-research-report.md — "The Wasteland
 Bites Back"): M0 persistence pre-stage (the net: MapList saved=No /

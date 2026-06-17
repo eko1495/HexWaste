@@ -13,6 +13,7 @@ public sealed class MapList
     private readonly Dictionary<int, string> _names = [];
     private readonly Dictionary<string, int> _byLookupName = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<int, string> _musicByIndex = [];
+    private readonly Dictionary<int, IReadOnlyList<(string Name, int Chance)>> _ambientByIndex = [];
     private readonly Dictionary<string, int> _indexByMapName = new(StringComparer.OrdinalIgnoreCase);
     private readonly HashSet<int> _unsaved = [];           // saved=No → transient encounter maps
     private readonly Dictionary<int, List<StartPoint>> _startPoints = [];
@@ -49,6 +50,10 @@ public sealed class MapList
             {
                 list._musicByIndex[currentIndex] = line["music=".Length..].Split(';')[0].Trim();
             }
+            else if (currentIndex >= 0 && line.StartsWith("ambient_sfx=", StringComparison.OrdinalIgnoreCase))
+            {
+                list._ambientByIndex[currentIndex] = ParseAmbient(line["ambient_sfx=".Length..].Split(';')[0]);
+            }
             else if (currentIndex >= 0 && line.StartsWith("saved=", StringComparison.OrdinalIgnoreCase))
             {
                 // saved=No marks a random-encounter map that is regenerated each
@@ -84,6 +89,29 @@ public sealed class MapList
         }
         return tile >= 0 ? new StartPoint(elev, tile) : null;
     }
+
+    /// <summary>Parse "name:chance, name:chance, ..." → the weighted ambient list. Splits each
+    /// comma entry on its FIRST ':' (name, chance); a malformed/unparseable entry is skipped
+    /// gracefully (the one "animal:15 animal:10" quirk in the real maps.txt drops cleanly).</summary>
+    private static IReadOnlyList<(string Name, int Chance)> ParseAmbient(string value)
+    {
+        var entries = new List<(string, int)>();
+        foreach (string part in value.Split(','))
+        {
+            int colon = part.IndexOf(':');
+            if (colon <= 0)
+                continue;
+            string name = part[..colon].Trim();
+            if (name.Length > 0 && int.TryParse(part[(colon + 1)..].Trim(), out int chance) && chance > 0)
+                entries.Add((name, chance));
+        }
+        return entries;
+    }
+
+    /// <summary>The map's weighted ambient sound-effect list (maps.txt ambient_sfx=), or empty.</summary>
+    public IReadOnlyList<(string Name, int Chance)> GetAmbientSfx(string mapFileName) =>
+        _ambientByIndex.TryGetValue(GetIndexByFileName(mapFileName), out IReadOnlyList<(string, int)>? list)
+            ? list : [];
 
     /// <summary>Returns e.g. "artemple.map", or null for unknown indices.</summary>
     public string? GetMapFileName(int index) =>

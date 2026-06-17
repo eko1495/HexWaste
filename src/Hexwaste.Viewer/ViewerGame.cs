@@ -292,6 +292,13 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
     private CityList _cities = null!;
     private AudioManager? _audio;
     private int _stepCounter;
+
+    // Per-map ambient sfx (P34-M5): the weighted maps.txt list, a wall-time countdown, and a DEDICATED
+    // seeded RNG kept off the combat/worldmap/skill/sneak streams so a future wall-time golden can't shift.
+    private IReadOnlyList<(string Name, int Chance)> _mapAmbient = [];
+    private double _ambientTimerMs;
+    private Random? _ambientRng;
+    private const double AmbientIntervalMs = 17000; // ~the engine's 10*randomBetween(15,20) game-ticks
     private WorldmapScreen? _worldmapScreen;
     private bool _worldmapOpen;
     private InterfaceBar? _interfaceBar;
@@ -573,6 +580,9 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
         /// <summary>Report the gore death-anim a burst/explosion/laser kill would give the critter
         /// at Hex — the picked anim + the art-resolved anim (P26), proving gore art availability.</summary>
         public sealed record DeathProbe(int Hex) : StartupAction;
+        /// <summary>Report the composed combat-sfx names for the critter at Hex (swing/hit/die) +
+        /// a weapon name + the map's first ambient entry (P34-M5).</summary>
+        public sealed record SfxProbe(int Hex) : StartupAction;
         /// <summary>Set the dude's two traits (id&lt;0 = none) and report the live effect on his
         /// stats/skills + has_trait (P28-M1).</summary>
         public sealed record TraitProbe(int Trait1, int Trait2) : StartupAction;
@@ -1254,6 +1264,27 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
                         + $"{Probe("burst", 0, Formats.Combat.DeathAnims.FireBurst)} "
                         + $"{Probe("laser", 1, Formats.Combat.DeathAnims.FireBurst)} "
                         + $"{Probe("explode", 6, Formats.Combat.DeathAnims.FireSingle)}");
+                    break;
+                }
+                case StartupAction.SfxProbe(var spHex):
+                {
+                    // P34-M5: the composed combat-sfx names for the critter (scorpion → MASCRP* which ship;
+                    // human → HMWARR* which don't, i.e. faithful-silent) + the map's first ambient entry.
+                    MapObject? spc = _solidObjects[_elevation].Concat(_flatObjects[_elevation])
+                        .FirstOrDefault(o => o.HexTile == spHex && Fid.Type(o.Fid) is ObjectType.Critter);
+                    if (spc is null) { Console.Error.WriteLine($"sfx-probe: no critter at {spHex}"); break; }
+                    string? baseName = _artIndex.CritterBaseName(spc.Fid);
+                    int wc = Fid.WeaponCode(spc.Fid);
+                    string Sfx(int anim, Formats.Sound.SfxName.CharacterSoundEffect ex) =>
+                        Formats.Sound.SfxName.CharName(baseName, anim, ex, wc) ?? "-";
+                    var amb = _mapList.GetAmbientSfx(_currentMapName);
+                    string ambient = amb.Count > 0 ? $"{amb[0].Name}:{amb[0].Chance}" : "-";
+                    Console.WriteLine($"sfx-probe: pid=0x{spc.Pid:X} "
+                        + $"swing={Sfx(16, Formats.Sound.SfxName.CharacterSoundEffect.Contact)} "
+                        + $"hit={Sfx(14, Formats.Sound.SfxName.CharacterSoundEffect.Unused)} "
+                        + $"die={Sfx(20, Formats.Sound.SfxName.CharacterSoundEffect.Die)} "
+                        + $"reload={Formats.Sound.SfxName.WeaponName(Formats.Sound.SfxName.WeaponSoundEffect.Ready, (byte)'1', true)} "
+                        + $"ambient={ambient}");
                     break;
                 }
                 case StartupAction.TraitProbe(var t1, var t2):
@@ -2394,6 +2425,28 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
         Window.Title = _baseTitle;
 
         _audio?.PlayMusic(_mapList.GetMusic(mapName));
+        _mapAmbient = _mapList.GetAmbientSfx(mapName); // P34-M5: per-map ambient sfx list
+        _ambientTimerMs = AmbientIntervalMs;
+    }
+
+    /// <summary>
+    /// Per-map ambient sound effects (P34-M5): on a wall-time countdown, roll a weighted entry
+    /// (AmbientSfx.RollIndex), remap birds → crickets at night, and play it. Suppressed in combat
+    /// (the engine's ambientSoundEffectEventProcess isInCombat gate). Update/wall-time driven + behind
+    /// _audio, so the headless harness (which doesn't pump enough wall-time) never fires it.
+    /// </summary>
+    private void TickAmbientSfx(double elapsedMs)
+    {
+        if (_audio is null || _mapAmbient.Count == 0 || _combat.Phase != Formats.Combat.CombatPhase.Idle)
+            return;
+        _ambientTimerMs -= elapsedMs;
+        if (_ambientTimerMs > 0)
+            return;
+        _ambientTimerMs = AmbientIntervalMs;
+        _ambientRng ??= new Random(RngSeed ?? Environment.TickCount);
+        int idx = Formats.Map.AmbientSfx.RollIndex(_mapAmbient, total => _ambientRng.Next(0, total + 1));
+        if (idx >= 0)
+            _audio.PlaySfx(Formats.Map.AmbientSfx.RemapBirdForNight(_mapAmbient[idx].Name, _clock.Hour));
     }
 
     protected override void Update(GameTime gameTime)
@@ -2910,6 +2963,7 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
         _combat.Step();
         _dude?.Update(gameTime.ElapsedGameTime.TotalMilliseconds);
         UpdateAmbientLife(gameTime.ElapsedGameTime.TotalMilliseconds);
+        TickAmbientSfx(gameTime.ElapsedGameTime.TotalMilliseconds); // P34-M5 ambient sfx
 
         // Script timers: pumped only here — dialog/loot/worldmap modes return
         // earlier in Update, matching the engine's _gdialogActive() gate.
@@ -4140,6 +4194,9 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
                 ? $"You reload the {ObjectNameByPid(weaponProto.Pid)} ({weaponItem.AmmoQuantity}/{weapon.AmmoCapacity})."
                 : $"The {ObjectName(holder)} reloads.");
             Console.WriteLine($"reload: {ObjectNameByPid(weaponProto.Pid)} -> {weaponItem.AmmoQuantity}/{weapon.AmmoCapacity}");
+            // Weapon-ready sfx on a successful reload (the engine rings the weapon in, combat.cc) — P34-M5.
+            if (weapon.SoundCode > 0)
+                _audio?.PlaySfx(Formats.Sound.SfxName.WeaponName(Formats.Sound.SfxName.WeaponSoundEffect.Ready, weapon.SoundCode, primaryOrPunch: true));
             return true;
         }
 
@@ -4507,6 +4564,13 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
             _audio?.PlaySfx(Formats.Sound.SfxName.WeaponAttack(weapon.SoundCode));
     }
 
+    /// <summary>Out-of-ammo empty-click sfx (combat.cc:5745) — P34-M5.</summary>
+    public void OnWeaponOutOfAmmo(ProtoInfo weaponProto)
+    {
+        if (weaponProto.Weapon is { SoundCode: > 0 } weapon)
+            _audio?.PlaySfx(Formats.Sound.SfxName.WeaponName(Formats.Sound.SfxName.WeaponSoundEffect.OutOfAmmo, weapon.SoundCode, primaryOrPunch: true));
+    }
+
     // ===================================================================
     //  ICombatHost — the rest of the seam to CombatEngine (phase-9 M0).
     //  The viewer keeps single ownership of the animator, walkers, draw
@@ -4705,7 +4769,13 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
 
     public void OnAttackStarted(MapObject attacker, MapObject target, ProtoInfo? weaponProto)
     {
-        PlayWeaponSfx(weaponProto);
+        if (weaponProto?.Weapon is not null)
+            PlayWeaponSfx(weaponProto);
+        // Unarmed/melee swing grunt (actions.cc:625 sfxBuildCharName(attacker, ANIM_THROW_PUNCH, CONTACT)) —
+        // a wielded weapon plays its own sfx above instead (P34-M5).
+        else if (Formats.Sound.SfxName.CharName(_artIndex.CritterBaseName(attacker.Fid), 16 /*ANIM_THROW_PUNCH*/,
+                     Formats.Sound.SfxName.CharacterSoundEffect.Contact, Fid.WeaponCode(attacker.Fid)) is { } swing)
+            _audio?.PlaySfx(swing);
         StartAttackAnimation(attacker, weaponProto);
         LaunchProjectile(attacker, target, weaponProto);
     }
@@ -4801,6 +4871,12 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
     public void OnTargetHit(MapObject target)
     {
         const int animHitFromFront = 14;
+        // Got-hit grunt (actions.cc:431 sfxBuildCharName(defender, ANIM_HIT_FROM_FRONT, UNUSED)) —
+        // audio-only, plays for any target incl. the dude; null/silent when the base is unresolvable (P34-M5).
+        if (Formats.Sound.SfxName.CharName(_artIndex.CritterBaseName(target.Fid), animHitFromFront,
+                Formats.Sound.SfxName.CharacterSoundEffect.Unused, Fid.WeaponCode(target.Fid)) is { } grunt)
+            _audio?.PlaySfx(grunt);
+
         int hitFid = Fid.Build(ObjectType.Critter, Fid.Index(target.Fid), animHitFromFront,
             Fid.WeaponCode(target.Fid));
         if (target != _dude?.Dude && _vfs.Exists(_artIndex.GetFrmPath(hitFid)))
@@ -4811,12 +4887,20 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
     /// waits), false if no fall art (corpse converted immediately).</summary>
     public bool StartDeathFall(MapObject critter, int deathAnim)
     {
-        // Gender from the critter's art base name (2nd char 'm'/'f' — the engine's
-        // sfxBuildCharName convention); the dude uses his gcd.
-        bool female = critter == _dude?.Dude
-            ? _dudeGcd?.Stats.BaseStats[34] == 1
-            : _artIndex.CritterBaseName(critter.Fid) is { Length: > 1 } n && char.ToLowerInvariant(n[1]) == 'f';
-        _audio?.PlaySfx(Formats.Sound.SfxName.HumanDeath(female, deathAnim));
+        // Death scream (actions.cc:321 sfxBuildCharName(defender, anim, CHARACTER_SOUND_EFFECT_DIE)).
+        // NPCs use the faithful CharName (scorpions → MASCRP* which ship; humans → HMWARR* which don't,
+        // i.e. engine-faithful silence). The DUDE keeps the HumanDeath HM/HFXXXX fallback (the P8 scream,
+        // a documented divergence) so the player death audio isn't regressed (P34-M5).
+        if (critter == _dude?.Dude)
+        {
+            bool female = _dudeGcd?.Stats.BaseStats[34] == 1;
+            _audio?.PlaySfx(Formats.Sound.SfxName.HumanDeath(female, deathAnim));
+        }
+        else if (Formats.Sound.SfxName.CharName(_artIndex.CritterBaseName(critter.Fid), deathAnim,
+                     Formats.Sound.SfxName.CharacterSoundEffect.Die, Fid.WeaponCode(critter.Fid)) is { } scream)
+        {
+            _audio?.PlaySfx(scream);
+        }
 
         int fallFid = Fid.Build(ObjectType.Critter, Fid.Index(critter.Fid), deathAnim, 0);
         if (_vfs.Exists(_artIndex.GetFrmPath(fallFid)))

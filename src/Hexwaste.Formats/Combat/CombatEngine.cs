@@ -215,6 +215,7 @@ public sealed class CombatEngine
                 if (_phase != CombatPhase.PlayerTurn && _host.TryReload(dude, weaponProto!, weaponItem!))
                     return true;
                 _host.Log("Out of ammo.");
+                _host.OnWeaponOutOfAmmo(weaponProto!);
                 return false;
             }
 
@@ -343,6 +344,7 @@ public sealed class CombatEngine
             if (_phase != CombatPhase.PlayerTurn && _host.TryReload(dude, weaponProto, weaponItem))
                 return true;
             _host.Log("Out of ammo.");
+            _host.OnWeaponOutOfAmmo(weaponProto);
             return false;
         }
 

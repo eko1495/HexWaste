@@ -1,0 +1,1 @@
+sfx-probe: pid=0x1000004 swing=NFPRIMZQ hit=NFPRIMAO die=NFPRIMZA reload=WR11XXX1 ambient=dogbark:10
