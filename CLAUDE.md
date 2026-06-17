@@ -1048,6 +1048,22 @@ titles, town/karma-title GVARs, the char-sheet/Pip-Boy display + save. The engin
 karma (no kill/quest hook, no karma-gated dialog), so it's faithful read-only display driven by scripts/
 --set-global — that's the whole feature, not a behaviour change. 441 Formats tests.
 
+Phase 32 (IN PROGRESS — "Broaden Compatibility", from the audit). The compatibility audit (a workflow +
+a 155-map dynamic sweep) found: all 155 original maps LOAD cleanly (the DAT/MAP/FRM/proto/render pipeline
+is general); the gap is scripted BEHAVIOUR — 13/28 procs wired, 93/181 externals wired, and vault13.gam
+GVARs UNSEEDED. Highest-leverage incremental wins: GVAR seeding + map-load robustness. M0 proto-read
+guard (DONE): the audit flagged MapFile's two uncaught protos.Get(pid).SubType reads (Item/Scenery
+trailer switch) as a latent SIGABRT — a missing/corrupt .pro threw out of LoadMap → MonoGame Update →
+hard abort. Wrapped them in MapFile.SubTypeOf (→ -1 on a bad proto → the trailer switch reads nothing,
+best-effort) + a top-level LoadMap try/catch (FileNotFound/InvalidData/NotSupported/EndOfStream) that
+soft-fails: a transition keeps the prior map (teardown runs after the parse), and a failed INITIAL load
+falls back to the title menu (Draw now guards the world draw on _map != null — the menu/overlays are
+null-map-safe). VERIFIED: a missing map (the audit's mis-probed klamath.map) that SIGABRT'd now exits
+cleanly to the menu; all 155 real maps still load identically (happy path: protos.Get succeeds → real
+SubType → unchanged). Inert — all 15 combat + 44 encounter goldens BYTE-IDENTICAL. NOTE: no shippable
+map actually trips this (the DAT carries every proto); it's latent hardening, not an active-crash fix
+(the audit's "Klamath crash" was a measurement artifact — a typo'd filename, not a real incompatibility).
+
 Phase 10 (DONE, per docs/phase10-research-report.md — "The Wasteland
 Bites Back"): M0 persistence pre-stage (the net: MapList saved=No /
 random_start_point parse + IsTransient; the 3-clause transient guards as

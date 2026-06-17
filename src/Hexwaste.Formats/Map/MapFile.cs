@@ -414,6 +414,16 @@ public sealed class MapFile
     /// ported from fallout2-ce src/proto.cc objectDataRead(). Returns the
     /// inventory length; the items themselves follow as nested object records.
     /// </summary>
+    /// <summary>The object's proto SubType, or -1 if the proto is missing/corrupt (P32 robustness). The
+    /// engine assumes every referenced .pro is present; a bad reference threw out of LoadMap as a hard
+    /// abort. A -1 falls through the Item/Scenery trailer switch (reads no trailer) — best-effort that
+    /// keeps the app alive instead of crashing. No shippable map trips this (the DAT carries every proto).</summary>
+    private static int SubTypeOf(ProtoDatabase protos, int pid)
+    {
+        try { return protos.Get(pid).SubType; }
+        catch (Exception ex) when (ex is FileNotFoundException or InvalidDataException or NotSupportedException) { return -1; }
+    }
+
     private static int ReadObjectData(BigEndianReader reader, MapObject obj,
         ProtoDatabase protos, int mapVersion)
     {
@@ -447,7 +457,7 @@ public sealed class MapFile
         switch ((ObjectType)pidType)
         {
             case ObjectType.Item:
-                switch (protos.Get(obj.Pid).SubType)
+                switch (SubTypeOf(protos, obj.Pid))
                 {
                     case 3: // ITEM_TYPE_WEAPON: loaded rounds + loaded ammo pid
                         obj.AmmoQuantity = reader.ReadInt32();
@@ -463,7 +473,7 @@ public sealed class MapFile
                 break;
 
             case ObjectType.Scenery:
-                switch (protos.Get(obj.Pid).SubType)
+                switch (SubTypeOf(protos, obj.Pid))
                 {
                     case 0: // SCENERY_TYPE_DOOR
                         obj.DoorOpenFlags = reader.ReadInt32();

@@ -2080,8 +2080,27 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
         }
 
         _currentMapName = mapName;
-        using (Stream stream = _vfs.OpenRead($@"maps\{mapName}"))
+        // P32 robustness: a missing/corrupt map or proto used to throw out of here, through LoadContent
+        // and MonoGame's Update loop, into a hard SIGABRT. Catch the expected I/O/parse failures and
+        // soft-fail — the teardown below hasn't run yet, so the prior map/menu state stays intact (the
+        // player just stays put). No shippable map trips this; it hardens against bad data.
+        try
+        {
+            using Stream stream = _vfs.OpenRead($@"maps\{mapName}");
             _map = MapFile.Load(stream, _protos);
+        }
+        catch (Exception ex) when (ex is FileNotFoundException or InvalidDataException
+            or NotSupportedException or EndOfStreamException)
+        {
+            Console.Error.WriteLine($"load-map: failed to load '{mapName}': {ex.GetType().Name}: {ex.Message}");
+            Log($"Could not load map {mapName}.");
+            // A transition keeps the prior map (teardown below hasn't run). With no prior map (initial
+            // load / a bad --map arg), fall back to the title menu — which runs null-map-safe — so the
+            // app survives instead of NPE-ing on a null _map.
+            if (_map is null)
+                _menu = MenuState.Title;
+            return;
+        }
 
         _animator = new ObjectAnimator(_frmCache);
         _scriptHost?.ClearTimers();
@@ -5374,7 +5393,7 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
         // isoWindowRefreshRectGame): floors -> flat objects -> non-flat
         // objects -> roofs. Floors render as lit quads (BasicEffect) before
         // the sprite batch opens.
-        if (!_worldmapOpen)
+        if (!_worldmapOpen && _map is not null)
         {
             _dudeUnderRoof = DudeIsUnderRoof();
             DrawFloors();
@@ -5392,12 +5411,18 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
         }
         else
         {
-            DrawObjects(_flatObjects[_elevation]);
-            DrawObjects(_solidObjects[_elevation]);
-            DrawProjectiles();
-            if (_roofsVisible)
-                DrawRoofs();
-            DrawInterfaceBar();
+            // The world draws only with a loaded map; without one (a failed/soft-failed load → the
+            // title menu) the UI overlays below still render. Inert for every real flow (_map is always
+            // loaded there); this just keeps a missing-map soft-fail from NPE-ing on null draw lists.
+            if (_map is not null)
+            {
+                DrawObjects(_flatObjects[_elevation]);
+                DrawObjects(_solidObjects[_elevation]);
+                DrawProjectiles();
+                if (_roofsVisible)
+                    DrawRoofs();
+                DrawInterfaceBar();
+            }
             DrawTextOverlay();
             DrawDialogPanel();
             DrawItemPanels();
