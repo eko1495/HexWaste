@@ -567,6 +567,9 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
         public sealed record HurtTooMuchProbe(int Hex, int Flags) : StartupAction;
         /// <summary>Report the dude's movement anim-code under each run guard (P34-M3).</summary>
         public sealed record RunProbe : StartupAction;
+        /// <summary>Position the dude adjacent to FightHex, then report the combat-outline type each
+        /// living critter would get (P34-M4; zero-RNG, no combat entry).</summary>
+        public sealed record OutlineProbe(int FightHex) : StartupAction;
         /// <summary>Report the gore death-anim a burst/explosion/laser kill would give the critter
         /// at Hex — the picked anim + the art-resolved anim (P26), proving gore art availability.</summary>
         public sealed record DeathProbe(int Hex) : StartupAction;
@@ -1452,6 +1455,25 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
                     int silentRun = Formats.Combat.RunGuard.MovementAnimCode(0, true, true, art);
                     Console.WriteLine($"run-probe: default={def} crippled={crippled} sneaking={sneaking} "
                         + $"silentRun={silentRun} artExists={(art ? 1 : 0)}");
+                    break;
+                }
+                case StartupAction.OutlineProbe(var fightHex) when _dude is not null:
+                {
+                    // P34-M4: position the dude adjacent to the target (zero RNG, no combat entry) and
+                    // classify every living critter's combat-outline type. CombatOutlineType is phase-
+                    // independent, so no need to actually enter combat.
+                    if (_solidObjects[_elevation].Any(o => o.HexTile == fightHex && Fid.Type(o.Fid) is ObjectType.Critter))
+                    {
+                        _dude.Dude.HexTile = Formats.Hex.HexGrid.TileInDirection(fightHex, 3); // adjacent, like --fight
+                        RebuildBlockedTiles(_dude.Dude);
+                    }
+                    foreach (MapObject oc in _solidObjects[_elevation]
+                        .Where(o => Fid.Type(o.Fid) is ObjectType.Critter && o != _dude.Dude && !o.IsDead)
+                        .OrderBy(o => o.HexTile))
+                    {
+                        string type = CombatOutlineType(oc).ToString().ToLowerInvariant();
+                        Console.WriteLine($"outline: hex={oc.HexTile} team={oc.Team} type={type}");
+                    }
                     break;
                 }
                 case StartupAction.RepTitle(var repValue):
@@ -5908,12 +5930,49 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
 
             _spriteBatch.Draw(texture, new Vector2(sprite.Left, sprite.Top), tint);
 
-            if (obj == _hoveredObject)
+            // Combat outlines (P34-M4): during combat every visible LIVING critter is outlined by team
+            // (red hostile / green friendly / dim perception-only), LoS-gated; out of combat the hovered
+            // object gets the green hover outline. One outline per critter (hover suppressed in combat).
+            if (_combat.Phase != Formats.Combat.CombatPhase.Idle && _dude is not null
+                && Fid.Type(obj.Fid) is ObjectType.Critter && obj != _dude.Dude && !obj.IsDead)
+            {
+                if (CombatOutlineColor(obj) is { } teamColor)
+                {
+                    Texture2D outline = _frmCache.GetOutlineTexture(sprite.Fid, sprite.FrameIndex, sprite.Rotation);
+                    _spriteBatch.Draw(outline, new Vector2(sprite.Left, sprite.Top), teamColor);
+                }
+            }
+            else if (obj == _hoveredObject && _combat.Phase == Formats.Combat.CombatPhase.Idle)
             {
                 Texture2D outline = _frmCache.GetOutlineTexture(sprite.Fid, sprite.FrameIndex, sprite.Rotation);
                 _spriteBatch.Draw(outline, new Vector2(sprite.Left, sprite.Top), new Color(0, 252, 0));
             }
         }
+    }
+
+    /// <summary>
+    /// The team/LoS outline a visible critter gets during combat, or null for none (P34-M4).
+    /// ported from fallout2-ce src/combat.cc _combat_update_critter_outline_for_los() +
+    /// src/object.cc _obj_outline_object() — the 5-band gradient collapses to the base palette index.
+    /// </summary>
+    private Color? CombatOutlineColor(MapObject critter)
+    {
+        int idx = Formats.Combat.CombatOutline.PaletteIndex(CombatOutlineType(critter));
+        if (idx < 0)
+            return null;
+        (byte r, byte g, byte b) = _palette.GetRgb(idx);
+        return new Color(r, g, b);
+    }
+
+    private Formats.Combat.OutlineType CombatOutlineType(MapObject critter)
+    {
+        MapObject dude = _dude!.Dude;
+        bool clearLos = Formats.Combat.LineOfFire.Trace(dude.HexTile, critter.HexTile,
+            t => ShootBlockerAt(t, dude, critter)).Blocker is null;
+        int dist = Formats.Hex.HexGrid.Distance(dude.HexTile, critter.HexTile);
+        int pe = GetCritterState(dude)?.Stat(1) ?? 0; // STAT_PERCEPTION (SPECIAL index 1)
+        bool glass = TranslucencyOf(critter) == Formats.Proto.TransType.Glass;
+        return Formats.Combat.CombatOutline.TypeFor(clearLos, dude.Team, critter.Team, dist, pe, glass);
     }
 
     private readonly Dictionary<int, Formats.Proto.TransType> _transByPid = [];

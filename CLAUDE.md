@@ -1167,6 +1167,20 @@ derived, not fps-derived; the crippled variant forces walk anyway). DECISIONS: r
 DEFERRED (golden-risk to the P30 sneak suite, not needed for the visual). Harness --run-probe (reports the
 code under each guard); golden run-probe (combat char on arcaves: default=19/crippled=1/sneaking=1/silentRun=
 19/artExists=1). 5 RunGuardTests lock the guard order + the 19/1 codes.
+M4 typed combat outlines (DONE): during combat every visible LIVING critter is outlined by team
+(red hostile / green friendly / dim perception-only), LoS-gated — ported from combat.cc _combat_update_
+critter_outline_for_los + object.cc _obj_outline_object. Pure Formats.Combat.CombatOutline.TypeFor: clear
+LoF to the dude → same-team FRIENDLY else HOSTILE; LoF blocked → PERCEPTION if within the dude's PE×5 reach
+(÷2 through glass) else none. The 5-band gradient collapses to the engine's base palette index (243 red /
+229 green / 61 dim). The viewer's CombatOutlineType reuses the faithful P13-M1 LineOfFire.Trace (via the
+host's ShootBlockerAt) + GetCritterState(dude).Stat(1) for PE; CombatOutlineColor resolves the index to RGB.
+Wired into DrawObjects (when _combat.Phase != Idle): a per-critter outline pass; the green hover outline is
+now suppressed during combat (one outline per critter). Draw-ONLY + headless-inert (DrawObjects never runs
+in the harness) + zero RNG → all 15 combat + 48 encounter goldens BYTE-IDENTICAL. Harness --outline-probe
+<fightHex> (zero-RNG: positions the dude adjacent, classifies each living critter — no combat entry, since
+the classification is phase-independent); golden outline-typed (arcaves: 2 clear-LoS scorpions hostile, the
+rest blocked/far → none). 6 CombatOutlineTests lock the team/LoS/perception/glass branches + the palette
+indices. DOCUMENTED: flat red/green for the engine's 5-band gradient; fog-of-war not modeled (all-visible).
 
 Phase 10 (DONE, per docs/phase10-research-report.md — "The Wasteland
 Bites Back"): M0 persistence pre-stage (the net: MapList saved=No /

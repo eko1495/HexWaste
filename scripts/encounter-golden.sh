@@ -178,11 +178,16 @@ SCENARIOS=(
   # guards (animation.cc animationRegisterRunToTile): crippled leg, sneaking-without-Silent-Running, or
   # missing run art. Pure decision (RunGuard.MovementAnimCode), Draw/anim-only -> all goldens unchanged.
   "run-probe|--character combat --map arcaves.map --run-probe --rng-seed 1"
+  # P34-M4 typed combat outlines: during combat every visible living critter is outlined by team
+  # (red hostile / green friendly), LoS-gated (combat.cc _combat_update_critter_outline_for_los). The
+  # probe positions the dude adjacent to 20529 and classifies each arcaves critter: clear-LoS scorpions
+  # (team 4 != dude team 0) = hostile; blocked-LoS + beyond PE*5 = none. Draw-only -> goldens unchanged.
+  "outline-typed|--character combat --map arcaves.map --outline-probe 20529 --rng-seed 1"
 )
 
 # Keep only the deterministic transcript lines (drop map-load / animate / stub /
 # dialog-text noise — NEVER capture REPLY/OPTION game-asset strings).
-FILTER='^(encounter|travel-from|companion|dismiss-persist|trade:|party:|party-count:|set-global:|hud-click:|use-skill:|hurt:|rest:|automap:|weapon-mode:|panel-click:|menu-click:|travel-resume:|travel-step:|travel-save-mid:|worldmap-fog:|weight:|iq-probe:|death-probe:|trait-probe:|perk-probe:|perk-pick:|combat-walk:|light:|reg-anim:|encounter-fight:|brawl:|sneak-probe:|sneak-roll:|backstab-probe:|detect-probe:|karma-probe:|set-karma:|rep-title:|town-rep:|karma-titles:|get-global:|place-probe:|reg-anim-move:|critter-state:|hurt-too-much:|run-probe:|  spawn|  flat|  wait:|  follow:|  dismiss:|  rejoin:)'
+FILTER='^(encounter|travel-from|companion|dismiss-persist|trade:|party:|party-count:|set-global:|hud-click:|use-skill:|hurt:|rest:|automap:|weapon-mode:|panel-click:|menu-click:|travel-resume:|travel-step:|travel-save-mid:|worldmap-fog:|weight:|iq-probe:|death-probe:|trait-probe:|perk-probe:|perk-pick:|combat-walk:|light:|reg-anim:|encounter-fight:|brawl:|sneak-probe:|sneak-roll:|backstab-probe:|detect-probe:|karma-probe:|set-karma:|rep-title:|town-rep:|karma-titles:|get-global:|place-probe:|reg-anim-move:|critter-state:|hurt-too-much:|run-probe:|outline:|  spawn|  flat|  wait:|  follow:|  dismiss:|  rejoin:)'
 
 echo "Building viewer..."
 dotnet build src/Hexwaste.Viewer -c Debug >/dev/null || { echo "build failed"; exit 2; }
