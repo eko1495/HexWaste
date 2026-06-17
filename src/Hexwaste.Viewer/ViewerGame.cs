@@ -373,6 +373,30 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
         return _karmavar ?? [];
     }
 
+    // P32-M1: data\vault13.gam new-game global seed (positional values), lazily parsed once.
+    private IReadOnlyList<int>? _gamSeed; private bool _gamSeedTried;
+    /// <summary>Seed the non-zero vault13.gam globals into GlobalVars at new-game (game.cc
+    /// gameLoadGlobalVars). Sparse — only the ~12 non-zero values are written (an unset key reads 0, so
+    /// the 684 zero-seeds are implicit). SILENT (no stdout) so it can't perturb a golden transcript; the
+    /// effect is purely the seeded values a script may branch on. No-op if vault13.gam is absent.</summary>
+    private void SeedGlobalVars()
+    {
+        if (_scriptHost is null)
+            return;
+        if (!_gamSeedTried)
+        {
+            _gamSeedTried = true;
+            if (_vfs.Exists(@"data\vault13.gam"))
+                _gamSeed = Formats.Int.GameGlobalVars.Parse(
+                    System.Text.Encoding.Latin1.GetString(_vfs.ReadAllBytes(@"data\vault13.gam")));
+        }
+        if (_gamSeed is null)
+            return;
+        for (int i = 0; i < _gamSeed.Count; i++)
+            if (_gamSeed[i] != 0)
+                _scriptHost.GlobalVars[i] = _gamSeed[i];
+    }
+
     /// <summary>The karma/reputation display lines (P31 B-M3) shared by the character sheet + Pip-Boy:
     /// the karma number (PC_STAT_KARMA), the generic-reputation value + title (GVAR_PLAYER_REPUTATION =
     /// GlobalVars[0] via genrep.txt), any earned karma titles, and non-Neutral slice-town standings.</summary>
@@ -523,6 +547,8 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
         public sealed record KarmaTitlesProbe : StartupAction;
         /// <summary>Set the dude's PC-stat karma + reputation (P31 B-M3 harness; pcSetStat clamps).</summary>
         public sealed record SetKarma(int Karma, int Reputation) : StartupAction;
+        /// <summary>Read a global var (P32-M1; verifies vault13.gam seeding after a new game).</summary>
+        public sealed record GetGlobal(int Id) : StartupAction;
         /// <summary>Report the gore death-anim a burst/explosion/laser kill would give the critter
         /// at Hex — the picked anim + the art-resolved anim (P26), proving gore art availability.</summary>
         public sealed record DeathProbe(int Hex) : StartupAction;
@@ -1316,6 +1342,12 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
                     int Pc(int s) => _scriptHost?.PcStatProvider?.Invoke(s) ?? 0;
                     Console.WriteLine($"karma-probe: karma={Pc(Formats.Int.PcStat.Karma)} rep={Pc(Formats.Int.PcStat.Reputation)}"
                         + $" level={Pc(Formats.Int.PcStat.Level)} xp={Pc(Formats.Int.PcStat.Experience)} unspent={Pc(Formats.Int.PcStat.UnspentSkillPoints)}");
+                    break;
+                }
+                case StartupAction.GetGlobal(var ggId):
+                {
+                    // P32-M1: read a global var (proves vault13.gam seeding fired at new-game).
+                    Console.WriteLine($"get-global: GVAR{ggId} = {_scriptHost?.GlobalVars.GetValueOrDefault(ggId, 0) ?? 0}");
                     break;
                 }
                 case StartupAction.RepTitle(var repValue):
@@ -7869,6 +7901,7 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
         if (_scriptHost is not null)
         {
             _scriptHost.GlobalVars.Clear();
+            SeedGlobalVars(); // P32-M1: seed the non-zero vault13.gam globals (e.g. Arroyo rep 50, FIND_VIC 1)
             _scriptHost.ClearAllLocalVars();
             _scriptHost.ExternalVars.Clear();
         }

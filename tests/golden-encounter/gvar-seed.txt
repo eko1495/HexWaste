@@ -1,0 +1,4 @@
+get-global: GVAR0 = 0
+get-global: GVAR47 = 50
+get-global: GVAR619 = 1
+get-global: GVAR134 = 100

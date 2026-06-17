@@ -1063,6 +1063,22 @@ cleanly to the menu; all 155 real maps still load identically (happy path: proto
 SubType → unchanged). Inert — all 15 combat + 44 encounter goldens BYTE-IDENTICAL. NOTE: no shippable
 map actually trips this (the DAT carries every proto); it's latent hardening, not an active-crash fix
 (the audit's "Klamath crash" was a measurement artifact — a typo'd filename, not a real incompatibility).
+M1 vault13.gam GVAR seeding (DONE): pure Formats.Int.GameGlobalVars.Parse ports game.cc globalVarsRead
+(the GAME_GLOBAL_VARS: section, positional index = the i-th non-blank/non-// line, value = sscanf %d
+after '='). SeedGlobalVars writes the non-zero seeds into ScriptHost.GlobalVars at StartNewGame (after
+the Clear, before the first map_enter), sparse — only the ~12 non-zero values (an unset key reads 0, so
+the 684 zero-seeds are implicit) and SILENT (no stdout, so no golden-line risk). KEY FINDING (shrinks
+the audit's "unseeded GVARs" gap): the base vault13.gam seeds 684/696 globals to 0; only 12 are non-zero,
+and just TWO touch the slice — GVAR_TOWN_REP_ARROYO[47]:=50 (Arroyo starts Idolized → feeds the P31
+karma display) and GVAR_FIND_VIC[619]:=1. GOLDEN SAFETY: seeding fires on StartNewGame; the harness
+--map debug path goes LoadContent→LoadMap directly (no StartNewGame → no seed), so the vic/dialog goldens
+(--map) are untouched; the --create-based goldens DO seed (StartNewGame) but no slice script reads a
+seeded var in a golden-visible way → ALL 15 combat + 44 encounter goldens BYTE-IDENTICAL. Harness
+--get-global <id>; new golden gvar-seed (--create → 47=50, 619=1, 134=100, 0=0). 2 GameGlobalVars tests
+incl. a GameDataFact that asserts the real vault13.gam positional indices (47=50, 619=1, ~12 non-zero).
+DOCUMENTED: the bare --map load stays unseeded (a synthetic debug jump); real play (menu → New Game)
+seeds. P32 COMPLETE: map-load robustness + GVAR seeding — the two highest-leverage compatibility wins
+from the audit.
 
 Phase 10 (DONE, per docs/phase10-research-report.md — "The Wasteland
 Bites Back"): M0 persistence pre-stage (the net: MapList saved=No /
