@@ -1094,6 +1094,28 @@ denbus2's same-tile call runs the path as a no-op → all 15 combat + 44 encount
 --place-probe <from> <to> proves the REAL relocate (denbus2 critter 14716→14000); new golden critter-place
 + 3 Placement tests. DOCUMENTED: the free-tile search is radius-1 (engine spiral-searches wider) + uses
 the current elevation's blocking (approximate off-screen).
+M1 reg_anim movement (DONE — the audit's #1 high-leverage stub): wired the reg_anim_func begin/end/clear
+queue (0x810E) + the 6 register ops the P21 note deferred — reg_anim_animate/_reverse (0x810F/0x8110),
+reg_anim_obj_move_to_obj/_run_to_obj (0x8111/0x8112), reg_anim_obj_move_to_tile/_run_to_tile (0x8113/
+0x8114). IntVm dispatch pops match the engine handlers verbatim (reg_anim_func: param then cmd, BEGIN=1/
+CLEAR=2/END=3; the move/animate ops: delay, target, obj). IVmExternals gained RegAnimBegin/End/Clear +
+RegAnimMoveToTile/MoveToObject/Animate; ScriptContext accumulates a resolved RegAnimAction list between
+begin and end (handles → MapObject at registration via ObjectOf) and flushes it to the host on END via
+ScriptHost.RegAnimRequested (RegAnimClearRequested for CLEAR → the existing ClearAnimation). The viewer's
+ExecuteRegAnim plays the batch: MoveToTile/RunToTile → StartNpcWalk; MoveToObject/RunToObject → StartNpcWalk
+to Placement.FreeTileNear(dest) (the P33-M0 reuse); Animate(Reverse) → the animator (critter anim-coded
+FID / scenery loop, like reg_anim_animate_forever). DOCUMENTED SIMPLIFICATIONS: the engine plays a batch
+SEQUENTIALLY over time — we execute in PARALLEL on END and ignore the per-action delay; run==walk (no
+separate run speed/anim); Animate LOOPS rather than playing once (no one-shot primitive); animate_forever
+(0x8126) stays the P21 immediate path, NOT queued. INERT ON THE SLICE: no shippable map fires the move/
+animate ops at map_enter (only reg_anim_animate_forever for scenery, P21), and reg_anim_func BEGIN/END
+wrap an empty batch there (animate_forever fires immediately, outside the batch), so ExecuteRegAnim is
+never invoked — all 15 combat + 47 encounter goldens (incl. script-light's --reg-anim-probe) BYTE-IDENTICAL
+(reg-anim-move is the 48th, the new fixture).
+The engine gates every op on !isInCombat() (interpreter_extra.cc:3460); ExecuteRegAnim mirrors that (skips
+the batch mid-combat). Harness --reg-anim-move <fromHex> <toHex> synthesizes a begin→move-to-tile→end batch
+on a real map critter (no slice script does); new golden reg-anim-move (denbus2 merchant 14716→14718 walks).
+SPILLOVER closed: "the reg_anim movement ops + begin/end sequencing" from the P21 spillover line is now DONE.
 
 Phase 10 (DONE, per docs/phase10-research-report.md — "The Wasteland
 Bites Back"): M0 persistence pre-stage (the net: MapList saved=No /

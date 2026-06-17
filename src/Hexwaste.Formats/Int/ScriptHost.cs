@@ -3,6 +3,25 @@ using Hexwaste.Formats.Text;
 
 namespace Hexwaste.Formats.Int;
 
+/// <summary>The kind of a queued reg_anim action (interpreter_extra.cc opRegAnim*).</summary>
+public enum RegAnimKind
+{
+    MoveToTile,
+    RunToTile,
+    MoveToObject,
+    RunToObject,
+    Animate,
+    AnimateReverse,
+}
+
+/// <summary>
+/// One registered reg_anim action, resolved to host objects at registration time.
+/// <see cref="Tile"/> is meaningful for the tile variants; <see cref="Dest"/> for the
+/// object variants; <see cref="Anim"/> for the animate variants. The engine plays a
+/// batch sequentially over time; the host's executor is free to simplify (P33-M1).
+/// </summary>
+public sealed record RegAnimAction(RegAnimKind Kind, MapObject Object, int Tile, MapObject? Dest, int Anim, int Delay);
+
 /// <summary>
 /// Runs object scripts in the micro INT VM with the engine's script-context
 /// protocol (phase-4 M0): object handle table, source/target/dude context,
@@ -85,6 +104,13 @@ public sealed class ScriptHost(GameFileSystem vfs, ScriptList scripts, Hexwaste.
 
     /// <summary>reg_anim_animate_forever: the host loops anim code on the object.</summary>
     public Action<MapObject, int>? AnimateForeverRequested { get; set; }
+
+    /// <summary>reg_anim_func END: the host plays a flushed batch of queued reg_anim
+    /// actions (moves/animations). (P33-M1.)</summary>
+    public Action<IReadOnlyList<RegAnimAction>>? RegAnimRequested { get; set; }
+
+    /// <summary>reg_anim_func CLEAR: the host cancels the object's animation/walk.</summary>
+    public Action<MapObject>? RegAnimClearRequested { get; set; }
 
     /// <summary>Stat-block override (the dude's gcd sheet); null falls back to
     /// the critter's prototype.</summary>
@@ -899,6 +925,47 @@ public sealed class ScriptHost(GameFileSystem vfs, ScriptList scripts, Hexwaste.
         {
             if (_host.ObjectOf(objectHandle) is { } obj)
                 _host.AnimateForeverRequested?.Invoke(obj, anim);
+        }
+
+        // ---- reg_anim batch (interpreter_extra.cc opRegAnimFunc/opRegAnim*). begin opens
+        // a batch, the register ops accumulate resolved actions, end flushes them to the
+        // host. The list lives on the context (begin/end pair within one proc run).
+        private readonly List<RegAnimAction> _regAnim = [];
+
+        public void RegAnimBegin() => _regAnim.Clear();
+
+        public void RegAnimEnd()
+        {
+            if (_regAnim.Count > 0)
+                _host.RegAnimRequested?.Invoke(_regAnim.ToArray());
+            _regAnim.Clear();
+        }
+
+        public void RegAnimClear(int objectHandle)
+        {
+            if (_host.ObjectOf(objectHandle) is { } obj)
+                _host.RegAnimClearRequested?.Invoke(obj);
+        }
+
+        public void RegAnimMoveToTile(int objectHandle, int tile, int delay, bool run)
+        {
+            if (_host.ObjectOf(objectHandle) is { } obj && Hex.HexGrid.IsValid(tile))
+                _regAnim.Add(new RegAnimAction(
+                    run ? RegAnimKind.RunToTile : RegAnimKind.MoveToTile, obj, tile, null, 0, delay));
+        }
+
+        public void RegAnimMoveToObject(int objectHandle, int destHandle, int delay, bool run)
+        {
+            if (_host.ObjectOf(objectHandle) is { } obj && _host.ObjectOf(destHandle) is { } dest)
+                _regAnim.Add(new RegAnimAction(
+                    run ? RegAnimKind.RunToObject : RegAnimKind.MoveToObject, obj, -1, dest, 0, delay));
+        }
+
+        public void RegAnimAnimate(int objectHandle, int anim, int delay, bool reverse)
+        {
+            if (_host.ObjectOf(objectHandle) is { } obj)
+                _regAnim.Add(new RegAnimAction(
+                    reverse ? RegAnimKind.AnimateReverse : RegAnimKind.Animate, obj, -1, null, anim, delay));
         }
 
         public int GetCritterStat(int objectHandle, int stat) =>

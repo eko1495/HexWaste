@@ -255,6 +255,10 @@ for (int i = 0; i < args.Length; i++)
             actions.Add(new ViewerGame.StartupAction.PlaceProbe(int.Parse(args[i + 1]), int.Parse(args[i + 2])));
             i += 2;
             break;
+        case "--reg-anim-move" when i + 2 < args.Length:
+            actions.Add(new ViewerGame.StartupAction.RegAnimMove(int.Parse(args[i + 1]), int.Parse(args[i + 2])));
+            i += 2;
+            break;
         case "--set-karma" when i + 2 < args.Length:
             actions.Add(new ViewerGame.StartupAction.SetKarma(int.Parse(args[i + 1]), int.Parse(args[i + 2])));
             i += 2;

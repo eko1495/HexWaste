@@ -159,11 +159,17 @@ SCENARIOS=(
   # (denbus2 has a critter at 14716; move it to 14000). On entry the engine fires this op same-tile (a
   # no-op), so the slice goldens are unchanged — this proves the actual relocate.
   "critter-place|--map denbus2.map --place-probe 14716 14000 --rng-seed 1"
+  # P33-M1 reg_anim movement: drive a reg_anim_func batch (begin -> obj_move_to_tile -> end)
+  # on a map critter via the executor (no shippable script fires the move ops, so synthesize
+  # it). denbus2's merchant at 14716 walks to the reachable 14718. The VM dispatch is inert on
+  # every slice map (only reg_anim_animate_forever for scenery fires at map_enter), so the
+  # other goldens — incl. script-light's --reg-anim-probe — are unchanged.
+  "reg-anim-move|--map denbus2.map --reg-anim-move 14716 14718 --rng-seed 1"
 )
 
 # Keep only the deterministic transcript lines (drop map-load / animate / stub /
 # dialog-text noise — NEVER capture REPLY/OPTION game-asset strings).
-FILTER='^(encounter|travel-from|companion|dismiss-persist|trade:|party:|party-count:|set-global:|hud-click:|use-skill:|hurt:|rest:|automap:|weapon-mode:|panel-click:|menu-click:|travel-resume:|travel-step:|travel-save-mid:|worldmap-fog:|weight:|iq-probe:|death-probe:|trait-probe:|perk-probe:|perk-pick:|combat-walk:|light:|reg-anim:|encounter-fight:|brawl:|sneak-probe:|sneak-roll:|backstab-probe:|detect-probe:|karma-probe:|set-karma:|rep-title:|town-rep:|karma-titles:|get-global:|place-probe:|  spawn|  flat|  wait:|  follow:|  dismiss:|  rejoin:)'
+FILTER='^(encounter|travel-from|companion|dismiss-persist|trade:|party:|party-count:|set-global:|hud-click:|use-skill:|hurt:|rest:|automap:|weapon-mode:|panel-click:|menu-click:|travel-resume:|travel-step:|travel-save-mid:|worldmap-fog:|weight:|iq-probe:|death-probe:|trait-probe:|perk-probe:|perk-pick:|combat-walk:|light:|reg-anim:|encounter-fight:|brawl:|sneak-probe:|sneak-roll:|backstab-probe:|detect-probe:|karma-probe:|set-karma:|rep-title:|town-rep:|karma-titles:|get-global:|place-probe:|reg-anim-move:|  spawn|  flat|  wait:|  follow:|  dismiss:|  rejoin:)'
 
 echo "Building viewer..."
 dotnet build src/Hexwaste.Viewer -c Debug >/dev/null || { echo "build failed"; exit 2; }

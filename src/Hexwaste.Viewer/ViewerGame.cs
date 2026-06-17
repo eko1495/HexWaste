@@ -217,6 +217,10 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
     /// recorded for the --reg-anim-probe; cleared per map.</summary>
     private readonly List<string> _regAnimForever = [];
 
+    /// <summary>reg_anim_func batch moves/animations executed this map (P33-M1) —
+    /// recorded for the --reg-anim-move probe; cleared per map.</summary>
+    private readonly List<string> _regAnimMoves = [];
+
     /// <summary>Options / pause menu (P12 M2): Esc or the OPT button opens it —
     /// Save / Load / Quit to main menu / Quit to desktop / Resume (the actions of
     /// options.cc showOptions; Preferences is out of scope — no preferences system).</summary>
@@ -552,6 +556,9 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
         /// <summary>Relocate the critter at FromHex to ToHex via the placement path (P32; verifies
         /// critter_attempt_placement actually moves a critter to a different tile).</summary>
         public sealed record PlaceProbe(int FromHex, int ToHex) : StartupAction;
+        /// <summary>Drive a reg_anim_func batch (begin -> move-to-tile -> end) on the critter at
+        /// FromHex toward ToHex via the executor (P33-M1; no slice script fires the move ops).</summary>
+        public sealed record RegAnimMove(int FromHex, int ToHex) : StartupAction;
         /// <summary>Report the gore death-anim a burst/explosion/laser kill would give the critter
         /// at Hex — the picked anim + the art-resolved anim (P26), proving gore art availability.</summary>
         public sealed record DeathProbe(int Hex) : StartupAction;
@@ -805,6 +812,8 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
                 },
                 StatsResolver = obj => obj == _dude?.Dude ? _dudeGcd?.Stats : null,
                 PlaceObjectRequested = (obj, tile, elevation) => PlaceObject(obj, tile, elevation),
+                RegAnimRequested = ExecuteRegAnim,
+                RegAnimClearRequested = ClearAnimation,
                 AttackRequested = (attacker, target) =>
                 {
                     // P30 A-M3: a sneaking dude can slip past scripted aggro (isWithinPerception,
@@ -1366,6 +1375,23 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
                     {
                         bool ok = PlaceObject(obj, toHex, _elevation);
                         Console.WriteLine($"place-probe: from={fromHex} requested={toHex} now={obj.HexTile} ok={ok}");
+                    }
+                    break;
+                }
+                case StartupAction.RegAnimMove(var fromHex, var toHex):
+                {
+                    // P33-M1: drive the reg_anim_func batch executor on a real map critter
+                    // (no shippable script fires reg_anim_obj_move_to_tile, so synthesize it).
+                    MapObject? obj = _solidObjects[_elevation].FirstOrDefault(o =>
+                        o.HexTile == fromHex && Fid.Type(o.Fid) is ObjectType.Critter && !o.IsDead);
+                    if (obj is null)
+                        Console.WriteLine($"reg-anim-move: no critter at {fromHex}");
+                    else
+                    {
+                        ExecuteRegAnim([new Formats.Int.RegAnimAction(
+                            Formats.Int.RegAnimKind.MoveToTile, obj, toHex, null, 0, 0)]);
+                        Console.WriteLine($"reg-anim-move: map={_currentMapName} "
+                            + $"[{string.Join(", ", _regAnimMoves)}]");
                     }
                     break;
                 }
@@ -2163,6 +2189,7 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
         _openDoors.Clear();
         _seenObjects.Clear(); // automap fog resets per map (P20-M2)
         _regAnimForever.Clear(); // reg_anim record resets per map (P21-M1)
+        _regAnimMoves.Clear(); // reg_anim_func batch record resets per map (P33-M1)
         _npcWalkers.Clear();
         _homeTiles.Clear();
         _projectiles.Clear();
@@ -4507,6 +4534,64 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
     public IEnumerable<MapObject> CombatCritters =>
         _dude is null ? [] : _solidObjects[_elevation].Where(o =>
             Fid.Type(o.Fid) is ObjectType.Critter && o != _dude.Dude);
+
+    /// <summary>
+    /// reg_anim_func END: play a flushed batch of queued reg_anim actions (P33-M1).
+    /// The engine gates every reg_anim op on !isInCombat() (interpreter_extra.cc:3460) and
+    /// plays the batch SEQUENTIALLY over time; we execute in parallel and ignore the delay
+    /// (DOCUMENTED SIMPLIFICATIONS). run==walk (no separate run animation/speed). Animate
+    /// loops the FRM rather than playing once (no one-shot primitive). SLICE NOTE: no
+    /// shippable map fires the move/animate ops at map_enter (only animate_forever for
+    /// scenery, P21), so this is forward-looking — it lights up when content uses it.
+    /// </summary>
+    private void ExecuteRegAnim(IReadOnlyList<Formats.Int.RegAnimAction> actions)
+    {
+        if (_combat.Phase != Formats.Combat.CombatPhase.Idle)
+            return;
+
+        foreach (Formats.Int.RegAnimAction a in actions)
+        {
+            switch (a.Kind)
+            {
+                case Formats.Int.RegAnimKind.MoveToTile:
+                case Formats.Int.RegAnimKind.RunToTile:
+                {
+                    bool started = StartNpcWalk(a.Object, a.Tile);
+                    _regAnimMoves.Add(
+                        $"{ObjectName(a.Object)}@{a.Object.HexTile}->{a.Tile}:"
+                        + $"{(a.Kind == Formats.Int.RegAnimKind.RunToTile ? "run" : "walk")}:{(started ? "ok" : "no")}");
+                    break;
+                }
+                case Formats.Int.RegAnimKind.MoveToObject:
+                case Formats.Int.RegAnimKind.RunToObject:
+                {
+                    // The engine walks to the destination object's tile; if that tile is
+                    // blocked, settle on a free neighbour (the Placement port, P33-M0).
+                    int dest = a.Dest is null
+                        ? -1
+                        : Formats.Map.Placement.FreeTileNear(a.Dest.HexTile, t => _blockedTiles.Contains(t));
+                    bool started = dest >= 0 && StartNpcWalk(a.Object, dest);
+                    _regAnimMoves.Add(
+                        $"{ObjectName(a.Object)}@{a.Object.HexTile}->obj@{dest}:"
+                        + $"{(a.Kind == Formats.Int.RegAnimKind.RunToObject ? "run" : "walk")}:{(started ? "ok" : "no")}");
+                    break;
+                }
+                case Formats.Int.RegAnimKind.Animate:
+                case Formats.Int.RegAnimKind.AnimateReverse:
+                {
+                    if (Fid.Type(a.Object.Fid) is ObjectType.Critter)
+                        _animator.SetCritterAnimation(a.Object, Fid.Build(ObjectType.Critter,
+                            Fid.Index(a.Object.Fid), a.Anim, Fid.WeaponCode(a.Object.Fid), a.Object.Rotation));
+                    else
+                        _animator.AddLooping(a.Object);
+                    _regAnimMoves.Add(
+                        $"{ObjectName(a.Object)}@{a.Object.HexTile}:anim{a.Anim}"
+                        + (a.Kind == Formats.Int.RegAnimKind.AnimateReverse ? "rev" : string.Empty));
+                    break;
+                }
+            }
+        }
+    }
 
     /// <summary>reg_anim_clear: drop a pending animation + stop/forget a walker.</summary>
     public void ClearAnimation(MapObject critter)

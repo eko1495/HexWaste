@@ -262,6 +262,30 @@ public interface IVmExternals
     /// <summary>reg_anim_animate_forever — loop animation code <paramref name="anim"/> on the
     /// object forever (the host's animator).</summary>
     void RegAnimAnimateForever(int objectHandle, int anim) { }
+
+    /// <summary>reg_anim_func BEGIN (interpreter_extra.cc:3462 reg_anim_begin): open an
+    /// animation batch; subsequent reg_anim register ops accumulate into it.</summary>
+    void RegAnimBegin() { }
+
+    /// <summary>reg_anim_func END (interpreter_extra.cc:3469 reg_anim_end): flush the batch
+    /// to the host (it plays the queued moves/animations).</summary>
+    void RegAnimEnd() { }
+
+    /// <summary>reg_anim_func CLEAR (interpreter_extra.cc:3466 reg_anim_clear): cancel the
+    /// object's running/queued animations.</summary>
+    void RegAnimClear(int objectHandle) { }
+
+    /// <summary>reg_anim_obj_move_to_tile / reg_anim_obj_run_to_tile (interpreter_extra.cc:
+    /// 3547/3564): queue a walk (<paramref name="run"/> = run variant) to a hex tile.</summary>
+    void RegAnimMoveToTile(int objectHandle, int tile, int delay, bool run) { }
+
+    /// <summary>reg_anim_obj_move_to_obj / reg_anim_obj_run_to_obj (interpreter_extra.cc:
+    /// 3513/3530): queue a walk to another object's tile.</summary>
+    void RegAnimMoveToObject(int objectHandle, int destHandle, int delay, bool run) { }
+
+    /// <summary>reg_anim_animate / reg_anim_animate_reverse (interpreter_extra.cc:3477/3496):
+    /// queue an animation by code (<paramref name="reverse"/> plays it backwards).</summary>
+    void RegAnimAnimate(int objectHandle, int anim, int delay, bool reverse) { }
 }
 
 /// <summary>
@@ -1368,6 +1392,48 @@ public sealed class IntVm
             {
                 int anim = PopInt();
                 _externals.RegAnimAnimateForever(PopInt(), anim);
+                break;
+            }
+
+            // ---- reg_anim batch (interpreter_extra.cc opRegAnim*). The engine gates
+            // these on !isInCombat(); the args are popped first either way, so we always
+            // pop here and let the host skip execution mid-combat (it keeps the stack
+            // balanced). reg_anim_func pops (param, cmd); the move/animate ops pop
+            // (delay, target, obj) like their opcode handlers.
+            case 0x810E: // reg_anim_func
+            {
+                Value param = Pop();
+                int cmd = PopInt();
+                switch (cmd)
+                {
+                    case 1: _externals.RegAnimBegin(); break;          // OP_REG_ANIM_FUNC_BEGIN
+                    case 2: _externals.RegAnimClear(param.Raw); break; // OP_REG_ANIM_FUNC_CLEAR (param = object)
+                    case 3: _externals.RegAnimEnd(); break;            // OP_REG_ANIM_FUNC_END
+                }
+                break;
+            }
+            case 0x810F: // reg_anim_animate (pops delay, anim, obj)
+            case 0x8110: // reg_anim_animate_reverse
+            {
+                int delay = PopInt();
+                int anim = PopInt();
+                _externals.RegAnimAnimate(PopInt(), anim, delay, opcode == 0x8110);
+                break;
+            }
+            case 0x8111: // reg_anim_obj_move_to_obj (pops delay, dest, obj)
+            case 0x8112: // reg_anim_obj_run_to_obj
+            {
+                int delay = PopInt();
+                int dest = PopInt();
+                _externals.RegAnimMoveToObject(PopInt(), dest, delay, opcode == 0x8112);
+                break;
+            }
+            case 0x8113: // reg_anim_obj_move_to_tile (pops delay, tile, obj)
+            case 0x8114: // reg_anim_obj_run_to_tile
+            {
+                int delay = PopInt();
+                int tile = PopInt();
+                _externals.RegAnimMoveToTile(PopInt(), tile, delay, opcode == 0x8114);
                 break;
             }
 
