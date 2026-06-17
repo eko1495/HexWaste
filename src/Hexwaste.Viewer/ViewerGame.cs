@@ -157,7 +157,9 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
     /// skill to the target (the use_skill_on_p_proc path that lockpick already uses).</summary>
     private bool _skilldexOpen;
     private int? _pendingUseSkill;
-    private bool _sneaking;
+    /// <summary>The dude's two-layer sneak state (P29 A-M0; critter.cc): the FLAG (Skilldex/S toggle)
+    /// + Working (the periodic SKILL_SNEAK roll, wired in A-M2). IsSneaking = flag &amp;&amp; Working.</summary>
+    private readonly Formats.Combat.SneakState _sneak = new();
     /// <summary>Seeded skill-roll RNG (deterministic under --rng-seed for goldens),
     /// separate from the combat/party/worldmap streams.</summary>
     private Formats.Combat.ICombatRng? _skillRng;
@@ -439,6 +441,8 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
         public sealed record CenterHex(int Hex) : StartupAction;
         /// <summary>Report the dude's carried weight / capacity / encumbered / AP-penalty (P24).</summary>
         public sealed record WeightProbe : StartupAction;
+        /// <summary>Set the sneaking flag (P29 A-M0) and report the two-layer state + Sneak skill.</summary>
+        public sealed record SneakProbe(int Flag) : StartupAction;
         /// <summary>Report the gore death-anim a burst/explosion/laser kill would give the critter
         /// at Hex — the picked anim + the art-resolved anim (P26), proving gore art availability.</summary>
         public sealed record DeathProbe(int Hex) : StartupAction;
@@ -707,6 +711,7 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
                     _ => 0,
                 },
                 PerkRankProvider = perk => Formats.Perks.PerkRules.Rank(_dudePerkRanks, perk),
+                SneakFlagProvider = () => _sneak.FlagSet, // P29 A-M0: using_skill(dude, SNEAK)
             };
             if (RngSeed is { } scriptSeed)
                 _scriptHost.Rng = new Random(scriptSeed);
@@ -1173,6 +1178,15 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
                         + $" apPenalty={DudeEncumbranceApPenalty()} items={_dudeInventory.Count}");
                     break;
                 }
+                case StartupAction.SneakProbe(var sneakFlag):
+                {
+                    // P29 A-M0: set the sneaking flag and report the two-layer state. Working is wired
+                    // in A-M2 (the periodic roll); A-M0 reports it as-is (0 until then).
+                    _sneak.FlagSet = sneakFlag != 0;
+                    Console.WriteLine($"sneak-probe: flag={(_sneak.FlagSet ? 1 : 0)} working={(_sneak.Working ? 1 : 0)}"
+                        + $" sneaking={(_sneak.IsSneaking ? 1 : 0)} skill={DudeSkillValue(8)}");
+                    break;
+                }
                 case StartupAction.FogProbe(var fx, var fy, var fa):
                 {
                     // Phase-22: drive a real travel leg WITH the fog and report the reveal.
@@ -1322,7 +1336,7 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
                     }
                     TryUseSkillOn(useSkill, skillTarget);
                     Console.WriteLine($"use-skill: skill={useSkill} target={ObjectName(skillTarget)} "
-                        + $"hp={skillTarget.CurrentHp} locked={skillTarget.IsLockedState} sneak={_sneaking}");
+                        + $"hp={skillTarget.CurrentHp} locked={skillTarget.IsLockedState} sneak={_sneak.FlagSet}");
                     break;
                 }
                 case StartupAction.RestFor(var restMinutes):
@@ -4659,9 +4673,10 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
             case 7: // Doctor
                 TryHeal(skill, target, self);
                 return;
-            case 8: // Sneak — a stance toggle (the engine's sneak state)
-                _sneaking = !_sneaking;
-                Log($"Sneak mode {(_sneaking ? "on" : "off")}.");
+            case 8: // Sneak — toggle the sneaking FLAG (dudeToggleState, critter.cc:1176). The
+                    // periodic roll that sets Working is wired in A-M2; A-M0 just flips the flag.
+                _sneak.FlagSet = !_sneak.FlagSet;
+                Log($"Sneak mode {(_sneak.FlagSet ? "on" : "off")}.");
                 return;
             default: // 9 Lockpick / 10 Steal / 11 Traps / 12 Science / 13 Repair
                 if (self || !IsAdjacentToDude(target))
@@ -7590,7 +7605,8 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
         _skillAllocOpen = false;
         _skilldexOpen = false;
         _pendingUseSkill = null;
-        _sneaking = false;
+        _sneak.FlagSet = false;
+        _sneak.Working = false;
         _skillUsesByDay.Clear();
         _skillUsesDay = -1;
         _pipboyOpen = false;

@@ -206,6 +206,10 @@ public sealed class ScriptHost(GameFileSystem vfs, ScriptList scripts, Hexwaste.
     /// (P28-M2). Null → 0 (no perk system).</summary>
     public Func<int, int>? PerkRankProvider { get; set; }
 
+    /// <summary>The dude's sneaking FLAG (dudeHasState DUDE_STATE_SNEAKING); host-provided. Drives
+    /// using_skill(dude, SKILL_SNEAK) (P29 A-M0). Null → false (not sneaking).</summary>
+    public Func<bool>? SneakFlagProvider { get; set; }
+
     /// <summary>Rolls for do_check/statRoll (seedable by the host).</summary>
     public Random Rng { get; set; } = new();
 
@@ -1060,6 +1064,12 @@ public sealed class ScriptHost(GameFileSystem vfs, ScriptList scripts, Hexwaste.
         // STAT_INTELLIGENCE gates dumb/smart dialogue options (P25). The Smooth Talker perk
         // bonus is out of scope (no perk system). Null dude → 5 (the pre-P25 neutral default).
         public int DialogIntelligence() => _dude is { } d ? _host.CritterStatValue(d, 4) : 5;
+
+        // ported from fallout2-ce interpreter_extra.cc opUsingSkill (0x454634): only
+        // using_skill(dude, SKILL_SNEAK=8) is meaningful — it returns the SNEAKING FLAG
+        // (dudeHasState, NOT the active _sneak_working). Everything else → false.
+        public bool IsUsingSkill(int objectHandle, int skill) =>
+            skill == 8 && _host.ObjectOf(objectHandle) == _dude && (_host.SneakFlagProvider?.Invoke() ?? false);
 
         public void FloatMessage(int objectHandle, string text, int type)
         {

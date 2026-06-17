@@ -945,6 +945,21 @@ creation trait picker, a curated perk-effects batch, the authentic PERKWIN art, 
 infrastructure; the trait/perk character layer is now whole. 392 Formats tests, 42 encounter + 15
 combat goldens green.
 
+Phase 30 (IN PROGRESS — "Walk Softly", stealth/sneak; researched via the stealth-karma-research
+workflow). USER DECISION: full faithful detection, LIVE (a periodic Sneak roll + Perception/distance
+isWithinPerception gate so active sneaking slips you past script aggro). M0 two-layer sneak state
+(DONE): pure Formats.Combat.SneakState mirrors critter.cc — the FLAG (dudeHasState, the Skilldex/S
+toggle) + Working (_sneak_working, set by the A-M2 periodic roll); IsSneaking = FlagSet && Working
+(dudeIsSneaking critter.cc:1236); RescheduleTicks ports sneakEventProcess's ladder verbatim (success→
+600; failure retries sooner the higher the skill: >250→100 … >80→400, else 600). Replaced the viewer
+_sneaking bool with the flag layer (the Skilldex case-8 toggle + the --use-skill diagnostic now read
+_sneak.FlagSet — the printed bool is byte-identical, so the skilldex-skills golden is unchanged).
+WIRED using_skill(dude, SKILL_SNEAK=8) to return the FLAG (interpreter_extra.cc:589 opUsingSkill —
+reads the flag, NOT Working): new IVmExternals.IsUsingSkill + ScriptHost.SneakFlagProvider + the 0x80AB
+dispatch (was the arity stub → 0; no slice script branches on it, so inert). Harness --sneak-probe
+<flag> prints sneak-probe: flag=/working=/sneaking=/skill=. 12 SneakStateTests (the truth table + the
+7-bucket ladder); all goldens BYTE-IDENTICAL.
+
 Phase 10 (DONE, per docs/phase10-research-report.md — "The Wasteland
 Bites Back"): M0 persistence pre-stage (the net: MapList saved=No /
 random_start_point parse + IsTransient; the 3-clause transient guards as

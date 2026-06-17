@@ -137,6 +137,9 @@ public interface IVmExternals
     /// <summary>Player IQ (+ Smooth Talker) for the giq_option filter.</summary>
     int DialogIntelligence() => 5;
 
+    /// <summary>using_skill(object, skill): true only for the dude's SNEAK flag (P29 A-M0).</summary>
+    bool IsUsingSkill(int objectHandle, int skill) => false;
+
     /// <summary>float_msg — floating head-text over an object.</summary>
     void FloatMessage(int objectHandle, string text, int type) { }
 
@@ -1325,6 +1328,12 @@ public sealed class IntVm
             {
                 int target = PopInt();
                 PushInt(_externals.ObjCanSee(PopInt(), target) ? 1 : 0);
+                break;
+            }
+            case 0x80AB: // using_skill (pops skill, object) — interpreter_extra.cc:579
+            {
+                int skill = PopInt();
+                PushInt(_externals.IsUsingSkill(PopInt(), skill) ? 1 : 0);
                 break;
             }
             case 0x80CE: // animate_move_obj_to_tile (pops speed, tile, obj)
