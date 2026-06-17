@@ -13,7 +13,8 @@ filing an issue.
 - **Rendering**: hex/square grids with correct z-sorting and draw order, roofs,
   per-vertex floor lighting, static light pools with occlusion, day/night clock,
   egg-style wall transparency, per-type object translucency (glass/steam/energy/
-  red/wall), silhouette outlines.
+  red/wall), silhouette outlines (typed red-hostile / green-friendly team outlines
+  on every visible, line-of-sight combatant during combat).
 - **A micro INT script VM** + script host: map-entry scripts, dialog (`gsay`
   trees, with IQ-gated dumb/smart options keyed to the dude's real Intelligence),
   examine, locks/lockpick, use / use-on-object, pickup, timers, spatial
@@ -22,8 +23,9 @@ filing an issue.
   travel as a moving party dot paced by terrain (mountains slow it), with random
   encounters (`worldmap.txt` tables → transient encounter maps, groups spawned in
   formation), an Outdoorsman detect-and-avoid prompt, auto-resume after an
-  encounter, save/resume mid-travel, ambient NPC life, sound
-  (music/sfx/footsteps/combat).
+  encounter, save/resume mid-travel, ambient NPC life, the dude runs by default
+  (the engine's 3 run guards), sound (music + footsteps + faithful weapon/critter
+  combat sfx + per-map weighted ambient sfx with night bird→cricket remap).
 - **Companions**: recruit (including Vic's legitimate VM-driven rescue), a
   wait/follow/dismiss/rejoin control hub, a flat 1:1 inventory trade panel, and
   per-companion proto level-ups (`party.txt`, live on the recruited Vic).
@@ -31,7 +33,9 @@ filing an issue.
   line-of-fire (screen-Bresenham) / ammo+reload, single + burst fire (with the
   left/right collateral cone), AP-gated movement (a crippled leg crawls at 4× the
   AP/hex, a crippled arm blocks a two-handed weapon), AI behaviour packets
-  (close-or-flee with real `_ai_run_away` retreat pathing), X-FIGHTING-Y team
+  (close-or-flee with real `_ai_run_away` retreat pathing, fleeing when too wounded
+  *or* crippled/blinded per the packet's `hurt_too_much`), defender reaction
+  animations (hit-from-front/back, dodge on a miss, knockdown fall + get-up), X-FIGHTING-Y team
   brawls (two spawned groups fight each other and you), critical hits + aimed
   called shots with their consequences (knockout + timed wake, lose-turn, crippled
   limbs, blindness — a Doctor mends limbs/eyes), knockback + persisting knockdown,
