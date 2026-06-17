@@ -248,6 +248,10 @@ for (int i = 0; i < args.Length; i++)
         case "--karma-titles":
             actions.Add(new ViewerGame.StartupAction.KarmaTitlesProbe());
             break;
+        case "--set-karma" when i + 2 < args.Length:
+            actions.Add(new ViewerGame.StartupAction.SetKarma(int.Parse(args[i + 1]), int.Parse(args[i + 2])));
+            i += 2;
+            break;
         case "--trait-probe" when i + 2 < args.Length:
             actions.Add(new ViewerGame.StartupAction.TraitProbe(int.Parse(args[i + 1]), int.Parse(args[i + 2])));
             i += 2;

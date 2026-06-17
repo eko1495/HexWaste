@@ -71,7 +71,11 @@ Prebuilt self-contained builds (Linux x64 / Windows x64) are produced by
   or pick a premade; level-ups grant skill points you spend on the character sheet (C),
   and stat-gated dialog runs the right branches — including IQ-gated options, so a
   low-Intelligence character gets the dumb lines and a bright one the smart ones.
-  Rest (Z) heals over time.
+  Rest (Z) heals over time. The character sheet and Pip-Boy show your karma and
+  reputation — a reputation title (`genrep.txt`), per-town standings (Vilified…
+  Idolized) and earned karma titles, read straight from the engine's stats/GVARs
+  (the engine never auto-awards karma, so on this slice it stays neutral unless a
+  quest sets it).
 - **Traits & perks**: the 16 optional traits do real things (Gifted, Bruiser,
   Heavy Handed, Good Natured, One Hander, Fast Shot, Finesse, Jinxed…) — chosen at
   character creation or baked into a premade, and they feed combat (to-hit, AP,

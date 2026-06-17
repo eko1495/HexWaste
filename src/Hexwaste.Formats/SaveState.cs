@@ -50,6 +50,12 @@ public sealed class SaveState
     public bool? SneakFlag { get; set; }
     public bool? SneakWorking { get; set; }
 
+    /// <summary>The dude's PC-stat karma + reputation (P31 B-M3; PC_STAT_KARMA / PC_STAT_REPUTATION).
+    /// null on pre-P31 saves → 0 (additive within V2). The generic/town/karma-title GVARs ride the
+    /// already-persisted GlobalVars dict.</summary>
+    public int? DudeKarma { get; set; }
+    public int? DudeReputation { get; set; }
+
     /// <summary>The dude's base stat block (35; null = reload the named
     /// premade). Self-contained so a created character round-trips without a
     /// .gcd file. Level-up HP lives in bonus stats and is replayed from level.</summary>

@@ -1031,6 +1031,22 @@ karma-titles active=1 id=1001; the town/karma GVARs the VM already maintains, so
 writes/RNG). Both pure + inert (no slice script sets a town/karma GVAR → all 0/Neutral/none). Harness
 --town-rep <value> + --karma-titles (message IDs only). 15 TownReputationTests incl. a GameDataFact real
 karmavar.txt parse; all goldens BYTE-IDENTICAL.
+M3 karma display + save persistence (DONE — P31 COMPLETE): the character sheet (C/K) + the Pip-Boy STATUS
+page now show "Karma: N" (PC_STAT_KARMA), "Reputation: <GVAR_PLAYER_REPUTATION> (<genrep title>)", any
+earned karma titles, and non-Neutral slice-town standings (shared KarmaDisplayLines). Title STRINGS come
+from text\english\game\editor.msg (gCharacterEditorMessageList; lazy EditorMsg loader). MODEL CLARIFIED
+(supersedes the B-M1 "unify" note): get_pc_stat(3)=PC_STAT_REPUTATION (_dudeReputation, −20..20) and
+get_pc_stat(4)=PC_STAT_KARMA (_dudeKarma, ≥0) are the PC-stats, but the DISPLAYED reputation + genrep
+title read GVAR_PLAYER_REPUTATION = GlobalVars[0] (the faithful source, VM-maintained, --set-global 0
+-able) — distinct ranges, so kept separate. Persisted: SaveState.DudeKarma/DudeReputation (additive-V2,
+sparse null at 0); the generic/town/karma GVARs ride the already-saved GlobalVars dict. Harness
+--set-karma <karma> <rep> (pcSetStat clamps: karma≥0, rep −20..20). VERIFIED end-to-end: --set-karma
+50 5 + --set-global 0 100/47 30/3 1 → karma-probe 50/5, rep-title(100)=msg 3004, Arroyo=Idolized, 1
+earned title. Display Draw-only + harness opt-in → existing goldens BYTE-IDENTICAL (only the new karma
+fixture); KarmaAndReputationRoundTrip test. P31 karma/reputation COMPLETE: get_pc_stat seam, generic-rep
+titles, town/karma-title GVARs, the char-sheet/Pip-Boy display + save. The engine never auto-awards
+karma (no kill/quest hook, no karma-gated dialog), so it's faithful read-only display driven by scripts/
+--set-global — that's the whole feature, not a behaviour change. 441 Formats tests.
 
 Phase 10 (DONE, per docs/phase10-research-report.md — "The Wasteland
 Bites Back"): M0 persistence pre-stage (the net: MapList saved=No /

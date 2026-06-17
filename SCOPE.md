@@ -57,6 +57,11 @@ filing an issue.
   Weapon Handling, Heave Ho). A character-sheet display + a level-up perk picker (the
   authentic PERKWIN window). Per-level skill points follow the full engine formula
   (Educated/Skilled/Gifted).
+- **Karma & reputation**: get_pc_stat reads the dude's real karma/reputation
+  (PC-stats), a generic-reputation title from `genrep.txt`, per-town standings
+  (`Vilified`…`Idolized`) and earned karma titles from their GVARs — shown on the
+  character sheet and Pip-Boy. (The engine never auto-awards karma; it is script-
+  driven, so on the slice it stays at zero unless a quest sets it.)
 - **Interface**: the authentic bottom HUD bar plus its panels — inventory,
   character sheet, the Skilldex use-skill picker, the Pip-Boy (status + rest),
   and an in-game options/pause menu.
@@ -64,8 +69,10 @@ filing an issue.
 ## What's out (by design, today)
 
 - **Most quest chains** — the opening hour (Arroyo → Temple → Klamath/Den) is
-  the target; reputation/karma badges and the slave-run path are not wired.
-  Vic's rescue (#10) *is* wired end-to-end, with one residual content gap: the
+  the target; the slave-run path is not wired, and while karma/reputation are
+  *displayed* (above), no slice quest *awards* them (the engine never auto-awards
+  karma — it is content-driven). Vic's rescue (#10) *is* wired end-to-end, with one
+  residual content gap: the
   radio item (pid 266) is a multi-step Klamath quest reward with no in-slice
   source, so the recruit needs one `--give` to supply it.
 - **Companion depth** — recruit/follow/fight/dismiss/rejoin/wait, 1:1 trade, and

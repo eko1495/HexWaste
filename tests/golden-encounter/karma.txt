@@ -1,0 +1,8 @@
+set-karma: karma=50 rep=5
+set-global: GVAR0 = 100
+set-global: GVAR47 = 30
+set-global: GVAR3 = 1
+karma-probe: karma=50 rep=5 level=1 xp=0 unspent=0
+rep-title: value=100 msg=3004
+town-rep: value=30 level=Idolized msg=2000
+karma-titles: active=1 ids=[1001]

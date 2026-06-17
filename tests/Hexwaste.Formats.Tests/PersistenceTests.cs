@@ -119,6 +119,19 @@ public class SaveStateRoundTripTests
     }
 
     [Fact]
+    public void KarmaAndReputationRoundTrip()
+    {
+        // P31 B-M3: the karma/reputation PC-stats survive save/load; absent on a pre-P31 save → 0.
+        var state = new SaveState { Version = SaveState.CurrentVersion, DudeKarma = 50, DudeReputation = -5 };
+        SaveState loaded = SaveState.FromJson(state.ToJson())!;
+        Assert.Equal(50, loaded.DudeKarma);
+        Assert.Equal(-5, loaded.DudeReputation);
+
+        Assert.Null(new SaveState().DudeKarma);       // additive default
+        Assert.Null(new SaveState().DudeReputation);
+    }
+
+    [Fact]
     public void PartyMemberPerkRanksRoundTrip()
     {
         // P29-M6: per-companion perk ranks survive save/load (additive within V2 — inert on the slice).

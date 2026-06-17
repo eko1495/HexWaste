@@ -372,6 +372,32 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
         }
         return _karmavar ?? [];
     }
+
+    /// <summary>The karma/reputation display lines (P31 B-M3) shared by the character sheet + Pip-Boy:
+    /// the karma number (PC_STAT_KARMA), the generic-reputation value + title (GVAR_PLAYER_REPUTATION =
+    /// GlobalVars[0] via genrep.txt), any earned karma titles, and non-Neutral slice-town standings.</summary>
+    private List<string> KarmaDisplayLines()
+    {
+        int Gv(int g) => _scriptHost?.GlobalVars.GetValueOrDefault(g, 0) ?? 0;
+        var lines = new List<string> { $"Karma: {_dudeKarma}" };
+        int rep = Gv(0); // GVAR_PLAYER_REPUTATION
+        string repTitle = EditorMsg(Formats.Map.GenericReputation.TitleFor(rep, GenrepTable()));
+        lines.Add($"Reputation: {rep}{(repTitle.Length > 0 ? $" ({repTitle})" : "")}");
+        List<string> earned = [.. Formats.Map.KarmaTitles.Active(KarmavarTable(), Gv)
+            .Select(t => EditorMsg(t.NameMessageId)).Where(s => s.Length > 0)];
+        if (earned.Count > 0)
+            lines.Add($"Titles: {string.Join(", ", earned)}");
+        foreach ((int gvar, string townName) in Formats.Map.TownReputation.SliceTowns)
+            if (Formats.Map.TownReputation.LevelFor(Gv(gvar)) is var lvl && lvl != Formats.Map.TownRepLevel.Neutral)
+                lines.Add($"{townName}: {lvl}");
+        return lines;
+    }
+    // P31 B-M3: editor.msg — the karma/reputation/town title strings (character_editor.cc uses
+    // gCharacterEditorMessageList = editor.msg). Lazy; empty if absent.
+    private Formats.Text.MessageFile? _editorMsg; private bool _editorMsgTried;
+    private string EditorMsg(int id) =>
+        id < 0 ? "" : LazyMsg(@"text\english\game\editor.msg", ref _editorMsgTried, ref _editorMsg)?.GetText(id) ?? "";
+
     private string TraitName(int i) =>
         i < 0 ? "" : LazyMsg(@"text\english\game\trait.msg", ref _traitMsgTried, ref _traitMsg)?.GetText(100 + i) is { Length: > 0 } n ? n : $"Trait {i}";
 
@@ -495,6 +521,8 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
         public sealed record TownRep(int Value) : StartupAction;
         /// <summary>Report the count + name-ids of the currently-earned karma titles (P31 B-M2).</summary>
         public sealed record KarmaTitlesProbe : StartupAction;
+        /// <summary>Set the dude's PC-stat karma + reputation (P31 B-M3 harness; pcSetStat clamps).</summary>
+        public sealed record SetKarma(int Karma, int Reputation) : StartupAction;
         /// <summary>Report the gore death-anim a burst/explosion/laser kill would give the critter
         /// at Hex — the picked anim + the art-resolved anim (P26), proving gore art availability.</summary>
         public sealed record DeathProbe(int Hex) : StartupAction;
@@ -1310,6 +1338,16 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
                     int Gv(int g) => _scriptHost?.GlobalVars.GetValueOrDefault(g, 0) ?? 0;
                     var active = Formats.Map.KarmaTitles.Active(KarmavarTable(), Gv).ToList();
                     Console.WriteLine($"karma-titles: active={active.Count} ids=[{string.Join(",", active.Select(t => t.NameMessageId))}]");
+                    break;
+                }
+                case StartupAction.SetKarma(var setK, var setR):
+                {
+                    // P31 B-M3: god-mode set of the karma/reputation PC-stats, with the engine's pcSetStat
+                    // clamps (karma >= 0, reputation -20..20). The displayed reputation TITLE is driven by
+                    // GVAR_PLAYER_REPUTATION (GlobalVars[0]) — set that via --set-global 0 <n>.
+                    _dudeKarma = Math.Max(0, setK);
+                    _dudeReputation = Math.Clamp(setR, -20, 20);
+                    Console.WriteLine($"set-karma: karma={_dudeKarma} rep={_dudeReputation}");
                     break;
                 }
                 case StartupAction.FogProbe(var fx, var fy, var fa):
@@ -5943,6 +5981,11 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
         if (AvailablePerkPicks() > 0)
             Line($"{AvailablePerkPicks()} perk(s) available — press G", green);
         ly += 6;
+        // Karma / reputation (P31 B-M3): the karma number + generic-reputation title + any earned
+        // karma titles + non-Neutral slice-town standings. Display-only (never transcript-diffed).
+        foreach (string kl in KarmaDisplayLines())
+            Line(kl, gray);
+        ly += 6;
         if (_unspentSkillPoints > 0)
             Line($"{_unspentSkillPoints} skill points — raise →", green);
         _fontRenderer.Draw(_spriteBatch, "C / K / G perk / Esc close", new Vector2(lx, y + h - lh - 8), gray);
@@ -6325,6 +6368,9 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
                 Line($"Carry Weight {carried}/{st.CarryWeight}", // red when over (P24)
                     Formats.Map.InventoryWeight.IsEncumbered(carried, st.CarryWeight) ? new Color(255, 64, 64) : dim);
             }
+            ty += 4;
+            foreach (string kl in KarmaDisplayLines()) // P31 B-M3
+                Line(kl, dim);
         }
         else
         {
@@ -7829,6 +7875,9 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
             // P30 A-M2: persist the sneak state, sparse (null when not sneaking → old-save compatible).
             SneakFlag = _sneak.FlagSet ? true : null,
             SneakWorking = _sneak.Working ? true : null,
+            // P31 B-M3: karma/reputation PC-stats, sparse (null at 0 → old-save compatible).
+            DudeKarma = _dudeKarma != 0 ? _dudeKarma : null,
+            DudeReputation = _dudeReputation != 0 ? _dudeReputation : null,
             DudeBaseStats = _dudeGcd is not null ? [.. _dudeGcd.Stats.BaseStats] : null,
             DudeTaggedSkills = _dudeGcd is not null ? [.. _dudeGcd.TaggedSkills] : null,
             Elevation = _elevation,
@@ -8001,6 +8050,10 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
         // Restore the sneak state (P30 A-M2); null on a pre-P30 save → not sneaking.
         _sneak.FlagSet = state.SneakFlag ?? false;
         _sneak.Working = state.SneakWorking ?? false;
+
+        // Restore karma/reputation (P31 B-M3); null on a pre-P31 save → 0.
+        _dudeKarma = state.DudeKarma ?? 0;
+        _dudeReputation = state.DudeReputation ?? 0;
         if (_dude is not null)
             _dude.Dude.CurrentHp = state.DudeHp > 0
                 ? state.DudeHp
