@@ -1,3 +1,4 @@
+using Hexwaste.Formats.Combat;
 using Hexwaste.Formats.Map;
 using Hexwaste.Formats.Text;
 
@@ -61,6 +62,29 @@ public sealed class ScriptHost(GameFileSystem vfs, ScriptList scripts, Hexwaste.
 
     public MapObject? ObjectOf(int handle) =>
         handle >= 1 && handle <= _handles.Count ? _handles[handle - 1] : null;
+
+    /// <summary>
+    /// critter_state's pure bitfield mapping — the single source of truth for both the VM external
+    /// (ScriptContext.CritterState) and the --critter-state-probe.
+    /// ported from fallout2-ce src/interpreter_extra.cc opGetCritterState() (0x80FB):
+    /// DEAD(1) for null/non-critter/dead; an ACTIVE critter → NORMAL(0) | PRONE(2 if mid-fall-anim)
+    /// | DAM_CRIP bits; an inactive-but-alive critter (knocked-out / lose-turn) → PRONE(2).
+    /// </summary>
+    public static int CritterStateOf(MapObject? c)
+    {
+        const int Dead = 0x01, Normal = 0x00, Prone = 0x02;
+        if (c is null || Fid.PidType(c.Pid) != 1) // OBJ_TYPE_CRITTER == 1
+            return Dead;
+        // critterIsActive (critter.cc:942): not knocked-out / lose-turn / dead — same mask as CombatEngine.CanAct.
+        bool active = (c.CombatResults & (CriticalTables.DamKnockedOut | CriticalTables.DamLoseTurn | CriticalTables.DamDead)) == 0;
+        if (active)
+        {
+            // ANIM_FALL_BACK_SF(48)..ANIM_FALL_FRONT_SF(49) = lying prone but conscious.
+            int state = Fid.AnimType(c.Fid) is >= 48 and <= 49 ? Prone : Normal;
+            return state | (c.CombatResults & CriticalTables.DamHealable); // DamHealable == engine DAM_CRIP (0x7C)
+        }
+        return c.IsDead ? Dead : Prone; // inactive: dead → DEAD, knocked-out/lose-turn alive → PRONE
+    }
 
     /// <summary>Resolves object names for the VM (set by the host application).</summary>
     public Func<MapObject, string>? NameResolver { get; set; }
@@ -240,6 +264,10 @@ public sealed class ScriptHost(GameFileSystem vfs, ScriptList scripts, Hexwaste.
     /// <summary>The dude's sneaking FLAG (dudeHasState DUDE_STATE_SNEAKING); host-provided. Drives
     /// using_skill(dude, SKILL_SNEAK) (P29 A-M0). Null → false (not sneaking).</summary>
     public Func<bool>? SneakFlagProvider { get; set; }
+
+    /// <summary>True while the viewer's CombatEngine is non-Idle; host-provided. Drives
+    /// is_in_combat(0x8128) which critter_p_proc heartbeats poll every tick (P34-M1). Null → false.</summary>
+    public Func<bool>? CombatActiveProvider { get; set; }
 
     /// <summary>Rolls for do_check/statRoll (seedable by the host).</summary>
     public Random Rng { get; set; } = new();
@@ -1150,6 +1178,12 @@ public sealed class ScriptHost(GameFileSystem vfs, ScriptList scripts, Hexwaste.
         // (dudeHasState, NOT the active _sneak_working). Everything else → false.
         public bool IsUsingSkill(int objectHandle, int skill) =>
             skill == 8 && _host.ObjectOf(objectHandle) == _dude && (_host.SneakFlagProvider?.Invoke() ?? false);
+
+        // ported from fallout2-ce interpreter_extra.cc opCombatIsInitialized (0x8128).
+        public bool IsInCombat() => _host.CombatActiveProvider?.Invoke() ?? false;
+
+        // ported from fallout2-ce interpreter_extra.cc opGetCritterState (0x80FB) — see ScriptHost.CritterStateOf.
+        public int CritterState(int objectHandle) => ScriptHost.CritterStateOf(_host.ObjectOf(objectHandle));
 
         public void FloatMessage(int objectHandle, string text, int type)
         {

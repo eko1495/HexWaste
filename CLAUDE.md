@@ -1117,6 +1117,26 @@ the batch mid-combat). Harness --reg-anim-move <fromHex> <toHex> synthesizes a b
 on a real map critter (no slice script does); new golden reg-anim-move (denbus2 merchant 14716→14718 walks).
 SPILLOVER closed: "the reg_anim movement ops + begin/end sequencing" from the P21 spillover line is now DONE.
 
+Phase 34 (IN PROGRESS — "Make It React", from the fo2ce-portability audit: Tier-1 breadth/feedback +
+Tier-2 sfx/reaction polish). The hard engineering is done; this phase wires the stubbed externals the
+slice's critter_p_proc fires every tick, the perception/presentation layers drawn on top of correct
+combat logic, and the sfx/reaction feedback. M0 design specs via a 6-agent grounding workflow. M1
+combat-introspection externals (DONE): wired two stubbed VM externals the slice's heartbeats fire —
+is_in_combat (0x8128, opCombatIsInitialized → a new ScriptHost.CombatActiveProvider Func<bool>? backed
+by CombatEngine.Phase != Idle, mirrors SneakFlagProvider) + critter_state (0x80FB, opGetCritterState →
+the CRITTER_STATE bitfield: DEAD(1) for null/non-critter/dead, else NORMAL(0)|PRONE(2 if FID anim 48-49)
+|DAM_CRIP bits for an active critter, or PRONE(2) for an inactive-but-alive one). The pure mapping is
+ScriptHost.CritterStateOf(MapObject) — the single source of truth both the VM (ScriptContext.CritterState)
+and the --critter-state-probe call; DAM_CRIP == CriticalTables.DamHealable (0x7C); the inactive-death test
+uses MapObject.IsDead (DAM_DEAD bit; the HP<=0-without-DAM_DEAD case is unreachable for a polled live
+critter — documented). The stack shape is UNCHANGED from the prior arity stubs (0x8128 = 0-pop/1-push,
+0x80FB = 1-pop/1-push), so the VM never desyncs; the only change is the returned VALUE, and no slice
+script branches on it in a golden-visible way (the OnStubbedExternal census is stderr-only) — all 15 combat
++ 48 encounter goldens BYTE-IDENTICAL (verified by a clean check BEFORE recording, incl. the combat
+fixtures where is_in_combat now returns 1 mid-fight). Harness --critter-state-probe <hex> (hex<0 = is_in_
+combat only); golden critter-state (denbus2 merchant 14716 un-engaged → inCombat=0/state=0 NORMAL). 8
+CritterStateExternalTests lock the bitfield truth table.
+
 Phase 10 (DONE, per docs/phase10-research-report.md — "The Wasteland
 Bites Back"): M0 persistence pre-stage (the net: MapList saved=No /
 random_start_point parse + IsTransient; the 3-clause transient guards as

@@ -559,6 +559,9 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
         /// <summary>Drive a reg_anim_func batch (begin -> move-to-tile -> end) on the critter at
         /// FromHex toward ToHex via the executor (P33-M1; no slice script fires the move ops).</summary>
         public sealed record RegAnimMove(int FromHex, int ToHex) : StartupAction;
+        /// <summary>Report is_in_combat + critter_state(critter@Hex) — the two heartbeat externals
+        /// (P34-M1). Hex&lt;0 reports is_in_combat only.</summary>
+        public sealed record CritterStateProbe(int Hex) : StartupAction;
         /// <summary>Report the gore death-anim a burst/explosion/laser kill would give the critter
         /// at Hex — the picked anim + the art-resolved anim (P26), proving gore art availability.</summary>
         public sealed record DeathProbe(int Hex) : StartupAction;
@@ -843,6 +846,7 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
                 },
                 PerkRankProvider = perk => Formats.Perks.PerkRules.Rank(_dudePerkRanks, perk),
                 SneakFlagProvider = () => _sneak.FlagSet, // P29 A-M0: using_skill(dude, SNEAK)
+                CombatActiveProvider = () => _combat.Phase != Formats.Combat.CombatPhase.Idle, // P34-M1: is_in_combat(0x8128)
             };
             if (RngSeed is { } scriptSeed)
                 _scriptHost.Rng = new Random(scriptSeed);
@@ -1393,6 +1397,18 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
                         Console.WriteLine($"reg-anim-move: map={_currentMapName} "
                             + $"[{string.Join(", ", _regAnimMoves)}]");
                     }
+                    break;
+                }
+                case StartupAction.CritterStateProbe(var csHex):
+                {
+                    // P34-M1: prove the two heartbeat externals read real state. is_in_combat via the
+                    // wired provider; critter_state via ScriptHost.CritterStateOf (the VM's source of truth).
+                    int inCombat = _scriptHost?.CombatActiveProvider?.Invoke() == true ? 1 : 0;
+                    MapObject? c = csHex < 0
+                        ? null
+                        : _solidObjects[_elevation].FirstOrDefault(o => o.HexTile == csHex && Fid.Type(o.Fid) is ObjectType.Critter);
+                    int state = csHex < 0 ? -1 : Formats.Int.ScriptHost.CritterStateOf(c);
+                    Console.WriteLine($"critter-state: inCombat={inCombat} hex={csHex} state={state}");
                     break;
                 }
                 case StartupAction.RepTitle(var repValue):

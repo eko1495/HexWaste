@@ -144,6 +144,15 @@ public interface IVmExternals
     /// (or a free tile near it) on an elevation. Returns true on success.</summary>
     bool CritterAttemptPlacement(int critterHandle, int tile, int elevation) => false;
 
+    /// <summary>is_in_combat (interpreter_extra.cc opCombatIsInitialized 0x8128): true while the
+    /// combat state machine runs. Default false (tests / no combat).</summary>
+    bool IsInCombat() => false;
+
+    /// <summary>critter_state (interpreter_extra.cc opGetCritterState 0x80FB): the CRITTER_STATE
+    /// bitfield — DEAD(1) for null/dead, else NORMAL(0)+PRONE(2)+DAM_CRIP bits, or PRONE(2) for an
+    /// unconscious-but-alive critter. Default DEAD(1) matches the engine's init value.</summary>
+    int CritterState(int objectHandle) => 1;
+
     /// <summary>float_msg — floating head-text over an object.</summary>
     void FloatMessage(int objectHandle, string text, int type) { }
 
@@ -1371,6 +1380,12 @@ public sealed class IntVm
                 PushInt(_externals.CritterAttemptPlacement(PopInt(), tile, elevation) ? 1 : 0);
                 break;
             }
+            case 0x8128: // is_in_combat — interpreter_extra.cc opCombatIsInitialized
+                PushInt(_externals.IsInCombat() ? 1 : 0);
+                break;
+            case 0x80FB: // critter_state (pops critter) — interpreter_extra.cc opGetCritterState
+                PushInt(_externals.CritterState(PopInt()));
+                break;
             case 0x80CE: // animate_move_obj_to_tile (pops speed, tile, obj)
             {
                 int speed = PopInt();

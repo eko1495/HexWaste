@@ -165,11 +165,15 @@ SCENARIOS=(
   # every slice map (only reg_anim_animate_forever for scenery fires at map_enter), so the
   # other goldens — incl. script-light's --reg-anim-probe — are unchanged.
   "reg-anim-move|--map denbus2.map --reg-anim-move 14716 14718 --rng-seed 1"
+  # P34-M1 is_in_combat (0x8128) + critter_state (0x80FB): the two stubbed externals the slice's
+  # critter_p_proc heartbeats fire every tick now read real state. denbus2's merchant at 14716 is
+  # un-engaged + upright + uninjured -> inCombat=0, state=0 (NORMAL); hex<0 reports is_in_combat only.
+  "critter-state|--map denbus2.map --critter-state-probe 14716 --critter-state-probe -1 --rng-seed 1"
 )
 
 # Keep only the deterministic transcript lines (drop map-load / animate / stub /
 # dialog-text noise — NEVER capture REPLY/OPTION game-asset strings).
-FILTER='^(encounter|travel-from|companion|dismiss-persist|trade:|party:|party-count:|set-global:|hud-click:|use-skill:|hurt:|rest:|automap:|weapon-mode:|panel-click:|menu-click:|travel-resume:|travel-step:|travel-save-mid:|worldmap-fog:|weight:|iq-probe:|death-probe:|trait-probe:|perk-probe:|perk-pick:|combat-walk:|light:|reg-anim:|encounter-fight:|brawl:|sneak-probe:|sneak-roll:|backstab-probe:|detect-probe:|karma-probe:|set-karma:|rep-title:|town-rep:|karma-titles:|get-global:|place-probe:|reg-anim-move:|  spawn|  flat|  wait:|  follow:|  dismiss:|  rejoin:)'
+FILTER='^(encounter|travel-from|companion|dismiss-persist|trade:|party:|party-count:|set-global:|hud-click:|use-skill:|hurt:|rest:|automap:|weapon-mode:|panel-click:|menu-click:|travel-resume:|travel-step:|travel-save-mid:|worldmap-fog:|weight:|iq-probe:|death-probe:|trait-probe:|perk-probe:|perk-pick:|combat-walk:|light:|reg-anim:|encounter-fight:|brawl:|sneak-probe:|sneak-roll:|backstab-probe:|detect-probe:|karma-probe:|set-karma:|rep-title:|town-rep:|karma-titles:|get-global:|place-probe:|reg-anim-move:|critter-state:|  spawn|  flat|  wait:|  follow:|  dismiss:|  rejoin:)'
 
 echo "Building viewer..."
 dotnet build src/Hexwaste.Viewer -c Debug >/dev/null || { echo "build failed"; exit 2; }

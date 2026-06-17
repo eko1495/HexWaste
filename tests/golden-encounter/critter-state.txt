@@ -1,0 +1,2 @@
+critter-state: inCombat=0 hex=14716 state=0
+critter-state: inCombat=0 hex=-1 state=-1
