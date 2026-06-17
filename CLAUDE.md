@@ -1080,6 +1080,21 @@ DOCUMENTED: the bare --map load stays unseeded (a synthetic debug jump); real pl
 seeds. P32 COMPLETE: map-load robustness + GVAR seeding — the two highest-leverage compatibility wins
 from the audit.
 
+Phase 33 (IN PROGRESS — "Scripted Map Externals", wiring the high-leverage stubs the slice fires, from
+the audit backlog). KEY GROUNDING (a per-map stub census): the slice fires its high-leverage stubs in
+INERT ways — artemple/arcaves' reg_anim_func wraps scenery animation, denbus2's critter_attempt_placement
+is a SAME-TILE placement (pid 0x0100003A 14716→14716, a no-op; NOT Vic@17070/Metzger@15278) — so wiring
+them is forward-looking infra (correct + byte-identical goldens, fake-host/probe-verified), not a slice-
+visible change. M0 critter_attempt_placement (DONE): wired 0x80FF (interpreter_extra.cc:2812) — IntVm
+dispatch (pops elevation, tile, critter) + IVmExternals.CritterAttemptPlacement + ScriptHost.
+PlaceObjectRequested callback → the viewer's PlaceObject relocates the critter (pure Formats.Map.Placement.
+FreeTileNear = the tile or a free neighbour, _obj_attempt_placement simplified to radius-1; then pull off
+every elevation draw list, RebuildBlockedTiles, InsertSorted into the target elevation, rebuild blocking).
+denbus2's same-tile call runs the path as a no-op → all 15 combat + 44 encounter goldens BYTE-IDENTICAL;
+--place-probe <from> <to> proves the REAL relocate (denbus2 critter 14716→14000); new golden critter-place
++ 3 Placement tests. DOCUMENTED: the free-tile search is radius-1 (engine spiral-searches wider) + uses
+the current elevation's blocking (approximate off-screen).
+
 Phase 10 (DONE, per docs/phase10-research-report.md — "The Wasteland
 Bites Back"): M0 persistence pre-stage (the net: MapList saved=No /
 random_start_point parse + IsTransient; the 3-clause transient guards as

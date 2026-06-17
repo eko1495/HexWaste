@@ -140,6 +140,10 @@ public interface IVmExternals
     /// <summary>using_skill(object, skill): true only for the dude's SNEAK flag (P29 A-M0).</summary>
     bool IsUsingSkill(int objectHandle, int skill) => false;
 
+    /// <summary>critter_attempt_placement (interpreter_extra.cc:2812): relocate a critter to a tile
+    /// (or a free tile near it) on an elevation. Returns true on success.</summary>
+    bool CritterAttemptPlacement(int critterHandle, int tile, int elevation) => false;
+
     /// <summary>float_msg — floating head-text over an object.</summary>
     void FloatMessage(int objectHandle, string text, int type) { }
 
@@ -1334,6 +1338,13 @@ public sealed class IntVm
             {
                 int skill = PopInt();
                 PushInt(_externals.IsUsingSkill(PopInt(), skill) ? 1 : 0);
+                break;
+            }
+            case 0x80FF: // critter_attempt_placement (pops elevation, tile, critter) — interpreter_extra.cc:2812
+            {
+                int elevation = PopInt();
+                int tile = PopInt();
+                PushInt(_externals.CritterAttemptPlacement(PopInt(), tile, elevation) ? 1 : 0);
                 break;
             }
             case 0x80CE: // animate_move_obj_to_tile (pops speed, tile, obj)

@@ -251,6 +251,10 @@ for (int i = 0; i < args.Length; i++)
         case "--get-global" when i + 1 < args.Length:
             actions.Add(new ViewerGame.StartupAction.GetGlobal(int.Parse(args[++i])));
             break;
+        case "--place-probe" when i + 2 < args.Length:
+            actions.Add(new ViewerGame.StartupAction.PlaceProbe(int.Parse(args[i + 1]), int.Parse(args[i + 2])));
+            i += 2;
+            break;
         case "--set-karma" when i + 2 < args.Length:
             actions.Add(new ViewerGame.StartupAction.SetKarma(int.Parse(args[i + 1]), int.Parse(args[i + 2])));
             i += 2;

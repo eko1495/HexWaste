@@ -94,6 +94,11 @@ public sealed class ScriptHost(GameFileSystem vfs, ScriptList scripts, Hexwaste.
     /// The host starts/joins combat (opAttackComplex → scriptsRequestCombat).</summary>
     public Action<MapObject, MapObject>? AttackRequested { get; set; }
 
+    /// <summary>critter_attempt_placement: relocate (obj, tile, elevation) to that tile (or a free tile
+    /// near it), re-sorting the host's draw lists + blocking. Returns true on success. (P32 reg-anim/
+    /// placement.)</summary>
+    public Func<MapObject, int, int, bool>? PlaceObjectRequested { get; set; }
+
     /// <summary>anim_busy: is this object mid-animation (host animator)?</summary>
     public Func<MapObject, bool>? AnimBusyResolver { get; set; }
 
@@ -979,6 +984,14 @@ public sealed class ScriptHost(GameFileSystem vfs, ScriptList scripts, Hexwaste.
 
         public bool AnimBusy(int objectHandle) =>
             _host.ObjectOf(objectHandle) is { } obj && (_host.AnimBusyResolver?.Invoke(obj) ?? false);
+
+        // ported from fallout2-ce interpreter_extra.cc opCritterAttemptPlacement (0x80FF).
+        public bool CritterAttemptPlacement(int critterHandle, int tile, int elevation)
+        {
+            if (_host.ObjectOf(critterHandle) is not { } critter)
+                return false;
+            return _host.PlaceObjectRequested?.Invoke(critter, tile, elevation) ?? false;
+        }
 
         public void GiveExpPoints(int amount) => _host.ExpAwarded?.Invoke(amount);
 

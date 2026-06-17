@@ -549,6 +549,9 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
         public sealed record SetKarma(int Karma, int Reputation) : StartupAction;
         /// <summary>Read a global var (P32-M1; verifies vault13.gam seeding after a new game).</summary>
         public sealed record GetGlobal(int Id) : StartupAction;
+        /// <summary>Relocate the critter at FromHex to ToHex via the placement path (P32; verifies
+        /// critter_attempt_placement actually moves a critter to a different tile).</summary>
+        public sealed record PlaceProbe(int FromHex, int ToHex) : StartupAction;
         /// <summary>Report the gore death-anim a burst/explosion/laser kill would give the critter
         /// at Hex — the picked anim + the art-resolved anim (P26), proving gore art availability.</summary>
         public sealed record DeathProbe(int Hex) : StartupAction;
@@ -801,6 +804,7 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
                         Console.Error.WriteLine(name);
                 },
                 StatsResolver = obj => obj == _dude?.Dude ? _dudeGcd?.Stats : null,
+                PlaceObjectRequested = (obj, tile, elevation) => PlaceObject(obj, tile, elevation),
                 AttackRequested = (attacker, target) =>
                 {
                     // P30 A-M3: a sneaking dude can slip past scripted aggro (isWithinPerception,
@@ -1348,6 +1352,21 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
                 {
                     // P32-M1: read a global var (proves vault13.gam seeding fired at new-game).
                     Console.WriteLine($"get-global: GVAR{ggId} = {_scriptHost?.GlobalVars.GetValueOrDefault(ggId, 0) ?? 0}");
+                    break;
+                }
+                case StartupAction.PlaceProbe(var fromHex, var toHex):
+                {
+                    // P32: drive the real critter_attempt_placement relocate path (PlaceObject) on a map
+                    // critter, proving it moves to a different tile.
+                    MapObject? obj = _solidObjects[_elevation].FirstOrDefault(o =>
+                        o.HexTile == fromHex && Fid.Type(o.Fid) is ObjectType.Critter && !o.IsDead);
+                    if (obj is null)
+                        Console.WriteLine($"place-probe: no critter at {fromHex}");
+                    else
+                    {
+                        bool ok = PlaceObject(obj, toHex, _elevation);
+                        Console.WriteLine($"place-probe: from={fromHex} requested={toHex} now={obj.HexTile} ok={ok}");
+                    }
                     break;
                 }
                 case StartupAction.RepTitle(var repValue):
@@ -3017,6 +3036,31 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
     {
         int index = objects.FindIndex(o => o.HexTile > obj.HexTile);
         objects.Insert(index < 0 ? objects.Count : index, obj);
+    }
+
+    /// <summary>critter_attempt_placement (interpreter_extra.cc:2812 → _obj_attempt_placement): relocate
+    /// an object to a tile (or a free tile near it, Placement.FreeTileNear) on an elevation, re-sorting
+    /// the draw lists + rebuilding blocking. Used by map_enter scripts that position critters; on the
+    /// shippable slice denbus2 calls it for a same-tile placement (a no-op) — it lights up for real when
+    /// a script moves a critter to a different tile. The free-tile search uses the CURRENT elevation's
+    /// blocking (approximate for off-screen elevations — a documented simplification).</summary>
+    private bool PlaceObject(MapObject obj, int tile, int elevation)
+    {
+        if (!Formats.Hex.HexGrid.IsValid(tile))
+            return false;
+        // Pull it off every elevation's draw list (an object's elevation is implicit in which list holds
+        // it), then rebuild blocking so its old tile frees before we pick the destination.
+        for (int e = 0; e < MapFile.ElevationCount; e++)
+        {
+            _flatObjects[e]?.Remove(obj);
+            _solidObjects[e]?.Remove(obj);
+        }
+        RebuildBlockedTiles(_dude?.Dude);
+        obj.HexTile = Formats.Map.Placement.FreeTileNear(tile, t => _blockedTiles.Contains(t));
+        int dest = elevation is >= 0 and < MapFile.ElevationCount ? elevation : _elevation;
+        InsertSorted(obj.IsFlat ? _flatObjects[dest] : _solidObjects[dest], obj);
+        RebuildBlockedTiles(_dude?.Dude);
+        return true;
     }
 
     /// <summary>
