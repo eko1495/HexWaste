@@ -565,6 +565,8 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
         /// <summary>OR Flags (DAM_* mask) into the critter@Hex's CombatResults, then report whether
         /// its AI packet's hurt_too_much mask would now make it flee (P34-M2).</summary>
         public sealed record HurtTooMuchProbe(int Hex, int Flags) : StartupAction;
+        /// <summary>Report the dude's movement anim-code under each run guard (P34-M3).</summary>
+        public sealed record RunProbe : StartupAction;
         /// <summary>Report the gore death-anim a burst/explosion/laser kill would give the critter
         /// at Hex — the picked anim + the art-resolved anim (P26), proving gore art availability.</summary>
         public sealed record DeathProbe(int Hex) : StartupAction;
@@ -1430,6 +1432,26 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
                     int wouldFlee = (htmC.CombatResults & packetHurt) != 0 ? 1 : 0;
                     Console.WriteLine($"hurt-too-much: pid=0x{htmC.Pid:X} hex={htmHex} "
                         + $"results=0x{htmC.CombatResults:X} packetHurt=0x{packetHurt:X} wouldFlee={wouldFlee}");
+                    break;
+                }
+                case StartupAction.RunProbe:
+                {
+                    // P34-M3: report the dude's run-guard decision under each condition (pure, zero-RNG).
+                    MapObject? rpDude = _dude?.Dude;
+                    if (rpDude is null)
+                    {
+                        Console.WriteLine("run-probe: no dude");
+                        break;
+                    }
+                    int runFid = Fid.Build(ObjectType.Critter, Fid.Index(rpDude.Fid),
+                        Formats.Combat.RunGuard.AnimRunning, Fid.WeaponCode(rpDude.Fid));
+                    bool art = _vfs.Exists(_artIndex.GetFrmPath(runFid));
+                    int def = Formats.Combat.RunGuard.MovementAnimCode(0, false, false, art);
+                    int crippled = Formats.Combat.RunGuard.MovementAnimCode(Formats.Combat.CriticalTables.DamCripLegLeft, false, false, art);
+                    int sneaking = Formats.Combat.RunGuard.MovementAnimCode(0, true, false, art);
+                    int silentRun = Formats.Combat.RunGuard.MovementAnimCode(0, true, true, art);
+                    Console.WriteLine($"run-probe: default={def} crippled={crippled} sneaking={sneaking} "
+                        + $"silentRun={silentRun} artExists={(art ? 1 : 0)}");
                     break;
                 }
                 case StartupAction.RepTitle(var repValue):
@@ -3060,7 +3082,8 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
         _dudeInventory = dude.Inventory;
 
         RebuildBlockedTiles(dude);
-        _dude = new DudeController(dude, _frmCache, tile => _blockedTiles.Contains(tile));
+        _dude = new DudeController(dude, _frmCache, tile => _blockedTiles.Contains(tile),
+            () => DudeMovementAnimCode(dude)); // P34-M3: run by default (the 3 engine guards), NPC walkers keep walking
         _dude.TileChanged += tile =>
         {
             // Keep hex z-order: re-insert at the new tile's sorted position.
@@ -3094,6 +3117,23 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
         InsertSorted(_solidObjects[_elevation], dude);
         _camera.SetCenter(dude.HexTile);
         RevealAround(dude.HexTile); // automap fog: reveal the spawn surroundings (P20-M2)
+    }
+
+    private const int PerkSilentRunning = 15; // PERK_SILENT_RUNNING (perk_defs.h)
+
+    /// <summary>
+    /// The dude's movement anim-code (walk/run) under the engine's 3 run guards (P34-M3).
+    /// ported from fallout2-ce src/animation.cc animationRegisterRunToTile() via RunGuard.MovementAnimCode.
+    /// The run-art existence check uses the dude's ACTUAL weapon-code FID (the engine checks weaponCode 0;
+    /// matching the loaded FID is faithful-enough and avoids a try-run-then-fail-to-load — documented).
+    /// </summary>
+    private int DudeMovementAnimCode(MapObject dude)
+    {
+        int runFid = Fid.Build(ObjectType.Critter, Fid.Index(dude.Fid),
+            Formats.Combat.RunGuard.AnimRunning, Fid.WeaponCode(dude.Fid));
+        bool runArtExists = _vfs.Exists(_artIndex.GetFrmPath(runFid));
+        bool silentRunning = Formats.Perks.PerkRules.Rank(_dudePerkRanks, PerkSilentRunning) > 0;
+        return Formats.Combat.RunGuard.MovementAnimCode(dude.CombatResults, _sneak.FlagSet, silentRunning, runArtExists);
     }
 
     private static void InsertSorted(List<MapObject> objects, MapObject obj)

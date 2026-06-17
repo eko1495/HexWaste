@@ -13,9 +13,14 @@ namespace Hexwaste.Viewer;
 /// (tile.cc _off_tile / dword_51D984), the dude advances one tile and the
 /// remainder carries over, so walking speed comes entirely from the FRM data.
 /// </summary>
-public sealed class DudeController(MapObject dude, FrmCache frmCache, Func<int, bool> isBlocked)
+public sealed class DudeController(MapObject dude, FrmCache frmCache, Func<int, bool> isBlocked,
+    Func<int>? movementAnimCode = null)
 {
     private const int AnimWalk = 1;
+
+    // The movement anim-code (walk/run): the dude passes a run-selector (P34-M3); NPC walkers
+    // pass nothing and keep walking. ported from fallout2-ce src/animation.cc animationRegisterRunToTile().
+    private readonly Func<int> _movementAnimCode = movementAnimCode ?? (() => AnimWalk);
 
     public MapObject Dude { get; } = dude;
 
@@ -34,7 +39,7 @@ public sealed class DudeController(MapObject dude, FrmCache frmCache, Func<int, 
     private double _accumulatorMs;
 
     public int CurrentFid => Moving
-        ? Fid.Build(ObjectType.Critter, Fid.Index(Dude.Fid), AnimWalk, Fid.WeaponCode(Dude.Fid))
+        ? Fid.Build(ObjectType.Critter, Fid.Index(Dude.Fid), _movementAnimCode(), Fid.WeaponCode(Dude.Fid))
         : Dude.Fid;
 
     public bool WalkTo(int targetTile)

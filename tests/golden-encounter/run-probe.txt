@@ -1,0 +1,1 @@
+run-probe: default=19 crippled=1 sneaking=1 silentRun=19 artExists=1

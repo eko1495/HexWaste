@@ -1152,6 +1152,21 @@ golden hurt-too-much-flee (arcaves scorpion 20529 + blind → wouldFlee=1). Test
 TooMuch* + the GameDataFact real-mask asserts; CombatEngineTests Blind-enemy-flees + the no-matching-bit-
 still-attacks control (the AND-gate / byte-identical invariant). DOCUMENTED CUT: the engine's third OR-clause
 (CRITTER_MANUEVER_FLEEING) stays unported — Hexwaste has no maneuver model (pre-existing simplification).
+M3 run animation (DONE): the dude now RUNS by default (the engine's running pref) instead of always
+walking. Pure Formats.Combat.RunGuard.MovementAnimCode ports the 3 guards of animation.cc animationRegister
+RunToTile() — walk if a crippled leg (DAM_CRIP_LEG_ANY), or sneaking without Silent Running (PERK 15), or
+the run art (ANIM_RUNNING=19) is missing; else run. DudeController gained an optional movementAnimCode
+selector (CurrentFid uses it; NPC walkers pass nothing → keep walking ANIM_WALK=1), the dude wires
+ViewerGame.DudeMovementAnimCode (computes runArtExists from the dude's ACTUAL weapon-code FID — a documented
+divergence from the engine's weaponCode-0 check, so the existence test matches the FRM that loads). The
+per-rotation offsets + FRM-driven speed are anim-code-INDEPENDENT (already correct), so only the FID anim-
+code changes; CurrentFid is Draw/anim-only (never in a transcript) + draws no RNG → all 15 combat + 48
+encounter goldens BYTE-IDENTICAL (incl. the combat-walk fixtures, whose printed tile/AP state is path+AP-
+derived, not fps-derived; the crippled variant forces walk anyway). DECISIONS: run applies in combat too
+(faithful, AP-cost unchanged by anim-code); the _dude_run sneak-disable side-effect (animation.cc:3007) is
+DEFERRED (golden-risk to the P30 sneak suite, not needed for the visual). Harness --run-probe (reports the
+code under each guard); golden run-probe (combat char on arcaves: default=19/crippled=1/sneaking=1/silentRun=
+19/artExists=1). 5 RunGuardTests lock the guard order + the 19/1 codes.
 
 Phase 10 (DONE, per docs/phase10-research-report.md — "The Wasteland
 Bites Back"): M0 persistence pre-stage (the net: MapList saved=No /
