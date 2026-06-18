@@ -119,6 +119,18 @@ public class SaveStateRoundTripTests
     }
 
     [Fact]
+    public void DudePoisonRoundTrips()
+    {
+        // P35-M3: the dude's poison counter survives save/load (the next-tick schedule is re-derived on
+        // load); absent on a pre-M3 save → null → not poisoned.
+        var state = new SaveState { Version = SaveState.CurrentVersion, DudePoison = 7 };
+        SaveState loaded = SaveState.FromJson(state.ToJson())!;
+        Assert.Equal(7, loaded.DudePoison);
+
+        Assert.Null(new SaveState().DudePoison); // additive default
+    }
+
+    [Fact]
     public void KarmaAndReputationRoundTrip()
     {
         // P31 B-M3: the karma/reputation PC-stats survive save/load; absent on a pre-P31 save → 0.

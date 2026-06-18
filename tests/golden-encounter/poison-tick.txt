@@ -1,0 +1,2 @@
+poison-tick: poison=1->0 hp=44->43 minutes=10
+poison-tick: poison=10->0 hp=43->38 minutes=60

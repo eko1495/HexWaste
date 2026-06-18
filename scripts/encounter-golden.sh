@@ -209,11 +209,17 @@ SCENARIOS=(
   # the dude. critterAdjustPoison is dude-only + poison-resistance reduced; the misc.msg "poisoned" line +
   # the delayed EVENT_TYPE_POISON damage tick are documented divergences (silent counter only).
   "combat-proc-poison|--character combat --map arcaves.map --combat-proc-hit 20529 --rng-seed 2"
+  # P35-M3 poison-over-time: the poison counter now ticks HP damage on the game clock (poisonEvent
+  # Process, critter.cc:378 — dude-only, -2 poison + -1 HP per tick at 10*(505-5*poison) game-ticks,
+  # re-queued until poison<=0). Deterministic (pure clock math, no RNG): poison 1 over 10 game-min = 1
+  # tick (-1 HP); poison 10 over 60 game-min = 5 ticks (-5 HP). No existing golden both poisons the dude
+  # AND advances the clock past a tick interval, so all other goldens are byte-identical.
+  "poison-tick|--character combat --map arcaves.map --poison-tick 1 10 --poison-tick 10 60 --rng-seed 1"
 )
 
 # Keep only the deterministic transcript lines (drop map-load / animate / stub /
 # dialog-text noise — NEVER capture REPLY/OPTION game-asset strings).
-FILTER='^(encounter|travel-from|companion|dismiss-persist|trade:|party:|party-count:|set-global:|hud-click:|use-skill:|hurt:|rest:|automap:|weapon-mode:|panel-click:|menu-click:|travel-resume:|travel-step:|travel-save-mid:|worldmap-fog:|weight:|iq-probe:|death-probe:|trait-probe:|perk-probe:|perk-pick:|combat-walk:|light:|reg-anim:|encounter-fight:|brawl:|sneak-probe:|sneak-roll:|backstab-probe:|detect-probe:|karma-probe:|set-karma:|rep-title:|town-rep:|karma-titles:|get-global:|place-probe:|reg-anim-move:|critter-state:|hurt-too-much:|run-probe:|outline:|sfx-probe:|reaction-probe:|combat-proc:|combat-proc-hit:|  spawn|  flat|  wait:|  follow:|  dismiss:|  rejoin:)'
+FILTER='^(encounter|travel-from|companion|dismiss-persist|trade:|party:|party-count:|set-global:|hud-click:|use-skill:|hurt:|rest:|automap:|weapon-mode:|panel-click:|menu-click:|travel-resume:|travel-step:|travel-save-mid:|worldmap-fog:|weight:|iq-probe:|death-probe:|trait-probe:|perk-probe:|perk-pick:|combat-walk:|light:|reg-anim:|encounter-fight:|brawl:|sneak-probe:|sneak-roll:|backstab-probe:|detect-probe:|karma-probe:|set-karma:|rep-title:|town-rep:|karma-titles:|get-global:|place-probe:|reg-anim-move:|critter-state:|hurt-too-much:|run-probe:|outline:|sfx-probe:|reaction-probe:|combat-proc:|combat-proc-hit:|poison-tick:|  spawn|  flat|  wait:|  follow:|  dismiss:|  rejoin:)'
 
 echo "Building viewer..."
 dotnet build src/Hexwaste.Viewer -c Debug >/dev/null || { echo "build failed"; exit 2; }

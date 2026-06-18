@@ -1271,9 +1271,27 @@ poison delta — deterministic: seed 2 → +1, seed 1 → 0 as the scorpion's do
 proc-poison (seed 2, dudePoison 0→1). DOCUMENTED CUTS: the silent poison message + the poison-over-time HP
 tick (the EVENT_TYPE_POISON queue is unwired — the counter is set faithfully but deals no periodic damage
 yet); a lethal hit returns early in Hexwaste so fp=2 fires only on a non-lethal hit (moot for poison).
-P35 COMPLETE: the per-turn (fp=4) + on-hit (fp=2) combat_p_proc hooks are live; the remaining 3 hooks
-(want-to-join fp=5, the end-of-combat map hook, the dead round-robin) stay unported (no slice driver).
-486 Formats tests; 59 encounter + 15 combat goldens green.
+The per-turn (fp=4) + on-hit (fp=2) combat_p_proc hooks are live; the remaining 3 hooks (want-to-join
+fp=5, the end-of-combat map hook, the dead round-robin) stay unported (no slice driver).
+M3 poison-over-time tick (DONE — "poison actually hurts"): the dude's poison counter now deals periodic
+HP damage on the game clock. KEY: the ported EventQueue is COMBAT-SCOPED (combat-tick, cleared on combat
+end — the knockout wake), so it's the WRONG tool for poison (which must outlast combat); instead a viewer
+game-time schedule (_dudePoisonNextTick) models the engine's single EVENT_TYPE_POISON queue entry off
+GameClock.Ticks. SchedulePoison (re)times the next tick to 10*(505-5*poison) ticks (critterAdjustPoison's
+_queue_clear_type + queueAddEvent, critter.cc:350-351); ProcessPoison (ported poisonEventProcess, critter.
+cc:378 — DUDE-ONLY) fires every due tick in a drain-loop (so a clock JUMP from rest/travel deals the right
+count), each: poison -= 2, HP -= 1, GameOver if HP<=0, re-queue from its own fire instant until poison<=0;
+driven from UpdateClock (the per-frame clock advance, which also catches up after rest/travel jumps). The
+engine's "You take damage from poison." misc.msg line is omitted (copyrighted; silent, the P35 pattern).
+ProcessPoison is gated on _dudePoisonNextTick>=0 (only when poisoned), and NO existing golden both poisons
+the dude AND advances the clock past a tick interval, so all 15 combat + 59 encounter goldens BYTE-IDENTICAL
+(verified). Persisted: SaveState.DudePoison (additive-V2, sparse null when not poisoned; the schedule is
+re-derived via SchedulePoison on load). Harness --poison-tick <poison> <gameMinutes> (deterministic, pure
+clock math — poison 1/10min → 1 tick -1 HP; poison 10/60min → 5 ticks -5 HP); golden poison-tick. Tests:
+DudePoisonRoundTrips (the save). DOCUMENTED CUT: ProcessPoison drives off UpdateClock + rest/travel via the
+frame loop (the engine ticks during gameTimeAddTicks); a headless harness that jumps the clock without
+pumping a frame relies on the explicit ProcessPoison in the probe. P35 COMPLETE (M0 grounding, M1 fp=4,
+M2 fp=2 poison sting, M3 poison-over-time). 487 Formats tests; 60 encounter + 15 combat goldens green.
 
 Phase 10 (DONE, per docs/phase10-research-report.md — "The Wasteland
 Bites Back"): M0 persistence pre-stage (the net: MapList saved=No /

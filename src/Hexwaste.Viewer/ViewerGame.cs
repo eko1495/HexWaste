@@ -592,6 +592,9 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
         /// <summary>Fire the critter@Hex's ON-HIT combat_p_proc (fp=2, target = the dude) and report the
         /// dude's poison delta — proves the scorpion's sting poisons whom it struck (P35 fp=2).</summary>
         public sealed record CombatProcHit(int AttackerHex) : StartupAction;
+        /// <summary>Set the dude's poison to InitialPoison, advance the game clock GameMinutes, process the
+        /// poison damage ticks, and report the poison + HP deltas (P35-M3 poison-over-time).</summary>
+        public sealed record PoisonTick(int InitialPoison, int GameMinutes) : StartupAction;
         /// <summary>Set the dude's two traits (id&lt;0 = none) and report the live effect on his
         /// stats/skills + has_trait (P28-M1).</summary>
         public sealed record TraitProbe(int Trait1, int Trait2) : StartupAction;
@@ -1338,6 +1341,18 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
                     var hr = _scriptHost?.RunCombatProc(atk, dudeObj, dudeObj, _map, 2);
                     Console.WriteLine($"combat-proc-hit: atk=0x{atk.Pid:X} hasProc={hr is not null} "
                         + $"dudePoison={before}->{dudeObj.Poison}");
+                    break;
+                }
+                case StartupAction.PoisonTick(var initPoison, var minutes) when _dude is not null:
+                {
+                    // P35-M3: poison the dude, advance the clock, fire the over-time ticks, report deltas.
+                    MapObject pd = _dude.Dude;
+                    int hpBefore = pd.CurrentHp;
+                    pd.Poison = initPoison;
+                    SchedulePoison();
+                    _clock.Ticks += (long)minutes * 60 * Formats.GameClock.TicksPerSecond;
+                    ProcessPoison();
+                    Console.WriteLine($"poison-tick: poison={initPoison}->{pd.Poison} hp={hpBefore}->{pd.CurrentHp} minutes={minutes}");
                     break;
                 }
                 case StartupAction.TraitProbe(var t1, var t2):
@@ -4617,12 +4632,16 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
             _audio?.PlaySfx(Formats.Sound.SfxName.WeaponAttack(weapon.SoundCode));
     }
 
+    /// <summary>The game-tick at which the dude's next poison damage tick fires; -1 = not poisoned.
+    /// Models the engine's single EVENT_TYPE_POISON queue entry (critter.cc:351) on the game-time clock
+    /// (the combat-scoped EventQueue is the wrong tool — poison must outlast combat). (P35-M3.)</summary>
+    private long _dudePoisonNextTick = -1;
+
     /// <summary>
     /// ported from fallout2-ce src/critter.cc critterAdjustPoison() (P35): DUDE-ONLY, poison-resistance
-    /// reduced; sets the poison counter. DOCUMENTED DIVERGENCES: the engine also (a) shows a misc.msg
-    /// monitor line ("You have been poisoned!") — we apply silently to keep a copyrighted game string out
-    /// of the goldens; (b) queues an EVENT_TYPE_POISON delayed-damage tick — Hexwaste's poison-over-time
-    /// tick is not wired, so the counter is set faithfully but deals no periodic HP damage yet.
+    /// reduced; sets the poison counter + (re)schedules the next damage tick. DOCUMENTED DIVERGENCE: the
+    /// engine also shows a misc.msg monitor line ("You have been poisoned!") — we apply silently to keep a
+    /// copyrighted game string out of the goldens.
     /// </summary>
     private void ApplyPoison(MapObject obj, int amount)
     {
@@ -4638,6 +4657,35 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
             return; // can't reduce poison that isn't there
         }
         obj.Poison = Math.Max(0, obj.Poison + amount);
+        SchedulePoison();
+    }
+
+    /// <summary>(Re)time the single poison damage event, ported from critterAdjustPoison's
+    /// _queue_clear_type(EVENT_TYPE_POISON) + queueAddEvent(10*(505-5*poison)) (critter.cc:350-351):
+    /// the next tick is 10*(505-5*poison) game-ticks from now, or cleared when poison ≤ 0. (P35-M3.)</summary>
+    private void SchedulePoison() => _dudePoisonNextTick =
+        _dude is { Dude.Poison: > 0 } d ? _clock.Ticks + 10L * (505 - 5 * d.Dude.Poison) : -1;
+
+    /// <summary>
+    /// Fire every poison damage tick now due, ported from poisonEventProcess (critter.cc:378): each tick
+    /// is DUDE-ONLY, decrements poison by 2 + deals 1 HP, then re-queues at the reduced interval until
+    /// poison ≤ 0. The loop drains all ticks a clock JUMP (rest/travel) made due, each re-timed from its
+    /// own fire instant (so a big jump deals the right number of ticks). Driven from UpdateClock. The
+    /// engine's "You take damage from poison." misc.msg line is omitted (copyrighted; silent — P35 pattern).
+    /// </summary>
+    private void ProcessPoison()
+    {
+        if (_dude is not { } d || _dudePoisonNextTick < 0)
+            return;
+        while (_dudePoisonNextTick >= 0 && _clock.Ticks >= _dudePoisonNextTick && d.Dude.Poison > 0)
+        {
+            long firedAt = _dudePoisonNextTick;
+            d.Dude.Poison = Math.Max(0, d.Dude.Poison - 2);
+            d.Dude.CurrentHp -= 1; // critterAdjustHitPoints(obj, -1)
+            if (d.Dude.CurrentHp <= 0 && !_combat.IsGameOver)
+                GameOver(); // death by poison
+            _dudePoisonNextTick = d.Dude.Poison > 0 ? firedAt + 10L * (505 - 5 * d.Dude.Poison) : -1;
+        }
     }
 
     /// <summary>Out-of-ammo empty-click sfx (combat.cc:5745) — P34-M5.</summary>
@@ -7826,6 +7874,7 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
     private void UpdateClock(double elapsedMs)
     {
         _clock.AdvanceRealTime(elapsedMs);
+        ProcessPoison(); // P35-M3: poison damage ticks on game time (also catches up after rest/travel jumps)
 
         int hour = _clock.Hour / 100;
         if (hour == _lastAmbientHour)
@@ -8407,6 +8456,7 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
             DudeLevel = _dudeLevel,
             DudeXp = _dudeXp,
             DudeHp = _dude?.Dude.CurrentHp ?? -1,
+            DudePoison = _dude is { Dude.Poison: > 0 } pd ? pd.Dude.Poison : null, // P35-M3 (sparse: null when not poisoned)
             UnspentSkillPoints = _unspentSkillPoints,
             Character = _activeCharacter,
             DudeSkills = _dudeGcd is not null ? [.. _dudeGcd.Stats.Skills] : null,
@@ -8596,9 +8646,13 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
         _dudeKarma = state.DudeKarma ?? 0;
         _dudeReputation = state.DudeReputation ?? 0;
         if (_dude is not null)
+        {
             _dude.Dude.CurrentHp = state.DudeHp > 0
                 ? state.DudeHp
                 : GetCritterState(_dude.Dude)?.MaxHp ?? _dude.Dude.CurrentHp;
+            _dude.Dude.Poison = state.DudePoison ?? 0; // P35-M3: restore poison + re-derive the tick schedule
+            SchedulePoison();
+        }
 
         // Rebuild the dude's bag from prototypes; worn armor re-applies its
         // bonus stats over the freshly reloaded sheet.

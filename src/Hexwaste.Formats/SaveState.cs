@@ -56,6 +56,10 @@ public sealed class SaveState
     public int? DudeKarma { get; set; }
     public int? DudeReputation { get; set; }
 
+    /// <summary>The dude's poison counter (P35-M3); null/0 = not poisoned (additive within V2). The
+    /// next-tick schedule is re-derived on load from the restored counter.</summary>
+    public int? DudePoison { get; set; }
+
     /// <summary>The dude's base stat block (35; null = reload the named
     /// premade). Self-contained so a created character round-trips without a
     /// .gcd file. Level-up HP lives in bonus stats and is replayed from level.</summary>
