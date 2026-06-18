@@ -1368,16 +1368,44 @@ public sealed class CombatEngine
         _host.Transcript($"brawl: combatants={_hostiles.Count} teams=[{string.Join(",", teams)}]");
     }
 
-    /// <summary>Scriptless hostility, the engine's combat_ai team rule: living
-    /// same-team critters within sight range join the fight at round start.</summary>
+    // CRITTER_MANEUVER_* flags (obj_types.h:120-123) — MapObject.Maneuver carries them.
+    private const int ManeuverEngaging = 0x01, ManeuverDisengaging = 0x02, ManeuverFleeing = 0x04;
+
+    /// <summary>
+    /// Does a candidate critter join the fight, ported from fallout2-ce src/combat_ai.cc
+    /// _combatai_want_to_join() (:3165): a dead/knocked-out critter never joins; one hurt this turn
+    /// (damageLastTurn > 0) always does; otherwise its combat_p_proc runs with fixedParam=5 (P35-M4 —
+    /// the script may set its maneuver, e.g. by attacking → ENGAGING), and the maneuver decides
+    /// (ENGAGING → join, DISENGAGING/FLEEING → don't); else the danger-source/team-sight heuristic
+    /// (CombatRules.ShouldJoin). The hidden/elevation guards are covered by the CombatCritters set.
+    /// </summary>
+    private bool WantToJoin(MapObject c, MapObject dude)
+    {
+        if (c.IsDead || IsKnockedOut(c))
+            return false;
+        if (c.DamageLastTurn > 0)
+            return true;
+        if (c.Sid != -1)
+            _host.RunCombatProc(c, 5); // fp=5: the script's want-to-join decision (may set maneuver)
+        if ((c.Maneuver & ManeuverEngaging) != 0)
+            return true;
+        if ((c.Maneuver & (ManeuverDisengaging | ManeuverFleeing)) != 0)
+            return false;
+        return CombatRules.ShouldJoin(c, _hostiles, dude.HexTile);
+    }
+
+    /// <summary>Same-team / hurt / script-willing critters join the fight at round start
+    /// (combat.cc:2905 _combat_add_noncoms → _combatai_want_to_join per candidate).</summary>
     private void AddJoiners()
     {
         MapObject? dude = _host.Dude;
         if (dude is null)
             return;
-        foreach (MapObject critter in _host.CombatCritters.Where(o =>
-            !_hostiles.Contains(o) && CombatRules.ShouldJoin(o, _hostiles, dude.HexTile)).ToList())
+        foreach (MapObject critter in _host.CombatCritters.Where(o => !_hostiles.Contains(o)).ToList())
         {
+            if (!WantToJoin(critter, dude))
+                continue;
+            critter.Maneuver = 0; // CRITTER_MANEUVER_NONE once joined (combat.cc:2907)
             _hostiles.Add(critter);
             critter.WhoHitMeCid = -1; // marks the dude as the aggressor
             _host.Log($"The {_host.ObjectName(critter)} joins the fight!");

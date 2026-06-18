@@ -1290,8 +1290,28 @@ re-derived via SchedulePoison on load). Harness --poison-tick <poison> <gameMinu
 clock math — poison 1/10min → 1 tick -1 HP; poison 10/60min → 5 ticks -5 HP); golden poison-tick. Tests:
 DudePoisonRoundTrips (the save). DOCUMENTED CUT: ProcessPoison drives off UpdateClock + rest/travel via the
 frame loop (the engine ticks during gameTimeAddTicks); a headless harness that jumps the clock without
-pumping a frame relies on the explicit ProcessPoison in the probe. P35 COMPLETE (M0 grounding, M1 fp=4,
-M2 fp=2 poison sting, M3 poison-over-time). 487 Formats tests; 60 encounter + 15 combat goldens green.
+pumping a frame relies on the explicit ProcessPoison in the probe.
+M4 fp=5 want-to-join hook (DONE): the join decision now runs each candidate's combat_p_proc with
+fixedParam=5 + honors its maneuver. Ported _combatai_want_to_join (combat_ai.cc:3165) into CombatEngine.
+WantToJoin: a dead/knocked-out critter never joins; one hurt this turn (DamageLastTurn>0) always does;
+else its combat_p_proc runs fp=5 (the script may set its maneuver, e.g. by attacking), and the maneuver
+decides — CRITTER_MANEUVER_ENGAGING(0x01)→join, DISENGAGING(0x02)/FLEEING(0x04)→don't; else the existing
+CombatRules.ShouldJoin heuristic (the danger-source/team-sight proxy). AddJoiners now iterates ALL non-
+hostile CombatCritters through WantToJoin (was the inline ShouldJoin), clearing maneuver to NONE on join
+(combat.cc:2907). MapObject.Maneuver already existed (parsed obj_pud). The attack external now sets the
+attacker ENGAGING (ScriptContext.AttackComplex, interpreter_extra.cc:1860) — the primary maneuver source;
+moot on the slice (an attacking critter is already hostile, never a join candidate). INERT on the slice:
+no critter handles fp==5 (scorpion fp==2, rat none), so fp=5 is a no-op VM run (no RNG/side-effect, like
+P35-M1) → maneuver stays NONE → ShouldJoin decides → the SAME join set; and no non-hostile candidate is
+damaged (anything the dude hit is already hostile). All 15 combat + 60 encounter goldens BYTE-IDENTICAL —
+the existing joiner fixtures (arcaves scorpions, the X-FIGHTING-Y brawls) are themselves the real-data proof
+of the ShouldJoin-fallback path; the maneuver/damage/fp5 branches are proven by 4 fake-host WantToJoin tests
+(ENGAGING-joins-far / FLEEING-blocks-near / damaged-joins / fp5-runs). DOCUMENTED RESIDUAL: the FLEEING/
+DISENGAGING maneuver SOURCES (the flee/terminate_combat externals, interpreter_extra.cc:4763/4781) stay
+arity-stubbed — only ENGAGING-via-attack is wired, so a script can force-join but not script-refuse yet.
+P35 COMPLETE (M0 grounding, M1 fp=4 per-turn, M2 fp=2 poison sting, M3 poison-over-time, M4 fp=5 want-to-
+join). The last hook (the end-of-combat map hook) + the dead round-robin stay unported (no slice driver).
+491 Formats tests; 60 encounter + 15 combat goldens green.
 
 Phase 10 (DONE, per docs/phase10-research-report.md — "The Wasteland
 Bites Back"): M0 persistence pre-stage (the net: MapList saved=No /

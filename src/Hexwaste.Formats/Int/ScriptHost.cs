@@ -1118,6 +1118,9 @@ public sealed class ScriptHost(GameFileSystem vfs, ScriptList scripts, Hexwaste.
                 return;
             if (_self.IsDead || _self.IsHidden || target.IsDead || target.IsHidden)
                 return;
+            // ported from fallout2-ce interpreter_extra.cc _op_attack (:1860): a script attack marks the
+            // attacker ENGAGING (CRITTER_MANEUVER_ENGAGING = 0x01) so its want-to-join returns true (P35-M4).
+            _self.Maneuver |= 0x01;
             _host.AttackRequested?.Invoke(_self, target);
         }
 

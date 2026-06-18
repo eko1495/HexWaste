@@ -416,6 +416,61 @@ public class CombatEngineTests
         Assert.Empty(host.CombatProcCalls);
     }
 
+    // P35-M4 want-to-join (combat_ai.cc:3165): AddJoiners runs at combat start; a candidate's maneuver /
+    // damage / fp=5 decides whether it joins. A far attacker opens combat; the candidate is the subject.
+    private static (CombatEngine, FakeCombatHost, MapObject Dude, MapObject Candidate) JoinSetup(
+        int candidateTile, Action<MapObject> setup)
+    {
+        var host = new FakeCombatHost();
+        MapObject dude = host.SetDude(NewCritter(tile: 20100, hp: 30, ap: 10));
+        MapObject attacker = host.AddCritter(NewCritter(tile: HexGrid.TileInDirection(20100, 0), hp: 30, ap: 10));
+        attacker.Team = 1;
+        MapObject candidate = host.AddCritter(NewCritter(tile: candidateTile, hp: 30, ap: 10));
+        candidate.Team = 1; // same team as the attacker (so the ShouldJoin fallback would consider it)
+        setup(candidate);
+        var engine = new CombatEngine(host, new MinRng());
+        engine.BeginScriptAggro(attacker, dude); // adds the attacker + runs AddJoiners over the candidate
+        return (engine, host, dude, candidate);
+    }
+
+    private static bool Joined(FakeCombatHost host, MapObject c) =>
+        host.Transcripts.Any(t => t.StartsWith("joins:") && t.Contains($"@{c.HexTile} "));
+
+    [Fact]
+    public void EngagingManeuverCritterJoinsEvenWhenFar()
+    {
+        // ENGAGING (0x01) short-circuits before the distance heuristic — a far critter still joins.
+        // (20050 = x50,y100: a far INTERIOR tile — an edge tile would break the step-walked Distance.)
+        var (_, host, _, candidate) = JoinSetup(candidateTile: 20050, c => c.Maneuver = 0x01);
+        Assert.True(HexGrid.Distance(candidate.HexTile, 20100) > CombatRules.SightRangeHexes); // ShouldJoin would reject
+        Assert.True(Joined(host, candidate));
+    }
+
+    [Fact]
+    public void FleeingManeuverCritterDoesNotJoinEvenWhenNearby()
+    {
+        // A near, same-team critter ShouldJoin would accept, but FLEEING (0x04) blocks the join.
+        var (_, host, _, candidate) = JoinSetup(HexGrid.TileInDirection(20100, 2), c => c.Maneuver = 0x04);
+        Assert.True(HexGrid.Distance(candidate.HexTile, 20100) <= CombatRules.SightRangeHexes);
+        Assert.False(Joined(host, candidate));
+    }
+
+    [Fact]
+    public void DamagedCandidateJoinsRegardlessOfDistance()
+    {
+        // damageLastTurn > 0 → joins before any maneuver/heuristic check (combat_ai.cc:3183).
+        var (_, host, _, candidate) = JoinSetup(candidateTile: 20050, c => c.DamageLastTurn = 4);
+        Assert.True(Joined(host, candidate));
+    }
+
+    [Fact]
+    public void Fp5HookRunsForAScriptedJoinCandidate()
+    {
+        // A scripted (Sid != -1) candidate gets its combat_p_proc run with fixedParam=5.
+        var (_, host, _, candidate) = JoinSetup(HexGrid.TileInDirection(20100, 2), c => c.Sid = 7);
+        Assert.Contains(host.CombatProcCalls, p => p.Critter == candidate && p.FixedParam == 5);
+    }
+
     [Fact]
     public void CriticalsStayOffUntilEnabled()
     {
