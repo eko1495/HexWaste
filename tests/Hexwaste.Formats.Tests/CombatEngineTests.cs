@@ -472,6 +472,30 @@ public class CombatEngineTests
     }
 
     [Fact]
+    public void TerminateCombatFromACombatProcEndsTheFight()
+    {
+        // P35-M5: a combat_p_proc that calls terminate_combat (→ engine.RequestTerminateCombat) ends the
+        // fight at the next turn boundary (combat.cc _game_user_wants_to_quit).
+        var host = new FakeCombatHost();
+        MapObject dude = host.SetDude(NewCritter(tile: 20100, hp: 30, ap: 10));
+        MapObject enemy = host.AddCritter(NewCritter(tile: HexGrid.TileInDirection(20100, 0), hp: 30, ap: 10));
+        enemy.Sid = 5; // scripted → its per-turn fp=4 runs
+        host.AiPackets[enemy] = new AiPacket(12, "Guard", MinToHit: 0, MinHp: 0, 0, "", "");
+        // ACTemVil's fp=4 calls terminate_combat AND script_overrides (it yields), so the enemy forfeits
+        // its turn — no pending attack to stall the turn loop before the terminate check.
+        host.CombatProcOverride = true;
+        var engine = new CombatEngine(host, new MinRng());
+        host.OnCombatProc = (c, fp) => { if (fp == 4 && c == enemy) engine.RequestTerminateCombat(); };
+
+        engine.BeginScriptAggro(enemy, dude); // opens combat; the enemy's turn runs fp=4 → terminate
+        for (int i = 0; i < 4 && engine.Phase != CombatPhase.Idle; i++)
+            engine.Step();
+
+        Assert.Equal(CombatPhase.Idle, engine.Phase); // combat ended
+        Assert.Equal(30, dude.CurrentHp);             // the enemy never landed an attack
+    }
+
+    [Fact]
     public void CriticalsStayOffUntilEnabled()
     {
         // Same MinRng, criticals disabled: a plain swing, no crit tag, base damage.
@@ -1407,9 +1431,11 @@ public class CombatEngineTests
         // toggles script_overrides (the per-turn turn-cancel).
         public List<(MapObject Critter, int FixedParam, MapObject? Target)> CombatProcCalls { get; } = [];
         public bool CombatProcOverride { get; set; }
+        public Action<MapObject, int>? OnCombatProc { get; set; } // a test side-effect (e.g. terminate)
         public (IReadOnlyList<string> Lines, bool Overridden) RunCombatProc(MapObject critter, int fixedParam, MapObject? target = null)
         {
             CombatProcCalls.Add((critter, fixedParam, target));
+            OnCombatProc?.Invoke(critter, fixedParam);
             return ([], CombatProcOverride);
         }
         public int PickDeathAnim(MapObject critter, int desiredAnim) => 20;

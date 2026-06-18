@@ -1309,9 +1309,25 @@ of the ShouldJoin-fallback path; the maneuver/damage/fp5 branches are proven by 
 (ENGAGING-joins-far / FLEEING-blocks-near / damaged-joins / fp5-runs). DOCUMENTED RESIDUAL: the FLEEING/
 DISENGAGING maneuver SOURCES (the flee/terminate_combat externals, interpreter_extra.cc:4763/4781) stay
 arity-stubbed — only ENGAGING-via-attack is wired, so a script can force-join but not script-refuse yet.
-P35 COMPLETE (M0 grounding, M1 fp=4 per-turn, M2 fp=2 poison sting, M3 poison-over-time, M4 fp=5 want-to-
-join). The last hook (the end-of-combat map hook) + the dead round-robin stay unported (no slice driver).
-491 Formats tests; 60 encounter + 15 combat goldens green.
+The per-turn (fp=4), on-hit (fp=2 poison), and want-to-join (fp=5) combat_p_proc hooks are live.
+M5 terminate_combat + the DISENGAGING source (DONE): wired terminate_combat (0x8153, opTerminateCombat) —
+the combat-control external a yield script (e.g. a temple challenger's fp=4 at ≤half HP) calls to END the
+fight. IVmExternals.TerminateCombat + IntVm 0x8153 dispatch + ScriptContext.TerminateCombat (sets self
+DISENGAGING [CRITTER_MANEUVER 0x02, completing M4's residual maneuver source] + ScriptHost.CombatTerminate
+Requested) → the viewer's _combat.RequestTerminateCombat(): a _terminateRequested flag (set only in combat,
+the engine's isInCombat guard) that UpdateCombat honors at the next turn boundary → EndCombat (ported from
+combat.cc _game_user_wants_to_quit=1); cleared in EndCombat/Reset. FORWARD-LOOKING INFRA: the grounding
+workflow's claim that ACTemVil (script 748) / dcG2Grd (36) are slice critters is WRONG — MapDump finds NO
+script-748 critter in any of the 4 slice maps (arcaves' lone static critter is script 750), so no shippable
+critter calls terminate_combat; it's wired faithfully + proven by the fake-host test TerminateCombatFromA
+CombatProcEndsTheFight (a fp=4 → RequestTerminateCombat ends the fight). 0x8153 is never hit in a golden +
+the flag defaults false → all 15 combat + 60 encounter goldens BYTE-IDENTICAL. Harness --terminate-combat
+<hex> (enters combat, drops the critter to ≤half HP, runs its fp=4, reports phase/maneuver — a diagnostic
+for future yield-scripted critters; no slice driver so no golden). DOCUMENTED RESIDUAL: the FLEEING maneuver
+source (the flee external) is still arity-stubbed (only ENGAGING-via-attack + DISENGAGING-via-terminate are
+wired). P35 COMPLETE (M0 grounding, M1 fp=4 per-turn, M2 fp=2 poison sting, M3 poison-over-time, M4 fp=5
+want-to-join, M5 terminate_combat). The end-of-combat map hook + the dead round-robin stay unported (no
+slice driver). 492 Formats tests; 60 encounter + 15 combat goldens green.
 
 Phase 10 (DONE, per docs/phase10-research-report.md — "The Wasteland
 Bites Back"): M0 persistence pre-stage (the net: MapList saved=No /

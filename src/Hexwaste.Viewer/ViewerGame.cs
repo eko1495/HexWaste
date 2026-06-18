@@ -595,6 +595,9 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
         /// <summary>Set the dude's poison to InitialPoison, advance the game clock GameMinutes, process the
         /// poison damage ticks, and report the poison + HP deltas (P35-M3 poison-over-time).</summary>
         public sealed record PoisonTick(int InitialPoison, int GameMinutes) : StartupAction;
+        /// <summary>Enter combat with the critter@Hex, drop it to ≤half HP, run its fp=4 combat_p_proc, and
+        /// report whether terminate_combat ended the fight + the critter's maneuver (P35-M5).</summary>
+        public sealed record TerminateCombatProbe(int Hex) : StartupAction;
         /// <summary>Set the dude's two traits (id&lt;0 = none) and report the live effect on his
         /// stats/skills + has_trait (P28-M1).</summary>
         public sealed record TraitProbe(int Trait1, int Trait2) : StartupAction;
@@ -878,6 +881,7 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
                 SneakFlagProvider = () => _sneak.FlagSet, // P29 A-M0: using_skill(dude, SNEAK)
                 CombatActiveProvider = () => _combat.Phase != Formats.Combat.CombatPhase.Idle, // P34-M1: is_in_combat(0x8128)
                 PoisonRequested = (obj, amount) => ApplyPoison(obj, amount), // P35: poison(0x8122)
+                CombatTerminateRequested = () => _combat.RequestTerminateCombat(), // P35-M5: terminate_combat(0x8153)
             };
             if (RngSeed is { } scriptSeed)
                 _scriptHost.Rng = new Random(scriptSeed);
@@ -1353,6 +1357,23 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
                     _clock.Ticks += (long)minutes * 60 * Formats.GameClock.TicksPerSecond;
                     ProcessPoison();
                     Console.WriteLine($"poison-tick: poison={initPoison}->{pd.Poison} hp={hpBefore}->{pd.CurrentHp} minutes={minutes}");
+                    break;
+                }
+                case StartupAction.TerminateCombatProbe(var tcHex) when _dude is not null:
+                {
+                    // P35-M5: enter combat with the critter, drop it to ≤half HP, run its fp=4 — a script
+                    // that yields (ACTemVil) calls terminate_combat → DISENGAGING + the fight ends.
+                    MapObject? tc = _solidObjects[_elevation].FirstOrDefault(o =>
+                        o.HexTile == tcHex && Fid.Type(o.Fid) is ObjectType.Critter);
+                    if (tc is null) { Console.Error.WriteLine($"terminate-combat: no critter at {tcHex}"); break; }
+                    _combat.BeginScriptAggro(tc, _dude.Dude); // enter combat (the critter is hostile)
+                    var phaseBefore = _combat.Phase;
+                    tc.CurrentHp = 1; // ≤half → a yield script fires terminate_combat
+                    _scriptHost?.RunCombatProc(tc, null, _dude.Dude, _map, 4);
+                    for (int i = 0; i < 4 && _combat.Phase != Formats.Combat.CombatPhase.Idle; i++)
+                        _combat.Step();
+                    Console.WriteLine($"terminate-combat: hex={tcHex} phaseBefore={phaseBefore} "
+                        + $"maneuver={tc.Maneuver} phaseAfter={_combat.Phase}");
                     break;
                 }
                 case StartupAction.TraitProbe(var t1, var t2):

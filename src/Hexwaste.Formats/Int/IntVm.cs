@@ -158,6 +158,11 @@ public interface IVmExternals
     /// reduced). Used by the scorpion's on-hit combat_p_proc (fp=2). Default no-op.</summary>
     void Poison(int objectHandle, int amount) { }
 
+    /// <summary>terminate_combat (interpreter_extra.cc opTerminateCombat 0x8153): end the current combat
+    /// (the engine's _game_user_wants_to_quit=1) and mark the script's self DISENGAGING. Used by e.g. the
+    /// temple challenger's combat_p_proc (fp=4) to yield at ≤half HP. Default no-op.</summary>
+    void TerminateCombat() { }
+
     /// <summary>float_msg — floating head-text over an object.</summary>
     void FloatMessage(int objectHandle, string text, int type) { }
 
@@ -1397,6 +1402,9 @@ public sealed class IntVm
                 _externals.Poison(PopInt(), amount);
                 break;
             }
+            case 0x8153: // terminate_combat — interpreter_extra.cc opTerminateCombat (0 args)
+                _externals.TerminateCombat();
+                break;
             case 0x80CE: // animate_move_obj_to_tile (pops speed, tile, obj)
             {
                 int speed = PopInt();

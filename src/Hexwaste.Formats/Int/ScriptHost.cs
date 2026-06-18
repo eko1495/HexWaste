@@ -273,6 +273,10 @@ public sealed class ScriptHost(GameFileSystem vfs, ScriptList scripts, Hexwaste.
     /// dude-only, poison-resistance reduced) — the scorpion's on-hit combat_p_proc fires it (P35). </summary>
     public Action<MapObject, int>? PoisonRequested { get; set; }
 
+    /// <summary>terminate_combat: a script asked to end the current combat (P35-M5). The host ends the
+    /// fight (CombatEngine); the DISENGAGING maneuver on self is set in ScriptContext.TerminateCombat.</summary>
+    public Action? CombatTerminateRequested { get; set; }
+
     /// <summary>Rolls for do_check/statRoll (seedable by the host).</summary>
     public Random Rng { get; set; } = new();
 
@@ -1237,6 +1241,14 @@ public sealed class ScriptHost(GameFileSystem vfs, ScriptList scripts, Hexwaste.
         {
             if (_host.ObjectOf(objectHandle) is { } obj)
                 _host.PoisonRequested?.Invoke(obj, amount);
+        }
+
+        // ported from fallout2-ce interpreter_extra.cc opTerminateCombat (0x8153): end combat + mark
+        // self DISENGAGING (CRITTER_MANEUVER_DISENGAGING = 0x02). The host ends the fight.
+        public void TerminateCombat()
+        {
+            _self.Maneuver |= 0x02;
+            _host.CombatTerminateRequested?.Invoke();
         }
 
         public void FloatMessage(int objectHandle, string text, int type)

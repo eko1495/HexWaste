@@ -1479,6 +1479,17 @@ public sealed class CombatEngine
     /// combat is over when nothing hostile is left standing.</summary>
     private bool CombatShouldEnd() => !_hostiles.Any(h => !h.IsDead);
 
+    private bool _terminateRequested;
+
+    /// <summary>A script called terminate_combat (combat_p_proc) — end the fight at the next turn
+    /// boundary, ported from fallout2-ce src/interpreter_extra.cc opTerminateCombat
+    /// (_game_user_wants_to_quit = 1). No-op outside combat (P35-M5).</summary>
+    public void RequestTerminateCombat()
+    {
+        if (_phase != CombatPhase.Idle)
+            _terminateRequested = true;
+    }
+
     private void EndCombat()
     {
         // Force-wake every combatant so knockout never leaks past the fight
@@ -1488,6 +1499,7 @@ public sealed class CombatEngine
         foreach (MapObject c in _hostiles.Concat(_host.PartyMembers).Append(_host.Dude!).Where(c => c is not null).Distinct())
             c.CombatResults &= ~(CriticalTables.DamKnockedOut | CriticalTables.DamLoseTurn);
         _knockedDown.Clear();
+        _terminateRequested = false; // P35-M5
 
         _phase = CombatPhase.Idle;
         _hostiles.Clear();
@@ -1548,6 +1560,13 @@ public sealed class CombatEngine
         if (_host.Dude is { } dude && dude.CurrentHp <= 0)
         {
             GameOver();
+            return;
+        }
+
+        // A combat_p_proc called terminate_combat → end the fight now (P35-M5).
+        if (_terminateRequested)
+        {
+            EndCombat();
             return;
         }
 
@@ -1997,6 +2016,7 @@ public sealed class CombatEngine
     public void Reset()
     {
         _phase = CombatPhase.Idle;
+        _terminateRequested = false; // P35-M5
         _hostiles.Clear();
         _enemyQueue.Clear();
         _actingEnemy = null;
