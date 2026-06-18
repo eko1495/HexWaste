@@ -308,6 +308,9 @@ for (int i = 0; i < args.Length; i++)
         case "--terminate-combat" when i + 1 < args.Length:
             actions.Add(new ViewerGame.StartupAction.TerminateCombatProbe(int.Parse(args[++i])));
             break;
+        case "--multihex-probe" when i + 1 < args.Length:
+            actions.Add(new ViewerGame.StartupAction.MultihexProbe((int)Convert.ToUInt32(args[++i], 16)));
+            break;
         case "--death-probe" when i + 1 < args.Length:
             actions.Add(new ViewerGame.StartupAction.DeathProbe(int.Parse(args[++i])));
             break;

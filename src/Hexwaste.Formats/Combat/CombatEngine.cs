@@ -978,6 +978,11 @@ public sealed class CombatEngine
         // +40 to hit a prone OR knocked-out target (combat.cc:4474).
         if (_knockedDown.Contains(defender.Critter) || IsKnockedOut(defender.Critter))
             toHit = Math.Min(toHit + 40, 95);
+
+        // +15 to hit a MULTIHEX defender — a big target (e.g. a Large Radscorpion) is easier to hit
+        // (combat.cc:4443). Requires BuildSpawn to propagate the proto's OBJECT_MULTIHEX onto the spawn.
+        if ((defender.Critter.Flags & OBJECT_MULTIHEX) != 0)
+            toHit += 15;
         return toHit; // callers clamp to [0,95]
     }
 

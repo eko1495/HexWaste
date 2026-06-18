@@ -1329,6 +1329,23 @@ wired). P35 COMPLETE (M0 grounding, M1 fp=4 per-turn, M2 fp=2 poison sting, M3 p
 want-to-join, M5 terminate_combat). The end-of-combat map hook + the dead round-robin stay unported (no
 slice driver). 492 Formats tests; 60 encounter + 15 combat goldens green.
 
+Phase 36 (DONE — "Big Targets", MULTIHEX; the Phase-34 audit's top remaining Tier-2 combat item). Two
+gaps closed: (1) ComputeToHit gained the +15-to-hit-vs-a-multihex-defender term (combat.cc:4443 — a big
+target is easier to hit; reads defender.Critter.Flags & OBJECT_MULTIHEX, the const already at CombatEngine.
+cc:67 used for the P9 knockback immunity); (2) BuildSpawn (the encounter-spawn path) PROPAGATED the proto's
+OBJECT_MULTIHEX (0x800) onto the spawn (it hardcoded Flags=0, so a spawned Large Radscorpion was never
+multihex → the +15 + knockback immunity silently never applied). SLICE DRIVER (verified, NOT dead code):
+the Large Radscorpion (pid 0x1000006, proto flags 0x20000800 = multihex) spawns in KLAD_Scorpions (worldmap.
+txt, Klamath-Den route, 30% ratio + a Dead variant); the SMALL Radscorpion (0x1000005, the arcaves --fight
+critter) is NOT multihex (flags 0x20000000) — so the +15 is inert on the current combat goldens (they fight
+the small one) → all 15 combat goldens BYTE-IDENTICAL, and the spawn-flag propagation doesn't print/affect
+the spawn census → all 60 encounter goldens BYTE-IDENTICAL. The feature lights up when a KLAD_Scorpions
+encounter with a Large Radscorpion is fought (now +15 to-hit + correctly knockback-immune). Harness
+--multihex-probe <pid> (reports the proto's multihex bit); golden multihex-probe (0x1000006 multihex=1 vs
+0x1000005 multihex=0). The +15 is a verbatim 1-line port (proportionate to the blind/Sharpshooter to-hit
+modifiers — proven by the real-data probe + byte-identical, no calibrated-RNG test). 492 Formats tests;
+61 encounter + 15 combat goldens green.
+
 Phase 10 (DONE, per docs/phase10-research-report.md — "The Wasteland
 Bites Back"): M0 persistence pre-stage (the net: MapList saved=No /
 random_start_point parse + IsTransient; the 3-clause transient guards as

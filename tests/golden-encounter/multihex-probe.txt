@@ -1,0 +1,2 @@
+multihex-probe: pid=0x1000006 multihex=1 flags=0x20000800
+multihex-probe: pid=0x1000005 multihex=0 flags=0x20000000

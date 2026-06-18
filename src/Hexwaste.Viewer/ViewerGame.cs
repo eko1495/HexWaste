@@ -598,6 +598,9 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
         /// <summary>Enter combat with the critter@Hex, drop it to ≤half HP, run its fp=4 combat_p_proc, and
         /// report whether terminate_combat ended the fight + the critter's maneuver (P35-M5).</summary>
         public sealed record TerminateCombatProbe(int Hex) : StartupAction;
+        /// <summary>Report whether the proto Pid carries the OBJECT_MULTIHEX flag (P36 — verifies a slice
+        /// critter is multihex + that the +15 to-hit / spawn propagation has a real driver).</summary>
+        public sealed record MultihexProbe(int Pid) : StartupAction;
         /// <summary>Set the dude's two traits (id&lt;0 = none) and report the live effect on his
         /// stats/skills + has_trait (P28-M1).</summary>
         public sealed record TraitProbe(int Trait1, int Trait2) : StartupAction;
@@ -1357,6 +1360,20 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
                     _clock.Ticks += (long)minutes * 60 * Formats.GameClock.TicksPerSecond;
                     ProcessPoison();
                     Console.WriteLine($"poison-tick: poison={initPoison}->{pd.Poison} hp={hpBefore}->{pd.CurrentHp} minutes={minutes}");
+                    break;
+                }
+                case StartupAction.MultihexProbe(var mhPid):
+                {
+                    // P36: report the proto's OBJECT_MULTIHEX (0x800) bit — verifies a slice critter is multihex.
+                    try
+                    {
+                        Formats.Proto.ProtoInfo mhp = _protos.Get(mhPid);
+                        Console.WriteLine($"multihex-probe: pid=0x{mhPid:X} multihex={((mhp.Flags & 0x800) != 0 ? 1 : 0)} flags=0x{mhp.Flags:X}");
+                    }
+                    catch (Exception ex) when (ex is FileNotFoundException or InvalidDataException)
+                    {
+                        Console.WriteLine($"multihex-probe: pid=0x{mhPid:X} (no proto)");
+                    }
                     break;
                 }
                 case StartupAction.TerminateCombatProbe(var tcHex) when _dude is not null:
@@ -5363,7 +5380,9 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
             Frame = 0,
             Rotation = Math.Clamp(si.Rotation, 0, 5),
             Fid = proto.Fid,
-            Flags = 0,
+            // Propagate the proto's OBJECT_MULTIHEX (0x800) so a spawned Large Radscorpion is a multihex
+            // target (the +15 to-hit + the knockback immunity actually apply). P36.
+            Flags = proto.Flags & 0x800,
             Pid = si.Pid,
             Sid = si.ScriptIndex >= 0 && _scriptHost is not null
                 ? _scriptHost.AllocateSid(_map, si.ScriptIndex)
