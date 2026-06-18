@@ -756,6 +756,7 @@ public sealed class CombatEngine
         else if (b.Target != dude)
         {
             _host.OnTargetHit(b.Target, b.Attacker, knockedDown: false); // bursts/guns never knock back (combat.cc:4633)
+            RunOnHitCombatProc(b.Attacker, b.Target); // P35: fp=2 per struck victim (combat.cc:4754)
         }
 
         ApplyBurstExtras(b);
@@ -787,6 +788,7 @@ public sealed class CombatEngine
             else if (ex.Victim != dude)
             {
                 _host.OnTargetHit(ex.Victim, b.Attacker, knockedDown: false);
+                RunOnHitCombatProc(b.Attacker, ex.Victim); // P35: fp=2 per struck victim (combat.cc:4754)
             }
         }
     }
@@ -1059,6 +1061,22 @@ public sealed class CombatEngine
 
         ApplyCritStatus(attack.Target, attack.CritFlags); // P14: knockout / lose-turn / crippled / blind
         ApplyKnockback(attack);
+        RunOnHitCombatProc(attack.Attacker, attack.Target); // P35: fp=2 on-hit hook (e.g. scorpion poison)
+    }
+
+    /// <summary>
+    /// The on-hit combat_p_proc hook, ported from fallout2-ce src/combat.cc:4729-4733: after a landed
+    /// hit (defenderDamage >= 0 && DAM_HIT) the ATTACKER's combat_p_proc runs with fixedParam=2 and
+    /// target = the struck defender (e.g. a scorpion poisons whom it stung). DIVERGENCE: a lethal hit
+    /// returns early in Hexwaste (KillCritter), so the hook fires only on a non-lethal hit — moot for
+    /// poison (a kill needs no poison). The dude attacker is a no-op (no gcd combat_p_proc / Sid -1).
+    /// </summary>
+    private void RunOnHitCombatProc(MapObject attacker, MapObject defender)
+    {
+        if (attacker.Sid == -1)
+            return;
+        foreach (string line in _host.RunCombatProc(attacker, 2, defender).Lines)
+            _host.Log(line);
     }
 
     /// <summary>Knockback shove (melee/unarmed/explosion, never guns) + persisting

@@ -298,6 +298,9 @@ for (int i = 0; i < args.Length; i++)
         case "--combat-proc" when i + 1 < args.Length:
             actions.Add(new ViewerGame.StartupAction.CombatProcProbe(int.Parse(args[++i])));
             break;
+        case "--combat-proc-hit" when i + 1 < args.Length:
+            actions.Add(new ViewerGame.StartupAction.CombatProcHit(int.Parse(args[++i])));
+            break;
         case "--death-probe" when i + 1 < args.Length:
             actions.Add(new ViewerGame.StartupAction.DeathProbe(int.Parse(args[++i])));
             break;

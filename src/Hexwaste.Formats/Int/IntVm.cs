@@ -153,6 +153,11 @@ public interface IVmExternals
     /// unconscious-but-alive critter. Default DEAD(1) matches the engine's init value.</summary>
     int CritterState(int objectHandle) => 1;
 
+    /// <summary>poison (interpreter_extra.cc opPoison 0x8122 → critterAdjustPoison): adjust the
+    /// object's poison counter by <paramref name="amount"/> (dude-only in the engine, poison-resistance
+    /// reduced). Used by the scorpion's on-hit combat_p_proc (fp=2). Default no-op.</summary>
+    void Poison(int objectHandle, int amount) { }
+
     /// <summary>float_msg — floating head-text over an object.</summary>
     void FloatMessage(int objectHandle, string text, int type) { }
 
@@ -1386,6 +1391,12 @@ public sealed class IntVm
             case 0x80FB: // critter_state (pops critter) — interpreter_extra.cc opGetCritterState
                 PushInt(_externals.CritterState(PopInt()));
                 break;
+            case 0x8122: // poison (pops amount, obj) — interpreter_extra.cc opPoison
+            {
+                int amount = PopInt();
+                _externals.Poison(PopInt(), amount);
+                break;
+            }
             case 0x80CE: // animate_move_obj_to_tile (pops speed, tile, obj)
             {
                 int speed = PopInt();

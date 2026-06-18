@@ -589,6 +589,9 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
         /// <summary>Run the critter@Hex's per-turn combat_p_proc (fp=4) and report whether it defines the
         /// proc + whether it script_overrides the turn (P35).</summary>
         public sealed record CombatProcProbe(int Hex) : StartupAction;
+        /// <summary>Fire the critter@Hex's ON-HIT combat_p_proc (fp=2, target = the dude) and report the
+        /// dude's poison delta — proves the scorpion's sting poisons whom it struck (P35 fp=2).</summary>
+        public sealed record CombatProcHit(int AttackerHex) : StartupAction;
         /// <summary>Set the dude's two traits (id&lt;0 = none) and report the live effect on his
         /// stats/skills + has_trait (P28-M1).</summary>
         public sealed record TraitProbe(int Trait1, int Trait2) : StartupAction;
@@ -871,6 +874,7 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
                 PerkRankProvider = perk => Formats.Perks.PerkRules.Rank(_dudePerkRanks, perk),
                 SneakFlagProvider = () => _sneak.FlagSet, // P29 A-M0: using_skill(dude, SNEAK)
                 CombatActiveProvider = () => _combat.Phase != Formats.Combat.CombatPhase.Idle, // P34-M1: is_in_combat(0x8128)
+                PoisonRequested = (obj, amount) => ApplyPoison(obj, amount), // P35: poison(0x8122)
             };
             if (RngSeed is { } scriptSeed)
                 _scriptHost.Rng = new Random(scriptSeed);
@@ -1320,6 +1324,20 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
                     var r = _scriptHost?.RunObjectProc(cpc, _map, dude: null, 4, -1, "combat_p_proc");
                     Console.WriteLine($"combat-proc: pid=0x{cpc.Pid:X} script={scriptIndex} "
                         + $"hasProc={r is not null} overridden={r?.Overridden ?? false} fp=4");
+                    break;
+                }
+                case StartupAction.CombatProcHit(var atkHex) when _dude is not null:
+                {
+                    // P35 fp=2: fire the attacker's on-hit combat_p_proc with target = the dude and report
+                    // the dude's poison delta (the scorpion stings → poison). Deterministic under --rng-seed.
+                    MapObject? atk = _solidObjects[_elevation].FirstOrDefault(o =>
+                        o.HexTile == atkHex && Fid.Type(o.Fid) is ObjectType.Critter);
+                    if (atk is null) { Console.Error.WriteLine($"combat-proc-hit: no critter at {atkHex}"); break; }
+                    MapObject dudeObj = _dude.Dude;
+                    int before = dudeObj.Poison;
+                    var hr = _scriptHost?.RunCombatProc(atk, dudeObj, dudeObj, _map, 2);
+                    Console.WriteLine($"combat-proc-hit: atk=0x{atk.Pid:X} hasProc={hr is not null} "
+                        + $"dudePoison={before}->{dudeObj.Poison}");
                     break;
                 }
                 case StartupAction.TraitProbe(var t1, var t2):
@@ -4599,6 +4617,29 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
             _audio?.PlaySfx(Formats.Sound.SfxName.WeaponAttack(weapon.SoundCode));
     }
 
+    /// <summary>
+    /// ported from fallout2-ce src/critter.cc critterAdjustPoison() (P35): DUDE-ONLY, poison-resistance
+    /// reduced; sets the poison counter. DOCUMENTED DIVERGENCES: the engine also (a) shows a misc.msg
+    /// monitor line ("You have been poisoned!") — we apply silently to keep a copyrighted game string out
+    /// of the goldens; (b) queues an EVENT_TYPE_POISON delayed-damage tick — Hexwaste's poison-over-time
+    /// tick is not wired, so the counter is set faithfully but deals no periodic HP damage yet.
+    /// </summary>
+    private void ApplyPoison(MapObject obj, int amount)
+    {
+        if (_dude is null || obj != _dude.Dude)
+            return; // critterAdjustPoison: non-dude returns -1 (no-op)
+        if (amount > 0)
+        {
+            int resist = GetCritterState(obj)?.Stat(32) ?? 0; // STAT_POISON_RESISTANCE
+            amount -= amount * resist / 100;
+        }
+        else if (obj.Poison <= 0)
+        {
+            return; // can't reduce poison that isn't there
+        }
+        obj.Poison = Math.Max(0, obj.Poison + amount);
+    }
+
     /// <summary>Out-of-ammo empty-click sfx (combat.cc:5745) — P34-M5.</summary>
     public void OnWeaponOutOfAmmo(ProtoInfo weaponProto)
     {
@@ -5012,15 +5053,14 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
     }
 
     /// <summary>
-    /// The per-turn combat_p_proc hook (P35). The engine sets scriptSetObjects(sid, NULL, NULL), so we
-    /// pass source = null (NOT the dude) + fixedParam 4. NOTE: RunObjectProc couples its source and
-    /// dude_obj arguments (RunProc uses the one MapObject for both), so passing null also makes dude_obj
-    /// return 0 inside combat_p_proc — a documented divergence from the engine's persistent gDude, INERT
-    /// on the slice (no fp=4 slice script reads source_obj or dude_obj).
+    /// A combat_p_proc hook (P35). The engine sets source = NULL always (scriptSetObjects(sid, NULL, ...));
+    /// the per-turn hook (fp=4) has target null, the on-hit hook (fp=2) sets target = the struck defender.
+    /// Routed through ScriptHost.RunCombatProc, which decouples source/target/dude so dude_obj is the real
+    /// dude (the P35 RunObjectProc coupling is gone).
     /// </summary>
-    public (IReadOnlyList<string> Lines, bool Overridden) RunCombatProc(MapObject critter, int fixedParam)
+    public (IReadOnlyList<string> Lines, bool Overridden) RunCombatProc(MapObject critter, int fixedParam, MapObject? target = null)
     {
-        var scripted = _scriptHost?.RunObjectProc(critter, _map, dude: null, fixedParam, actionBeingUsed: -1, "combat_p_proc");
+        var scripted = _scriptHost?.RunCombatProc(critter, target, _dude?.Dude, _map, fixedParam);
         return scripted is null ? ([], false) : (scripted.Messages.ToList(), scripted.Overridden);
     }
 

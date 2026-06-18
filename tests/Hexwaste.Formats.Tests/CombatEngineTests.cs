@@ -1348,12 +1348,13 @@ public class CombatEngineTests
         public void OnTargetHit(MapObject target, MapObject attacker, bool knockedDown) => Hits.Add((target, knockedDown));
         public void OnTargetDodge(MapObject target) => Dodges.Add(target);
         public void OnGetUp(MapObject critter) => GetUps.Add(critter);
-        // P35 combat_p_proc: record each per-turn call; CombatProcOverride toggles script_overrides.
-        public List<(MapObject Critter, int FixedParam)> CombatProcCalls { get; } = [];
+        // P35 combat_p_proc: record each call (per-turn fp=4 / on-hit fp=2 + its target); CombatProcOverride
+        // toggles script_overrides (the per-turn turn-cancel).
+        public List<(MapObject Critter, int FixedParam, MapObject? Target)> CombatProcCalls { get; } = [];
         public bool CombatProcOverride { get; set; }
-        public (IReadOnlyList<string> Lines, bool Overridden) RunCombatProc(MapObject critter, int fixedParam)
+        public (IReadOnlyList<string> Lines, bool Overridden) RunCombatProc(MapObject critter, int fixedParam, MapObject? target = null)
         {
-            CombatProcCalls.Add((critter, fixedParam));
+            CombatProcCalls.Add((critter, fixedParam, target));
             return ([], CombatProcOverride);
         }
         public int PickDeathAnim(MapObject critter, int desiredAnim) => 20;

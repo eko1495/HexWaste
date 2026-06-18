@@ -1250,6 +1250,30 @@ add_trait) are still arity-stubbed and would need dispatch when those critters e
 --combat-proc <hex> (hasProc/overridden/script-index, state-only); goldens combat-proc-scorpion (script=19
 hasProc=True overridden=False — defines-but-inert) + combat-proc-slave (script=906 hasProc=False). 4 fake-
 host CombatEngineTests (runs-then-default-AI / override-forfeits-turn / unscripted-skips / KO-skips).
+M2 fp=2 ON-HIT hook (DONE — the scorpion's poison sting): after a landed hit (combat.cc:4729-4733
+defenderDamage>=0 && DAM_HIT) the ATTACKER's combat_p_proc runs with source=NULL, target=the struck
+defender, fixedParam=2. Wired: ScriptContext gained a Target field (target_obj override; null→self) +
+ScriptHost.RunCombatProc(self, target, dude, map, fp) — a DECOUPLED runner (source always NULL, target +
+dude separate) since RunObjectProc couples source==dude; this also fixes the P35-M1 dude_obj=0 divergence
+(combat_p_proc now sees the real dude_obj). poison(0x8122, opPoison→critterAdjustPoison) dispatched: IVm
+Externals.Poison + ScriptHost.PoisonRequested → the viewer's ApplyPoison (DUDE-ONLY + poison-resistance
+reduced, sets the Poison counter). ICombatHost.RunCombatProc gained an optional target; CombatEngine.Run
+OnHitCombatProc fires it from ResolveAttack's hit branch + the burst main/extra hits (the dude attacker is
+a no-op — Sid -1 / no gcd proc). The scorpion (ZClScorp) combat_p_proc calls do_check (seeded _scriptHost.
+Rng) + random (IntVm fixed seed) + poison(target) — all DETERMINISTIC under --rng-seed. SURPRISE (better
+than the spec predicted): BYTE-IDENTICAL on all 15 combat + 56 encounter goldens — the scorpion DOES sting
++ poison the dude in the --fight fixtures, but (a) ApplyPoison is SILENT (the engine's misc.msg "You have
+been poisoned!" is a copyrighted game string, deliberately NOT emitted) and (b) the poison counter doesn't
+tick HP during the fight (the EVENT_TYPE_POISON delayed-damage tick is a DOCUMENTED simplification — not
+wired) and (c) the do_check draws from _scriptHost.Rng, NOT the combat stream, so to-hit/damage/outcome are
+unchanged. So no fixture re-records. Harness --combat-proc-hit <atkHex> (fires fp=2 at the dude, reports the
+poison delta — deterministic: seed 2 → +1, seed 1 → 0 as the scorpion's do_check decides); golden combat-
+proc-poison (seed 2, dudePoison 0→1). DOCUMENTED CUTS: the silent poison message + the poison-over-time HP
+tick (the EVENT_TYPE_POISON queue is unwired — the counter is set faithfully but deals no periodic damage
+yet); a lethal hit returns early in Hexwaste so fp=2 fires only on a non-lethal hit (moot for poison).
+P35 COMPLETE: the per-turn (fp=4) + on-hit (fp=2) combat_p_proc hooks are live; the remaining 3 hooks
+(want-to-join fp=5, the end-of-combat map hook, the dead round-robin) stay unported (no slice driver).
+486 Formats tests; 59 encounter + 15 combat goldens green.
 
 Phase 10 (DONE, per docs/phase10-research-report.md — "The Wasteland
 Bites Back"): M0 persistence pre-stage (the net: MapList saved=No /

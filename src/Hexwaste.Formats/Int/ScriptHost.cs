@@ -269,6 +269,10 @@ public sealed class ScriptHost(GameFileSystem vfs, ScriptList scripts, Hexwaste.
     /// is_in_combat(0x8128) which critter_p_proc heartbeats poll every tick (P34-M1). Null → false.</summary>
     public Func<bool>? CombatActiveProvider { get; set; }
 
+    /// <summary>poison(obj, amount): the host adjusts the critter's poison counter (critterAdjustPoison,
+    /// dude-only, poison-resistance reduced) — the scorpion's on-hit combat_p_proc fires it (P35). </summary>
+    public Action<MapObject, int>? PoisonRequested { get; set; }
+
     /// <summary>Rolls for do_check/statRoll (seedable by the host).</summary>
     public Random Rng { get; set; } = new();
 
@@ -455,6 +459,42 @@ public sealed class ScriptHost(GameFileSystem vfs, ScriptList scripts, Hexwaste.
 
         return RunProc(record.ScriptListIndex, map, obj.Sid, record, obj, dude,
             fixedParam, actionBeingUsed, procedureNames);
+    }
+
+    /// <summary>
+    /// Run a combatant's combat_p_proc with the engine's combat context (combat.cc:3245/4730):
+    /// self = the combatant, source = NULL always, target = the struck defender (fp=2) or null (fp=4),
+    /// dude = the real dude (for dude_obj). This DECOUPLES source/target/dude (RunObjectProc couples
+    /// source==dude), which the combat hooks need. Returns null when self has no combat_p_proc.
+    /// </summary>
+    public ScriptRunResult? RunCombatProc(MapObject self, MapObject? target, MapObject? dude, MapFile map, int fixedParam)
+    {
+        if (self.Sid == -1 || !map.ScriptsBySid.TryGetValue(self.Sid, out MapScriptRecord? record))
+            return null;
+        string? path = scripts.GetScriptPath(record.ScriptListIndex);
+        if (path is null)
+            return null;
+        try
+        {
+            IntProgram? program = GetProgram(path);
+            if (program is null)
+                return null;
+            var externals = new ScriptContext(this, map, self.Sid, record, self: self, source: null, dude: dude)
+            {
+                FixedParamValue = fixedParam,
+                ActionBeingUsedValue = -1,
+                Target = target,
+            };
+            var vm = new IntVm(program, externals, OnStubbedExternal, ExternalVars);
+            return vm.TryRunProcedure("combat_p_proc")
+                ? new ScriptRunResult(externals.Overridden, externals.Messages)
+                : null;
+        }
+        catch (Exception ex) when (ex is InvalidDataException or FileNotFoundException or NotSupportedException)
+        {
+            Console.Error.WriteLine($"script {path}: {ex.Message}");
+            return null;
+        }
     }
 
     /// <summary>
@@ -812,6 +852,10 @@ public sealed class ScriptHost(GameFileSystem vfs, ScriptList scripts, Hexwaste.
 
         public int ObjectBeingUsedWithId() => _host.HandleOf(UsedWith);
 
+        /// <summary>target_obj override: the on-hit combat_p_proc (fp=2) sets target = the struck
+        /// defender (combat.cc:4730 scriptSetObjects(attacker,NULL,defender)). Null → self (the default).</summary>
+        public MapObject? Target { get; init; }
+
         public ScriptContext(ScriptHost host, MapFile map, int sid, MapScriptRecord record,
             MapObject self, MapObject? source, MapObject? dude)
         {
@@ -838,7 +882,7 @@ public sealed class ScriptHost(GameFileSystem vfs, ScriptList scripts, Hexwaste.
 
         public int SourceObjectId() => _host.HandleOf(_source);
 
-        public int TargetObjectId() => _host.HandleOf(_self); // defaults to self (scripts.cc:1316)
+        public int TargetObjectId() => Target is { } t ? _host.HandleOf(t) : _host.HandleOf(_self); // null → self (scripts.cc:1316)
 
         public int DudeObjectId() => _host.HandleOf(_dude);
 
@@ -1184,6 +1228,13 @@ public sealed class ScriptHost(GameFileSystem vfs, ScriptList scripts, Hexwaste.
 
         // ported from fallout2-ce interpreter_extra.cc opGetCritterState (0x80FB) — see ScriptHost.CritterStateOf.
         public int CritterState(int objectHandle) => ScriptHost.CritterStateOf(_host.ObjectOf(objectHandle));
+
+        // ported from fallout2-ce interpreter_extra.cc opPoison (0x8122 → critterAdjustPoison).
+        public void Poison(int objectHandle, int amount)
+        {
+            if (_host.ObjectOf(objectHandle) is { } obj)
+                _host.PoisonRequested?.Invoke(obj, amount);
+        }
 
         public void FloatMessage(int objectHandle, string text, int type)
         {
