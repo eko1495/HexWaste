@@ -345,6 +345,78 @@ public class CombatEngineTests
     }
 
     [Fact]
+    public void PerTurnCombatProcRunsForAScriptedEnemyThenDefaultAi()
+    {
+        // P35: a scripted (Sid != -1) enemy runs combat_p_proc (fp=4) at the top of its turn; with no
+        // override it falls through to the default AI and still attacks.
+        var host = new FakeCombatHost();
+        MapObject dude = host.SetDude(NewCritter(tile: 20100, hp: 30, ap: 10));
+        MapObject enemy = host.AddCritter(NewCritter(tile: HexGrid.TileInDirection(20100, 0), hp: 30, ap: 10));
+        enemy.Sid = 5; // scripted
+        host.AiPackets[enemy] = new AiPacket(12, "Guard", MinToHit: 0, MinHp: 0, 0, "", "");
+        var engine = new CombatEngine(host, new MinRng());
+
+        engine.BeginScriptAggro(enemy, dude);
+        engine.Step();
+
+        Assert.Contains(host.CombatProcCalls, c => c.Critter == enemy && c.FixedParam == 4);
+        Assert.Contains(host.Transcripts, t => t.StartsWith("enemy-attack")); // default AI still ran
+    }
+
+    [Fact]
+    public void PerTurnCombatProcOverrideForfeitsTheTurn()
+    {
+        // script_overrides() in combat_p_proc cancels the default turn (combat.cc:3259) — no attack.
+        var host = new FakeCombatHost { CombatProcOverride = true };
+        MapObject dude = host.SetDude(NewCritter(tile: 20100, hp: 30, ap: 10));
+        MapObject enemy = host.AddCritter(NewCritter(tile: HexGrid.TileInDirection(20100, 0), hp: 30, ap: 10));
+        enemy.Sid = 5;
+        host.AiPackets[enemy] = new AiPacket(12, "Guard", MinToHit: 0, MinHp: 0, 0, "", "");
+        var engine = new CombatEngine(host, new MinRng());
+
+        engine.BeginScriptAggro(enemy, dude);
+        engine.Step();
+
+        Assert.Contains(host.CombatProcCalls, c => c.Critter == enemy);
+        Assert.DoesNotContain(host.Transcripts, t => t.StartsWith("enemy-attack")); // turn forfeited
+        Assert.Equal(30, dude.CurrentHp);
+    }
+
+    [Fact]
+    public void UnscriptedEnemyDoesNotRunCombatProc()
+    {
+        // Sid == -1 (the NewCritter default) → the proc is skipped (combat.cc:3244 sid!=-1 gate).
+        var host = new FakeCombatHost();
+        MapObject dude = host.SetDude(NewCritter(tile: 20100, hp: 30, ap: 10));
+        MapObject enemy = host.AddCritter(NewCritter(tile: HexGrid.TileInDirection(20100, 0), hp: 30, ap: 10));
+        host.AiPackets[enemy] = new AiPacket(12, "Guard", MinToHit: 0, MinHp: 0, 0, "", "");
+        var engine = new CombatEngine(host, new MinRng());
+
+        engine.BeginScriptAggro(enemy, dude);
+        engine.Step();
+
+        Assert.Empty(host.CombatProcCalls);
+    }
+
+    [Fact]
+    public void KnockedOutEnemyDoesNotRunCombatProc()
+    {
+        // The proc is inside the !incapacitated branch (combat.cc:3231) — a KO'd critter forfeits both.
+        var host = new FakeCombatHost();
+        MapObject dude = host.SetDude(NewCritter(tile: 20100, hp: 30, ap: 10));
+        MapObject enemy = host.AddCritter(NewCritter(tile: HexGrid.TileInDirection(20100, 0), hp: 30, ap: 10));
+        enemy.Sid = 5;
+        enemy.CombatResults |= CriticalTables.DamKnockedOut;
+        host.AiPackets[enemy] = new AiPacket(12, "Guard", MinToHit: 0, MinHp: 0, 0, "", "");
+        var engine = new CombatEngine(host, new MinRng());
+
+        engine.BeginScriptAggro(enemy, dude);
+        engine.Step();
+
+        Assert.Empty(host.CombatProcCalls);
+    }
+
+    [Fact]
     public void CriticalsStayOffUntilEnabled()
     {
         // Same MinRng, criticals disabled: a plain swing, no crit tag, base damage.
@@ -1276,6 +1348,14 @@ public class CombatEngineTests
         public void OnTargetHit(MapObject target, MapObject attacker, bool knockedDown) => Hits.Add((target, knockedDown));
         public void OnTargetDodge(MapObject target) => Dodges.Add(target);
         public void OnGetUp(MapObject critter) => GetUps.Add(critter);
+        // P35 combat_p_proc: record each per-turn call; CombatProcOverride toggles script_overrides.
+        public List<(MapObject Critter, int FixedParam)> CombatProcCalls { get; } = [];
+        public bool CombatProcOverride { get; set; }
+        public (IReadOnlyList<string> Lines, bool Overridden) RunCombatProc(MapObject critter, int fixedParam)
+        {
+            CombatProcCalls.Add((critter, fixedParam));
+            return ([], CombatProcOverride);
+        }
         public int PickDeathAnim(MapObject critter, int desiredAnim) => 20;
         public bool StartDeathFall(MapObject critter, int deathAnim) => false; // no fall art → corpse now
         public void ConvertToCorpse(MapObject critter, int deathAnim) { }

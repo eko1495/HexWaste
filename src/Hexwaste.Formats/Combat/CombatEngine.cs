@@ -1237,6 +1237,23 @@ public sealed class CombatEngine
 
     /// <summary>A prone critter stands at its turn (3 AP); returns the AP left, or
     /// -1 if it wasn't prone. Removes the flag.</summary>
+    /// <summary>
+    /// The per-turn combat_p_proc hook, ported from fallout2-ce src/combat.cc:3243-3258 (_combat_turn):
+    /// for a scripted combatant (sid != -1) run combat_p_proc (fixedParam=4, source+target null); if the
+    /// script called script_overrides() the engine skips the standup + default-AI block entirely
+    /// (combat.cc:3259) — we mirror that by returning true so the caller forfeits the rest of the turn.
+    /// Runs INSIDE the !incapacitated branch (caller checks SkipTurnIfIncapacitated first, :3231).
+    /// </summary>
+    private bool RunCombatProcOverridesTurn(MapObject critter)
+    {
+        if (critter.Sid == -1)
+            return false;
+        (IReadOnlyList<string> lines, bool overridden) = _host.RunCombatProc(critter, 4);
+        foreach (string line in lines)
+            _host.Log(line);
+        return overridden;
+    }
+
     private int StandUpIfProne(MapObject critter, int ap)
     {
         if (!_knockedDown.Remove(critter))
@@ -1602,6 +1619,11 @@ public sealed class CombatEngine
         if (SkipTurnIfIncapacitated(enemy))
             return false;
 
+        // Per-turn combat_p_proc hook (combat.cc:3243) — before standup + default AI; an override
+        // cancels the whole turn (P35). Inside the !incapacitated branch like the engine.
+        if (RunCombatProcOverridesTurn(enemy))
+            return false;
+
         // Stand up first if prone (3 AP), then act with what's left.
         if (StandUpIfProne(enemy, _actingEnemyAp) is var stood && stood >= 0)
         {
@@ -1775,6 +1797,10 @@ public sealed class CombatEngine
     private bool TryAllyAction(MapObject ally)
     {
         if (SkipTurnIfIncapacitated(ally))
+            return false;
+
+        // Per-turn combat_p_proc hook — the engine runs it for EVERY combatant (no party exclusion). P35.
+        if (RunCombatProcOverridesTurn(ally))
             return false;
 
         if (StandUpIfProne(ally, _actingAllyAp) is var stood && stood >= 0)

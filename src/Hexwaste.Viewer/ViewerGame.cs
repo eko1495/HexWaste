@@ -586,6 +586,9 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
         /// <summary>Report the reaction-anim codes (hit/dodge/fall/getup) the critter at Hex would get
         /// from an attacker at AttackerRotation (P34-M6).</summary>
         public sealed record ReactionProbe(int Hex, int AttackerRotation) : StartupAction;
+        /// <summary>Run the critter@Hex's per-turn combat_p_proc (fp=4) and report whether it defines the
+        /// proc + whether it script_overrides the turn (P35).</summary>
+        public sealed record CombatProcProbe(int Hex) : StartupAction;
         /// <summary>Set the dude's two traits (id&lt;0 = none) and report the live effect on his
         /// stats/skills + has_trait (P28-M1).</summary>
         public sealed record TraitProbe(int Trait1, int Trait2) : StartupAction;
@@ -1303,6 +1306,20 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
                         + $"hit={Formats.Combat.ReactionAnims.HitReaction(front, backArt)} "
                         + $"dodge={Formats.Combat.ReactionAnims.Dodge} fall={Formats.Combat.ReactionAnims.KnockdownFall(front)} "
                         + $"getup={Formats.Combat.ReactionAnims.StandUp(Formats.Combat.ReactionAnims.FallBack)} backArt={(backArt ? 1 : 0)}");
+                    break;
+                }
+                case StartupAction.CombatProcProbe(var cpHex):
+                {
+                    // P35: run the critter's per-turn combat_p_proc (fp=4) and report whether it DEFINES
+                    // the proc (RunObjectProc returns null when the proc is absent) + whether it overrides.
+                    MapObject? cpc = _solidObjects[_elevation].Concat(_flatObjects[_elevation])
+                        .FirstOrDefault(o => o.HexTile == cpHex && Fid.Type(o.Fid) is ObjectType.Critter);
+                    if (cpc is null) { Console.Error.WriteLine($"combat-proc: no critter at {cpHex}"); break; }
+                    int scriptIndex = cpc.Sid != -1 && _map.ScriptsBySid.TryGetValue(cpc.Sid, out MapScriptRecord? cpr)
+                        ? cpr.ScriptListIndex : -1;
+                    var r = _scriptHost?.RunObjectProc(cpc, _map, dude: null, 4, -1, "combat_p_proc");
+                    Console.WriteLine($"combat-proc: pid=0x{cpc.Pid:X} script={scriptIndex} "
+                        + $"hasProc={r is not null} overridden={r?.Overridden ?? false} fp=4");
                     break;
                 }
                 case StartupAction.TraitProbe(var t1, var t2):
@@ -4991,6 +5008,19 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
     public (IReadOnlyList<string> Lines, bool Overridden) RunDestroyProc(MapObject critter, MapObject? killer)
     {
         var scripted = _scriptHost?.RunObjectProc(critter, _map, killer, "destroy_p_proc");
+        return scripted is null ? ([], false) : (scripted.Messages.ToList(), scripted.Overridden);
+    }
+
+    /// <summary>
+    /// The per-turn combat_p_proc hook (P35). The engine sets scriptSetObjects(sid, NULL, NULL), so we
+    /// pass source = null (NOT the dude) + fixedParam 4. NOTE: RunObjectProc couples its source and
+    /// dude_obj arguments (RunProc uses the one MapObject for both), so passing null also makes dude_obj
+    /// return 0 inside combat_p_proc — a documented divergence from the engine's persistent gDude, INERT
+    /// on the slice (no fp=4 slice script reads source_obj or dude_obj).
+    /// </summary>
+    public (IReadOnlyList<string> Lines, bool Overridden) RunCombatProc(MapObject critter, int fixedParam)
+    {
+        var scripted = _scriptHost?.RunObjectProc(critter, _map, dude: null, fixedParam, actionBeingUsed: -1, "combat_p_proc");
         return scripted is null ? ([], false) : (scripted.Messages.ToList(), scripted.Overridden);
     }
 

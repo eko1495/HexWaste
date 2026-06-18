@@ -1222,6 +1222,35 @@ P34 COMPLETE — Tier 1 (is_in_combat/critter_state, hurt_too_much flee, run ani
 identical bar its own new probe fixture. 8 new encounter goldens (56 encounter + 15 combat total); 482
 Formats tests green.
 
+Phase 35 (IN PROGRESS — "The Script Takes Its Turn", combat_p_proc; from the audit's hardest backlog
+item). M0 grounding via a 4-agent workflow (engine semantics + a real slice .int census + Hexwaste
+integration + synthesis). KEY FINDING: combat_p_proc (SCRIPT_PROC_COMBAT=13) is LIVE on the slice but
+liveness splits by HOOK — the engine fires FIVE differently (per-turn fp=4, on-hit fp=2, want-to-join
+fp=5, the end-of-combat map hook, the dead round-robin). This milestone wires ONLY the PER-TURN hook
+(fp=4, combat.cc:3243-3258 _combat_turn): for each scripted (sid!=-1) combatant, at the TOP of its turn
+(INSIDE the !incapacitated branch, AFTER SkipTurnIfIncapacitated, BEFORE standup/AI), run combat_p_proc
+with scriptSetObjects(sid,NULL,NULL)+fixedParam=4; if the script called script_overrides() the engine
+skips the whole standup+AI block (combat.cc:3259) — we mirror it by forfeiting the rest of the turn.
+New ICombatHost.RunCombatProc default-([],false) seam; CombatEngine.RunCombatProcOverridesTurn wired into
+both TryEnemyAction + TryAllyAction (the engine runs it for EVERY combatant, no party exclusion); the
+viewer delegates to ScriptHost.RunObjectProc with source=null (matching scriptSetObjects NULL — GOTCHA:
+RunProc couples source==dude_obj, so null also yields dude_obj=0 in combat_p_proc, a documented divergence
+from the engine's persistent gDude, INERT on the slice). BYTE-IDENTICAL on all 15 combat + 56 encounter
+goldens (verified by a clean combat-golden check BEFORE recording): the only --fight critter that DEFINES
+combat_p_proc is the arcaves scorpion (ZClScorp, script 19), but its body gates on fixed_param==2 (the
+on-hit poison hook), so the fp=4 per-turn call runs the proc, the fp==2 guard is false, the body short-
+circuits → no RNG, no message, Overridden=false → unchanged. DOCUMENTED CUTS: the dude's own per-turn proc
+(the engine runs it for gDude too, but Hexwaste's dude turn is player-driven, not a TryXAction — inert, no
+slice dude gcd defines it); and the OTHER FOUR hooks stay unported — esp. the fp=2 ON-HIT poison hook (the
+genuinely behaviour-LIVE one: scorpion poison + a do_check stat-roll on every sting, golden-RISK, needs a
+target param + poison/0x8122 dispatch) is the explicit next milestone. The fp=4 scripts that WOULD act —
+ACTemVil (script 748, temple challenger: terminate_combat at ≤half HP) + dcG2Grd (script 36, Den guards) —
+aren't in any --fight golden, so byte-identical holds; their override externals (terminate_combat/critter_
+add_trait) are still arity-stubbed and would need dispatch when those critters enter a fixture. Harness
+--combat-proc <hex> (hasProc/overridden/script-index, state-only); goldens combat-proc-scorpion (script=19
+hasProc=True overridden=False — defines-but-inert) + combat-proc-slave (script=906 hasProc=False). 4 fake-
+host CombatEngineTests (runs-then-default-AI / override-forfeits-turn / unscripted-skips / KO-skips).
+
 Phase 10 (DONE, per docs/phase10-research-report.md — "The Wasteland
 Bites Back"): M0 persistence pre-stage (the net: MapList saved=No /
 random_start_point parse + IsTransient; the 3-clause transient guards as

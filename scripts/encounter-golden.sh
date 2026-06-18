@@ -195,11 +195,19 @@ SCENARIOS=(
   # hit=14 even from behind (the art-existence fallback). Draw/anim-only -> goldens byte-identical.
   "reaction-anims-human|--map denbus2.map --reaction-probe 8667 0 --reaction-probe 8667 3 --rng-seed 1"
   "reaction-anims-scorpion|--map arcaves.map --reaction-probe 20529 3 --rng-seed 1"
+  # P35 combat_p_proc (SCRIPT_PROC_COMBAT): the per-turn in-combat script hook (fixedParam=4) now runs
+  # at the top of each combatant's turn (combat.cc:3243); script_overrides() forfeits the turn. LIVE-but-
+  # INERT on the slice: the arcaves scorpion (script 19) DEFINES combat_p_proc but its body gates on
+  # fixed_param==2 (the on-hit poison hook, a separate golden-risk milestone), so the fp=4 call is a no-op
+  # (hasProc=True, overridden=False, no RNG) -> the --fight goldens stay byte-identical; the denbus2 slave
+  # (script 906) defines no combat_p_proc (hasProc=False).
+  "combat-proc-scorpion|--map arcaves.map --combat-proc 20529 --rng-seed 1"
+  "combat-proc-slave|--map denbus2.map --combat-proc 11670 --rng-seed 1"
 )
 
 # Keep only the deterministic transcript lines (drop map-load / animate / stub /
 # dialog-text noise — NEVER capture REPLY/OPTION game-asset strings).
-FILTER='^(encounter|travel-from|companion|dismiss-persist|trade:|party:|party-count:|set-global:|hud-click:|use-skill:|hurt:|rest:|automap:|weapon-mode:|panel-click:|menu-click:|travel-resume:|travel-step:|travel-save-mid:|worldmap-fog:|weight:|iq-probe:|death-probe:|trait-probe:|perk-probe:|perk-pick:|combat-walk:|light:|reg-anim:|encounter-fight:|brawl:|sneak-probe:|sneak-roll:|backstab-probe:|detect-probe:|karma-probe:|set-karma:|rep-title:|town-rep:|karma-titles:|get-global:|place-probe:|reg-anim-move:|critter-state:|hurt-too-much:|run-probe:|outline:|sfx-probe:|reaction-probe:|  spawn|  flat|  wait:|  follow:|  dismiss:|  rejoin:)'
+FILTER='^(encounter|travel-from|companion|dismiss-persist|trade:|party:|party-count:|set-global:|hud-click:|use-skill:|hurt:|rest:|automap:|weapon-mode:|panel-click:|menu-click:|travel-resume:|travel-step:|travel-save-mid:|worldmap-fog:|weight:|iq-probe:|death-probe:|trait-probe:|perk-probe:|perk-pick:|combat-walk:|light:|reg-anim:|encounter-fight:|brawl:|sneak-probe:|sneak-roll:|backstab-probe:|detect-probe:|karma-probe:|set-karma:|rep-title:|town-rep:|karma-titles:|get-global:|place-probe:|reg-anim-move:|critter-state:|hurt-too-much:|run-probe:|outline:|sfx-probe:|reaction-probe:|combat-proc:|  spawn|  flat|  wait:|  follow:|  dismiss:|  rejoin:)'
 
 echo "Building viewer..."
 dotnet build src/Hexwaste.Viewer -c Debug >/dev/null || { echo "build failed"; exit 2; }

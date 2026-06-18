@@ -134,6 +134,11 @@ public interface ICombatHost
     IReadOnlyList<string> RunDamageProc(MapObject target, MapObject? source, int damage);
     /// <summary>Run destroy_p_proc; Overridden = script_overrides (no default XP). :2527</summary>
     (IReadOnlyList<string> Lines, bool Overridden) RunDestroyProc(MapObject critter, MapObject? killer);
+    /// <summary>Run the per-turn combat_p_proc hook (SCRIPT_PROC_COMBAT, combat.cc:3247) with
+    /// <paramref name="fixedParam"/>=4, source+target null. Overridden = script_overrides() —
+    /// when true the critter forfeits its default turn (standup + AI). Default ([], false) so the
+    /// fake test host needs no override (P35).</summary>
+    (IReadOnlyList<string> Lines, bool Overridden) RunCombatProc(MapObject critter, int fixedParam) => ([], false);
     /// <summary>Drop a fallen follower from the party (PartyMembers + script index + log). :2541</summary>
     void RemovePartyMember(MapObject critter);
     /// <summary>Living party members (for ally turns + nearest-target choice). _scriptHost.PartyMembers.</summary>

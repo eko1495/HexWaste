@@ -1,0 +1,1 @@
+combat-proc: pid=0x1000013 script=906 hasProc=False overridden=False fp=4
