@@ -1346,6 +1346,34 @@ encounter with a Large Radscorpion is fought (now +15 to-hit + correctly knockba
 modifiers — proven by the real-data probe + byte-identical, no calibrated-RNG test). 492 Formats tests;
 61 encounter + 15 combat goldens green.
 
+Phase 37 (DONE — "Better Living Through Chemistry", non-HP drug stat effects; the Phase-34 audit's last
+slice-driven item — UseDrug previously applied ONLY the HP heal and Log'd "Nothing happens" for every
+SPECIAL-boosting chem). Ported item.cc _item_d_take_drug (:2809) + _perform_drug_effect (:2639) + the
+EVENT_TYPE_DRUG wear-off queue. M1 proto (BYTE-IDENTICAL — the drug weight int was already skipped, so the
+9 trailing ints read in place with no downstream shift): DrugProtoStats widened from (Stats, Amounts) to
+also carry Duration1/Amount1, Duration2/Amount2, AddictionChance, WithdrawalEffect, WithdrawalOnset
+(proto.cc:1570-1581 order). KEY GROUNDING FINDING: the duration1/duration2 amount tiers are NOT a residual
+to skip — they ARE the wear-off: the three tiers per stat NET TO ZERO (Buffout ST +2 immediate / −4 at 360
+min / +2 at 1080 min = 0; Jet ST/PE/AP +1/+1/+2 / −4 at 5 min / restore at 1440 min = 0 — the comedown is
+the down-then-up ramp). M2 effects: UseDrug applies the immediate effect (ApplyDrugEffect, the
+_perform_drug_effect port — stat 35 = current HP heal/clamp/GameOver; stats 0..34 = a BonusStats bonus;
+the stats[0]==-2 sentinel = the stimpak random-range heal, REUSING _combatRng so the existing stimpak draw
+is byte-identical; stats ≥36 [poison/rad counters] out of scope, only Mentats' minor rad bump — documented)
+then schedules the two delayed kicks (ScheduleDrugEvent, skips an all-zero kick). ProcessDrugs drains due
+kicks in fire-time order from UpdateClock — the P35-M3 poison-tick game-time pattern (so a rest/travel
+clock JUMP fires several at once). PERSISTENCE (the critical risk): BonusStats is REBUILT from base+armor on
+load (the drug bonus is NOT in the base block), so a mid-drug save would lose the immediate bonus while the
+pending reversals still fire → negative stats; FIX = track the drug's contribution in _drugBonus[35],
+persist it (SaveState.DrugBonus, sparse-null) + the pending kicks (SaveState.PendingDrugs, additive-V2),
+and RE-APPLY _drugBonus to BonusStats AFTER the sheet rebuild on load. INERT: no golden gives/uses a stat
+drug (golden --give pids are weapons/caps/radio: 7/9/25/41/242/266; the -2 stimpak heal RNG is unchanged),
+so all 15 combat + 61 encounter goldens BYTE-IDENTICAL. Harness --drug-probe <pid> <gameMinutes> (advances
+the clock cumulatively, fires the wear-off, reports the active _drugBonus per stat + pending count); golden
+drug-stat (Buffout: min 0 up-kick ST+2/EN+3/AG+2 pending=2 → +400 dur1 fired all-negative pending=1 → +700
+[total 1100] dur2 restored to net-zero pending=0). 494 Formats tests (ItemProtoTests GameDataFact asserts
+Buffout/Jet durations + the net-zero-per-stat invariant; PersistenceTests DrugBonus/PendingDrugs round-trip);
+62 encounter + 15 combat goldens green.
+
 Phase 10 (DONE, per docs/phase10-research-report.md — "The Wasteland
 Bites Back"): M0 persistence pre-stage (the net: MapList saved=No /
 random_start_point parse + IsTransient; the 3-clause transient guards as

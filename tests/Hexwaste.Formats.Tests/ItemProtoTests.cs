@@ -47,6 +47,47 @@ public class ItemProtoTests
         // Cost field (M5 prereq): stimpak base price is 175.
         Assert.Equal(175, stimpak.Cost);
     }
+
+    [GameDataFact]
+    public void StatDrugPayloadsParseWithTheTimedWearOff()
+    {
+        using var vfs = GameFileSystem.Open(GameData.RequiredDir);
+        var protos = new ProtoDatabase(vfs);
+
+        // P37: the SPECIAL-boosting drugs carry the full proto.cc:1570-1581 payload — the immediate
+        // amounts + two delayed (duration,amount) kicks that net to zero per stat (the comedown wears
+        // off cleanly). Durations are in game-minutes; behaviourally confirmed by --drug-probe.
+
+        // Buffout (pid 87): immediate ST+2/AG+2/EN+3, a 360-min −4 kick, a 1080-min restore.
+        ProtoInfo buffout = protos.Get(87);
+        Assert.NotNull(buffout.Drug);
+        Assert.Equal(360, buffout.Drug.Duration1);
+        Assert.Equal(1080, buffout.Drug.Duration2);
+        Assert.Contains(0, buffout.Drug.Stats);  // Strength
+        Assert.Contains(5, buffout.Drug.Stats);  // Agility
+        Assert.Contains(2, buffout.Drug.Stats);  // Endurance
+        AssertNetZeroPerStat(buffout.Drug);
+
+        // Jet (pid 259): immediate ST+1/PE+1/AP+2, a fast 5-min −4 kick, a 1440-min restore.
+        ProtoInfo jet = protos.Get(259);
+        Assert.NotNull(jet.Drug);
+        Assert.Equal(5, jet.Drug.Duration1);
+        Assert.Equal(1440, jet.Drug.Duration2);
+        Assert.Contains(8, jet.Drug.Stats);      // max action points
+        AssertNetZeroPerStat(jet.Drug);
+    }
+
+    // The three amount tiers (immediate + dur1 + dur2) cancel to zero for every affected stat —
+    // the wear-off IS the down-then-up ramp, not a residual we skip (P37 grounding finding).
+    private static void AssertNetZeroPerStat(DrugProtoStats drug)
+    {
+        for (int i = 0; i < 3; i++)
+        {
+            if (drug.Stats[i] < 0)
+                continue;
+            Assert.Equal(0, drug.Amounts[i] + drug.Amount1[i] + drug.Amount2[i]);
+        }
+    }
 }
 
 public class RangedProtoAndMathTests

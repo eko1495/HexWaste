@@ -131,6 +131,34 @@ public class SaveStateRoundTripTests
     }
 
     [Fact]
+    public void DrugBonusAndPendingKicksRoundTrip()
+    {
+        // P37: the active drug bonus (re-applied after the sheet rebuild on load) and the pending
+        // wear-off kicks survive save/load; absent on a pre-P37 save → null → no drug in effect.
+        var state = new SaveState
+        {
+            Version = SaveState.CurrentVersion,
+            DrugBonus = [2, 0, 3, 0, 0, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+            PendingDrugs =
+            [
+                new SaveState.PendingDrug(216_000L, [0, 5, 2], [-4, -4, -4]),
+                new SaveState.PendingDrug(648_000L, [0, 5, 2], [2, 2, 1]),
+            ],
+        };
+        SaveState loaded = SaveState.FromJson(state.ToJson())!;
+        Assert.Equal(2, loaded.DrugBonus![0]);
+        Assert.Equal(3, loaded.DrugBonus[2]);
+        Assert.Equal(2, loaded.DrugBonus[5]);
+        Assert.Equal(2, loaded.PendingDrugs!.Count);
+        Assert.Equal(216_000L, loaded.PendingDrugs[0].FireTick);
+        Assert.Equal([0, 5, 2], loaded.PendingDrugs[1].Stats);
+        Assert.Equal([2, 2, 1], loaded.PendingDrugs[1].Amounts);
+
+        Assert.Null(new SaveState().DrugBonus);    // additive default
+        Assert.Null(new SaveState().PendingDrugs);
+    }
+
+    [Fact]
     public void KarmaAndReputationRoundTrip()
     {
         // P31 B-M3: the karma/reputation PC-stats survive save/load; absent on a pre-P31 save → 0.

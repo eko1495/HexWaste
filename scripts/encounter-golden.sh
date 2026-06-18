@@ -220,11 +220,18 @@ SCENARIOS=(
   # and spawns in KLAD_Scorpions (Klamath-Den route, 30% ratio); the small Radscorpion (0x1000005, the
   # arcaves --fight critter) is NOT, so the combat goldens stay byte-identical. The probe proves the flag.
   "multihex-probe|--map arcaves.map --multihex-probe 1000006 --multihex-probe 1000005 --rng-seed 1"
+  # P37 drug stat effects (item.cc _perform_drug_effect + the EVENT_TYPE_DRUG wear-off queue): Buffout
+  # (pid 87) gives an immediate ST+2/EN+3/AG+2 and schedules a 360-min down-kick (-4 each) then a 1080-min
+  # restore (+2/+1/+2) that NET TO ZERO (the comedown). The probe reports the active _drugBonus per stat +
+  # the pending count: at min 0 the up-kick (pending 2); at +400 the dur1 down-kick fired (now negative,
+  # pending 1); at +700 (total 1100) dur2 restored it to zero (pending 0). No golden gives/uses a stat
+  # drug, so all other goldens stay byte-identical (the -2 stimpak heal RNG is unchanged).
+  "drug-stat|--character combat --map arcaves.map --give 87 --use-item 87 --drug-probe 87 0 --drug-probe 87 400 --drug-probe 87 700 --rng-seed 1"
 )
 
 # Keep only the deterministic transcript lines (drop map-load / animate / stub /
 # dialog-text noise — NEVER capture REPLY/OPTION game-asset strings).
-FILTER='^(encounter|travel-from|companion|dismiss-persist|trade:|party:|party-count:|set-global:|hud-click:|use-skill:|hurt:|rest:|automap:|weapon-mode:|panel-click:|menu-click:|travel-resume:|travel-step:|travel-save-mid:|worldmap-fog:|weight:|iq-probe:|death-probe:|trait-probe:|perk-probe:|perk-pick:|combat-walk:|light:|reg-anim:|encounter-fight:|brawl:|sneak-probe:|sneak-roll:|backstab-probe:|detect-probe:|karma-probe:|set-karma:|rep-title:|town-rep:|karma-titles:|get-global:|place-probe:|reg-anim-move:|critter-state:|hurt-too-much:|run-probe:|outline:|sfx-probe:|reaction-probe:|combat-proc:|combat-proc-hit:|poison-tick:|multihex-probe:|  spawn|  flat|  wait:|  follow:|  dismiss:|  rejoin:)'
+FILTER='^(encounter|travel-from|companion|dismiss-persist|trade:|party:|party-count:|set-global:|hud-click:|use-skill:|hurt:|rest:|automap:|weapon-mode:|panel-click:|menu-click:|travel-resume:|travel-step:|travel-save-mid:|worldmap-fog:|weight:|iq-probe:|death-probe:|trait-probe:|perk-probe:|perk-pick:|combat-walk:|light:|reg-anim:|encounter-fight:|brawl:|sneak-probe:|sneak-roll:|backstab-probe:|detect-probe:|karma-probe:|set-karma:|rep-title:|town-rep:|karma-titles:|get-global:|place-probe:|reg-anim-move:|critter-state:|hurt-too-much:|run-probe:|outline:|sfx-probe:|reaction-probe:|combat-proc:|combat-proc-hit:|poison-tick:|multihex-probe:|drug-probe:|  spawn|  flat|  wait:|  follow:|  dismiss:|  rejoin:)'
 
 echo "Building viewer..."
 dotnet build src/Hexwaste.Viewer -c Debug >/dev/null || { echo "build failed"; exit 2; }

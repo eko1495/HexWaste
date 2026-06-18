@@ -60,6 +60,17 @@ public sealed class SaveState
     /// next-tick schedule is re-derived on load from the restored counter.</summary>
     public int? DudePoison { get; set; }
 
+    /// <summary>The active drug contribution to the dude's BonusStats[0..34] (P37; null = no drug
+    /// in effect). The sheet is rebuilt from base+armor on load (drug bonuses are NOT in the base
+    /// block), so this is re-applied after the rebuild — otherwise the pending wear-off reversals
+    /// would fire against a stat that never got the bonus, driving it negative. Sparse: null at 0.</summary>
+    public int[]? DrugBonus { get; set; }
+
+    /// <summary>Pending delayed drug kicks (the down-ramp / wear-off) not yet fired (P37; null/empty
+    /// = none). Each carries its absolute fire-tick (game-time) so a clock jump fires the due ones.
+    /// Additive within V2.</summary>
+    public List<PendingDrug>? PendingDrugs { get; set; }
+
     /// <summary>The dude's base stat block (35; null = reload the named
     /// premade). Self-contained so a created character round-trips without a
     /// .gcd file. Level-up HP lives in bonus stats and is replayed from level.</summary>
@@ -125,6 +136,10 @@ public sealed class SaveState
         int AmmoQuantity = -1, int AmmoTypePid = -1);
 
     public sealed record SavedDoor(int HexTile, int Pid, bool Open, bool Locked);
+
+    /// <summary>A scheduled drug wear-off kick (P37): the absolute game-tick it fires at, the up-to-3
+    /// affected stat indices, and their per-stat deltas. Mirrors an item.cc EVENT_TYPE_DRUG entry.</summary>
+    public sealed record PendingDrug(long FireTick, int[] Stats, int[] Amounts);
 
     /// <summary>An object a script or the player added to the world.</summary>
     public sealed record CreatedObject(int Pid, int Tile, int Elevation, int Count);

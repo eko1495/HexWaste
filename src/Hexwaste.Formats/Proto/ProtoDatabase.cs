@@ -79,11 +79,17 @@ public sealed record AmmoProtoStats(
 /// DR[7] then DT[7], by damage type (0 = normal).</summary>
 public sealed record ArmorProtoStats(int ArmorClass, int[] DamageResistance, int[] DamageThreshold);
 
-/// <summary>Drug payload (protoItemDataRead ITEM_TYPE_DRUG): three affected
-/// stats + immediate amounts. Stat -1 = unused; stats[0] == -2 means
-/// amounts[0..1] are a random range applied to stats[1] (item.cc
-/// _perform_drug_effect — the stimpak heal roll).</summary>
-public sealed record DrugProtoStats(int[] Stats, int[] Amounts);
+/// <summary>Drug payload (protoItemDataRead ITEM_TYPE_DRUG, proto.cc:1570-1581): three affected
+/// stats + the immediate <see cref="Amounts"/>, then the two delayed kicks
+/// (<see cref="Amount1"/>@<see cref="Duration1"/> min, <see cref="Amount2"/>@<see cref="Duration2"/> min)
+/// that ramp the effect down/back — the three tiers per stat net to zero, so they ARE the wear-off
+/// (Buffout ST +2/-4/+2). Stat -1 = unused; stats[0] == -2 means amounts[0..1] are a random range applied
+/// to stats[1] (item.cc _perform_drug_effect — the stimpak heal roll). The addiction trio is parsed but
+/// unused this phase (addiction/withdrawal is a documented residual).</summary>
+public sealed record DrugProtoStats(
+    int[] Stats, int[] Amounts,
+    int Duration1, int[] Amount1, int Duration2, int[] Amount2,
+    int AddictionChance, int WithdrawalEffect, int WithdrawalOnset);
 
 /// <summary>
 /// Critter prototype combat data, ported from fallout2-ce src/proto.cc
@@ -215,8 +221,13 @@ public sealed class ProtoDatabase(GameFileSystem vfs)
                             armor = new ArmorProtoStats(reader.ReadInt32(),
                                 reader.ReadInt32Array(7), reader.ReadInt32Array(7));
                             break;
-                        case 2: // ITEM_TYPE_DRUG: stat[3], amount[3]
-                            drug = new DrugProtoStats(reader.ReadInt32Array(3), reader.ReadInt32Array(3));
+                        case 2: // ITEM_TYPE_DRUG (proto.cc:1570-1581): stat[3], amount[3], then the 9 trailing
+                            // ints (dur1, amount1[3], dur2, amount2[3], addiction trio). Read order verbatim.
+                            drug = new DrugProtoStats(
+                                reader.ReadInt32Array(3), reader.ReadInt32Array(3),
+                                reader.ReadInt32(), reader.ReadInt32Array(3),
+                                reader.ReadInt32(), reader.ReadInt32Array(3),
+                                reader.ReadInt32(), reader.ReadInt32(), reader.ReadInt32());
                             break;
                         case 3: // ITEM_TYPE_WEAPON (full payload, proto.cc:1585-1601)
                         {

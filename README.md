@@ -66,7 +66,9 @@ Prebuilt self-contained builds (Linux x64 / Windows x64) are produced by
   a periodic skill roll decides whether you're really hidden, and while you are an
   NPC's perception range shrinks — sneak wide around a foe and its scripted aggro
   never fires; with the Silent Death perk a melee strike from behind hits for 4×.
-  Kills pay XP at combat end; levels raise your HP. Lose, and F9 puts you back.
+  Chems give a temporary edge — Buffout, Jet and the like boost your SPECIAL stats
+  for a while, then wear off through a comedown that leaves you briefly weaker before
+  it settles back. Kills pay XP at combat end; levels raise your HP. Lose, and F9 puts you back.
 - **Character**: create your own (SPECIAL, gender, optional traits, tagged skills)
   or pick a premade; level-ups grant skill points you spend on the character sheet (C),
   and stat-gated dialog runs the right branches — including IQ-gated options, so a

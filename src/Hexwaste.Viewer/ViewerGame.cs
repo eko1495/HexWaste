@@ -595,6 +595,11 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
         /// <summary>Set the dude's poison to InitialPoison, advance the game clock GameMinutes, process the
         /// poison damage ticks, and report the poison + HP deltas (P35-M3 poison-over-time).</summary>
         public sealed record PoisonTick(int InitialPoison, int GameMinutes) : StartupAction;
+        /// <summary>Snapshot the dude's BonusStats, advance the clock GameMinutes, fire the scheduled
+        /// drug wear-off, and report every changed stat index before→after (P37 — proves the immediate
+        /// effect + the timed reversal). Pid is informational; the drug must already be in effect via
+        /// a preceding --use-item.</summary>
+        public sealed record DrugProbe(int Pid, int GameMinutes) : StartupAction;
         /// <summary>Enter combat with the critter@Hex, drop it to ≤half HP, run its fp=4 combat_p_proc, and
         /// report whether terminate_combat ended the fight + the critter's maneuver (P35-M5).</summary>
         public sealed record TerminateCombatProbe(int Hex) : StartupAction;
@@ -1360,6 +1365,22 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
                     _clock.Ticks += (long)minutes * 60 * Formats.GameClock.TicksPerSecond;
                     ProcessPoison();
                     Console.WriteLine($"poison-tick: poison={initPoison}->{pd.Poison} hp={hpBefore}->{pd.CurrentHp} minutes={minutes}");
+                    break;
+                }
+                case StartupAction.DrugProbe(var drugPid, var drugMinutes) when _dudeGcd is not null:
+                {
+                    // P37: advance the clock (cumulative across probes), fire the scheduled wear-off, then
+                    // report the active drug contribution per stat (_drugBonus, the immediate effect minus any
+                    // wear-off that has now fired) + the pending count. The immediate effect was applied by the
+                    // preceding --use-item, so the bonus at minutes=0 shows the up-kick; later probes show the
+                    // ramp down toward the net-zero wear-off.
+                    _clock.Ticks += (long)drugMinutes * 60 * Formats.GameClock.TicksPerSecond;
+                    ProcessDrugs();
+                    var bonus = Enumerable.Range(0, 35)
+                        .Where(s => _drugBonus[s] != 0)
+                        .Select(s => $"{s}={_drugBonus[s]}");
+                    Console.WriteLine($"drug-probe: pid={drugPid} minutes={drugMinutes} pending={_pendingDrugEvents.Count} "
+                        + $"bonus=[{string.Join(",", bonus)}]");
                     break;
                 }
                 case StartupAction.MultihexProbe(var mhPid):
@@ -3875,31 +3896,103 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
         if (!_combat.TryUseActionPoints(2))
             return;
 
-        // _perform_drug_effect: stats[0] == -2 → amounts[0..1] are a random
-        // range for stats[1] (the stimpak heal roll); 35 = current HP.
-        int healed = 0;
-        if (drug.Stats[0] == -2 && drug.Stats[1] == 35)
-            healed = _combatRng.Next(drug.Amounts[0], drug.Amounts[1] + 1);
-        else
-            for (int i = 0; i < 3; i++)
-                if (drug.Stats[i] == 35)
-                    healed += drug.Amounts[i];
+        // ported from item.cc _item_d_take_drug (:2809): the immediate effect, then schedule the two
+        // delayed kicks (the down-ramp + restore that net to zero = the wear-off). P37.
+        int hpBefore = _dude?.Dude.CurrentHp ?? 0;
+        bool changed = ApplyDrugEffect(drug.Stats, drug.Amounts, immediate: true);
+        ScheduleDrugEvent(drug.Duration1, drug.Stats, drug.Amount1);
+        ScheduleDrugEvent(drug.Duration2, drug.Stats, drug.Amount2);
 
-        if (healed > 0 && _dude is not null && GetCritterState(_dude.Dude) is { } stats)
-        {
-            int before = _dude.Dude.CurrentHp;
-            _dude.Dude.CurrentHp = Math.Min(before + healed, stats.MaxHp);
-            Log($"You gain {_dude.Dude.CurrentHp - before} hit points.");
-            Console.WriteLine($"drug: {ObjectName(item)} healed {_dude.Dude.CurrentHp - before} (hp {_dude.Dude.CurrentHp})");
-        }
-        else
-        {
-            Log("Nothing happens."); // non-HP chem effects are out of PoC scope
-        }
+        if (changed && _dude is not null && _dude.Dude.CurrentHp != hpBefore)
+            Log($"You gain {_dude.Dude.CurrentHp - hpBefore} hit points.");
+        else if (!changed)
+            Log("Nothing happens."); // item.cc:2714 msg-10 (no effect applied)
+        Console.WriteLine($"drug: {ObjectName(item)} applied (hp {_dude?.Dude.CurrentHp ?? 0})");
 
         item.StackCount--;
         if (item.StackCount <= 0)
             _dudeInventory.Remove(item);
+    }
+
+    /// <summary>The active drug contribution to BonusStats[0..34] (per stat). Tracked separately so it can
+    /// be RE-APPLIED on load — LoadGame rebuilds the sheet (base + worn armor) and would otherwise lose the
+    /// drug bonus while the pending wear-off reversals still fire → negative stats. (P37.)</summary>
+    private readonly int[] _drugBonus = new int[35];
+
+    /// <summary>Pending delayed drug kicks (the down-ramp / wear-off), keyed by the game-tick they fire at.
+    /// ported from item.cc's EVENT_TYPE_DRUG queue; driven from UpdateClock like the poison tick. (P37.)</summary>
+    private readonly List<(long FireTick, int[] Stats, int[] Amounts)> _pendingDrugEvents = [];
+
+    /// <summary>
+    /// ported from item.cc _perform_drug_effect (:2639): additively apply a drug's per-stat amounts.
+    /// stats[0] == -2 → the first real stat (stats[1]) takes a random range amounts[0]..amounts[1]
+    /// (immediate only; the stimpak heal). stat 35 = current HP (heal/cost, clamped, GameOver on ≤0);
+    /// 0..34 = a SPECIAL/derived BonusStats bonus (mirrored into _drugBonus for save re-apply). stats ≥36
+    /// (poison/rad counters) are out of scope (documented — only Mentats' minor rad bump). Returns whether
+    /// anything changed (the "Nothing happens" gate). The -2 random roll is the ONLY RNG draw.
+    /// </summary>
+    private bool ApplyDrugEffect(int[] stats, int[] amounts, bool immediate)
+    {
+        if (_dude is null || _dudeGcd is null)
+            return false;
+        bool firstStatIsMinimum = stats[0] == -2;
+        bool changed = false;
+        for (int i = firstStatIsMinimum ? 1 : 0; i < 3; i++)
+        {
+            int stat = stats[i];
+            if (stat < 0)
+                continue;
+            int amt = firstStatIsMinimum && i == 1
+                ? (immediate ? _combatRng.Next(amounts[0], amounts[1] + 1) : amounts[i])
+                : amounts[i];
+            if (stat == 35) // current HP
+            {
+                int before = _dude.Dude.CurrentHp;
+                int max = GetCritterState(_dude.Dude)?.MaxHp ?? before;
+                _dude.Dude.CurrentHp = Math.Clamp(before + amt, 0, max);
+                if (_dude.Dude.CurrentHp != before)
+                    changed = true;
+                if (_dude.Dude.CurrentHp <= 0 && !_combat.IsGameOver)
+                    GameOver(); // a drug-cost HP delta can kill (Super Stimpak)
+            }
+            else if (stat <= 34 && amt != 0)
+            {
+                _dudeGcd.Stats.BonusStats[stat] += amt;
+                _drugBonus[stat] += amt;
+                changed = true;
+            }
+        }
+        return changed;
+    }
+
+    /// <summary>Schedule a delayed drug kick durationMin game-minutes out (item.cc _insert_drug_effect:
+    /// skip an all-zero kick; delay = 600 ticks/game-minute, the GameClock basis). (P37.)</summary>
+    private void ScheduleDrugEvent(int durationMin, int[] stats, int[] amounts)
+    {
+        if (amounts[0] == 0 && amounts[1] == 0 && amounts[2] == 0)
+            return; // item.cc:2601 — an unused kick schedules nothing
+        _pendingDrugEvents.Add((_clock.Ticks + 600L * durationMin, stats, amounts));
+    }
+
+    /// <summary>Fire every due drug kick in fire-time order (a clock JUMP from rest/travel fires several);
+    /// each is a wear-off delta (no RNG). ported from item.cc drugEffectEventProcess. Driven by UpdateClock.</summary>
+    private void ProcessDrugs()
+    {
+        if (_pendingDrugEvents.Count == 0)
+            return;
+        while (true)
+        {
+            int next = -1;
+            long earliest = long.MaxValue;
+            for (int i = 0; i < _pendingDrugEvents.Count; i++)
+                if (_pendingDrugEvents[i].FireTick <= _clock.Ticks && _pendingDrugEvents[i].FireTick < earliest)
+                    (earliest, next) = (_pendingDrugEvents[i].FireTick, i);
+            if (next < 0)
+                return;
+            (long _, int[] stats, int[] amounts) = _pendingDrugEvents[next];
+            _pendingDrugEvents.RemoveAt(next);
+            ApplyDrugEffect(stats, amounts, immediate: false);
+        }
     }
 
     private bool IsDoor(MapObject obj)
@@ -7915,6 +8008,7 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
     {
         _clock.AdvanceRealTime(elapsedMs);
         ProcessPoison(); // P35-M3: poison damage ticks on game time (also catches up after rest/travel jumps)
+        ProcessDrugs(); // P37: scheduled drug stat reversals fire on game time (same catch-up after jumps)
 
         int hour = _clock.Hour / 100;
         if (hour == _lastAmbientHour)
@@ -8449,6 +8543,8 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
         _pendingUseSkill = null;
         _sneak.FlagSet = false;
         _sneak.Working = false;
+        Array.Clear(_drugBonus);        // P37: no drug in effect on a fresh game (else a stale
+        _pendingDrugEvents.Clear();     // pending kick could fire on the reset clock)
         _skillUsesByDay.Clear();
         _skillUsesDay = -1;
         _pipboyOpen = false;
@@ -8497,6 +8593,11 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
             DudeXp = _dudeXp,
             DudeHp = _dude?.Dude.CurrentHp ?? -1,
             DudePoison = _dude is { Dude.Poison: > 0 } pd ? pd.Dude.Poison : null, // P35-M3 (sparse: null when not poisoned)
+            // P37: persist the active drug bonus + pending wear-off kicks, sparse (null when no drug active).
+            DrugBonus = _drugBonus.Any(b => b != 0) ? [.. _drugBonus] : null,
+            PendingDrugs = _pendingDrugEvents.Count > 0
+                ? [.. _pendingDrugEvents.Select(e => new SaveState.PendingDrug(e.FireTick, e.Stats, e.Amounts))]
+                : null,
             UnspentSkillPoints = _unspentSkillPoints,
             Character = _activeCharacter,
             DudeSkills = _dudeGcd is not null ? [.. _dudeGcd.Stats.Skills] : null,
@@ -8718,6 +8819,21 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
                 }
             }
         }
+
+        // P37: restore the active drug bonus AFTER the base+armor sheet rebuild above (the drug
+        // contribution is NOT in the base block, so re-apply it here or the pending wear-off would
+        // drive the stat negative). Then restore the pending wear-off kicks (they fire on the clock).
+        Array.Clear(_drugBonus);
+        _pendingDrugEvents.Clear();
+        if (state.DrugBonus is { } drugBonus && _dudeGcd is not null)
+            for (int s = 0; s < 35 && s < drugBonus.Length; s++)
+            {
+                _drugBonus[s] = drugBonus[s];
+                _dudeGcd.Stats.BonusStats[s] += drugBonus[s];
+            }
+        if (state.PendingDrugs is { } pending)
+            foreach (SaveState.PendingDrug e in pending)
+                _pendingDrugEvents.Add((e.FireTick, e.Stats, e.Amounts));
 
         // Rebuild the companions and stand them next to the dude.
         if (_scriptHost is not null)
