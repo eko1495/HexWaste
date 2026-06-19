@@ -250,11 +250,17 @@ SCENARIOS=(
   # +5 pts = +10%): 43->53, then a 2nd read off the raised skill gives +4 (53->61); Scout Handbook
   # (86→Outdoorsman, untagged so +8 pts = +8%): 16->24. No RNG (pure skill math) → deterministic.
   "use-book|--character combat --map arcaves.map --use-book 102 --use-book 102 --use-book 86 --rng-seed 1"
+  # P40 selectable ammo type (item.cc weaponUnload + the per-box reload): the player can switch a
+  # weapon's loaded ammo (unload Shift+R, then reload with a chosen box). --load-ammo unloads + reloads
+  # with the given pid, reporting the loaded type + the combat-relevant mods. A 10mm pistol (8) switches
+  # 10mm AP (30, dr-25/mult1/div2 = armor-piercing) <-> 10mm JHP (29, dr+25/mult2/div1 = anti-unarmored).
+  # The ammo combat math was already wired+consumed, so this only adds CONTROL -> goldens byte-identical.
+  "ammo-select|--character combat --map arcaves.map --give 8 --use-item 8 --give 30 --give 29 --load-ammo 30 --load-ammo 29 --rng-seed 1"
 )
 
 # Keep only the deterministic transcript lines (drop map-load / animate / stub /
 # dialog-text noise — NEVER capture REPLY/OPTION game-asset strings).
-FILTER='^(encounter|travel-from|companion|dismiss-persist|trade:|party:|party-count:|set-global:|hud-click:|use-skill:|hurt:|rest:|automap:|weapon-mode:|panel-click:|menu-click:|travel-resume:|travel-step:|travel-save-mid:|worldmap-fog:|weight:|iq-probe:|death-probe:|trait-probe:|perk-probe:|perk-pick:|combat-walk:|light:|reg-anim:|encounter-fight:|brawl:|sneak-probe:|sneak-roll:|backstab-probe:|detect-probe:|karma-probe:|set-karma:|rep-title:|town-rep:|karma-titles:|get-global:|place-probe:|reg-anim-move:|critter-state:|hurt-too-much:|run-probe:|outline:|sfx-probe:|reaction-probe:|combat-proc:|combat-proc-hit:|poison-tick:|multihex-probe:|drug-probe:|addict-probe:|kills-probe:|book:|  spawn|  flat|  wait:|  follow:|  dismiss:|  rejoin:)'
+FILTER='^(encounter|travel-from|companion|dismiss-persist|trade:|party:|party-count:|set-global:|hud-click:|use-skill:|hurt:|rest:|automap:|weapon-mode:|panel-click:|menu-click:|travel-resume:|travel-step:|travel-save-mid:|worldmap-fog:|weight:|iq-probe:|death-probe:|trait-probe:|perk-probe:|perk-pick:|combat-walk:|light:|reg-anim:|encounter-fight:|brawl:|sneak-probe:|sneak-roll:|backstab-probe:|detect-probe:|karma-probe:|set-karma:|rep-title:|town-rep:|karma-titles:|get-global:|place-probe:|reg-anim-move:|critter-state:|hurt-too-much:|run-probe:|outline:|sfx-probe:|reaction-probe:|combat-proc:|combat-proc-hit:|poison-tick:|multihex-probe:|drug-probe:|addict-probe:|kills-probe:|book:|ammo-select:|unload:|  spawn|  flat|  wait:|  follow:|  dismiss:|  rejoin:)'
 
 echo "Building viewer..."
 dotnet build src/Hexwaste.Viewer -c Debug >/dev/null || { echo "build failed"; exit 2; }

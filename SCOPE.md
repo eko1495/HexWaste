@@ -43,8 +43,9 @@ filing an issue.
   death animations (sliced/charred/big-hole/exploded corpses by damage type);
   stealth (a two-layer Sneak state with a periodic skill roll; active sneaking
   shrinks an NPC's perception range so you can slip past scripted aggro; the Silent
-  Death perk quadruples a melee backstab); armor, lootable corpses, scripted
-  aggro, same-team joiners, a minimum
+  Death perk quadruples a melee backstab); selectable ammo (unload + reload to swap
+  armor-piercing vs hollow-point, which shifts to-hit/damage vs armored vs soft
+  targets); armor, lootable corpses, scripted aggro, same-team joiners, a minimum
   party member, barter, kill XP, level-ups, per-map persistent world, versioned
   JSON save/load, a main menu, character creation, rest, and carry weight +
   encumbrance (item weights, a STAT_CARRY_WEIGHT capacity, an over-limit combat

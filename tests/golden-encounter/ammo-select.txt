@@ -1,0 +1,4 @@
+unload: weapon=8 ejected=12 type=29 left=0
+ammo-select: weapon=8 ok=True loaded=30 qty=12/12 ac=0 dr=-25 mult=1 div=2
+unload: weapon=8 ejected=12 type=30 left=0
+ammo-select: weapon=8 ok=True loaded=29 qty=12/12 ac=0 dr=25 mult=2 div=1

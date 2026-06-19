@@ -62,7 +62,10 @@ Prebuilt self-contained builds (Linux x64 / Windows x64) are produced by
   area blast with falloff and knockback. With a burst gun (10mm SMG, Tommy
   Gun, combat shotgun) hold the trigger (B): the magazine sprays a cone of
   rounds — in a duel a few find the target and the rest chew up the scenery,
-  the same spread the engine rolls. Sneak (the Skilldex Sneak skill toggles it):
+  the same spread the engine rolls. You choose what to load: unload (Shift+R) and
+  use another ammo box to switch between, say, armor-piercing and hollow-point —
+  AP punches through a foe's armor, JHP doubles the damage to an unarmored one.
+  Sneak (the Skilldex Sneak skill toggles it):
   a periodic skill roll decides whether you're really hidden, and while you are an
   NPC's perception range shrinks — sneak wide around a foe and its scripted aggro
   never fires; with the Silent Death perk a melee strike from behind hits for 4×.
@@ -145,7 +148,7 @@ Prebuilt self-contained builds (Linux x64 / Windows x64) are produced by
 | C / K | character sheet (spend level-up skill points) |
 | Z | rest to heal (when no enemies are near) |
 | F5 / F9 | save / load |
-| R | reload the equipped gun (2 AP in combat) |
+| R / Shift+R | reload the equipped gun (2 AP in combat) / unload it (to switch ammo type) |
 | F4 / T / PgUp / PgDn | roofs / walk-cycle / elevation (PgUp/PgDn page an open item panel) |
 | [ / ] | ambient light (night ↔ day) |
 | M | worldmap |

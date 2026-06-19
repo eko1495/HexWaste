@@ -1435,6 +1435,28 @@ combat + 67 prior encounter goldens BYTE-IDENTICAL. Harness --use-book <pid>; go
 showing diminishing returns 43→53→61, then 86 16→24). 528 Formats tests (19 SkillBooksTests: the curve, the
 cap, Comprehension ×1.5, read time); 68 encounter + 15 combat goldens green.
 
+Phase 40 (DONE — "Pick Your Round", selectable ammo type; the next-feature-grounding RUNNER-UP [71]).
+The combat CONSEQUENCE was already live (loading AP vs JHP shifts to-hit + damage via the wired ammo
+AC/DR/mult/div math — CombatMath/RangedMath, consumed at CombatEngine to-hit + damage sites); P40 adds
+player CONTROL over the choice. UnloadEquippedWeapon (weaponUnload item.cc:1880 — eject min(loaded,
+boxCapacity) into a DISCRETE bag box [a partial count must NOT merge into a full stack via AddToDude
+Inventory], leave the remainder, empty the weapon). TryReload refactored: the 3-param ICombatHost method
+is now a forwarder to TryReloadWith(…, preferredAmmoPid) — at -1 the body is byte-identical (the R-key /
+AI auto-reload path unchanged), ≥0 restricts the bag scan to a chosen ammo pid (the selection). The
+no-mixed-mags rule (only reload a matching type into a non-empty weapon) is unchanged, so a type SWAP
+needs an empty weapon → unload first. Player paths: Shift+R unloads the equipped weapon; USING an ammo
+box (UseInventoryItem ammo branch) reloads the equipped weapon with that type (blocked-→-hint-to-unload on
+a different loaded type). SLICE-LIVE (verified by a recursive inventory walk): the 10mm pistol (pid 8) AND
+the Klamath pipe rifle (299) both fire 10mm, with 10mm AP (pid 30: ac0/dr-25/mult1/div2 = armor-piercing)
++ 10mm JHP (29: ac0/dr+25/mult2/div1 = anti-unarmored) abundantly lootable across denbus1/2/kladwtwn, and
+Den NPCs wear DR-armor so AP genuinely matters. Additive (the auto-reload/--give paths still auto-select;
+combat math untouched) → all 15 combat + 68 prior encounter goldens BYTE-IDENTICAL. Harness --load-ammo
+<ammoPid> (unload + reload-with-pid, report the loaded type + ac/dr/mult/div); golden ammo-select (pistol
+AP↔JHP delta). No new Formats tests (viewer wiring on already-parsed protos + already-tested combat math);
+528 Formats tests, 69 encounter + 15 combat goldens green. DOCUMENTED: the unloaded box is discrete (the
+engine creates a fresh object too); the engine's prefer-last-loaded-type auto-reload nuance (item.cc:1455)
+is approximated by Hexwaste's bag-order scan on an empty weapon (a pre-existing behavior, unchanged).
+
 Phase 10 (DONE, per docs/phase10-research-report.md — "The Wasteland
 Bites Back"): M0 persistence pre-stage (the net: MapList saved=No /
 random_start_point parse + IsTransient; the 3-clause transient guards as

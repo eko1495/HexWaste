@@ -617,6 +617,9 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
         /// <summary>Give one book Pid and read it (the faithful UseInventoryItem→book path), reporting the
         /// trained skill's value before/after + the gain (P39). STATE-only ints.</summary>
         public sealed record UseBook(int Pid) : StartupAction;
+        /// <summary>Switch the equipped weapon to the given ammo Pid (unload current + reload-with-pid),
+        /// reporting the loaded type + the combat-relevant ammo mods (P40). STATE-only ints.</summary>
+        public sealed record LoadAmmo(int AmmoPid) : StartupAction;
         /// <summary>Enter combat with the critter@Hex, drop it to ≤half HP, run its fp=4 combat_p_proc, and
         /// report whether terminate_combat ended the fight + the critter's maneuver (P35-M5).</summary>
         public sealed record TerminateCombatProbe(int Hex) : StartupAction;
@@ -1447,6 +1450,24 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
                         if (bookIdx >= 0)
                             UseInventoryItem(bookIdx);
                     }
+                    break;
+                }
+                case StartupAction.LoadAmmo(var ammoPid) when _dude is not null:
+                {
+                    // P40: switch the equipped weapon to ammoPid (unload current → reload-with-pid), then
+                    // report the loaded type + the combat-relevant ammo mods (proving the JHP/AP delta).
+                    (ProtoInfo? wp, MapObject? wi) = EquippedWeapon(_dude.Dude);
+                    if (wp?.Weapon is { } w && wi is not null)
+                    {
+                        UnloadEquippedWeapon(); // eject current so the type can change (no mixed mags)
+                        bool ok = TryReloadWith(_dude.Dude, wp, wi, ammoPid);
+                        Formats.Proto.AmmoProtoStats? la = LoadedAmmo(wp, wi);
+                        Console.WriteLine($"ammo-select: weapon={wp.Pid} ok={ok} loaded={wi.AmmoTypePid} "
+                            + $"qty={WeaponAmmo(wp, wi)}/{w.AmmoCapacity} ac={la?.AcModifier ?? 0} dr={la?.DrModifier ?? 0} "
+                            + $"mult={la?.DamageMultiplier ?? 1} div={la?.DamageDivisor ?? 1}");
+                    }
+                    else
+                        Console.Error.WriteLine("load-ammo: no weapon equipped");
                     break;
                 }
                 case StartupAction.MultihexProbe(var mhPid):
@@ -3136,10 +3157,15 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
         if (IsKeyPressed(keyboard, Keys.Space))
             _combat.EndPlayerTurn();
 
-        // R reloads the equipped gun (2 AP during your combat turn);
-        // roofs moved to F4.
+        // R reloads the equipped gun (2 AP during your combat turn); Shift+R unloads it (eject ammo to
+        // the bag, P40 — needed to switch ammo type). roofs moved to F4.
         if (IsKeyPressed(keyboard, Keys.R))
-            _combat.ReloadEquippedWeapon();
+        {
+            if (keyboard.IsKeyDown(Keys.LeftShift) || keyboard.IsKeyDown(Keys.RightShift))
+                UnloadEquippedWeapon();
+            else
+                _combat.ReloadEquippedWeapon();
+        }
 
         // [ and ] adjust ambient light (day/night preview).
         if (IsKeyPressed(keyboard, Keys.OemOpenBrackets) || IsKeyPressed(keyboard, Keys.OemCloseBrackets))
@@ -3970,6 +3996,22 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
             return;
         }
 
+        // P40: using an ammo box reloads the equipped weapon with THAT ammo type (the player's type
+        // selection — the engine's drag-ammo-onto-weapon). The no-mixed-mags rule blocks a swap into a
+        // loaded weapon of a different type → hint to unload (Shift+R) first.
+        if (proto.Ammo is not null && _dude is not null)
+        {
+            (ProtoInfo? wp, MapObject? wi) = EquippedWeapon(_dude.Dude);
+            if (wp?.Weapon is not null && wi is not null)
+            {
+                if (!TryReloadWith(_dude.Dude, wp, wi, item.Pid))
+                    Log($"Can't load that type — unload the {ObjectNameByPid(wp.Pid)} first (Shift+R).");
+                return;
+            }
+            Log("You have no compatible weapon equipped.");
+            return;
+        }
+
         Log($"You can't use the {ObjectName(item)} that way.");
     }
 
@@ -4548,8 +4590,16 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
     }
 
     /// <summary>Reload from a matching-caliber ammo item: partial fills, no
-    /// mixed mags (item.cc weaponCanBeReloadedWith/weaponReload).</summary>
-    public bool TryReload(MapObject holder, ProtoInfo weaponProto, MapObject weaponItem)
+    /// mixed mags (item.cc weaponCanBeReloadedWith/weaponReload). The R key / AI
+    /// auto-reload path — picks any matching box (preferred pid -1).</summary>
+    public bool TryReload(MapObject holder, ProtoInfo weaponProto, MapObject weaponItem) =>
+        TryReloadWith(holder, weaponProto, weaponItem, -1);
+
+    /// <summary>Reload, optionally restricting to a SPECIFIC ammo pid (P40 — the player's ammo-type
+    /// selection: "reload with THIS box"). preferredAmmoPid &lt; 0 = any matching box (the default
+    /// auto-reload, unchanged → byte-identical). The no-mixed-mags rule still applies, so a type swap
+    /// needs an empty weapon (unload first).</summary>
+    public bool TryReloadWith(MapObject holder, ProtoInfo weaponProto, MapObject weaponItem, int preferredAmmoPid)
     {
         if (weaponProto.Weapon is not { } weapon || weapon.AmmoCapacity <= 0)
             return false;
@@ -4560,6 +4610,9 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
         List<MapObject> bag = holder == _dude?.Dude ? _dudeInventory : holder.Inventory;
         foreach (MapObject box in bag)
         {
+            if (preferredAmmoPid >= 0 && box.Pid != preferredAmmoPid)
+                continue; // P40: the player chose a specific ammo type
+
             ProtoInfo boxProto;
             try
             {
@@ -4604,6 +4657,43 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
         }
 
         return false;
+    }
+
+    /// <summary>Eject the dude's equipped weapon's loaded ammo into a bag box and empty the weapon
+    /// (P40; ported from item.cc weaponUnload :1880 — one box of min(loaded, boxCapacity) rounds, the
+    /// remainder stays in the mag). Needed to SWITCH ammo type (the no-mixed-mags rule blocks loading a
+    /// different type into a non-empty weapon). The ejected box is added discretely (a partial count
+    /// must not merge into a full stack). Returns true if anything was ejected.</summary>
+    private bool UnloadEquippedWeapon()
+    {
+        if (_dude is null)
+            return false;
+        (ProtoInfo? wp, MapObject? wi) = EquippedWeapon(_dude.Dude);
+        if (wp?.Weapon is not { } weapon || wi is null)
+        {
+            Log("You have no weapon to unload.");
+            return false;
+        }
+        int loaded = WeaponAmmo(wp, wi);
+        int typePid = wi.AmmoTypePid != -1 ? wi.AmmoTypePid : weapon.AmmoTypePid;
+        if (loaded <= 0 || typePid <= 0)
+        {
+            Log($"The {ObjectNameByPid(wp.Pid)} is already empty.");
+            return false;
+        }
+        int boxCap = SafeProto(typePid)?.Ammo?.Quantity ?? loaded;
+        int ejected = Math.Min(loaded, boxCap);
+        if (RebuildObject(typePid, 1) is { } box)
+        {
+            box.AmmoQuantity = ejected;
+            _dudeInventory.Add(box); // discrete — a partial box must not merge into a full stack
+        }
+        wi.AmmoQuantity = loaded - ejected;
+        if (wi.AmmoQuantity == 0)
+            wi.AmmoTypePid = -1;
+        Log($"You unload the {ObjectNameByPid(wp.Pid)}.");
+        Console.WriteLine($"unload: weapon={wp.Pid} ejected={ejected} type={typePid} left={wi.AmmoQuantity}");
+        return true;
     }
 
     /// <summary>Attack art: the weapon's animation code goes into FID bits
