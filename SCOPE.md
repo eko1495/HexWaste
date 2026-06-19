@@ -43,7 +43,7 @@ filing an issue.
   death animations (sliced/charred/big-hole/exploded corpses by damage type);
   stealth (a two-layer Sneak state with a periodic skill roll; active sneaking
   shrinks an NPC's perception range so you can slip past scripted aggro; the Silent
-  Death perk quadruples a melee backstab); armor, drugs, lootable corpses, scripted
+  Death perk quadruples a melee backstab); armor, lootable corpses, scripted
   aggro, same-team joiners, a minimum
   party member, barter, kill XP, level-ups, per-map persistent world, versioned
   JSON save/load, a main menu, character creation, rest, and carry weight +
@@ -61,11 +61,17 @@ filing an issue.
   Weapon Handling, Heave Ho). A character-sheet display + a level-up perk picker (the
   authentic PERKWIN window). Per-level skill points follow the full engine formula
   (Educated/Skilled/Gifted).
+- **Chems & addiction**: drugs apply their immediate SPECIAL boost and a timed
+  comedown that wears off (Buffout, Jet, Mentats…); using an addictive chem can
+  hook you (a Sneak-isolated roll), and after an onset delay withdrawal saps the
+  matching stats until it passes — Jet's is permanent (needs the antidote). Stimpaks
+  heal as before. Shown on the character sheet / Pip-Boy.
 - **Karma & reputation**: get_pc_stat reads the dude's real karma/reputation
   (PC-stats), a generic-reputation title from `genrep.txt`, per-town standings
   (`Vilified`…`Idolized`) and earned karma titles from their GVARs — shown on the
   character sheet and Pip-Boy. (The engine never auto-awards karma; it is script-
-  driven, so on the slice it stays at zero unless a quest sets it.)
+  driven, so on the slice it stays at zero unless a quest sets it.) Kills *are*
+  tracked by type (the engine's kill counter, read by scripts + shown on the sheet).
 - **Interface**: the authentic bottom HUD bar plus its panels — inventory,
   character sheet, the Skilldex use-skill picker, the Pip-Boy (status + rest),
   and an in-game options/pause menu.
@@ -91,9 +97,11 @@ filing an issue.
   `party.txt` level-ups advance proto stages, not perks — so it stays inert until
   future content lands one.
 - **The remaining ~80 perks' specific effects** (the table is complete and the
-  stat perks + a curated combat/skill set are wired; the rest — sneak, timed
-  buffs, content/dialog, addiction, mutation perks — are data-present), and
-  worldmap car travel.
+  stat perks + a curated combat/skill set are wired; the rest — timed
+  buffs, content/dialog, mutation perks — are data-present), and worldmap car travel.
+- **Dialogue voiceover (VO)** — the ACM speech path is feasible, but no shippable
+  Arroyo→Den NPC is voiced (their dialogue lines carry no speech file), so it would
+  play nothing on the slice; deferred until a voiced NPC is in scope.
 - **Anything needing assets we can't ship** — Hexwaste requires *your own* legal
   copy of Fallout 2. We never include or distribute game data.
 

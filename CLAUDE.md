@@ -1374,6 +1374,43 @@ drug-stat (Buffout: min 0 up-kick ST+2/EN+3/AG+2 pending=2 → +400 dur1 fired a
 Buffout/Jet durations + the net-zero-per-stat invariant; PersistenceTests DrugBonus/PendingDrugs round-trip);
 62 encounter + 15 combat goldens green.
 
+Phase 38 (DONE — "Vices and Tallies", the user's "perks/karma auto-award, addiction/withdrawal, VO"
+ask — RESHAPED by a grounded + adversarially-verified workflow [karma-addiction-vo-grounding] against the
+prime directive). USER DECISIONS: drop karma auto-award + add kill counters; full addiction/withdrawal;
+DEFER VO. KARMA AUTO-AWARD — REJECTED as a non-faithful divergence: the engine has NO kill/quest/combat→
+karma hook (pcSetStat stat.cc:611 is the sole gPcStatValues writer, never called with KARMA/REPUTATION; no
+set_pc_stat external; combat.cc:4855 kill path runs destroy_p_proc + XP + the kill counter, ZERO karma) —
+karma is 100% script-driven (set_global_var), already wired in P31; inventing an auto-award would violate
+"port, never guess". VO — faithful but FULLY INERT on the slice (every shippable Den NPC MSG has empty audio
+fields; no slice NPC has a head/speech dir; the only voiced NPCs Elder/Hakunin/Sulik are content-gated out)
+— DEFERRED until a voiced NPC is in scope. LESSON RE-CONFIRMED: the grounding synthesis mis-decoded the
+addiction perks AND the Tragic/Jet GVAR indices — I verified every load-bearing value against the actual
+source / Hexwaste's checksum-guarded PerkTable.g.cs (the recurring hallucination guard).
+M0 pure Formats.Item.DrugAddiction: the drugPid→addiction-GVAR map (item.cc:144 gDrugDescriptions; verified
+game_vars.h indices NUKA=21/BUFFOUT=22/MENTATS=23/PSYCHO=24/RADAWAY=25/ALCOHOL=26/TRAGIC=293/JET=294) +
+the faithful Roll (item.cc:2823 chance ×2 ChemReliant /÷2 ChemResistant /÷2 FlowerChild, roll(1..100)≤chance
+inclusive); PerkRules.MaxRankPerkEffect = the perkAddEffect maxRank==-1 fold ((Stat,StatModifier) + the
+StatReqs[0..6] SPECIAL array as the EFFECT) — decoded from PerkTable.g.cs: Buffout(54)=ST-2/EN-2/AG-3,
+Mentats(55)=IN-3/AG-2, Psycho(56)=IN-2, RadAway(57)=RadResist-20, Jet(70)=MaxAP-1/ST-1/PE-1, Tragic(71)=
+PE-2/IN-1/LK-1, Nuka(53)=none. M1+M2 (one commit): UseDrug→TryAddict rolls on a dedicated _addictionRng
+(isolated → P37 drug-stat + all goldens BYTE-IDENTICAL even though Buffout is now addictive), sets the GVAR,
+schedules onset (600*withdrawalOnset ticks); ProcessWithdrawals (drained from UpdateClock) onset→apply the
+perk fold into _withdrawalBonus[35]+BonusStats + schedule recovery 7 game-days out FROM THE ONSET'S FIRE
+INSTANT (the clock-jump-correct rule, like ProcessPoison — caught + fixed a recovery-scheduling bug);
+recovery→reverse + clear GVAR, EXCEPT Jet (PERK_JET_ADDICTION=70 returns early → PERMANENT until pid-260
+antidote, one-give residual). NEVER touches _dudePerkRanks. M3 persistence (SaveState.WithdrawalBonus +
+PendingWithdrawals, additive-V2 sparse, re-applied AFTER the load sheet-rebuild — the DrugBonus trap) +
+char-sheet/Pip-Boy "Addictions:" display (character_editor.cc:4611 gAddictionReputationVars + editor.msg
+1004+index). Harness --addict-probe <pid> <seed> <gameMinutes>; goldens addict-buffout-active/-recover/
+addict-jet-permanent/addict-miss. KILL COUNTERS (the faithful karma adjacency): CombatEngine.KillCritter
+tallies the victim's KILL_TYPE beside the XP accrual (gated identically, combat.cc:4870) via a default-no-op
+ICombatHost.RecordKill → _killsByType[19] (critter.cc:152), reset on new-game, persisted (SaveState.Kills
+ByType sparse); metarule3 rule 103 GET_KILL_COUNT (killsGetByType) wired (inert — no slice script reads it);
+char-sheet "Kills:" display (proto.msg 1450+killType). RecordKill draws no RNG/Console → combat goldens
+byte-identical. Harness --kills-probe <killtype>; golden kill-counter (seed-7 arcaves fight = 2 Radscorpions
+[6=2]; each gives 60 XP, so +120 = 2 kills, NOT one — verified). 509 Formats tests (DrugAddictionTests 13,
+the withdrawal round-trip, the kill-counter fake-host gating); 67 encounter + 15 combat goldens green.
+
 Phase 10 (DONE, per docs/phase10-research-report.md — "The Wasteland
 Bites Back"): M0 persistence pre-stage (the net: MapList saved=No /
 random_start_point parse + IsTransient; the 3-clause transient guards as
