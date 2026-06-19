@@ -46,6 +46,24 @@ public class CombatEngineTests
     }
 
     [Fact]
+    public void KillsAreTalliedOnlyForDudeOrTeamKills()
+    {
+        // P38: killsIncByType — the engine tallies a kill (beside the XP award) only for a dude/team
+        // kill the destroy script didn't override (combat.cc:4860-4870). A killer-less death isn't.
+        var host = new FakeCombatHost();
+        MapObject dude = host.SetDude(NewCritter(tile: 20100, hp: 30, ap: 10));
+        var engine = new CombatEngine(host, new MinRng());
+        MapObject a = host.AddCritter(NewCritter(tile: 20200, hp: 1, killType: 6));
+        MapObject b = host.AddCritter(NewCritter(tile: 20300, hp: 1, killType: 6));
+
+        engine.Kill(a, dude); // dude kill → tallied
+        engine.Kill(b);       // no killer → not tallied (the dude/team gate fails)
+
+        Assert.Single(host.RecordedKills);
+        Assert.Same(a, host.RecordedKills[0]);
+    }
+
+    [Fact]
     public void BonusHthAttacksPerkLowersUnarmedApCost()
     {
         // P28-M3: Bonus HtH Attacks → −1 AP per melee/unarmed swing (item.cc:1693). A punch is
@@ -1448,6 +1466,8 @@ public class CombatEngineTests
         public IReadOnlyCollection<MapObject> PartyMembers => [];
         public IEnumerable<MapObject> CombatCritters => _critters;
         public void AwardXp(int amount) => XpAwarded += amount;
+        public readonly List<MapObject> RecordedKills = []; // P38: killsIncByType
+        public void RecordKill(MapObject victim) => RecordedKills.Add(victim);
         public void GameOver() => GameOverCalled = true;
         public void Log(string line) => Logs.Add(line);
         public void Transcript(string line) => Transcripts.Add(line);

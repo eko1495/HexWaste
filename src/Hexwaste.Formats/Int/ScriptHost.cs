@@ -257,6 +257,10 @@ public sealed class ScriptHost(GameFileSystem vfs, ScriptList scripts, Hexwaste.
     /// <summary>get_pc_stat values (1=level, 2=experience); host-provided.</summary>
     public Func<int, int>? PcStatProvider { get; set; }
 
+    /// <summary>The dude's kill tally for a KILL_TYPE (killsGetByType); host-provided. Drives
+    /// metarule3 GET_KILL_COUNT (P38). Null → 0 (no kills tracked).</summary>
+    public Func<int, int>? KillCountProvider { get; set; }
+
     /// <summary>The dude's rank in a perk (perkGetRank); host-provided. Drives has_trait(type 0)
     /// (P28-M2). Null → 0 (no perk system).</summary>
     public Func<int, int>? PerkRankProvider { get; set; }
@@ -1094,6 +1098,7 @@ public sealed class ScriptHost(GameFileSystem vfs, ScriptList scripts, Hexwaste.
         }
 
         public int GetPcStat(int stat) => _host.PcStatProvider?.Invoke(stat) ?? 0;
+        public int GetKillCount(int killType) => _host.KillCountProvider?.Invoke(killType) ?? 0;
 
         // ported from fallout2-ce interpreter_extra.cc opCritterAddTrait():
         // kind 1 = object traits; perks (kind 0) are out of PoC scope.

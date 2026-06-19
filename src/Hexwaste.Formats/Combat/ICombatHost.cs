@@ -150,6 +150,11 @@ public interface ICombatHost
 
     // --- Progression / end-of-combat -------------------------------------
     void AwardXp(int amount);                                           // :2740
+
+    /// <summary>Tally a dude/team kill by the victim's KILL_TYPE (killsIncByType, critter.cc:702;
+    /// combat.cc:4870 — beside the XP award, same gating). Default no-op (P38); the fake host has
+    /// no kill tracker.</summary>
+    void RecordKill(MapObject victim) { }
     void GameOver();                                                    // :2856
 
     // --- Output -----------------------------------------------------------

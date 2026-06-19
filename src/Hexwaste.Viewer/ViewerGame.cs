@@ -611,6 +611,9 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
         /// GVAR + active withdrawal stat penalty + pending count (P38 — STATE-only ints). Seed is chosen
         /// so the deterministic roll hits.</summary>
         public sealed record AddictProbe(int Pid, int Seed, int GameMinutes) : StartupAction;
+        /// <summary>Report the dude's kill tally (P38; killsGetByType). KillType &gt;= 0 reports that one
+        /// type's count; KillType &lt; 0 reports every non-zero type. STATE-only ints.</summary>
+        public sealed record KillsProbe(int KillType) : StartupAction;
         /// <summary>Enter combat with the critter@Hex, drop it to ≤half HP, run its fp=4 combat_p_proc, and
         /// report whether terminate_combat ended the fight + the critter's maneuver (P35-M5).</summary>
         public sealed record TerminateCombatProbe(int Hex) : StartupAction;
@@ -897,6 +900,7 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
                     _ => 0,
                 },
                 PerkRankProvider = perk => Formats.Perks.PerkRules.Rank(_dudePerkRanks, perk),
+                KillCountProvider = kt => kt >= 0 && kt < _killsByType.Length ? _killsByType[kt] : 0, // P38: GET_KILL_COUNT
                 SneakFlagProvider = () => _sneak.FlagSet, // P29 A-M0: using_skill(dude, SNEAK)
                 CombatActiveProvider = () => _combat.Phase != Formats.Combat.CombatPhase.Idle, // P34-M1: is_in_combat(0x8128)
                 PoisonRequested = (obj, amount) => ApplyPoison(obj, amount), // P35: poison(0x8122)
@@ -1415,6 +1419,19 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
                         .Select(s => $"{s}={_withdrawalBonus[s]}");
                     Console.WriteLine($"addict-probe: pid={adPid} seed={adSeed} minutes={adMinutes} "
                         + $"gvar{adGvar}={adGvarVal} withdrawal=[{string.Join(",", wd)}] pendingWd={_pendingWithdrawalEvents.Count}");
+                    break;
+                }
+                case StartupAction.KillsProbe(var ktQuery):
+                {
+                    // P38: report the kill tally (killsGetByType). >=0 → one type; <0 → all non-zero.
+                    if (ktQuery >= 0)
+                        Console.WriteLine($"kills-probe: type={ktQuery} count={(ktQuery < _killsByType.Length ? _killsByType[ktQuery] : 0)}");
+                    else
+                    {
+                        var all = Enumerable.Range(0, _killsByType.Length)
+                            .Where(k => _killsByType[k] != 0).Select(k => $"{k}={_killsByType[k]}");
+                        Console.WriteLine($"kills-probe: all=[{string.Join(",", all)}]");
+                    }
                     break;
                 }
                 case StartupAction.MultihexProbe(var mhPid):
@@ -4651,7 +4668,37 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
     }
 
     /// <summary>pcAddExperience: add XP, level up while thresholds pass —
-    /// each level adds EN/2+2 bonus max HP and heals the gain (stat.cc:771).</summary>
+    /// <summary>The dude's kill tally per KILL_TYPE (gKillsByType, critter.cc:152; 19 types). Incremented
+    /// on a dude/team kill, read by metarule3 GET_KILL_COUNT + the char-sheet display (P38).</summary>
+    private int[] _killsByType = new int[19];
+
+    /// <summary>ICombatHost (P38): tally a dude/team kill by the victim's KILL_TYPE (killsIncByType,
+    /// critter.cc:702). The victim's kill type is its proto field; a bad proto is skipped.</summary>
+    public void RecordKill(MapObject victim)
+    {
+        if (GetCritterState(victim) is { } stats && stats.Proto.KillType is int kt && kt >= 0 && kt < _killsByType.Length)
+            _killsByType[kt]++;
+    }
+
+    /// <summary>The char-sheet "::: Kills :::" rows (character_editor.cc:2202): each KILL_TYPE with a
+    /// non-zero tally, named from proto.msg (1450 + killType, killTypeGetName critter.cc:766). Live UI.</summary>
+    private List<string> KillDisplayLines()
+    {
+        var lines = new List<string>();
+        for (int kt = 0; kt < _killsByType.Length; kt++)
+            if (_killsByType[kt] > 0)
+            {
+                string name = ProtoMsg(1450 + kt);
+                lines.Add($"{(name.Length > 0 ? name : $"Kill type {kt}")}: {_killsByType[kt]}");
+            }
+        return lines;
+    }
+    // proto.msg — kill-type (and other proto) display names (character_editor.cc uses gProtoMessageList);
+    // lazy, empty if absent.
+    private Formats.Text.MessageFile? _protoMsg; private bool _protoMsgTried;
+    private string ProtoMsg(int id) =>
+        id < 0 ? "" : LazyMsg(@"text\english\game\proto.msg", ref _protoMsgTried, ref _protoMsg)?.GetText(id) ?? "";
+
     public void AwardXp(int amount)
     {
         if (amount <= 0)
@@ -6850,6 +6897,15 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
         // karma titles + non-Neutral slice-town standings. Display-only (never transcript-diffed).
         foreach (string kl in KarmaDisplayLines())
             Line(kl, gray);
+        // Kills by type (P38; character_editor.cc:2202 "::: Kills :::") — char sheet only.
+        List<string> killLines = KillDisplayLines();
+        if (killLines.Count > 0)
+        {
+            ly += 6;
+            Line("Kills:", gray);
+            foreach (string kl in killLines)
+                Line($"  {kl}", gray);
+        }
         ly += 6;
         if (_unspentSkillPoints > 0)
             Line($"{_unspentSkillPoints} skill points — raise →", green);
@@ -8692,6 +8748,7 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
         _pendingDrugEvents.Clear();     // pending kick could fire on the reset clock)
         Array.Clear(_withdrawalBonus);  // P38: no addiction/withdrawal on a fresh game
         _pendingWithdrawalEvents.Clear();
+        Array.Clear(_killsByType);      // P38: a fresh game has no kills
         _skillUsesByDay.Clear();
         _skillUsesDay = -1;
         _pipboyOpen = false;
@@ -8750,6 +8807,7 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
             PendingWithdrawals = _pendingWithdrawalEvents.Count > 0
                 ? [.. _pendingWithdrawalEvents.Select(e => new SaveState.PendingWithdrawal(e.FireTick, e.IsStart, e.Pid, e.Perk))]
                 : null,
+            KillsByType = _killsByType.Any(k => k != 0) ? [.. _killsByType] : null, // P38 (sparse: null when no kills)
             UnspentSkillPoints = _unspentSkillPoints,
             Character = _activeCharacter,
             DudeSkills = _dudeGcd is not null ? [.. _dudeGcd.Stats.Skills] : null,
@@ -9000,6 +9058,11 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
         if (state.PendingWithdrawals is { } pendingWd)
             foreach (SaveState.PendingWithdrawal e in pendingWd)
                 _pendingWithdrawalEvents.Add((e.FireTick, e.IsStart, e.Pid, e.Perk));
+
+        // P38: restore the kill tally (sparse-null on a pre-P38 / no-kills save).
+        _killsByType = new int[19];
+        if (state.KillsByType is { } kills)
+            Array.Copy(kills, _killsByType, Math.Min(kills.Length, _killsByType.Length));
 
         // Rebuild the companions and stand them next to the dude.
         if (_scriptHost is not null)

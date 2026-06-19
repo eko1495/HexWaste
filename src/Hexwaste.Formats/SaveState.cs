@@ -81,6 +81,10 @@ public sealed class SaveState
     /// Additive within V2.</summary>
     public List<PendingWithdrawal>? PendingWithdrawals { get; set; }
 
+    /// <summary>The dude's kill tally per KILL_TYPE (P38; gKillsByType, 19 types). Null when no kills
+    /// (additive within V2 — sparse). Read by metarule3 GET_KILL_COUNT + the char-sheet display.</summary>
+    public int[]? KillsByType { get; set; }
+
     /// <summary>The dude's base stat block (35; null = reload the named
     /// premade). Self-contained so a created character round-trips without a
     /// .gcd file. Level-up HP lives in bonus stats and is replayed from level.</summary>

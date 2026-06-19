@@ -1304,7 +1304,10 @@ public sealed class CombatEngine
         // Engine: kills by the dude OR his team accrue XP (combat.cc:4860).
         bool dudeTeamKill = killer == _host.Dude || (killer is not null && killer.Team == 0);
         if (!xpOverridden && dudeTeamKill && _host.GetCritterState(critter) is { } stats)
+        {
             _xpPending += stats.Proto.Experience;
+            _host.RecordKill(critter); // killsIncByType(critterGetKillType(victim)), combat.cc:4870
+        }
 
         _host.RemovePartyMember(critter);
 

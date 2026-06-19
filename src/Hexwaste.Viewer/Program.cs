@@ -313,6 +313,9 @@ for (int i = 0; i < args.Length; i++)
             actions.Add(new ViewerGame.StartupAction.AddictProbe(int.Parse(args[i + 1]), int.Parse(args[i + 2]), int.Parse(args[i + 3])));
             i += 3;
             break;
+        case "--kills-probe" when i + 1 < args.Length:
+            actions.Add(new ViewerGame.StartupAction.KillsProbe(int.Parse(args[++i])));
+            break;
         case "--terminate-combat" when i + 1 < args.Length:
             actions.Add(new ViewerGame.StartupAction.TerminateCombatProbe(int.Parse(args[++i])));
             break;

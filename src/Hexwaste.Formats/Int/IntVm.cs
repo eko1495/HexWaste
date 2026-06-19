@@ -76,6 +76,10 @@ public interface IVmExternals
     /// 2=experience, 3=reputation, 4=karma.</summary>
     int GetPcStat(int stat) => 0;
 
+    /// <summary>metarule3 rule 103 GET_KILL_COUNT (killsGetByType): the dude's kill tally for a
+    /// KILL_TYPE (P38). 0 by default → inert.</summary>
+    int GetKillCount(int killType) => 0;
+
     /// <summary>critter_add_trait (opCritterAddTrait): kind 1 sets object
     /// traits (5=aiPacket, 6=team); perks (kind 0) are out of PoC scope.</summary>
     void CritterAddTrait(int objectHandle, int kind, int param, int value) { }
@@ -1327,9 +1331,12 @@ public sealed class IntVm
                 Value p1 = Pop();
                 int rule = PopInt();
                 _ = p3;
+                int metaResult = 0;
                 if (rule == 100 && p1.Tag == TypeInt && p2.Tag == TypeInt)
                     _externals.RemoveTimerEventsWithParam(p1.Raw, p2.Raw);
-                PushInt(0);
+                else if (rule == 103 && p1.Tag == TypeInt) // GET_KILL_COUNT (interpreter_extra.cc:1989)
+                    metaResult = _externals.GetKillCount(p1.Raw);
+                PushInt(metaResult);
                 break;
             }
             case 0x80D4: // tile_num
