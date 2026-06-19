@@ -13,6 +13,8 @@ public static class PerkId
     public const int BonusRateOfFire = 5;   // −1 AP per ranged attack (item.cc:1699)
     public const int Sharpshooter = 14;     // +2 effective Perception per rank for ranged to-hit (combat.cc:4355)
     public const int Educated = 18;         // +2 skill points per level-up (character_editor.cc:5689)
+    public const int FlowerChild = 42;      // halves drug addiction chance + withdrawal duration (item.cc:2834/3060)
+    public const int JetAddiction = 70;     // the Jet withdrawal "perk" — PERMANENT until the Jet antidote (item.cc:2984)
     public const int Slayer = 23;           // every melee/unarmed hit is a critical (combat.cc:3866)
     public const int Sniper = 24;           // a ranged hit crits on a d10 ≤ Luck roll (combat.cc:3891)
     public const int SilentDeath = 25;      // melee/unarmed backstab while sneaking: 4x dmg / x2 on a crit (combat.cc:3870)

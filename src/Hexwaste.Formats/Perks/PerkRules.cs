@@ -41,6 +41,26 @@ public static class PerkRules
         return m;
     }
 
+    /// <summary>The one-shot stat effect of a maxRank==-1 perk — the perkAddEffect maxRank==-1 path
+    /// (perk.cc): the (Stat, StatModifier) pair when Stat != -1, PLUS the StatReqs[0..6] SPECIAL array
+    /// (which for a granted/maxRank==-1 perk is the EFFECT, not a requirement). Returns the per-stat
+    /// deltas to fold into a bonus-stat array (apply +1 on withdrawal onset, -1 on recovery). Used for
+    /// the addiction-withdrawal penalties (a withdrawal IS such a perk: e.g. Buffout addiction 54 →
+    /// ST-2/EN-2/AG-3, Jet addiction 70 → MaxAP-1/ST-1/PE-1). Empty for a rank-based / out-of-range perk.</summary>
+    public static IEnumerable<(int Stat, int Delta)> MaxRankPerkEffect(int perkIndex)
+    {
+        if (perkIndex < 0 || perkIndex >= PerkTable.Entries.Length)
+            yield break;
+        PerkData p = PerkTable.Entries[perkIndex];
+        if (p.MaxRank != -1)
+            yield break;
+        if (p.Stat != -1)
+            yield return (p.Stat, p.StatModifier);
+        for (int s = 0; s < 7; s++)
+            if (p.StatReqs[s] != 0)
+                yield return (s, p.StatReqs[s]);
+    }
+
     /// <summary>Whether the critter may take another rank of a perk (perkCanAdd port): not maxed,
     /// PC level ≥ minLevel, the skill/gvar param gates (first-only / OR / AND), and the per-SPECIAL
     /// requirements (positive = minimum, negative = "at most").</summary>
