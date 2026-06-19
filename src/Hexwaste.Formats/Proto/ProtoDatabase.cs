@@ -53,7 +53,8 @@ public sealed record WeaponProtoStats(
     int Caliber,
     int AmmoTypePid,
     int AmmoCapacity,
-    byte SoundCode)
+    byte SoundCode,
+    int CriticalFailureType = 0)
 {
     /// <summary>Guns have a fire attack anim (item.cc _attack_anim index ≥ 6).
     /// Throwers (index 5) stay on the melee path until rung (a) lands —
@@ -241,7 +242,8 @@ public sealed class ProtoDatabase(GameFileSystem vfs)
                             int minStrength = reader.ReadInt32();
                             int apCost = reader.ReadInt32();
                             int apCost2 = reader.ReadInt32();
-                            reader.Skip(2 * 4); // criticalFailureType, perk
+                            int criticalFailureType = reader.ReadInt32(); // _cf_table row (P41)
+                            reader.Skip(4); // perk
                             int rounds = reader.ReadInt32();
                             int caliber = reader.ReadInt32();
                             int ammoTypePid = reader.ReadInt32();
@@ -249,7 +251,8 @@ public sealed class ProtoDatabase(GameFileSystem vfs)
                             byte weaponSound = reader.ReadByte(); // single byte, not int
                             weapon = new WeaponProtoStats(animationCode, minDamage, maxDamage,
                                 damageType, maxRange1, maxRange2, projectilePid, minStrength,
-                                apCost, apCost2, rounds, caliber, ammoTypePid, ammoCapacity, weaponSound);
+                                apCost, apCost2, rounds, caliber, ammoTypePid, ammoCapacity, weaponSound,
+                                criticalFailureType);
                             break;
                         }
                         case 4: // ITEM_TYPE_AMMO (proto.cc:1604-1611)

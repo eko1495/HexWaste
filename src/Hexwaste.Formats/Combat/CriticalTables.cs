@@ -26,8 +26,19 @@ public static partial class CriticalTables
     public const int DamBlind = 0x40;
     public const int DamDead = 0x80;
     public const int DamCritical = 0x200;
+    public const int DamOnFire = 0x400;
     public const int DamBypass = 0x800;
+    public const int DamExplode = 0x1000;
+    public const int DamDestroy = 0x2000;
+    public const int DamDrop = 0x4000;
     public const int DamLoseTurn = 0x8000;
+    // Critical-FAILURE-only effect bits (obj_types.h:143-148; P41).
+    public const int DamHitSelf = 0x10000;
+    public const int DamLoseAmmo = 0x20000;
+    public const int DamDud = 0x40000;
+    public const int DamHurtSelf = 0x80000;
+    public const int DamRandomHit = 0x100000;
+    public const int DamCripRandom = 0x200000;
 
     public const int DamCripLegAny = DamCripLegLeft | DamCripLegRight;   // 0x0C
     public const int DamCripArmAny = DamCripArmLeft | DamCripArmRight;   // 0x30
@@ -89,6 +100,18 @@ public static partial class CriticalTables
         }
         h = Hash(h, CritterData);
         h = Hash(h, PlayerData);
+        h = Hash(h, CritFailTable);
         return h;
+    }
+
+    /// <summary>The DAM_* flags of a critical FAILURE (the attacker's fumble), keyed by the weapon's
+    /// criticalFailureType row (0..6; -1/out-of-range → row 0, the unarmed/default) and the Luck-bucketed
+    /// severity column (0..4). _cf_table[failureType*CritFailEffectCount + effect], combat.cc:1875.</summary>
+    public static int CritFailFlags(int failureType, int effect)
+    {
+        if (failureType < 0 || failureType >= CritFailTypeCount)
+            failureType = 0;
+        effect = Math.Clamp(effect, 0, CritFailEffectCount - 1);
+        return CritFailTable[failureType * CritFailEffectCount + effect];
     }
 }

@@ -14,11 +14,16 @@ public static partial class CriticalTables
     public const int LocationCount = 9;
     public const int SeverityCount = 6;
 
+    /// <summary>_cf_table dimensions (combat.cc): 7 weapon critical-failure-type rows × 5
+    /// Luck-bucketed severity columns. The flat array is [failureType*5 + effect].</summary>
+    public const int CritFailTypeCount = 7;
+    public const int CritFailEffectCount = 5;
+
     /// <summary>Stride of one critical row: mult, flags, massiveStat, statMod, massiveFlags.</summary>
     public const int Stride = 5;
 
     /// <summary>FNV-1a over every field — guards the data file.</summary>
-    public const ulong DataChecksum = 0x15A0DCC02C894B8BUL;
+    public const ulong DataChecksum = 0x91DC554FDF20B990UL;
 
     // [(killType*LocationCount + location)*SeverityCount + severity] * Stride
     //   → {mult, flags, massiveStat, statMod, massiveFlags}
@@ -389,5 +394,14 @@ public static partial class CriticalTables
         3, 2, 2, 4, 1, 4, 2, 2, 2, 1, 4, 1, -1, 0, 0,
         3, 0, -1, 0, 0, 3, 0, -1, 0, 0, 3, 2048, -1, 0, 0,
         3, 2050, -1, 0, 0, 4, 2050, -1, 0, 0, 4, 2050, 6, 2, 128,
+    };
+
+    // _cf_table[failureType*CritFailEffectCount + effect] → the DAM_* flags of a critical FAILURE
+    //   (the attacker's fumble); failureType = weapon criticalFailureType, effect = Luck severity 0..4.
+    internal static readonly int[] CritFailTable =
+    {
+        0, 32768, 32768, 524290, 2097152, 0, 32768, 16384, 1048576, 65536, 0, 131072, 16384, 1048576, 8192,
+        32768, 163840, 49152, 1048576, 36864, 262144, 16384, 540672, 1048576, 4096, 32768, 262144, 8192, 1048576, 36866,
+        0, 32768, 1048576, 8192, 37888,
     };
 }
