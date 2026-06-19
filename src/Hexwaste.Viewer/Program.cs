@@ -316,6 +316,9 @@ for (int i = 0; i < args.Length; i++)
         case "--kills-probe" when i + 1 < args.Length:
             actions.Add(new ViewerGame.StartupAction.KillsProbe(int.Parse(args[++i])));
             break;
+        case "--use-book" when i + 1 < args.Length:
+            actions.Add(new ViewerGame.StartupAction.UseBook(int.Parse(args[++i])));
+            break;
         case "--terminate-combat" when i + 1 < args.Length:
             actions.Add(new ViewerGame.StartupAction.TerminateCombatProbe(int.Parse(args[++i])));
             break;

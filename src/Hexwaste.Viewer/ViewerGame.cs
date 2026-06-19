@@ -614,6 +614,9 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
         /// <summary>Report the dude's kill tally (P38; killsGetByType). KillType &gt;= 0 reports that one
         /// type's count; KillType &lt; 0 reports every non-zero type. STATE-only ints.</summary>
         public sealed record KillsProbe(int KillType) : StartupAction;
+        /// <summary>Give one book Pid and read it (the faithful UseInventoryItem→book path), reporting the
+        /// trained skill's value before/after + the gain (P39). STATE-only ints.</summary>
+        public sealed record UseBook(int Pid) : StartupAction;
         /// <summary>Enter combat with the critter@Hex, drop it to ≤half HP, run its fp=4 combat_p_proc, and
         /// report whether terminate_combat ended the fight + the critter's maneuver (P35-M5).</summary>
         public sealed record TerminateCombatProbe(int Hex) : StartupAction;
@@ -1431,6 +1434,18 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
                         var all = Enumerable.Range(0, _killsByType.Length)
                             .Where(k => _killsByType[k] != 0).Select(k => $"{k}={_killsByType[k]}");
                         Console.WriteLine($"kills-probe: all=[{string.Join(",", all)}]");
+                    }
+                    break;
+                }
+                case StartupAction.UseBook(var bookPid):
+                {
+                    // P39: give one book + read it (the real UseInventoryItem→book branch prints the "book:" line).
+                    if (RebuildObject(bookPid, 1) is { } bookObj)
+                    {
+                        AddToDudeInventory(bookObj);
+                        int bookIdx = _dudeInventory.FindIndex(i => i.Pid == bookPid);
+                        if (bookIdx >= 0)
+                            UseInventoryItem(bookIdx);
                     }
                     break;
                 }
@@ -3924,6 +3939,34 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
         if (proto.Drug is not null)
         {
             UseDrug(item, proto.Drug);
+            return;
+        }
+
+        // P39: skill books (item.cc booksInitVanilla + proto_instance.cc _obj_use_book). A book raises
+        // its skill by (100 − effective)/10 points (×1.5 with Comprehension), nothing once effective
+        // hits 100, at a game-time cost of 3600*(11−INT)s. The screen fade + scriptsExecMapUpdateProc
+        // the engine also runs here are out of scope (no palette fade; map_update_p_proc unwired).
+        if (Formats.Item.SkillBooks.TryGet(item.Pid, out int bookSkill, out _) && _dude is not null && _dudeGcd is not null)
+        {
+            if (_combat.Phase != Formats.Combat.CombatPhase.Idle)
+            {
+                Log("You can't do that in combat."); // proto.msg 902 — refuse mid-combat
+                Console.WriteLine($"book: pid={item.Pid} skill={bookSkill} refused=combat");
+                return;
+            }
+            int effective = GetCritterState(_dude.Dude)?.SkillValue(bookSkill) ?? 0;
+            bool comprehension = DudePerkRank(Formats.Perks.PerkId.Comprehension) > 0;
+            int increase = Formats.Item.SkillBooks.Increase(effective, comprehension);
+            if (increase > 0)
+                _dudeGcd.Stats.Skills[bookSkill] += increase; // skillAddForce ×increase (base points)
+            int intelligence = GetCritterState(_dude.Dude)?.Stat(Formats.Combat.CritterStat.Intelligence) ?? 5;
+            _clock.Ticks += (long)Formats.Item.SkillBooks.ReadSeconds(intelligence) * Formats.GameClock.TicksPerSecond;
+            int after = GetCritterState(_dude.Dude)?.SkillValue(bookSkill) ?? 0;
+            Log(increase > 0 ? "You learn something new." : "You can't learn anything more from this book.");
+            Console.WriteLine($"book: pid={item.Pid} skill={bookSkill} before={effective} increase={increase} after={after}");
+            item.StackCount--;
+            if (item.StackCount <= 0)
+                _dudeInventory.Remove(item);
             return;
         }
 

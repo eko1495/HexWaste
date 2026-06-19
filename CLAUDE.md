@@ -1411,6 +1411,30 @@ byte-identical. Harness --kills-probe <killtype>; golden kill-counter (seed-7 ar
 [6=2]; each gives 60 XP, so +120 = 2 kills, NOT one — verified). 509 Formats tests (DrugAddictionTests 13,
 the withdrawal round-trip, the kill-counter fake-host gating); 67 encounter + 15 combat goldens green.
 
+Phase 39 (DONE — "Required Reading", skill books; chosen by a next-feature-grounding workflow that ranked
+4 candidates by value/effort/faithfulness/LIVENESS — skill books won [82] as the only one that's faithful,
+small, a NEW player-facing capability, AND verified-live on the slice [vs selectable-ammo whose effect is
+already live, the crit-FAILURE table gated to day≥6, map_update_p_proc subtle/inert]). A real recursive
+inventory-walk found exactly 2 lootable books on the slice: Guns and Bullets (pid 102→Small Guns) in a
+denbus1 container @23316, Scout Handbook (pid 86→Outdoorsman) on a KLAMALL critter @26515 (the slice's
+Klamath map is KLAMALL.map, not klamath.map). M1 pure Formats.Item.SkillBooks: BookTable (booksInitVanilla
+item.cc:3283 — pid→(skill,proto.msg id): 73→Science(12)/802, 76→Repair(13)/803, 80→FirstAid(6)/804,
+86→Outdoorsman(17)/806, 102→SmallGuns(0)/805) + BookRaise.Increase = (100−effective)/10, ≤0→0 (the de-facto
+cap at effective 100 — NOT skillAddForce's 300 guard), ×150/100 with Comprehension (proto_instance.cc:776);
+ReadSeconds = 3600*(11−INT). PerkId.Comprehension=81 (enum index, verified — NOT the line-88 the synthesis
+cited). M2 wired into UseInventoryItem (a book branch above the can't-use fallthrough, mirroring UseDrug):
+refuse in combat (proto.msg-902 state line, no copyright); read the EFFECTIVE skill via CritterState.Skill
+Value, WRITE the BASE points _dudeGcd.Stats.Skills[skill]+=increase (the engine's skillGetValue/skillAddForce
+split — so a TAGGED skill gains 2%/point: Narg's Small Guns 43→53 from +5 pts; an untagged Outdoorsman
+16→24 from +8); advance the clock ReadSeconds. DOCUMENTED OUT-OF-SCOPE (both in _obj_use_book but unported):
+the paletteFadeTo screen fade (no palette fade in our renderer) + scriptsExecMapUpdateProc (map_update_p_proc
+unwired). Persistence rides the already-saved DudeSkills. DECISION: ship all 5 book rows (3 — Big Book of
+Science/Dean's Electronics/First Aid Book — have no slice instance, documented forward-looking infra). Inert
+by default (no golden uses a book; the book branch is gated on the book-pid set + draws no RNG) → all 15
+combat + 67 prior encounter goldens BYTE-IDENTICAL. Harness --use-book <pid>; golden use-book (102 twice
+showing diminishing returns 43→53→61, then 86 16→24). 528 Formats tests (19 SkillBooksTests: the curve, the
+cap, Comprehension ×1.5, read time); 68 encounter + 15 combat goldens green.
+
 Phase 10 (DONE, per docs/phase10-research-report.md — "The Wasteland
 Bites Back"): M0 persistence pre-stage (the net: MapList saved=No /
 random_start_point parse + IsTransient; the 3-clause transient guards as

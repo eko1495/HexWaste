@@ -60,7 +60,8 @@ filing an issue.
   Silent Death, Sharpshooter, Swift Learner, Educated, Living Anatomy, Pyromaniac,
   Weapon Handling, Heave Ho). A character-sheet display + a level-up perk picker (the
   authentic PERKWIN window). Per-level skill points follow the full engine formula
-  (Educated/Skilled/Gifted).
+  (Educated/Skilled/Gifted). Skill books raise their skill when read (diminishing
+  returns to 100, the Comprehension +50%, a read time that shrinks with Intelligence).
 - **Chems & addiction**: drugs apply their immediate SPECIAL boost and a timed
   comedown that wears off (Buffout, Jet, Mentats…); using an addictive chem can
   hook you (a Sneak-isolated roll), and after an onset delay withdrawal saps the

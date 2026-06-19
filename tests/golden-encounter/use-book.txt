@@ -1,0 +1,3 @@
+book: pid=102 skill=0 before=43 increase=5 after=53
+book: pid=102 skill=0 before=53 increase=4 after=61
+book: pid=86 skill=17 before=16 increase=8 after=24

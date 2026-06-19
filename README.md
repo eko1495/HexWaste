@@ -76,6 +76,8 @@ Prebuilt self-contained builds (Linux x64 / Windows x64) are produced by
   or pick a premade; level-ups grant skill points you spend on the character sheet (C),
   and stat-gated dialog runs the right branches — including IQ-gated options, so a
   low-Intelligence character gets the dumb lines and a bright one the smart ones.
+  Skill books (Guns and Bullets, Scout Handbook…) raise their skill when read, with
+  diminishing returns up to 100 — and a smarter character reads them faster.
   Rest (Z) heals over time. The character sheet and Pip-Boy show your karma and
   reputation — a reputation title (`genrep.txt`), per-town standings (Vilified…
   Idolized) and earned karma titles, read straight from the engine's stats/GVARs
