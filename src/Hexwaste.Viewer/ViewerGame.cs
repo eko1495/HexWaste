@@ -5163,6 +5163,10 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
     /// (random.cc: gameTime / TICKS_PER_DAY >= 1).</summary>
     public bool CriticalsEnabled => _clock.Ticks / Formats.GameClock.TicksPerDay >= 1;
 
+    /// <summary>ICombatHost (P41): the engine suppresses the DUDE's critical-FAILURE EFFECT until day 6
+    /// (combat.cc:4190); the trigger still fires from day 2. Non-dude fumbles have no such gate.</summary>
+    public bool DudeCritFailuresEnabled => _clock.Ticks / Formats.GameClock.TicksPerDay >= 6;
+
     private Formats.Combat.AiPacketTable? _aiPackets;
     private bool _aiPacketsLoaded;
 

@@ -247,21 +247,14 @@ public sealed class CombatEngine
         _host.ClearAnimation(target);
         dude.Rotation = HexGrid.RotationTo(dude.HexTile, target.HexTile);
 
-        (int chance, bool hit, int damage, int critFlags) = RollAttack(attacker, defender, weaponProto, weaponItem,
+        (int chance, bool hit, int damage, int critFlags, int delta) = RollAttack(attacker, defender, weaponProto, weaponItem,
             distance, crittersInPath, attackerIsDude: true, defenderIsDude: target == dude, hitLocation);
 
-        // P29-M1: Jinxed — a missed dude attack can fumble into a critical failure (combat.cc:3857
-        // rolls randomBetween(0,1) on every ROLL_FAILURE when the dude has the trait). SIMPLIFIED:
-        // we honour only DAM_LOSE_TURN (the most common _cf_table low-severity effect) by zeroing the
-        // dude's AP — not the full 7×5 table (drop/explode/cripple/on-fire), and dude-only (the engine
-        // fumbles EVERY combatant when the dude is Jinxed). Gated on CriticalsEnabled (our day-2 signal;
-        // the engine gates the dude's crit-failures at day 6 — a documented divergence). The d2 draw is
-        // taken ONLY when the trait is set, so a trait-less dude draws nothing → goldens byte-identical.
-        if (!hit && _host.CriticalsEnabled && _host.DudeHasTrait(TraitModifiers.Jinxed) && _rng.Next(0, 2) == 1)
-        {
+        // P41: a missed attack can fumble into a critical failure (the full _cf_table — drop/destroy/
+        // explode/hurt-self/cripple/random-hit/lose-turn), replacing the P29 lose-turn-only Jinxed stub.
+        // The dude's EFFECT is gated to day 6 (the trigger draws from day 2). On lose-turn, end the turn.
+        if (!hit && TriggerCritFailure(attacker, attackerIsDude: true, weaponProto, weaponItem, delta))
             _dudeAp = 0;
-            _host.Log("Jinxed! You fumble and lose your turn.");
-        }
 
         if (isGun)
             weaponItem!.AmmoQuantity = _host.WeaponAmmo(weaponProto!, weaponItem) - 1;
@@ -796,7 +789,7 @@ public sealed class CombatEngine
     /// <summary>Roll an attack with the equipped weapon (or fists). Guns use the
     /// ranged to-hit (distance/PE, ammo AC mod, min-ST, crowd) and ammo damage
     /// mods; melee keeps the phase-6 path.</summary>
-    private (int Chance, bool Hit, int Damage, int CritFlags) RollAttack(
+    private (int Chance, bool Hit, int Damage, int CritFlags, int Delta) RollAttack(
         CritterState attacker, CritterState defender,
         ProtoInfo? weaponProto, MapObject? weaponItem, int distance, int crittersInPath,
         bool attackerIsDude, bool defenderIsDude, int hitLocation)
@@ -883,7 +876,7 @@ public sealed class CombatEngine
                 damage += DudeFlatDamageBonus(weaponProto, defender);
         }
 
-        return (accuracy, hit, damage, critFlags);
+        return (accuracy, hit, damage, critFlags, delta);
     }
 
     /// <summary>The crit's flags, plus the "massive critical" flags when the defender
@@ -915,6 +908,116 @@ public sealed class CombatEngine
             && weaponProto?.Weapon?.DamageType == 2) // DAMAGE_TYPE_FIRE
             bonus += 5;
         return bonus;
+    }
+
+    /// <summary>
+    /// Critical FAILURE on a MISS (P41) — random.cc randomTranslateRoll (the trigger) + combat.cc:4178
+    /// attackComputeCriticalFailure (the effects). Call AFTER RollAttack on a miss; returns true if the
+    /// fumble costs the attacker its turn (the caller zeroes the right AP pool). RNG ORDERING mirrors the
+    /// engine: the day≥1 natural-upgrade draw fires immediately after the (miss) hit-roll, then the Jinxed
+    /// force, then severity + per-effect draws — so a day-1, non-Jinxed attacker draws NOTHING (goldens
+    /// byte-identical). The DUDE's effect is suppressed before day 6 (the trigger still drew). Effects are
+    /// applied to the ATTACKER immediately (the miss has no deferred swing-damage).
+    /// </summary>
+    private bool TriggerCritFailure(CritterState attacker, bool attackerIsDude,
+        ProtoInfo? weaponProto, MapObject? weaponItem, int delta)
+    {
+        bool critFail = false;
+        if (_host.CriticalsEnabled)                                  // random.cc:113 — day≥1 natural upgrade
+            critFail = _rng.Next(1, 101) <= -delta / 10;
+        if (!critFail && _host.DudeHasTrait(TraitModifiers.Jinxed))  // combat.cc:3857 — Jinxed force, no day gate
+            critFail = _rng.Next(0, 2) == 1;
+        if (!critFail)
+            return false;
+
+        // combat.cc:4190 — the dude's fumble has no EFFECT before day 6 (the trigger above still drew).
+        if (attackerIsDude && !_host.DudeCritFailuresEnabled)
+            return false;
+
+        MapObject self = attacker.Critter;
+        int failureType = weaponProto?.Weapon?.CriticalFailureType ?? 0;
+        int flags = CriticalFailure.Resolve(failureType, attacker.Stat(CritterStat.Luck), _rng);
+        // _attackFindInvalidFlags (combat.cc:4225): an unarmed attacker can't drop/destroy/lose a weapon.
+        if (weaponItem is null)
+            flags &= ~(CriticalTables.DamDrop | CriticalTables.DamDestroy | CriticalTables.DamLoseAmmo);
+        if (flags == 0)
+            return false;
+
+        _host.Log($"The {_host.ObjectName(self)} fumbles!");
+        _host.Transcript($"crit-fail: {_host.ObjectName(self)}@{self.HexTile} flags=0x{flags:X}");
+
+        if ((flags & CriticalTables.DamCripRandom) != 0) // _do_random_cripple → one random limb bit
+        {
+            int[] limbs = { CriticalTables.DamCripLegLeft, CriticalTables.DamCripLegRight,
+                CriticalTables.DamCripArmLeft, CriticalTables.DamCripArmRight };
+            self.CombatResults |= limbs[_rng.Next(0, 4)];
+            _host.Transcript($"crippled: {_host.ObjectName(self)}@{self.HexTile} flags=0x{self.CombatResults & CriticalTables.DamCripLimbs:X}");
+        }
+        if ((flags & CriticalTables.DamKnockedDown) != 0 && _knockedDown.Add(self))
+            _host.Transcript($"knockdown: {_host.ObjectName(self)}@{self.HexTile}");
+
+        // Self-damage: EXPLODE detonates the fumbling weapon at the attacker's tile (its own damage as
+        // the blast, radius 1 — a documented simplification); HIT_SELF/HURT_SELF take the weapon's rolled
+        // damage as a direct HP hit (no on-hit hooks / ammo mods, not a re-attack).
+        if ((flags & CriticalTables.DamExplode) != 0)
+            Explode(self.HexTile, self, weaponProto?.Weapon?.MinDamage ?? 1, weaponProto?.Weapon?.MaxDamage ?? 6, 1);
+        else if ((flags & (CriticalTables.DamHitSelf | CriticalTables.DamHurtSelf)) != 0)
+            CritFailDamage(attacker, attacker, weaponProto, "crit-fail-self");
+
+        if ((flags & CriticalTables.DamDrop) != 0 && weaponItem is not null)
+        {
+            _host.RemoveFromHand(self, weaponItem);
+            _host.DropThrownWeapon(weaponItem, self.HexTile); // spills to the ground, recoverable
+        }
+        else if ((flags & CriticalTables.DamDestroy) != 0 && weaponItem is not null)
+            _host.RemoveFromHand(self, weaponItem);          // destroyed — gone, not dropped
+        else if ((flags & CriticalTables.DamLoseAmmo) != 0 && weaponItem is not null)
+            weaponItem.AmmoQuantity = 0;                      // the magazine spills
+
+        // DAM_RANDOM_HIT: the wild shot strikes a random nearby living critter (can catch a companion) —
+        // a documented direct-damage approximation, not a full re-attack (combat.cc _combat_ai_random_target).
+        if ((flags & CriticalTables.DamRandomHit) != 0)
+        {
+            MapObject? victim = RandomNearbyCritter(self);
+            if (victim is not null && _host.GetCritterState(victim) is { } vd)
+                CritFailDamage(attacker, vd, weaponProto, "crit-fail-random-hit");
+        }
+
+        // DAM_DUD / DAM_ON_FIRE are cosmetic on this slice (no jam-state / fire model) — documented.
+        return (flags & CriticalTables.DamLoseTurn) != 0;
+    }
+
+    /// <summary>Direct crit-failure damage to a victim (self-hurt or the wild RANDOM_HIT): the weapon's
+    /// rolled damage (no ammo mods — a documented simplification), applied straight to HP with a kill
+    /// check. A self-kill / companion-kill via the attacker; a dude victim → game over.</summary>
+    private void CritFailDamage(CritterState attacker, CritterState victimState, ProtoInfo? weaponProto, string tag)
+    {
+        MapObject victim = victimState.Critter;
+        int dmg = weaponProto?.Weapon is { } w
+            ? CombatMath.RollWeaponDamage(_rng, attacker, victimState, w.MinDamage, w.MaxDamage, 1, false, 0)
+            : CombatMath.RollDamage(_rng, attacker, victimState, 1, false, 0);
+        victim.CurrentHp -= dmg;
+        _host.Log($"The {_host.ObjectName(victim)} takes {dmg} damage.");
+        _host.Transcript($"{tag}: {_host.ObjectName(victim)}@{victim.HexTile} damage={dmg}");
+        if (victim.CurrentHp > 0)
+            return;
+        if (victim == _host.Dude)
+            _host.GameOver();
+        else
+            KillCritter(victim, attacker.Critter, dmg, weaponProto?.Weapon?.DamageType ?? 0);
+    }
+
+    /// <summary>A random LIVING combatant (incl. the dude) within 5 tiles of <paramref name="self"/>,
+    /// or null. Used for the crit-failure DAM_RANDOM_HIT wild shot.</summary>
+    private MapObject? RandomNearbyCritter(MapObject self)
+    {
+        var pool = new List<MapObject>();
+        if (_host.Dude is { IsDead: false } dude && dude != self && HexGrid.Distance(self.HexTile, dude.HexTile) <= 5)
+            pool.Add(dude);
+        foreach (MapObject c in _host.CombatCritters)
+            if (c != self && !c.IsDead && HexGrid.Distance(self.HexTile, c.HexTile) <= 5)
+                pool.Add(c);
+        return pool.Count == 0 ? null : pool[_rng.Next(0, pool.Count)];
     }
 
     /// <summary>Transcript suffix marking a critical (and its honoured effects, P14).</summary>
@@ -1926,8 +2029,10 @@ public sealed class CombatEngine
             if (_host.GetCritterState(ally) is not { } attacker || _host.GetCritterState(target) is not { } defender)
                 return false;
             ally.Rotation = HexGrid.RotationTo(ally.HexTile, target.HexTile);
-            (int chance, bool hit, int damage, int critFlags) = RollAttack(attacker, defender, weaponProto, weaponItem,
+            (int chance, bool hit, int damage, int critFlags, int delta) = RollAttack(attacker, defender, weaponProto, weaponItem,
                 distance, crittersInPath, attackerIsDude: false, defenderIsDude: false, CriticalTables.LocationUncalled);
+            if (!hit && TriggerCritFailure(attacker, attackerIsDude: false, weaponProto, weaponItem, delta))
+                _actingAllyAp = 0; // P41: a fumble can cost the ally its turn
             if (isGun && weaponItem is not null)
                 weaponItem.AmmoQuantity = _host.WeaponAmmo(weaponProto!, weaponItem) - 1;
             _pendingAttack = new PendingAttack(ally, target, chance, hit, damage, critFlags, CanKnockback: !isGun,
@@ -1962,9 +2067,11 @@ public sealed class CombatEngine
         enemy.Rotation = HexGrid.RotationTo(enemy.HexTile, defenderObj.HexTile);
 
         bool isGun = weaponProto?.Weapon is { } w && w.IsGun(weaponProto.ExtendedFlags);
-        (int chance, bool hit, int damage, int critFlags) = RollAttack(attacker, defender, weaponProto, weaponItem,
+        (int chance, bool hit, int damage, int critFlags, int delta) = RollAttack(attacker, defender, weaponProto, weaponItem,
             distance, crittersInPath, attackerIsDude: false, defenderIsDude: defenderObj == _host.Dude,
             CriticalTables.LocationUncalled);
+        if (!hit && TriggerCritFailure(attacker, attackerIsDude: false, weaponProto, weaponItem, delta))
+            _actingEnemyAp = 0; // P41: a fumble can cost the enemy the rest of its turn
         if (isGun && weaponItem is not null)
             weaponItem.AmmoQuantity = _host.WeaponAmmo(weaponProto!, weaponItem) - 1;
         _pendingAttack = new PendingAttack(enemy, defenderObj, chance, hit, damage, critFlags, CanKnockback: !isGun,

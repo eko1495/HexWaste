@@ -30,6 +30,11 @@ SCENARIOS=(
   "arcaves-crit-day2|--character combat --advance-days 1 --map arcaves.map --fight 20529 --rng-seed 2"
   "arcaves-aim-eyes-day2|--character combat --advance-days 1 --aim eyes --map arcaves.map --fight 20529 --rng-seed 2"
   "arcaves-knockdown-day2|--character combat --advance-days 1 --aim right_leg --map arcaves.map --fight 20529 --rng-seed 4"
+  # P41: critical FAILURE on a miss (_cf_table). The trigger fires from day 2 but the DUDE's EFFECT is
+  # gated to day 6 (combat.cc:4190) — so at day 6 a missed unarmed swing fumbles: seed 7 lands a
+  # LOSE_TURN (crit-fail flags=0x8000). The day-2 fixtures above were re-recorded for the trigger's
+  # extra d100-on-miss (RNG shift, the P14-M4 precedent); the day-1 fixtures stay byte-identical.
+  "arcaves-crit-fail-day6|--character combat --advance-days 6 --map arcaves.map --fight 20529 --rng-seed 7"
   "arcaves-explode|--map arcaves.map --explode 20529 --rng-seed 1"
   "arcaves-throw-spear|--map arcaves.map --give 7 --use-item 7 --throw 20529 --rng-seed 1"
   "arcaves-throw-grenade|--map arcaves.map --give 25 --use-item 25 --throw 20529 --rng-seed 1"

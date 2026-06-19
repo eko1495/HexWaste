@@ -53,6 +53,9 @@ Prebuilt self-contained builds (Linux x64 / Windows x64) are produced by
   consequences (the engine's massive-critical roll): a blow can blind, cripple a
   limb, knock a target out cold (it wakes after a spell), or cost it a turn — a
   blinded foe fights at −25, and the Skilldex Doctor skill mends limbs and eyes.
+  Misses can backfire too: a critical FAILURE makes a fighter fumble — lose the
+  turn, drop or wreck the weapon, hurt itself, even wing a bystander (your own
+  fumbles only bite once you're a seasoned wastelander — day 6, like the engine).
   Moving in combat costs action points per hex (you can't free-walk the map mid-
   fight), a crippled leg costs 4× so it crawls, and a crippled arm blocks a
   two-handed weapon (both arms block any weapon). Big melee blows knock the

@@ -38,7 +38,9 @@ filing an issue.
   animations (hit-from-front/back, dodge on a miss, knockdown fall + get-up), X-FIGHTING-Y team
   brawls (two spawned groups fight each other and you), critical hits + aimed
   called shots with their consequences (knockout + timed wake, lose-turn, crippled
-  limbs, blindness — a Doctor mends limbs/eyes), knockback + persisting knockdown,
+  limbs, blindness — a Doctor mends limbs/eyes), critical FAILURES on a miss (the
+  `_cf_table` — fumble/drop/destroy/hurt-self/explode/random-hit; the dude's own
+  effect gated to day 6 like the engine), knockback + persisting knockdown,
   area explosions, throwing (spears, grenades, recoverable, can crit), and gory
   death animations (sliced/charred/big-hole/exploded corpses by damage type);
   stealth (a two-layer Sneak state with a periodic skill roll; active sneaking

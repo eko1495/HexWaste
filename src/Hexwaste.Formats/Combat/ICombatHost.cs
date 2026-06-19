@@ -51,6 +51,11 @@ public interface ICombatHost
     /// <summary>True once a full in-game day has elapsed — the engine enables
     /// critical hits from "day 2" (random.cc randomTranslateRoll).</summary>
     bool CriticalsEnabled { get; }
+
+    /// <summary>True once 6 in-game days have elapsed — the engine suppresses the DUDE's critical-
+    /// FAILURE EFFECT until day 6 (combat.cc:4190; the trigger still fires from day 2). Non-dude
+    /// fumbles have no such gate. Default false (P41; the fake host has no clock).</summary>
+    bool DudeCritFailuresEnabled => false;
     (ProtoInfo? Proto, MapObject? Item) EquippedWeapon(MapObject critter); // :2305
     int WeaponAmmo(ProtoInfo weaponProto, MapObject item);              // :2326
     AmmoProtoStats? LoadedAmmo(ProtoInfo weaponProto, MapObject item);  // :2333

@@ -1457,6 +1457,37 @@ AP↔JHP delta). No new Formats tests (viewer wiring on already-parsed protos + 
 engine creates a fresh object too); the engine's prefer-last-loaded-type auto-reload nuance (item.cc:1455)
 is approximated by Hexwaste's bag-order scan on an empty weapon (a pre-existing behavior, unchanged).
 
+Phase 41 (DONE — "Fumble", the critical-FAILURE table; the highest-value remaining backlog item — it
+completes the crit system [crit-SUCCESS landed P9; failures only honored Jinxed's lose-turn since P29]).
+M0 data (BYTE-IDENTICAL — proto un-skip is read4+skip4 == the old skip8): ProtoDatabase reads weapon
+criticalFailureType → WeaponProtoStats; gen_critical_tables.py emits the _cf_table[7][5] (combat.cc:1875,
+verified all 7 rows e.g. row6col4=Explode|LoseTurn|OnFire=37888) into CritFailTable + the missing DAM
+tokens; the FNV-1a checksum folds the new table (runtime ComputeChecksum updated); CriticalTables gained
+the crit-fail DAM_* constants + CritFailFlags(failureType, effect); Formats.Combat.CriticalFailure.Severity
+(Luck-bucketed d100−5·(LK−5), combat.cc:4203) + Resolve. M1 trigger + effects: the natural ROLL_CRITICAL_
+FAILURE upgrade (random.cc randomTranslateRoll — the symmetric mirror of crit-success: a MISS at day≥1
+[CriticalsEnabled] draws a d100 ≤ −delta/10) + the Jinxed force (combat.cc:3857, any combatant when the
+dude is Jinxed, no day gate) are wired into the consolidated TriggerCritFailure, called after RollAttack on
+a miss in all 3 single-attack paths (dude/ally/enemy; RNG ORDER mirrors the engine — the upgrade draw is
+the very next after the miss hit-roll, so day-1 non-Jinxed draws NOTHING → byte-identical). KEY DIVERGENCE
+FIX: the DUDE's crit-fail EFFECT is now correctly gated to day≥6 (ICombatHost.DudeCritFailuresEnabled,
+combat.cc:4190 — the trigger still draws from day 2); non-dude fumbles are ungated (P29's day-2 lose-turn
+was the documented divergence, now faithful). Effects honored (attackComputeCriticalFailure): LOSE_TURN
+(AP→0, the actor's turn ends), KNOCKED_DOWN (prone), CRIP_RANDOM (a random limb), DROP (weapon to the
+ground), DESTROY (weapon gone), LOSE_AMMO (mag spills), HIT_SELF/HURT_SELF (self-damage), EXPLODE (the
+weapon detonates at the fumbler), RANDOM_HIT (the wild shot strikes a random nearby critter — can catch a
+companion); the _attackFindInvalidFlags mask clears DROP/DESTROY/LOSE_AMMO for an unarmed attacker.
+DOCUMENTED SIMPLIFICATIONS: self/collateral damage is a direct HP hit (no on-hit hooks / ammo mods, not a
+re-attack); DAM_DUD/DAM_ON_FIRE are cosmetic (no jam/fire model); crit-fail is wired on the SINGLE-attack
+path ONLY (burst already aborts on its inception crit-fail; thrown is a residual — both their goldens are
+day-1 so unaffected). RE-RECORD: the 2nd-d100-on-miss shifted the 3 day-2 crit goldens (crit-day2/aim-eyes-
+day2/knockdown-day2 — the P14-M4 precedent; verified the divergence is a clean RNG shift, fights resolve
+sanely) — the 12 day-1 + burst/throw fixtures stayed BYTE-IDENTICAL (clean check BEFORE record). New golden
+arcaves-crit-fail-day6 (a day-6 dude's missed punch fumbles to LOSE_TURN, flags=0x8000). 5 CriticalFailure
+tests (severity buckets, the verified table, clamp, Resolve-with-Luck, checksum) + 3 fake-host CombatEngine
+tests (the day≥6 gate, a table effect [CRIP_RANDOM], the inert no-criticals invariant); 546 Formats tests,
+69 encounter + 16 combat goldens green.
+
 Phase 10 (DONE, per docs/phase10-research-report.md — "The Wasteland
 Bites Back"): M0 persistence pre-stage (the net: MapList saved=No /
 random_start_point parse + IsTransient; the 3-clause transient guards as

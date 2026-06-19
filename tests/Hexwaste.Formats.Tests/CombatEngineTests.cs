@@ -1148,24 +1148,51 @@ public class CombatEngineTests
     }
 
     [Fact]
-    public void JinxedDudeFumblesAMissIntoALostTurn()
+    public void CriticalFailureFiresOnAMissAndHonorsTheDudeDay6Gate()
     {
-        // P29-M1 (combat.cc:3857, simplified): on a MISS a Jinxed dude rolls d2 — a 1 fumbles into a
-        // lost turn (AP → 0). Gated on CriticalsEnabled (our day-2 proxy for the engine's day-6 gate).
-        int ApAfterMiss(bool jinxed)
+        // P41 (random.cc randomTranslateRoll + combat.cc:4178): a MISS at day ≥ 2 (CriticalsEnabled)
+        // draws the natural crit-failure upgrade; on a crit-failure the dude's EFFECT is suppressed
+        // until day 6 (DudeCritFailuresEnabled). SeqRng: to-hit 100 (guaranteed miss), upgrade 1
+        // (≤ -delta/10 → crit-fail), severity 30 (row 0 → LOSE_TURN). At day < 6 the severity is never
+        // drawn (gated before Resolve), so the punch just costs its 3 AP.
+        int ApAfterMiss(bool day6)
         {
-            var host = new FakeCombatHost { CriticalsEnabled = true }; // unarmed
-            if (jinxed) host.Traits.Add(TraitModifiers.Jinxed);
+            var host = new FakeCombatHost { CriticalsEnabled = true, DudeCritFailuresEnabled = day6 };
             host.SetDude(NewCritter(20100, hp: 30, ap: 10));
             MapObject enemy = host.AddCritter(NewCritter(HexGrid.TileInDirection(20100, 0), hp: 100));
-            // SequenceRng: to-hit roll 100 (a miss), then the Jinxed d2 = 1 (fumble).
-            var engine = new CombatEngine(host, new SequenceRng(100, 1));
+            var engine = new CombatEngine(host, new SequenceRng(100, 1, 30));
             Assert.True(engine.TryAttack(enemy));
             return engine.DudeAp;
         }
 
-        Assert.Equal(0, ApAfterMiss(true));  // fumbled → turn lost
-        Assert.Equal(7, ApAfterMiss(false)); // no trait: 10 − 3 punch, no d2 drawn
+        Assert.Equal(0, ApAfterMiss(day6: true));  // day ≥ 6: the fumble lands → turn lost
+        Assert.Equal(7, ApAfterMiss(day6: false)); // day < 6: trigger drew but the effect is gated → 10 − 3 punch
+    }
+
+    [Fact]
+    public void CriticalFailureAppliesTheTableEffect()
+    {
+        // A day-6 dude fumble at MAX severity → _cf_table row 0 (unarmed) col 4 = CRIP_RANDOM → one
+        // crippled limb. SeqRng: to-hit 100 (miss), upgrade 1 (crit-fail), severity 100 (col 4), limb 0.
+        var host = new FakeCombatHost { CriticalsEnabled = true, DudeCritFailuresEnabled = true };
+        MapObject dude = host.SetDude(NewCritter(20100, hp: 30, ap: 10));
+        MapObject enemy = host.AddCritter(NewCritter(HexGrid.TileInDirection(20100, 0), hp: 100));
+        var engine = new CombatEngine(host, new SequenceRng(100, 1, 100, 0));
+        Assert.True(engine.TryAttack(enemy));
+        Assert.NotEqual(0, dude.CombatResults & CriticalTables.DamCripLimbs); // a limb is crippled
+    }
+
+    [Fact]
+    public void NoCriticalFailureWithoutCriticalsOrJinxed()
+    {
+        // The inert invariant: a non-Jinxed dude before day 2 (CriticalsEnabled false) draws NOTHING
+        // extra on a miss → byte-identical. SeqRng has only the to-hit roll; any extra draw would throw.
+        var host = new FakeCombatHost { CriticalsEnabled = false };
+        host.SetDude(NewCritter(20100, hp: 30, ap: 10));
+        MapObject enemy = host.AddCritter(NewCritter(HexGrid.TileInDirection(20100, 0), hp: 100));
+        var engine = new CombatEngine(host, new SequenceRng(100));
+        Assert.True(engine.TryAttack(enemy));
+        Assert.Equal(7, engine.DudeAp); // 10 − 3 punch, no fumble draw
     }
 
     // ====================================================================
@@ -1407,6 +1434,7 @@ public class CombatEngineTests
 
         public readonly Dictionary<MapObject, AiPacket> AiPackets = [];
         public bool CriticalsEnabled { get; set; }
+        public bool DudeCritFailuresEnabled { get; set; } // P41: the dude's day≥6 crit-failure-effect gate
         public readonly Dictionary<int, int> PerkRanks = []; // P28-M3 combat perk effects
         public int DudePerkRank(int perk) => PerkRanks.GetValueOrDefault(perk);
         public readonly HashSet<int> Traits = []; // P29-M1 combat-path trait effects
