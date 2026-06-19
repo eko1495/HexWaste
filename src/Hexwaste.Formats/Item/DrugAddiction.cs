@@ -28,6 +28,21 @@ public static class DrugAddiction
         [304] = 293, // Deck of Tragic Cards → GVAR_ADDICT_TRAGIC
     };
 
+    /// <summary>The char-sheet "::: Addictions :::" display rows, ported from character_editor.cc
+    /// gAddictionReputationVars (:540) — the addiction GVAR + its editor.msg name id (1004 + index,
+    /// :4625), in the engine's order. The display shows each row whose GVAR is non-zero.</summary>
+    public static readonly (int Gvar, int EditorMsgId)[] ReputationVars =
+    [
+        (21, 1004),  // Nuka-Cola
+        (22, 1005),  // Buffout
+        (23, 1006),  // Mentats
+        (24, 1007),  // Psycho
+        (25, 1008),  // RadAway
+        (26, 1009),  // Alcohol
+        (294, 1010), // Jet
+        (293, 1011), // Deck of Tragic Cards
+    ];
+
     /// <summary>The addiction GVAR index for a drug pid, or -1 if the drug isn't addictive
     /// (drugGetAddictionGvarByPid, item.cc:3091).</summary>
     public static int GvarForPid(int drugPid) =>

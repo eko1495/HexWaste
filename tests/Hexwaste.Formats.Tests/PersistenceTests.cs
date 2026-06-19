@@ -159,6 +159,34 @@ public class SaveStateRoundTripTests
     }
 
     [Fact]
+    public void WithdrawalBonusAndPendingWithdrawalsRoundTrip()
+    {
+        // P38: the active withdrawal penalty (re-applied after the sheet rebuild on load) + the pending
+        // onset/recovery events survive save/load; absent on a pre-P38 save → null → no withdrawal.
+        var state = new SaveState
+        {
+            Version = SaveState.CurrentVersion,
+            // Jet addiction withdrawal: ST-1, PE-1, MaxAP(8)-1.
+            WithdrawalBonus = [-1, -1, 0, 0, 0, 0, 0, 0, -1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+            PendingWithdrawals =
+            [
+                new SaveState.PendingWithdrawal(6_350_400L, false, 259, 70), // pending Jet recovery
+            ],
+        };
+        SaveState loaded = SaveState.FromJson(state.ToJson())!;
+        Assert.Equal(-1, loaded.WithdrawalBonus![0]);
+        Assert.Equal(-1, loaded.WithdrawalBonus[8]);
+        Assert.Single(loaded.PendingWithdrawals!);
+        Assert.Equal(259, loaded.PendingWithdrawals![0].Pid);
+        Assert.Equal(70, loaded.PendingWithdrawals[0].Perk);
+        Assert.False(loaded.PendingWithdrawals[0].IsStart);
+        Assert.Equal(6_350_400L, loaded.PendingWithdrawals[0].FireTick);
+
+        Assert.Null(new SaveState().WithdrawalBonus);     // additive default
+        Assert.Null(new SaveState().PendingWithdrawals);
+    }
+
+    [Fact]
     public void KarmaAndReputationRoundTrip()
     {
         // P31 B-M3: the karma/reputation PC-stats survive save/load; absent on a pre-P31 save → 0.

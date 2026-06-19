@@ -71,6 +71,16 @@ public sealed class SaveState
     /// Additive within V2.</summary>
     public List<PendingDrug>? PendingDrugs { get; set; }
 
+    /// <summary>The active WITHDRAWAL stat penalty contribution to BonusStats[0..34] (P38; null = no
+    /// withdrawal in effect). Re-applied after the load-time sheet rebuild — the same DrugBonus trap.
+    /// The addiction GVARs themselves ride <see cref="GlobalVars"/>. Sparse: null when all-zero.</summary>
+    public int[]? WithdrawalBonus { get; set; }
+
+    /// <summary>Pending withdrawal onset/recovery events not yet fired (P38; null/empty = none). Each
+    /// carries its absolute fire-tick, the onset/recovery flag, the drug pid, and the withdrawal perk.
+    /// Additive within V2.</summary>
+    public List<PendingWithdrawal>? PendingWithdrawals { get; set; }
+
     /// <summary>The dude's base stat block (35; null = reload the named
     /// premade). Self-contained so a created character round-trips without a
     /// .gcd file. Level-up HP lives in bonus stats and is replayed from level.</summary>
@@ -140,6 +150,11 @@ public sealed class SaveState
     /// <summary>A scheduled drug wear-off kick (P37): the absolute game-tick it fires at, the up-to-3
     /// affected stat indices, and their per-stat deltas. Mirrors an item.cc EVENT_TYPE_DRUG entry.</summary>
     public sealed record PendingDrug(long FireTick, int[] Stats, int[] Amounts);
+
+    /// <summary>A scheduled withdrawal event (P38): the absolute game-tick, IsStart (symptom onset vs
+    /// recovery), the drug pid, and the addiction "perk" index. Mirrors an item.cc EVENT_TYPE_WITHDRAWAL
+    /// entry (WithdrawalEvent {field_0, pid, perk}).</summary>
+    public sealed record PendingWithdrawal(long FireTick, bool IsStart, int Pid, int Perk);
 
     /// <summary>An object a script or the player added to the world.</summary>
     public sealed record CreatedObject(int Pid, int Tile, int Elevation, int Count);

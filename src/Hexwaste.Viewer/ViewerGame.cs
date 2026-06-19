@@ -425,6 +425,12 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
         foreach ((int gvar, string townName) in Formats.Map.TownReputation.SliceTowns)
             if (Formats.Map.TownReputation.LevelFor(Gv(gvar)) is var lvl && lvl != Formats.Map.TownRepLevel.Neutral)
                 lines.Add($"{townName}: {lvl}");
+        // P38: active drug addictions, the engine's "::: Addictions :::" rows (character_editor.cc:4611
+        // reads gAddictionReputationVars non-zero, names from editor.msg 1004+index).
+        List<string> addictions = [.. Formats.Item.DrugAddiction.ReputationVars
+            .Where(r => Gv(r.Gvar) != 0).Select(r => EditorMsg(r.EditorMsgId)).Where(s => s.Length > 0)];
+        if (addictions.Count > 0)
+            lines.Add($"Addictions: {string.Join(", ", addictions)}");
         return lines;
     }
     // P31 B-M3: editor.msg — the karma/reputation/town title strings (character_editor.cc uses
@@ -8739,6 +8745,11 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
             PendingDrugs = _pendingDrugEvents.Count > 0
                 ? [.. _pendingDrugEvents.Select(e => new SaveState.PendingDrug(e.FireTick, e.Stats, e.Amounts))]
                 : null,
+            // P38: the active withdrawal penalty + pending onset/recovery events (addiction GVARs ride GlobalVars).
+            WithdrawalBonus = _withdrawalBonus.Any(b => b != 0) ? [.. _withdrawalBonus] : null,
+            PendingWithdrawals = _pendingWithdrawalEvents.Count > 0
+                ? [.. _pendingWithdrawalEvents.Select(e => new SaveState.PendingWithdrawal(e.FireTick, e.IsStart, e.Pid, e.Perk))]
+                : null,
             UnspentSkillPoints = _unspentSkillPoints,
             Character = _activeCharacter,
             DudeSkills = _dudeGcd is not null ? [.. _dudeGcd.Stats.Skills] : null,
@@ -8975,6 +8986,20 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
         if (state.PendingDrugs is { } pending)
             foreach (SaveState.PendingDrug e in pending)
                 _pendingDrugEvents.Add((e.FireTick, e.Stats, e.Amounts));
+
+        // P38: restore the withdrawal penalty the same way (re-apply AFTER the sheet rebuild) + the
+        // pending onset/recovery events. The addiction GVARs themselves ride GlobalVars (restored above).
+        Array.Clear(_withdrawalBonus);
+        _pendingWithdrawalEvents.Clear();
+        if (state.WithdrawalBonus is { } wdBonus && _dudeGcd is not null)
+            for (int s = 0; s < 35 && s < wdBonus.Length; s++)
+            {
+                _withdrawalBonus[s] = wdBonus[s];
+                _dudeGcd.Stats.BonusStats[s] += wdBonus[s];
+            }
+        if (state.PendingWithdrawals is { } pendingWd)
+            foreach (SaveState.PendingWithdrawal e in pendingWd)
+                _pendingWithdrawalEvents.Add((e.FireTick, e.IsStart, e.Pid, e.Perk));
 
         // Rebuild the companions and stand them next to the dude.
         if (_scriptHost is not null)
