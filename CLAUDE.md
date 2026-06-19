@@ -1488,6 +1488,35 @@ tests (severity buckets, the verified table, clamp, Resolve-with-Luck, checksum)
 tests (the day≥6 gate, a table effect [CRIP_RANDOM], the inert no-criticals invariant); 546 Formats tests,
 69 encounter + 16 combat goldens green.
 
+Phase 42 (DONE — "Field Medicine", enemy chem_use stimpak healing; the AI-depth runner-up of the
+next-feature-grounding-2 workflow). DELIBERATELY CHOSE THE RUNNER-UP over the synthesis's #1 (map_update_
+p_proc lighting, 8.8) — I verified the #1's "every map wrongly full-bright → wire the day/night curve"
+premise was UNCONFIRMED (it contradicts the established P4 "engine has NO day/night curve; ours is custom"
+finding; the slice-map opcode scan showed arcaves has ZERO game_time_hour/month refs [a cave — no day/
+night] and the town-map counts were false-positive-inflated; I couldn't confirm map_update drives
+set_light_level without building it), and its AmbientFixed rework risks the P21 lighting goldens. Per the
+prime directive (don't build on an unverified premise) + the recurring grounding-hallucination lesson, the
+solidly-verified runner-up won: ~30 slice human NPCs CARRY stimpaks (pid 40, SubType=2/healing) and
+chem_use is a live ai.txt field. Ported combat_ai.cc _ai_check_drugs healing branch (:999-1027): AiPackets
+now parses chem_use (gChemUseKeys clean=0/hurt_little=1/hurt_lots=2/sometimes=3/anytime=4/always=5);
+Formats.Combat.AiHealing = IsHealingItem (pids 40/144/273, itemIsHealing item.cc:3592) + HealHpRatio
+(clean→0/little→60/lots→30/else→50, combat_ai.cc:971). CombatEngine.TryAiHeal runs after the flee gate in
+TryEnemyAction (the engine's flee→drugs→attack order): a BIPED (BODY_TYPE_BIPED==0 → quadruped scorpions
+never heal) below MaxHp*ratio/100 quaffs a healing item (host ICombatHost.TryNpcHeal, default-false) while
+AP≥2, 2 AP each. ViewerGame.TryNpcHeal finds a healing drug in the critter's bag, rolls the stimpak heal on
+_combatRng (the -2 range / stat-35, like the dude's), applies capped at MaxHp, consumes one. ENEMIES ONLY
+(the dude/allies heal via the UI); the non-healing combat-drug branch (sometimes/anytime/always quaffing
+Jet/Psycho) is a documented residual. BYTE-IDENTICAL: the two golden-fight enemies — arcaves scorpion (pkt8
+clean + quadruped) and denbus2 peasant (pkt14 clean) — never heal (verified the real ai.txt: pkt8/pkt14
+chem_use absent=clean), and TryNpcHeal draws nothing for an empty bag → all 16 combat + 69 prior encounter
+goldens unchanged. DOCUMENTED: the slice's stimpak NPCs live in SWARM Den maps where the dude can't win a
+clean 1-on-1 (denbus1 @17662 = 11 hostiles, dude dies in 2 rounds), so the live proof is --ai-heal-probe
+<hex> (give the critter a stimpak, drop it to 1 HP, run the real TryNpcHeal) + a fake-host test, not a
+winnable real fight. Golden ai-heal (denbus1 Average Merchant @16910 heals 1→13). 22 new tests
+(AiHealingTests, the chem_use parse + GameDataFact [pkt8/14 clean, pkt12=2, pkt50=4], 2 fake-host heal/
+clean-skip tests); 568 Formats tests, 70 encounter + 16 combat goldens green. map_update_p_proc stays on
+the backlog pending a proper M0 RunMapUpdate diagnostic to confirm (not assume) its lighting payoff.
+
 Phase 10 (DONE, per docs/phase10-research-report.md — "The Wasteland
 Bites Back"): M0 persistence pre-stage (the net: MapList saved=No /
 random_start_point parse + IsTransient; the 3-clause transient guards as

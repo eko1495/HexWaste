@@ -34,7 +34,8 @@ filing an issue.
   left/right collateral cone), AP-gated movement (a crippled leg crawls at 4× the
   AP/hex, a crippled arm blocks a two-handed weapon), AI behaviour packets
   (close-or-flee with real `_ai_run_away` retreat pathing, fleeing when too wounded
-  *or* crippled/blinded per the packet's `hurt_too_much`), defender reaction
+  *or* crippled/blinded per the packet's `hurt_too_much`, and quaffing a stimpak
+  mid-fight when hurt if the packet's `chem_use` says so and it carries one), defender reaction
   animations (hit-from-front/back, dodge on a miss, knockdown fall + get-up), X-FIGHTING-Y team
   brawls (two spawned groups fight each other and you), critical hits + aimed
   called shots with their consequences (knockout + timed wake, lose-turn, crippled

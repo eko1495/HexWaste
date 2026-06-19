@@ -160,6 +160,11 @@ public interface ICombatHost
     /// combat.cc:4870 — beside the XP award, same gating). Default no-op (P38); the fake host has
     /// no kill tracker.</summary>
     void RecordKill(MapObject victim) { }
+
+    /// <summary>An NPC quaffs ONE healing item from its inventory (the AI's _ai_check_drugs heal,
+    /// combat_ai.cc:999): find a healing drug, apply its heal to the critter, consume it; return whether
+    /// it healed (P42). Default false (the fake host has no inventory/proto model).</summary>
+    bool TryNpcHeal(MapObject critter) => false;
     void GameOver();                                                    // :2856
 
     // --- Output -----------------------------------------------------------

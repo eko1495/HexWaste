@@ -20,7 +20,11 @@ public sealed record AiPacket(
     string Disposition,
     /// <summary>The DAM_* damage-flags mask parsed from ai.txt's <c>hurt_too_much</c> column;
     /// an enemy with <c>(CombatResults &amp; HurtTooMuch) != 0</c> flees (combat_ai.cc:3076). 0 = never.</summary>
-    int HurtTooMuch = 0);
+    int HurtTooMuch = 0,
+    /// <summary>ai.txt <c>chem_use</c> mode (gChemUseKeys order): 0 clean, 1 stims_when_hurt_little,
+    /// 2 stims_when_hurt_lots, 3 sometimes, 4 anytime, 5 always (combat_ai.cc:192). Drives the AI's
+    /// mid-fight healing (P42); the non-healing combat-drug branch is a documented residual.</summary>
+    int ChemUse = 0);
 
 /// <summary>
 /// The parsed <c>data\ai.txt</c> table, keyed by <c>packet_num</c>. Built once and
@@ -54,7 +58,7 @@ public sealed class AiPacketTable
         {
             if (fields.TryGetValue("packet_num", out string? pn) && int.TryParse(pn, out int num))
                 packets.Add(new AiPacket(num, name, I("min_to_hit"), I("min_hp"), I("max_dist"),
-                    S("distance"), S("disposition"), ParseHurt(S("hurt_too_much"))));
+                    S("distance"), S("disposition"), ParseHurt(S("hurt_too_much")), ParseChemUse(S("chem_use"))));
             fields.Clear();
         }
 
@@ -105,4 +109,16 @@ public sealed class AiPacketTable
         }
         return mask;
     }
+
+    /// <summary>ai.txt <c>chem_use</c> string → the gChemUseKeys index (combat_ai.cc:192). Absent/
+    /// unknown → 0 (clean). _cai_match_str_to_list (combat_ai.cc:475).</summary>
+    internal static int ParseChemUse(string value) => value.Trim().ToLowerInvariant() switch
+    {
+        "stims_when_hurt_little" => 1,
+        "stims_when_hurt_lots" => 2,
+        "sometimes" => 3,
+        "anytime" => 4,
+        "always" => 5,
+        _ => 0, // "clean" / absent
+    };
 }

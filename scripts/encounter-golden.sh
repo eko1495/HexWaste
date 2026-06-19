@@ -256,11 +256,17 @@ SCENARIOS=(
   # 10mm AP (30, dr-25/mult1/div2 = armor-piercing) <-> 10mm JHP (29, dr+25/mult2/div1 = anti-unarmored).
   # The ammo combat math was already wired+consumed, so this only adds CONTROL -> goldens byte-identical.
   "ammo-select|--character combat --map arcaves.map --give 8 --use-item 8 --give 30 --give 29 --load-ammo 30 --load-ammo 29 --rng-seed 1"
+  # P42 enemy chem_use stimpak healing (combat_ai.cc _ai_check_drugs): a hurt BIPED enemy with a healing
+  # item + a chem_use packet quaffs it mid-fight (2 AP). --ai-heal-probe gives the critter a stimpak,
+  # drops it to 1 HP, and runs the real TryNpcHeal — the swarm Den maps never let the dude win a clean
+  # 1-on-1 vs a stimpak NPC, so this is the deterministic live proof. The golden-fight enemies (arcaves
+  # scorpion pkt8/quadruped, denbus2 peasant pkt14 — both chem_use=clean) never heal → goldens byte-identical.
+  "ai-heal|--map denbus1.map --ai-heal-probe 16910 --rng-seed 1"
 )
 
 # Keep only the deterministic transcript lines (drop map-load / animate / stub /
 # dialog-text noise — NEVER capture REPLY/OPTION game-asset strings).
-FILTER='^(encounter|travel-from|companion|dismiss-persist|trade:|party:|party-count:|set-global:|hud-click:|use-skill:|hurt:|rest:|automap:|weapon-mode:|panel-click:|menu-click:|travel-resume:|travel-step:|travel-save-mid:|worldmap-fog:|weight:|iq-probe:|death-probe:|trait-probe:|perk-probe:|perk-pick:|combat-walk:|light:|reg-anim:|encounter-fight:|brawl:|sneak-probe:|sneak-roll:|backstab-probe:|detect-probe:|karma-probe:|set-karma:|rep-title:|town-rep:|karma-titles:|get-global:|place-probe:|reg-anim-move:|critter-state:|hurt-too-much:|run-probe:|outline:|sfx-probe:|reaction-probe:|combat-proc:|combat-proc-hit:|poison-tick:|multihex-probe:|drug-probe:|addict-probe:|kills-probe:|book:|ammo-select:|unload:|  spawn|  flat|  wait:|  follow:|  dismiss:|  rejoin:)'
+FILTER='^(encounter|travel-from|companion|dismiss-persist|trade:|party:|party-count:|set-global:|hud-click:|use-skill:|hurt:|rest:|automap:|weapon-mode:|panel-click:|menu-click:|travel-resume:|travel-step:|travel-save-mid:|worldmap-fog:|weight:|iq-probe:|death-probe:|trait-probe:|perk-probe:|perk-pick:|combat-walk:|light:|reg-anim:|encounter-fight:|brawl:|sneak-probe:|sneak-roll:|backstab-probe:|detect-probe:|karma-probe:|set-karma:|rep-title:|town-rep:|karma-titles:|get-global:|place-probe:|reg-anim-move:|critter-state:|hurt-too-much:|run-probe:|outline:|sfx-probe:|reaction-probe:|combat-proc:|combat-proc-hit:|poison-tick:|multihex-probe:|drug-probe:|addict-probe:|kills-probe:|book:|ammo-select:|unload:|ai-heal-probe:|  spawn|  flat|  wait:|  follow:|  dismiss:|  rejoin:)'
 
 echo "Building viewer..."
 dotnet build src/Hexwaste.Viewer -c Debug >/dev/null || { echo "build failed"; exit 2; }

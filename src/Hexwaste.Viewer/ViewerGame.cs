@@ -620,6 +620,9 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
         /// <summary>Switch the equipped weapon to the given ammo Pid (unload current + reload-with-pid),
         /// reporting the loaded type + the combat-relevant ammo mods (P40). STATE-only ints.</summary>
         public sealed record LoadAmmo(int AmmoPid) : StartupAction;
+        /// <summary>Give the critter@Hex a stimpak, drop it to 1 HP, and run the AI heal (the real
+        /// TryNpcHeal path), reporting the heal (P42). STATE-only ints.</summary>
+        public sealed record AiHealProbe(int Hex) : StartupAction;
         /// <summary>Enter combat with the critter@Hex, drop it to ≤half HP, run its fp=4 combat_p_proc, and
         /// report whether terminate_combat ended the fight + the critter's maneuver (P35-M5).</summary>
         public sealed record TerminateCombatProbe(int Hex) : StartupAction;
@@ -1450,6 +1453,21 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
                         if (bookIdx >= 0)
                             UseInventoryItem(bookIdx);
                     }
+                    break;
+                }
+                case StartupAction.AiHealProbe(var healHex):
+                {
+                    // P42: give the critter a stimpak, hurt it to 1 HP, run the real TryNpcHeal — proves
+                    // the AI heal mechanic deterministically on a real slice critter (the swarm Den maps
+                    // never let the dude win a clean 1-on-1 vs a stimpak NPC, so this is the live proof).
+                    MapObject? hc = _solidObjects[_elevation].FirstOrDefault(o => o.HexTile == healHex
+                        && Fid.Type(o.Fid) is ObjectType.Critter);
+                    if (hc is null) { Console.Error.WriteLine($"ai-heal-probe: no critter at {healHex}"); break; }
+                    if (RebuildObject(40, 1) is { } stim) hc.Inventory.Add(stim); // a stimpak
+                    int hmax = GetCritterState(hc)?.MaxHp ?? hc.CurrentHp;
+                    hc.CurrentHp = 1;
+                    bool healed = TryNpcHeal(hc);
+                    Console.WriteLine($"ai-heal-probe: hex={healHex} healed={healed} hp=1->{hc.CurrentHp} max={hmax}");
                     break;
                 }
                 case StartupAction.LoadAmmo(var ammoPid) when _dude is not null:
@@ -4811,6 +4829,34 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
     {
         if (GetCritterState(victim) is { } stats && stats.Proto.KillType is int kt && kt >= 0 && kt < _killsByType.Length)
             _killsByType[kt]++;
+    }
+
+    /// <summary>ICombatHost (P42): an NPC quaffs ONE healing item from its bag (the AI _ai_check_drugs
+    /// heal, combat_ai.cc:999) — find a healing drug (stimpak/super-stimpak/healing-powder), roll its
+    /// HP heal (the -2 random range / stat-35 amount on _combatRng, like the dude's stimpak), apply it
+    /// capped at MaxHp, consume one. Returns whether it healed. Inert when the critter carries none.</summary>
+    public bool TryNpcHeal(MapObject critter)
+    {
+        foreach (MapObject item in critter.Inventory)
+        {
+            if (!Formats.Combat.AiHealing.IsHealingItem(item.Pid) || SafeProto(item.Pid)?.Drug is not { } drug)
+                continue;
+            int healed = drug.Stats[0] == -2
+                ? _combatRng.Next(drug.Amounts[0], drug.Amounts[1] + 1) // stimpak random-range heal
+                : Enumerable.Range(0, 3).Where(i => drug.Stats[i] == 35).Sum(i => drug.Amounts[i]);
+            if (healed <= 0)
+                continue;
+            int max = GetCritterState(critter)?.MaxHp ?? critter.CurrentHp;
+            int before = critter.CurrentHp;
+            critter.CurrentHp = Math.Min(before + healed, max);
+            item.StackCount--;
+            if (item.StackCount <= 0)
+                critter.Inventory.Remove(item);
+            Log($"The {ObjectName(critter)} uses a healing item.");
+            Console.WriteLine($"ai-heal: {ObjectName(critter)}@{critter.HexTile} +{critter.CurrentHp - before} ({critter.CurrentHp}/{max})");
+            return true;
+        }
+        return false;
     }
 
     /// <summary>The char-sheet "::: Kills :::" rows (character_editor.cc:2202): each KILL_TYPE with a

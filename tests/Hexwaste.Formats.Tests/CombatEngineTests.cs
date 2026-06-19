@@ -306,6 +306,46 @@ public class CombatEngineTests
     }
 
     [Fact]
+    public void HurtBipedEnemyHealsBeforeAttackingWithChemUse()
+    {
+        // P42 (_ai_check_drugs): a hurt BIPED enemy with chem_use + a healing item quaffs it (2 AP) on
+        // its turn before attacking — stims_when_hurt_lots heals below 30% of max HP.
+        var host = new FakeCombatHost();
+        MapObject dude = host.SetDude(NewCritter(tile: 20100, hp: 30, ap: 10));
+        MapObject enemy = host.AddCritter(NewCritter(tile: HexGrid.TileInDirection(20100, 0), hp: 100, ap: 10));
+        enemy.CurrentHp = 20; // 20/100 = below the 30% hurt-lots ratio
+        host.AiPackets[enemy] = new AiPacket(12, "Guard", MinToHit: 0, MinHp: 0, 0, "", "", 0, ChemUse: 2);
+        host.CarriesStimpak.Add(enemy);
+        var engine = new CombatEngine(host, new MinRng());
+
+        engine.BeginScriptAggro(enemy, dude);
+        engine.Step();
+
+        Assert.True(enemy.CurrentHp > 20, "the enemy healed before attacking");
+        Assert.DoesNotContain(enemy, host.CarriesStimpak); // the stimpak was consumed
+    }
+
+    [Fact]
+    public void CleanEnemyNeverHealsEvenWhenHurtAndCarryingAStimpak()
+    {
+        // chem_use=clean → no heal, even hurt with a stimpak in the bag (the inert-by-default gate;
+        // the slice's scorpion/peasant packets are clean → byte-identical goldens).
+        var host = new FakeCombatHost();
+        MapObject dude = host.SetDude(NewCritter(tile: 20100, hp: 30, ap: 10));
+        MapObject enemy = host.AddCritter(NewCritter(tile: HexGrid.TileInDirection(20100, 0), hp: 100, ap: 10));
+        enemy.CurrentHp = 5;
+        host.AiPackets[enemy] = new AiPacket(8, "Animal", MinToHit: 0, MinHp: 0, 0, "", "", 0, ChemUse: 0);
+        host.CarriesStimpak.Add(enemy);
+        var engine = new CombatEngine(host, new MinRng());
+
+        engine.BeginScriptAggro(enemy, dude);
+        engine.Step();
+
+        Assert.Equal(5, enemy.CurrentHp);              // never healed
+        Assert.Contains(enemy, host.CarriesStimpak);   // stimpak untouched
+    }
+
+    [Fact]
     public void EnemyWithAchievableMinToHitStillAttacks()
     {
         var host = new FakeCombatHost();
@@ -1496,6 +1536,16 @@ public class CombatEngineTests
         public void AwardXp(int amount) => XpAwarded += amount;
         public readonly List<MapObject> RecordedKills = []; // P38: killsIncByType
         public void RecordKill(MapObject victim) => RecordedKills.Add(victim);
+        public readonly HashSet<MapObject> CarriesStimpak = []; // P42: AI chem_use heal
+        public int NpcHealAmount = 10;
+        public bool TryNpcHeal(MapObject critter)
+        {
+            if (!CarriesStimpak.Remove(critter)) // one stimpak per heal
+                return false;
+            int max = GetCritterState(critter)?.MaxHp ?? critter.CurrentHp;
+            critter.CurrentHp = Math.Min(critter.CurrentHp + NpcHealAmount, max);
+            return true;
+        }
         public void GameOver() => GameOverCalled = true;
         public void Log(string line) => Logs.Add(line);
         public void Transcript(string line) => Transcripts.Add(line);

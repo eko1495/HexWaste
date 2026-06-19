@@ -45,8 +45,9 @@ Prebuilt self-contained builds (Linux x64 / Windows x64) are produced by
   hefty burst, laser, or explosion leaves a suitably gory corpse) and
   lootable corpses that stay dead across map travel, AI turns, same-team
   joiners, and script-driven aggro — temple ants jump you on sight. Enemies
-  read their `ai.txt` packets: they close to a viable shot and flee when badly
-  wounded, instead of fighting to the last hit point. Critical hits (from in-game
+  read their `ai.txt` packets: they close to a viable shot, flee when badly
+  wounded, and — if they're the type that carries chems — gulp a stimpak mid-fight
+  when you've hurt them, instead of fighting to the last hit point. Critical hits (from in-game
   day 2, like the engine) roll off the real Fallout 2 crit tables — bonus damage,
   armor bypass, the occasional instant kill; aim a called shot (V) at eyes/head/
   legs to trade accuracy for a far better critical. And criticals have

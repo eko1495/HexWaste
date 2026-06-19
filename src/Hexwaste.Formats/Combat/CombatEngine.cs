@@ -1785,6 +1785,20 @@ public sealed class CombatEngine
 
     /// <summary>One AI action: punch when adjacent, else an AP-budgeted approach
     /// at 1 AP per hex (the engine's combat_ai movement budget).</summary>
+    /// <summary>The AI heal loop (_ai_check_drugs healing branch, combat_ai.cc:999-1027): a BIPED enemy
+    /// below its chem_use HP ratio quaffs healing items (host-side) while it has the AP (2 each), until
+    /// healthy or out of items/AP. BODY_TYPE_BIPED == 0 (proto_types.h) — quadruped scorpions never heal,
+    /// so the arcaves combat goldens are unaffected. Enemies only (the dude/allies heal via the UI).</summary>
+    private void TryAiHeal(MapObject enemy, AiPacket ai, CritterState st)
+    {
+        int ratio = AiHealing.HealHpRatio(ai.ChemUse);
+        if (ratio == 0 || st.Proto.BodyType != 0) // 0 = BODY_TYPE_BIPED
+            return;
+        int minHp = st.MaxHp * ratio / 100;
+        while (enemy.CurrentHp < minHp && _actingEnemyAp >= 2 && _host.TryNpcHeal(enemy))
+            _actingEnemyAp -= 2;
+    }
+
     private bool TryEnemyAction(MapObject enemy)
     {
         MapObject? dude = _host.Dude;
@@ -1853,6 +1867,11 @@ public sealed class CombatEngine
         // ported from fallout2-ce src/combat_ai.cc _combat_ai()
         if (ai is { HurtTooMuch: not 0 } && (enemy.CombatResults & ai.HurtTooMuch) != 0)
             return TryFlee(enemy, dudeTile);
+
+        // chem_use: a hurt BIPED quaffs healing items before attacking (combat_ai.cc _ai_check_drugs,
+        // after the flee gate, before _ai_try_attack). P42.
+        if (ai is not null && _host.GetCritterState(enemy) is { } healSt)
+            TryAiHeal(enemy, ai, healSt);
 
         (ProtoInfo? enemyWeapon, MapObject? enemyWeaponItem) = _host.EquippedWeapon(enemy);
         bool enemyGun = enemyWeapon?.Weapon is { } ew && ew.IsGun(enemyWeapon.ExtendedFlags);

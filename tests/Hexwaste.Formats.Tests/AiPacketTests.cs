@@ -102,5 +102,34 @@ public class AiPacketTests
         Assert.Equal(CriticalTables.DamBlind, table.Get(8)!.HurtTooMuch);                          // Animals: "blind"
         Assert.Equal(CriticalTables.DamCripLimbs | CriticalTables.DamBlind, table.Get(14)!.HurtTooMuch); // Peasants: "crippled, blind"
         Assert.Equal(CriticalTables.DamBlind, table.Get(33)!.HurtTooMuch);                         // Den slave coward: "blind"
+
+        // P42: the real chem_use modes. The two golden-fight enemies — Animals(8, scorpion) and
+        // Peasants(14) — have NO chem_use → 0 clean → never heal → the combat goldens stay byte-identical.
+        Assert.Equal(0, table.Get(8)!.ChemUse);   // Animals: clean (absent)
+        Assert.Equal(0, table.Get(14)!.ChemUse);  // Peasants: clean (absent)
+        Assert.Equal(2, table.Get(12)!.ChemUse);  // Generic Guards: stims_when_hurt_lots
+        Assert.Equal(4, table.Get(50)!.ChemUse);  // anytime
+    }
+
+    [Theory]
+    [InlineData("clean", 0)]
+    [InlineData("stims_when_hurt_little", 1)]
+    [InlineData("stims_when_hurt_lots", 2)]
+    [InlineData("sometimes", 3)]
+    [InlineData("anytime", 4)]
+    [InlineData("always", 5)]
+    [InlineData("", 0)]
+    [InlineData("nonsense", 0)]
+    public void ChemUseParsesFromTheGChemUseKeys(string value, int expected)
+    {
+        AiPacketTable t = AiPacketTable.Parse($"[P]\npacket_num=1\nchem_use={value}\n");
+        Assert.Equal(expected, t.Get(1)!.ChemUse);
+    }
+
+    [Fact]
+    public void ChemUseDefaultsToCleanWhenAbsent()
+    {
+        AiPacketTable t = AiPacketTable.Parse("[P]\npacket_num=1\nmin_hp=5\n");
+        Assert.Equal(0, t.Get(1)!.ChemUse);
     }
 }

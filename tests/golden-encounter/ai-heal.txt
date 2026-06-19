@@ -1,0 +1,1 @@
+ai-heal-probe: hex=16910 healed=True hp=1->13 max=49
