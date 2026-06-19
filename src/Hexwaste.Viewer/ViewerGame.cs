@@ -600,6 +600,11 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
         /// effect + the timed reversal). Pid is informational; the drug must already be in effect via
         /// a preceding --use-item.</summary>
         public sealed record DrugProbe(int Pid, int GameMinutes) : StartupAction;
+        /// <summary>Seed the addiction RNG, give+use one drug Pid (the faithful UseDrug→roll path),
+        /// advance the clock GameMinutes, fire the withdrawal onset/recovery, and report the addiction
+        /// GVAR + active withdrawal stat penalty + pending count (P38 — STATE-only ints). Seed is chosen
+        /// so the deterministic roll hits.</summary>
+        public sealed record AddictProbe(int Pid, int Seed, int GameMinutes) : StartupAction;
         /// <summary>Enter combat with the critter@Hex, drop it to ≤half HP, run its fp=4 combat_p_proc, and
         /// report whether terminate_combat ended the fight + the critter's maneuver (P35-M5).</summary>
         public sealed record TerminateCombatProbe(int Hex) : StartupAction;
@@ -1381,6 +1386,29 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
                         .Select(s => $"{s}={_drugBonus[s]}");
                     Console.WriteLine($"drug-probe: pid={drugPid} minutes={drugMinutes} pending={_pendingDrugEvents.Count} "
                         + $"bonus=[{string.Join(",", bonus)}]");
+                    break;
+                }
+                case StartupAction.AddictProbe(var adPid, var adSeed, var adMinutes) when _dude is not null && _scriptHost is not null:
+                {
+                    // P38: seed the addiction RNG, give+use one drug (the faithful UseDrug→TryAddict roll),
+                    // advance the clock, fire onset/recovery, report the addiction GVAR + withdrawal penalty.
+                    _addictionRng = new Formats.Combat.SystemCombatRng(adSeed);
+                    if (RebuildObject(adPid, 1) is { } adDrug)
+                    {
+                        AddToDudeInventory(adDrug);
+                        int adIdx = _dudeInventory.FindIndex(i => i.Pid == adPid);
+                        if (adIdx >= 0)
+                            UseInventoryItem(adIdx); // runs UseDrug → the addiction roll on the seeded RNG
+                    }
+                    _clock.Ticks += (long)adMinutes * 60 * Formats.GameClock.TicksPerSecond;
+                    ProcessWithdrawals();
+                    int adGvar = Formats.Item.DrugAddiction.GvarForPid(adPid);
+                    int adGvarVal = adGvar >= 0 ? _scriptHost.GlobalVars.GetValueOrDefault(adGvar, 0) : -1;
+                    var wd = Enumerable.Range(0, 35)
+                        .Where(s => _withdrawalBonus[s] != 0)
+                        .Select(s => $"{s}={_withdrawalBonus[s]}");
+                    Console.WriteLine($"addict-probe: pid={adPid} seed={adSeed} minutes={adMinutes} "
+                        + $"gvar{adGvar}={adGvarVal} withdrawal=[{string.Join(",", wd)}] pendingWd={_pendingWithdrawalEvents.Count}");
                     break;
                 }
                 case StartupAction.MultihexProbe(var mhPid):
@@ -3902,6 +3930,7 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
         bool changed = ApplyDrugEffect(drug.Stats, drug.Amounts, immediate: true);
         ScheduleDrugEvent(drug.Duration1, drug.Stats, drug.Amount1);
         ScheduleDrugEvent(drug.Duration2, drug.Stats, drug.Amount2);
+        TryAddict(item, drug); // P38: the _item_d_take_drug addiction tail (item.cc:2822)
 
         if (changed && _dude is not null && _dude.Dude.CurrentHp != hpBefore)
             Log($"You gain {_dude.Dude.CurrentHp - hpBefore} hit points.");
@@ -3992,6 +4021,115 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
             (long _, int[] stats, int[] amounts) = _pendingDrugEvents[next];
             _pendingDrugEvents.RemoveAt(next);
             ApplyDrugEffect(stats, amounts, immediate: false);
+        }
+    }
+
+    // ─── P38: drug addiction + withdrawal (item.cc) ──────────────────────────────────────────
+
+    /// <summary>The active WITHDRAWAL stat penalty contribution to BonusStats[0..34] (per stat).
+    /// Tracked separately so it can be RE-APPLIED after the load-time sheet rebuild — exactly the
+    /// DrugBonus trap — else a pending recovery would reverse a penalty that was never re-folded.</summary>
+    private readonly int[] _withdrawalBonus = new int[35];
+
+    /// <summary>Pending withdrawal events: the absolute game-tick, IsStart (symptom onset vs recovery),
+    /// the drug pid, and the addiction "perk" (the withdrawal stat-penalty perk index). ported from
+    /// item.cc's EVENT_TYPE_WITHDRAWAL queue; drained from UpdateClock like the drug/poison ticks.</summary>
+    private readonly List<(long FireTick, bool IsStart, int Pid, int Perk)> _pendingWithdrawalEvents = [];
+
+    /// <summary>A dedicated seeded RNG for the addiction roll, isolated off the combat/worldmap/skill
+    /// streams (the _sneakRng/_partyRng pattern) — so giving/looting/using a chem never perturbs them.</summary>
+    private Formats.Combat.ICombatRng? _addictionRng;
+
+    /// <summary>The _item_d_take_drug addiction tail (item.cc:2822-2846), dude-only: if the drug is
+    /// addictive and the dude isn't already addicted to it, roll on the isolated RNG; on success set
+    /// the addiction GVAR (dudeSetAddiction) and schedule the symptom-onset withdrawal event.</summary>
+    private void TryAddict(MapObject item, DrugProtoStats drug)
+    {
+        // The dude is the only addiction subject (the engine's critter==gDude gate); UseDrug only ever
+        // runs for the dude's bag.
+        if (_dude is null || _scriptHost is null)
+            return;
+        int gvar = Formats.Item.DrugAddiction.GvarForPid(item.Pid);
+        if (gvar < 0)
+            return; // not an addictive drug
+        if (_scriptHost.GlobalVars.GetValueOrDefault(gvar, 0) != 0)
+            return; // dudeIsAddicted — no re-roll while already hooked
+
+        bool reliant = DudeHasTrait(Formats.Combat.TraitModifiers.ChemReliant);
+        bool resistant = DudeHasTrait(Formats.Combat.TraitModifiers.ChemResistant);
+        bool flowerChild = DudePerkRank(Formats.Perks.PerkId.FlowerChild) > 0;
+        _addictionRng ??= new Formats.Combat.SystemCombatRng(RngSeed ?? Environment.TickCount);
+        int roll = _addictionRng.Next(1, 101); // randomBetween(1, 100), inclusive
+
+        if (Formats.Item.DrugAddiction.Roll(drug.AddictionChance, reliant, resistant, flowerChild, roll))
+        {
+            _scriptHost.GlobalVars[gvar] = 1; // dudeSetAddiction (item.cc:3106)
+            ScheduleWithdrawal(isStart: true, drug.WithdrawalOnset, drug.WithdrawalEffect, item.Pid);
+        }
+    }
+
+    /// <summary>Schedule a withdrawal event durationMin game-minutes out (item.cc _insert_withdrawal:
+    /// queueAddEvent(600 * duration, …); 600 ticks/game-minute = the GameClock basis).</summary>
+    private void ScheduleWithdrawal(bool isStart, int durationMin, int perk, int pid) =>
+        _pendingWithdrawalEvents.Add((_clock.Ticks + 600L * durationMin, isStart, pid, perk));
+
+    /// <summary>Fire every due withdrawal event in fire-time order (a clock JUMP fires onset-then-recovery
+    /// in order). ported from item.cc withdrawalEventProcess (:2974): onset → apply the perk penalty +
+    /// schedule recovery 7 game-days out (halved by Chem Reliant / Flower Child); recovery → reverse the
+    /// penalty + clear the addiction GVAR, EXCEPT a Jet addiction which is PERMANENT (returns early,
+    /// cleared only by the Jet antidote). Driven by UpdateClock. No RNG.</summary>
+    private void ProcessWithdrawals()
+    {
+        if (_pendingWithdrawalEvents.Count == 0)
+            return;
+        while (true)
+        {
+            int next = -1;
+            long earliest = long.MaxValue;
+            for (int i = 0; i < _pendingWithdrawalEvents.Count; i++)
+                if (_pendingWithdrawalEvents[i].FireTick <= _clock.Ticks && _pendingWithdrawalEvents[i].FireTick < earliest)
+                    (earliest, next) = (_pendingWithdrawalEvents[i].FireTick, i);
+            if (next < 0)
+                return;
+            (long fireTick, bool isStart, int pid, int perk) = _pendingWithdrawalEvents[next];
+            _pendingWithdrawalEvents.RemoveAt(next);
+
+            if (isStart) // performWithdrawalStart (item.cc:3039)
+            {
+                ApplyWithdrawalPerk(perk, +1);
+                int duration = 10080; // 7 game-days
+                if (DudeHasTrait(Formats.Combat.TraitModifiers.ChemReliant)) duration /= 2;
+                if (DudePerkRank(Formats.Perks.PerkId.FlowerChild) > 0) duration /= 2;
+                // Schedule recovery from the ONSET's fire instant (the engine's queue fires events at
+                // their scheduled tick), NOT the post-jump clock — else a big --addict-probe jump would
+                // push recovery past where it should be (the same fire-instant rule as ProcessPoison).
+                _pendingWithdrawalEvents.Add((fireTick + 600L * duration, false, pid, perk));
+            }
+            else // withdrawalEventProcess recovery branch (item.cc:2980)
+            {
+                if (perk == Formats.Perks.PerkId.JetAddiction)
+                    continue; // Jet withdrawal is PERMANENT until the antidote
+                ApplyWithdrawalPerk(perk, -1);
+                int gvar = Formats.Item.DrugAddiction.GvarForPid(pid); // dudeClearAddiction
+                if (gvar >= 0 && _scriptHost is not null)
+                    _scriptHost.GlobalVars[gvar] = 0;
+            }
+        }
+    }
+
+    /// <summary>Apply a withdrawal perk's maxRank==-1 stat fold (perkAddEffect/perkRemoveEffect) into
+    /// BonusStats + the tracked _withdrawalBonus, sign +1 on onset / -1 on recovery. NEVER touches
+    /// _dudePerkRanks (the engine's perkAddEffect mutates bonus stats directly, never the rank).</summary>
+    private void ApplyWithdrawalPerk(int perk, int sign)
+    {
+        if (_dudeGcd is null)
+            return;
+        foreach ((int stat, int delta) in Formats.Perks.PerkRules.MaxRankPerkEffect(perk))
+        {
+            if (stat < 0 || stat >= 35)
+                continue;
+            _dudeGcd.Stats.BonusStats[stat] += sign * delta;
+            _withdrawalBonus[stat] += sign * delta;
         }
     }
 
@@ -8009,6 +8147,7 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
         _clock.AdvanceRealTime(elapsedMs);
         ProcessPoison(); // P35-M3: poison damage ticks on game time (also catches up after rest/travel jumps)
         ProcessDrugs(); // P37: scheduled drug stat reversals fire on game time (same catch-up after jumps)
+        ProcessWithdrawals(); // P38: withdrawal onset/recovery fire on game time (drain-loop for clock jumps)
 
         int hour = _clock.Hour / 100;
         if (hour == _lastAmbientHour)
@@ -8545,6 +8684,8 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
         _sneak.Working = false;
         Array.Clear(_drugBonus);        // P37: no drug in effect on a fresh game (else a stale
         _pendingDrugEvents.Clear();     // pending kick could fire on the reset clock)
+        Array.Clear(_withdrawalBonus);  // P38: no addiction/withdrawal on a fresh game
+        _pendingWithdrawalEvents.Clear();
         _skillUsesByDay.Clear();
         _skillUsesDay = -1;
         _pipboyOpen = false;

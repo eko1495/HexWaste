@@ -227,11 +227,23 @@ SCENARIOS=(
   # pending 1); at +700 (total 1100) dur2 restored it to zero (pending 0). No golden gives/uses a stat
   # drug, so all other goldens stay byte-identical (the -2 stimpak heal RNG is unchanged).
   "drug-stat|--character combat --map arcaves.map --give 87 --use-item 87 --drug-probe 87 0 --drug-probe 87 400 --drug-probe 87 700 --rng-seed 1"
+  # P38 drug addiction + withdrawal (item.cc _item_d_take_drug addiction tail :2822 + the
+  # EVENT_TYPE_WITHDRAWAL onset/recovery chain). --addict-probe <pid> <seed> <gameMin> seeds the
+  # ISOLATED addiction RNG, gives+uses the drug (the faithful roll), advances the clock, fires
+  # onset/recovery, reports the addiction GVAR + withdrawal stat penalty + pending count. Buffout(87)
+  # seed 1 HITS: addicted (gvar22=1), the symptom onset applies the withdrawal perk (ST-2/EN-2/AG-3,
+  # decoded from PerkTable), then recovery 7 game-days later clears it. Seed 2 MISSES (no addiction).
+  # Jet(259) withdrawal is PERMANENT — the penalty persists past recovery (gvar stays 1, no reverse).
+  # The roll draws ONLY from the dedicated _addictionRng, so the other goldens stay byte-identical.
+  "addict-buffout-active|--character combat --map arcaves.map --addict-probe 87 1 9000 --rng-seed 1"
+  "addict-buffout-recover|--character combat --map arcaves.map --addict-probe 87 1 20200 --rng-seed 1"
+  "addict-jet-permanent|--character combat --map arcaves.map --addict-probe 259 1 30000 --rng-seed 1"
+  "addict-miss|--character combat --map arcaves.map --addict-probe 87 2 9000 --rng-seed 1"
 )
 
 # Keep only the deterministic transcript lines (drop map-load / animate / stub /
 # dialog-text noise — NEVER capture REPLY/OPTION game-asset strings).
-FILTER='^(encounter|travel-from|companion|dismiss-persist|trade:|party:|party-count:|set-global:|hud-click:|use-skill:|hurt:|rest:|automap:|weapon-mode:|panel-click:|menu-click:|travel-resume:|travel-step:|travel-save-mid:|worldmap-fog:|weight:|iq-probe:|death-probe:|trait-probe:|perk-probe:|perk-pick:|combat-walk:|light:|reg-anim:|encounter-fight:|brawl:|sneak-probe:|sneak-roll:|backstab-probe:|detect-probe:|karma-probe:|set-karma:|rep-title:|town-rep:|karma-titles:|get-global:|place-probe:|reg-anim-move:|critter-state:|hurt-too-much:|run-probe:|outline:|sfx-probe:|reaction-probe:|combat-proc:|combat-proc-hit:|poison-tick:|multihex-probe:|drug-probe:|  spawn|  flat|  wait:|  follow:|  dismiss:|  rejoin:)'
+FILTER='^(encounter|travel-from|companion|dismiss-persist|trade:|party:|party-count:|set-global:|hud-click:|use-skill:|hurt:|rest:|automap:|weapon-mode:|panel-click:|menu-click:|travel-resume:|travel-step:|travel-save-mid:|worldmap-fog:|weight:|iq-probe:|death-probe:|trait-probe:|perk-probe:|perk-pick:|combat-walk:|light:|reg-anim:|encounter-fight:|brawl:|sneak-probe:|sneak-roll:|backstab-probe:|detect-probe:|karma-probe:|set-karma:|rep-title:|town-rep:|karma-titles:|get-global:|place-probe:|reg-anim-move:|critter-state:|hurt-too-much:|run-probe:|outline:|sfx-probe:|reaction-probe:|combat-proc:|combat-proc-hit:|poison-tick:|multihex-probe:|drug-probe:|addict-probe:|  spawn|  flat|  wait:|  follow:|  dismiss:|  rejoin:)'
 
 echo "Building viewer..."
 dotnet build src/Hexwaste.Viewer -c Debug >/dev/null || { echo "build failed"; exit 2; }

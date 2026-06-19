@@ -1,0 +1,1 @@
+addict-probe: pid=87 seed=1 minutes=9000 gvar22=1 withdrawal=[0=-2,2=-2,5=-3] pendingWd=1
