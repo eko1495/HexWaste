@@ -210,6 +210,7 @@ public class SaveStateRoundTripTests
         };
 
         SaveState.PartyMemberState m = Assert.Single(SaveState.FromJson(state.ToJson())!.Party);
+        Assert.NotNull(m.PerkRanks); // [NotNull] narrows away the CS8604 on the span overload below
         Assert.Equal([0, 0, 3], m.PerkRanks);
     }
 

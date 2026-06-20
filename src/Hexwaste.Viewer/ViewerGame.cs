@@ -969,8 +969,7 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
         // --buy/--sell startup actions below.
         if (TalkAtHex is { } talkHex)
         {
-            MapObject? hexNpc = _solidObjects[_elevation]
-                .FirstOrDefault(o => o.HexTile == talkHex && Fid.Type(o.Fid) is ObjectType.Critter);
+            MapObject? hexNpc = CritterAt(talkHex);
             if (hexNpc is not null)
             {
                 _camera.SetCenter(talkHex);
@@ -1043,8 +1042,7 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
                 }
                 case StartupAction.ExamineCritter(var critterHex):
                 {
-                    MapObject? critter = _solidObjects[_elevation]
-                        .FirstOrDefault(o => o.HexTile == critterHex && Fid.Type(o.Fid) is ObjectType.Critter);
+                    MapObject? critter = CritterAt(critterHex);
                     if (critter is null)
                     {
                         Console.Error.WriteLine($"no critter at hex {critterHex}");
@@ -1151,8 +1149,7 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
                     // Phase-18 M0/M1: open combat, give the dude a clean Ap budget, then walk
                     // toward WalkHex — the AP-gated walk halts when AP runs out (1 AP/hex, or
                     // 4/hex with a crippled leg). Reports the distance covered + AP left.
-                    MapObject? foe = _solidObjects[_elevation]
-                        .FirstOrDefault(o => o.HexTile == cwFight && Fid.Type(o.Fid) is ObjectType.Critter && !o.IsDead);
+                    MapObject? foe = CritterAt(cwFight, aliveOnly: true);
                     if (foe is null || _dude is null) { Console.Error.WriteLine($"combat-walk: no critter at {cwFight}"); break; }
                     _dude.Dude.HexTile = Formats.Hex.HexGrid.TileInDirection(cwFight, 3); // adjacent, like --fight
                     RebuildBlockedTiles(_dude.Dude);
@@ -1282,8 +1279,7 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
                     // (an int — never the copyrighted option text) at the greeting. Different IN ->
                     // different count proves giq_option dumb/smart gating (low IN loses smart
                     // options, gains dumb ones).
-                    MapObject? iqNpc = _solidObjects[_elevation]
-                        .FirstOrDefault(o => o.HexTile == iqHex && Fid.Type(o.Fid) is ObjectType.Critter);
+                    MapObject? iqNpc = CritterAt(iqHex);
                     if (iqNpc is null) { Console.Error.WriteLine($"iq-probe: no critter at {iqHex}"); break; }
                     if (_dudeGcd is not null && forceIn >= 0)
                         _dudeGcd.Stats.BaseStats[4] = forceIn; // STAT_INTELLIGENCE (test plumbing)
@@ -1298,8 +1294,7 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
                     // P26: for the critter at <hex>, report the gore death anim a solid (dmg 20)
                     // burst / explosion / laser kill picks (DeathAnims.Pick) and the art-RESOLVED
                     // anim (PickDeathAnim's _check_death) — proving whether the critter ships gore art.
-                    MapObject? dpc = _solidObjects[_elevation].Concat(_flatObjects[_elevation])
-                        .FirstOrDefault(o => o.HexTile == dpHex && Fid.Type(o.Fid) is ObjectType.Critter);
+                    MapObject? dpc = CritterAt(dpHex, includeFlat: true);
                     if (dpc is null) { Console.Error.WriteLine($"death-probe: no critter at {dpHex}"); break; }
                     string Probe(string label, int dmgType, int atkAnim)
                     {
@@ -1319,8 +1314,7 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
                 {
                     // P34-M5: the composed combat-sfx names for the critter (scorpion → MASCRP* which ship;
                     // human → HMWARR* which don't, i.e. faithful-silent) + the map's first ambient entry.
-                    MapObject? spc = _solidObjects[_elevation].Concat(_flatObjects[_elevation])
-                        .FirstOrDefault(o => o.HexTile == spHex && Fid.Type(o.Fid) is ObjectType.Critter);
+                    MapObject? spc = CritterAt(spHex, includeFlat: true);
                     if (spc is null) { Console.Error.WriteLine($"sfx-probe: no critter at {spHex}"); break; }
                     string? baseName = _artIndex.CritterBaseName(spc.Fid);
                     int wc = Fid.WeaponCode(spc.Fid);
@@ -1339,8 +1333,7 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
                 case StartupAction.ReactionProbe(var rpHex, var attRot):
                 {
                     // P34-M6: the reaction-anim codes the critter would get from an attacker at attRot.
-                    MapObject? rc = _solidObjects[_elevation].Concat(_flatObjects[_elevation])
-                        .FirstOrDefault(o => o.HexTile == rpHex && Fid.Type(o.Fid) is ObjectType.Critter);
+                    MapObject? rc = CritterAt(rpHex, includeFlat: true);
                     if (rc is null) { Console.Error.WriteLine($"reaction-probe: no critter at {rpHex}"); break; }
                     bool front = Formats.Combat.SneakAttack.IsHitFromFront(attRot, rc.Rotation);
                     bool backArt = _vfs.Exists(_artIndex.GetFrmPath(
@@ -1355,8 +1348,7 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
                 {
                     // P35: run the critter's per-turn combat_p_proc (fp=4) and report whether it DEFINES
                     // the proc (RunObjectProc returns null when the proc is absent) + whether it overrides.
-                    MapObject? cpc = _solidObjects[_elevation].Concat(_flatObjects[_elevation])
-                        .FirstOrDefault(o => o.HexTile == cpHex && Fid.Type(o.Fid) is ObjectType.Critter);
+                    MapObject? cpc = CritterAt(cpHex, includeFlat: true);
                     if (cpc is null) { Console.Error.WriteLine($"combat-proc: no critter at {cpHex}"); break; }
                     int scriptIndex = cpc.Sid != -1 && _map.ScriptsBySid.TryGetValue(cpc.Sid, out MapScriptRecord? cpr)
                         ? cpr.ScriptListIndex : -1;
@@ -1460,8 +1452,7 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
                     // P42: give the critter a stimpak, hurt it to 1 HP, run the real TryNpcHeal — proves
                     // the AI heal mechanic deterministically on a real slice critter (the swarm Den maps
                     // never let the dude win a clean 1-on-1 vs a stimpak NPC, so this is the live proof).
-                    MapObject? hc = _solidObjects[_elevation].FirstOrDefault(o => o.HexTile == healHex
-                        && Fid.Type(o.Fid) is ObjectType.Critter);
+                    MapObject? hc = CritterAt(healHex);
                     if (hc is null) { Console.Error.WriteLine($"ai-heal-probe: no critter at {healHex}"); break; }
                     if (RebuildObject(40, 1) is { } stim) hc.Inventory.Add(stim); // a stimpak
                     int hmax = GetCritterState(hc)?.MaxHp ?? hc.CurrentHp;
@@ -1677,7 +1668,7 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
                     int inCombat = _scriptHost?.CombatActiveProvider?.Invoke() == true ? 1 : 0;
                     MapObject? c = csHex < 0
                         ? null
-                        : _solidObjects[_elevation].FirstOrDefault(o => o.HexTile == csHex && Fid.Type(o.Fid) is ObjectType.Critter);
+                        : CritterAt(csHex);
                     int state = csHex < 0 ? -1 : Formats.Int.ScriptHost.CritterStateOf(c);
                     Console.WriteLine($"critter-state: inCombat={inCombat} hex={csHex} state={state}");
                     break;
@@ -1980,8 +1971,7 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
                     break;
                 case StartupAction.TalkChoose(var tcHex, var tcChoices):
                 {
-                    MapObject? npc = _solidObjects[_elevation]
-                        .FirstOrDefault(o => o.HexTile == tcHex && Fid.Type(o.Fid) is ObjectType.Critter);
+                    MapObject? npc = CritterAt(tcHex);
                     if (npc is null)
                     {
                         Console.Error.WriteLine($"talk-seq: no critter at hex {tcHex}");
@@ -2008,8 +1998,7 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
                     // Phase-20 M4: burst at <atHex> from an EXPLICIT dude tile <fromHex> so
                     // the cone can be aimed to sweep a real bystander (collateral). Reports
                     // any burst-extra: lines the spray produced.
-                    MapObject? bt = _solidObjects[_elevation]
-                        .FirstOrDefault(o => o.HexTile == atHex && Fid.Type(o.Fid) is ObjectType.Critter && !o.IsDead);
+                    MapObject? bt = CritterAt(atHex, aliveOnly: true);
                     if (bt is null || _dude is null) { Console.Error.WriteLine($"burst-at: no critter at {atHex}"); break; }
                     _dude.Dude.HexTile = fromHex;
                     RebuildBlockedTiles(_dude.Dude);
@@ -2022,8 +2011,7 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
                 }
                 case StartupAction.Burst(var burstHex):
                 {
-                    MapObject? target = _solidObjects[_elevation]
-                        .FirstOrDefault(o => o.HexTile == burstHex && Fid.Type(o.Fid) is ObjectType.Critter);
+                    MapObject? target = CritterAt(burstHex);
                     if (target is null)
                     {
                         Console.Error.WriteLine($"no critter at hex {burstHex}");
@@ -2061,8 +2049,7 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
                 }
                 case StartupAction.Attack(var attackHex):
                 {
-                    MapObject? target = _solidObjects[_elevation]
-                        .FirstOrDefault(o => o.HexTile == attackHex && Fid.Type(o.Fid) is ObjectType.Critter);
+                    MapObject? target = CritterAt(attackHex);
                     if (target is null)
                     {
                         Console.Error.WriteLine($"no critter at hex {attackHex}");
@@ -2090,8 +2077,7 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
                 }
                 case StartupAction.Fight(var fightHex):
                 {
-                    MapObject? target = _solidObjects[_elevation]
-                        .FirstOrDefault(o => o.HexTile == fightHex && Fid.Type(o.Fid) is ObjectType.Critter);
+                    MapObject? target = CritterAt(fightHex);
                     if (target is null)
                     {
                         Console.Error.WriteLine($"no critter at hex {fightHex}");
@@ -3784,6 +3770,18 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
     {
         try { return _protos.Get(pid); }
         catch (Exception ex) when (ex is FileNotFoundException or InvalidDataException) { return null; }
+    }
+
+    /// <summary>The critter at a hex on the current elevation, or null — the shared lookup the harness
+    /// handlers use. <paramref name="aliveOnly"/> skips corpses; <paramref name="includeFlat"/> also
+    /// searches the flat list (where dead/NO_BLOCK critters live, for the corpse-aware probes).</summary>
+    private MapObject? CritterAt(int hex, bool aliveOnly = false, bool includeFlat = false)
+    {
+        IEnumerable<MapObject> src = includeFlat
+            ? _solidObjects[_elevation].Concat(_flatObjects[_elevation])
+            : _solidObjects[_elevation];
+        return src.FirstOrDefault(o => o.HexTile == hex
+            && Fid.Type(o.Fid) is ObjectType.Critter && (!aliveOnly || !o.IsDead));
     }
 
     /// <summary>The dude's total carried weight in pounds (P24; InventoryWeight over _dudeInventory).</summary>
