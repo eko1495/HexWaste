@@ -514,8 +514,8 @@ the keys fire. Harness --menu-click <options|pipboy|pipboy-rest> <row> asserts e
 centre hit-tests back to its own index then dispatches (goldens menu-click-options +
 menu-click-pipboy, side-effect-free rows -> map-independent). Draw-only + no new action
 paths -> 286 Formats tests + combat + all 19 encounter goldens green. Spillover: per-member
-companion trade priced-barter, the embedded Pip-Boy mini-automap (automap.db RLE), inventory
-drag-and-drop equip slots (we use click-to-use), the worldmap-screen tab wiring.
+companion trade priced-barter, the embedded Pip-Boy mini-automap (automap.db RLE),
+the worldmap-screen tab wiring. (Inventory drag-and-drop equip shipped in P47.)
 
 Phase 16 (DONE — "The Road Watches Back", worldmap + encounter authenticity; the wasteland
 was silent + inert): M0 encounter-name banner (DONE). EncounterTable.Index (0-based load
@@ -1642,6 +1642,29 @@ anim dedupe). Tooling: MapDump gained a per-map map_update_p_proc census (LIVE/A
 --map-update-probe (state-only runtime trace: lightCalls/levels/ambient-delta/new-stubs); ScriptHost.Run
 MapUpdate. 2 new goldens — light-arcaves (the live 40960 dim) + map-update-arcaves (the diagnostic:
 levels=[50], 1 light call, no new stubs). 622 Formats tests, 74 encounter + 16 combat goldens green.
+
+Phase 47 (DONE — "Drag the Gear", inventory drag-and-drop equip; the P15-M2 spillover). M0 grounding
+(workflow): fo2ce inventory.cc — the window (499x377) + the armor/left/right equip-slot rects + the
+press->drag->release state machine + the _switch_hand equip/swap (inventory.cc:2386-2537); Hexwaste's
+inventory is a TEXT-LIST panel (no authentic INVBOX.frm window) with a flag-toggle equip model
+(FlagInRightHand/FlagWorn + ApplyArmorBonus). M1 pure Formats.Combat.EquipRules: CanEquip (weapon->the
+weapon slot, armor->the armor slot, a wrong-type drop rejected — the _switch_hand type guards) +
+NaturalSlot + the EquipSlot enum (Weapon/Armor only — Hexwaste equips ONE weapon, so the engine's LEFT-
+hand/dual-wield item2 slot is OUT, a documented simplification: it needs the two-handed/item2 proto model
+and no shippable content dual-wields). M2 viewer: two equip SLOTS (weapon + armor) rendered as boxes
+beside the list (x=420, the free right-panel column) showing the equipped item's icon; a press->drag->
+release handler (HandleInventoryDrag) — drag a list row onto a slot = EQUIP, drag a slot item off = UNEQUIP,
+a row TAP (no real drag) falls back to the existing click-to-use so click-to-equip is preserved; the
+dragged item's ghost icon follows the cursor; reuses the existing flag + ApplyArmorBonus mutations (the
+same equip math as UseInventoryItem). Loot/barter/trade keep click-on-press (they transfer, not equip).
+DOCUMENTED DIVERGENCE: the slots are boxes beside the text list, not the authentic INVBOX.frm paperdoll
+window — an art residual (the Skilldex text-then-art pattern). GOLDEN-SAFE: the panel-click/hud-click
+goldens drive TryClickItemPanel/TryClickInterfaceBar DIRECTLY (not the live mouse edges I changed), and
+DrawEquipSlots is Draw-only gated on _inventoryOpen -> all 16 combat + 74 prior encounter goldens BYTE-
+IDENTICAL. Harness --drag-equip <fromRow> <slot> (slot 0=weapon/2=armor/-1=drop; STATE-only: pid +
+equipped flag + AC/DT/DR, never the item name); 4 goldens (weapon equips in-hand; armor applies AC 8->33
+DT 0->12 DR 0->40; a weapon onto the armor slot is rejected; drop removes from the bag). 9 EquipRulesTests.
+631 Formats tests, 78 encounter + 16 combat goldens green.
 
 Phase 10 (DONE, per docs/phase10-research-report.md — "The Wasteland
 Bites Back"): M0 persistence pre-stage (the net: MapList saved=No /

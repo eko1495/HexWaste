@@ -297,6 +297,10 @@ for (int i = 0; i < args.Length; i++)
         case "--map-update-probe":
             actions.Add(new ViewerGame.StartupAction.MapUpdateProbe());
             break;
+        case "--drag-equip" when i + 2 < args.Length:
+            actions.Add(new ViewerGame.StartupAction.DragEquip(int.Parse(args[i + 1]), int.Parse(args[i + 2])));
+            i += 2;
+            break;
         case "--reaction-probe" when i + 2 < args.Length:
             actions.Add(new ViewerGame.StartupAction.ReactionProbe(int.Parse(args[i + 1]), int.Parse(args[i + 2])));
             i += 2;

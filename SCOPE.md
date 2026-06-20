@@ -85,9 +85,10 @@ filing an issue.
   character sheet and Pip-Boy. (The engine never auto-awards karma; it is script-
   driven, so on the slice it stays at zero unless a quest sets it.) Kills *are*
   tracked by type (the engine's kill counter, read by scripts + shown on the sheet).
-- **Interface**: the authentic bottom HUD bar plus its panels — inventory,
-  character sheet, the Skilldex use-skill picker, the Pip-Boy (status + rest),
-  and an in-game options/pause menu.
+- **Interface**: the authentic bottom HUD bar plus its panels — inventory (with
+  drag-and-drop equip: drag an item onto the weapon/armor slot to equip, or off to
+  unequip; click-to-use still works), character sheet, the Skilldex use-skill picker,
+  the Pip-Boy (status + rest), and an in-game options/pause menu.
 
 ## What's out (by design, today)
 

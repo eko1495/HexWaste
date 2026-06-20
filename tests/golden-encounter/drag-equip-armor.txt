@@ -1,0 +1,1 @@
+drag-equip: row=0 slot=2 pid=0x3 equipped=1 AC=33 DT=12 DR=40

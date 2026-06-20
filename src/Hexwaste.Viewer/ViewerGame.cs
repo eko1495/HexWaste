@@ -600,6 +600,10 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
         /// SCRIPT_PROC 23) once and report its observable side effects — lighting calls, the ambient
         /// before/after, and any NEW stubbed externals. STATE-only (counts/ids), no game strings.</summary>
         public sealed record MapUpdateProbe : StartupAction;
+        /// <summary>Drive the real drag-to-equip path (P47): drag the inventory item at FromRow onto a
+        /// slot — Slot 0=weapon, 2=armor, -1=drop. Reports pid + equipped flag + AC/DT/DR. STATE-only
+        /// (pid + ints), never the item's name/message text.</summary>
+        public sealed record DragEquip(int FromRow, int Slot) : StartupAction;
         /// <summary>Run the critter@Hex's per-turn combat_p_proc (fp=4) and report whether it defines the
         /// proc + whether it script_overrides the turn (P35).</summary>
         public sealed record CombatProcProbe(int Hex) : StartupAction;
@@ -1409,6 +1413,28 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
                         + $"lightCalls={lightCalls} levels=[{string.Join(",", lightLevels)}] objLightCalls={objLightCalls} "
                         + $"ambient={ambientBefore}->{_lightGrid.Ambient} fixed={(fixedBefore ? 1 : 0)}->{(AmbientFixed ? 1 : 0)} "
                         + $"newStubbedExternals={newStubs.Count}[{string.Join(",", newStubs)}]");
+                    break;
+                }
+                case StartupAction.DragEquip(var deRow, var deSlot):
+                {
+                    // P47: drive the real drag-to-equip path headlessly + report the equipped state.
+                    if (deRow < 0 || deRow >= _dudeInventory.Count)
+                    {
+                        Console.Error.WriteLine($"drag-equip: no item at row {deRow}");
+                        break;
+                    }
+                    MapObject deItem = _dudeInventory[deRow];
+                    if (deSlot == -1)
+                        DropFromInventory(deRow);
+                    else
+                        EquipFromDrag(deItem, deSlot == 2 ? Formats.Combat.EquipSlot.Armor : Formats.Combat.EquipSlot.Weapon);
+                    bool deEquipped = deSlot == -1 ? !_dudeInventory.Contains(deItem)
+                        : deSlot == 2 ? deItem.IsWorn
+                        : deItem.IsInHand;
+                    Formats.Combat.CritterState? deSt = GetCritterState(_dude?.Dude);
+                    Console.WriteLine($"drag-equip: row={deRow} slot={deSlot} pid=0x{deItem.Pid:X} "
+                        + $"equipped={(deEquipped ? 1 : 0)} "
+                        + $"AC={deSt?.ArmorClass ?? 0} DT={deSt?.DamageThreshold ?? 0} DR={deSt?.DamageResistance ?? 0}");
                     break;
                 }
                 case StartupAction.CombatProcProbe(var cpHex):
@@ -3016,9 +3042,12 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
                 }
             }
 
-            // A row click fires the same per-panel action (the trade give-side is the
-            // right panel, so its click needs no Shift — unlike the shared number row).
-            if (mouse.LeftButton == ButtonState.Pressed && _previousMouse.LeftButton == ButtonState.Released)
+            // The pure-inventory panel uses drag-and-drop equip (P47); loot/trade keep click-on-
+            // press (they transfer, not equip). A row TAP still falls back to click-to-use inside
+            // the drag handler, so click-to-equip is preserved.
+            if (_inventoryOpen && _lootContainer is null && _tradePartner is null)
+                HandleInventoryDrag(mouse, shiftHeld);
+            else if (mouse.LeftButton == ButtonState.Pressed && _previousMouse.LeftButton == ButtonState.Released)
                 TryClickItemPanel(mouse.X, mouse.Y, shiftHeld);
 
             HandlePanelPaging(keyboard);
@@ -7954,6 +7983,185 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
             if (ReferenceEquals(panel.Items, _dudeInventory)) // the dude's side carries the weight readout (P24)
                 DrawWeightReadout(panel.X, bottom);
         }
+        DrawEquipSlots(); // P47: the weapon/armor equip slots + the dragged-item ghost
+    }
+
+    // ====================================================================
+    //  Inventory drag-and-drop equip (P47)
+    // ====================================================================
+    //
+    // The inventory panel supports drag: press an item (a list row or an occupied equip
+    // slot), drag it to a slot to EQUIP / out of a slot to UNEQUIP; a tap on a row (no real
+    // drag) falls back to the existing click-to-use/equip. Loot/barter/trade keep click-on-
+    // press (they transfer, not equip). Ported from fallout2-ce inventory.cc — the press->
+    // drag->release state machine + the slot hit-test cascade (inventory.cc:2386-2537) + the
+    // _switch_hand equip/swap. DIVERGENCE: Hexwaste renders the slots as boxes beside the
+    // text list, not the authentic INVBOX.frm paperdoll window (a documented art residual, the
+    // Skilldex text-then-art pattern); and there is no LEFT-hand slot (single-weapon model).
+
+    private enum DragSource { None, Row, WeaponSlot, ArmorSlot }
+    private MapObject? _dragItem;       // the item currently being dragged, or null
+    private DragSource _dragSource;     // where the drag started
+    private Point _dragStart;           // the press position (to tell a tap from a drag)
+
+    // The two equip-slot rects (screen coords; the inventory list panel is fixed at x=40,
+    // width 360, so x=420 is free — the same column the barter/trade right panel uses).
+    private static readonly Rectangle WeaponSlotRect = new(420, 96, 90, 60);
+    private static readonly Rectangle ArmorSlotRect = new(420, 176, 90, 60);
+
+    private static Formats.Combat.EquipSlot? EquipSlotAt(int mx, int my) =>
+        WeaponSlotRect.Contains(mx, my) ? Formats.Combat.EquipSlot.Weapon
+        : ArmorSlotRect.Contains(mx, my) ? Formats.Combat.EquipSlot.Armor
+        : null;
+
+    /// <summary>The inventory list row (0..8) under a point, or -1. Shares ItemRowRect with
+    /// the renderer + TryClickItemPanel so they never disagree (panel x = 40).</summary>
+    private int InventoryRowAt(int mx, int my)
+    {
+        for (int row = 0; row < ItemRowsPerPage; row++)
+            if (ItemRowRect(40, row).Contains(mx, my))
+                return row;
+        return -1;
+    }
+
+    /// <summary>The dude's item currently in a slot — the wielded weapon, or the worn armor.</summary>
+    private MapObject? EquippedInSlot(Formats.Combat.EquipSlot slot) =>
+        slot == Formats.Combat.EquipSlot.Weapon
+            ? _dudeInventory.FirstOrDefault(i => i.IsInHand && SafeProto(i.Pid)?.Weapon is not null)
+            : _dudeInventory.FirstOrDefault(i => i.IsWorn);
+
+    /// <summary>The live press/drag/release handler for the inventory panel (P47). Only the pure-
+    /// inventory case reaches here; loot/barter/trade keep click-on-press in the caller.</summary>
+    private void HandleInventoryDrag(MouseState mouse, bool shift)
+    {
+        bool press = mouse.LeftButton == ButtonState.Pressed && _previousMouse.LeftButton == ButtonState.Released;
+        bool release = mouse.LeftButton == ButtonState.Released && _previousMouse.LeftButton == ButtonState.Pressed;
+
+        if (press)
+        {
+            _dragStart = new Point(mouse.X, mouse.Y);
+            _dragItem = null;
+            _dragSource = DragSource.None;
+            if (EquipSlotAt(mouse.X, mouse.Y) is { } slot && EquippedInSlot(slot) is { } equipped)
+            {
+                _dragItem = equipped;
+                _dragSource = slot == Formats.Combat.EquipSlot.Weapon ? DragSource.WeaponSlot : DragSource.ArmorSlot;
+            }
+            else if (InventoryRowAt(mouse.X, mouse.Y) is int row && row >= 0)
+            {
+                int gi = _panelPage * ItemRowsPerPage + row;
+                if (gi < _dudeInventory.Count)
+                {
+                    _dragItem = _dudeInventory[gi];
+                    _dragSource = DragSource.Row;
+                }
+            }
+            return;
+        }
+
+        if (release && _dragItem is { } dragged)
+        {
+            Formats.Combat.EquipSlot? overSlot = EquipSlotAt(mouse.X, mouse.Y);
+            if (_dragSource == DragSource.Row && overSlot is { } dropSlot)
+                EquipFromDrag(dragged, dropSlot); // list -> slot: equip
+            else if (_dragSource is DragSource.WeaponSlot && overSlot != Formats.Combat.EquipSlot.Weapon)
+                UnequipSlot(Formats.Combat.EquipSlot.Weapon); // dragged the weapon off its slot: unequip
+            else if (_dragSource is DragSource.ArmorSlot && overSlot != Formats.Combat.EquipSlot.Armor)
+                UnequipSlot(Formats.Combat.EquipSlot.Armor);
+            else if (_dragSource == DragSource.Row
+                && Math.Abs(mouse.X - _dragStart.X) <= 4 && Math.Abs(mouse.Y - _dragStart.Y) <= 4)
+                TryClickItemPanel(_dragStart.X, _dragStart.Y, shift); // a tap: the click-to-use fallback
+            _dragItem = null;
+            _dragSource = DragSource.None;
+        }
+    }
+
+    /// <summary>Equip an item dropped onto a slot — the _switch_hand equip path (inventory.cc:2490).
+    /// A wrong-type drop (armor on the weapon slot, etc.) is rejected by EquipRules. Reuses the same
+    /// flag/armor-bonus mutations as the click-to-equip (UseInventoryItem).</summary>
+    private void EquipFromDrag(MapObject item, Formats.Combat.EquipSlot slot)
+    {
+        if (_dude is null)
+            return;
+        Formats.Proto.ProtoInfo? proto = SafeProto(item.Pid);
+        if (!Formats.Combat.EquipRules.CanEquip(proto?.Weapon is not null, proto?.Armor is not null, slot))
+            return;
+
+        if (slot == Formats.Combat.EquipSlot.Weapon)
+        {
+            foreach (MapObject other in _dudeInventory)
+                other.Flags &= ~(MapObject.FlagInLeftHand | MapObject.FlagInRightHand);
+            item.Flags |= MapObject.FlagInRightHand;
+            Log($"You ready the {ObjectName(item)}.");
+        }
+        else // Armor
+        {
+            if (item.IsWorn)
+                return;
+            foreach (MapObject other in _dudeInventory.Where(o => o.IsWorn))
+            {
+                if (SafeProto(other.Pid)?.Armor is { } oldArmor)
+                    ApplyArmorBonus(oldArmor, -1);
+                other.Flags &= ~MapObject.FlagWorn;
+            }
+            item.Flags |= MapObject.FlagWorn;
+            if (proto!.Armor is { } armor)
+                ApplyArmorBonus(armor, +1);
+            Log($"You put on the {ObjectName(item)}.");
+        }
+    }
+
+    /// <summary>Unequip the item currently in a slot (dragged off it) — clears the flag + reverses
+    /// the armor bonus, mirroring UnequipForTransfer without removing the item from the bag.</summary>
+    private void UnequipSlot(Formats.Combat.EquipSlot slot)
+    {
+        if (slot == Formats.Combat.EquipSlot.Weapon)
+        {
+            foreach (MapObject it in _dudeInventory.Where(i => i.IsInHand).ToList())
+            {
+                it.Flags &= ~(MapObject.FlagInLeftHand | MapObject.FlagInRightHand);
+                Log($"You put away the {ObjectName(it)}.");
+            }
+        }
+        else
+        {
+            foreach (MapObject it in _dudeInventory.Where(i => i.IsWorn).ToList())
+            {
+                if (SafeProto(it.Pid)?.Armor is { } armor)
+                    ApplyArmorBonus(armor, -1);
+                it.Flags &= ~MapObject.FlagWorn;
+                Log($"You take off the {ObjectName(it)}.");
+            }
+        }
+    }
+
+    /// <summary>Draw the weapon + armor equip slots and the dragged item's ghost icon. Only in the
+    /// pure-inventory view (loot/barter/trade have no equip slots).</summary>
+    private void DrawEquipSlots()
+    {
+        if (_fontRenderer is null || !_inventoryOpen || _lootContainer is not null
+            || _tradePartner is not null || _barterNpc is not null)
+            return;
+        _panelPixel ??= CreatePixel();
+        DrawEquipSlot(WeaponSlotRect, "WEAPON", EquippedInSlot(Formats.Combat.EquipSlot.Weapon));
+        DrawEquipSlot(ArmorSlotRect, "ARMOR", EquippedInSlot(Formats.Combat.EquipSlot.Armor));
+        if (_dragItem is { } dragged) // the ghost icon follows the cursor (from the last Update mouse)
+            DrawItemIcon(dragged, new Rectangle(_previousMouse.X - 14, _previousMouse.Y - 11, 28, 22));
+    }
+
+    private void DrawEquipSlot(Rectangle rect, string label, MapObject? item)
+    {
+        _spriteBatch.Draw(_panelPixel, rect, new Color(8, 8, 8, 230));
+        var border = new Color(0, 252, 0);
+        _spriteBatch.Draw(_panelPixel, new Rectangle(rect.X, rect.Y, rect.Width, 1), border);
+        _spriteBatch.Draw(_panelPixel, new Rectangle(rect.X, rect.Bottom - 1, rect.Width, 1), border);
+        _spriteBatch.Draw(_panelPixel, new Rectangle(rect.X, rect.Y, 1, rect.Height), border);
+        _spriteBatch.Draw(_panelPixel, new Rectangle(rect.Right - 1, rect.Y, 1, rect.Height), border);
+        _fontRenderer!.Draw(_spriteBatch, label, new Vector2(rect.X + 4, rect.Y - 22), Color.LightGray);
+        if (item is not null)
+            DrawItemIcon(item, new Rectangle(rect.X + 8, rect.Y + 6, rect.Width - 16, rect.Height - 12));
+        else
+            _fontRenderer.Draw(_spriteBatch, "(empty)", new Vector2(rect.X + 8, rect.Y + rect.Height / 2 - 8), Color.Gray);
     }
 
     /// <summary>The carried-weight readout, drawn just below the dude's inventory panel (P24;
