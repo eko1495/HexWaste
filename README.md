@@ -54,8 +54,9 @@ Prebuilt self-contained builds (Linux x64 / Windows x64) are produced by
   stimpak mid-fight when you've hurt them, instead of fighting to the last hit
   point. Critical hits (from in-game
   day 2, like the engine) roll off the real Fallout 2 crit tables — bonus damage,
-  armor bypass, the occasional instant kill; aim a called shot (V) at eyes/head/
-  legs to trade accuracy for a far better critical. And criticals have
+  armor bypass, the occasional instant kill; press V for the called-shot dialog
+  and click a body part — eyes/head/legs — to trade accuracy for a far better
+  critical. And criticals have
   consequences (the engine's massive-critical roll): a blow can blind, cripple a
   limb, knock a target out cold (it wakes after a spell), or cost it a turn — a
   blinded foe fights at −25, and the Skilldex Doctor skill mends limbs and eyes.
@@ -153,7 +154,7 @@ Prebuilt self-contained builds (Linux x64 / Windows x64) are produced by
 | right-click | examine (critters show HP/AC) |
 | F | attack the hovered critter (starts combat) |
 | B | spray a burst at the hovered critter (needs a burst gun: SMG/Tommy/combat shotgun) |
-| V | cycle the called-shot location (aimed shot) |
+| V | open the called-shot dialog (click a body part to aim) |
 | Space | end combat turn |
 | L | lockpick the hovered door (the Skilldex Lockpick skill) |
 | S | Skilldex — pick a skill (1–8), then click a target to use it |

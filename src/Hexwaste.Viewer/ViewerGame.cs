@@ -604,6 +604,9 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
         /// slot — Slot 0=weapon, 2=armor, -1=drop. Reports pid + equipped flag + AC/DT/DR. STATE-only
         /// (pid + ints), never the item's name/message text.</summary>
         public sealed record DragEquip(int FromRow, int Slot) : StartupAction;
+        /// <summary>Drive the called-shot dialog's row selection (P49): pick dialog row 0..8 and report
+        /// the resulting AimLocation + its to-hit penalty. STATE-only (ints + the part name).</summary>
+        public sealed record AimClick(int Row) : StartupAction;
         /// <summary>Run the critter@Hex's per-turn combat_p_proc (fp=4) and report whether it defines the
         /// proc + whether it script_overrides the turn (P35).</summary>
         public sealed record CombatProcProbe(int Hex) : StartupAction;
@@ -1445,6 +1448,18 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
                     Console.WriteLine($"drag-equip: row={deRow} slot={deSlot} pid=0x{deItem.Pid:X} "
                         + $"equipped={(deEquipped ? 1 : 0)} "
                         + $"AC={deSt?.ArmorClass ?? 0} DT={deSt?.DamageThreshold ?? 0} DR={deSt?.DamageResistance ?? 0}");
+                    break;
+                }
+                case StartupAction.AimClick(var acRow):
+                {
+                    // P49: drive the called-shot dialog selection (the same SelectAimRow the live click uses).
+                    // Row -1 just OPENS the dialog (leaves it up for a screenshot) without selecting.
+                    OpenAimDialog();
+                    if (acRow >= 0)
+                        SelectAimRow(acRow);
+                    int pen = Formats.Combat.CriticalTables.LocationPenalty[
+                        Math.Clamp(AimLocation, 0, Formats.Combat.CriticalTables.LocationPenalty.Length - 1)];
+                    Console.WriteLine($"aim-click: row={acRow} loc={AimLocation} name={AimName(AimLocation)} penalty={pen}");
                     break;
                 }
                 case StartupAction.CombatProcProbe(var cpHex):
@@ -2995,6 +3010,16 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
             return;
         }
 
+        // The called-shot dialog (P49): modal while open — pick a hit location, then resume.
+        if (_aimDialogOpen)
+        {
+            HandleAimDialogInput(mouse, keyboard);
+            _previousMouse = mouse;
+            _previousKeyboard = keyboard;
+            base.Update(gameTime);
+            return;
+        }
+
         // The multi-slot save/load picker (P48): 0-9 / click a slot to save into / load from it.
         if (_saveLoadOpen)
         {
@@ -3334,14 +3359,10 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
         if (IsKeyPressed(keyboard, Keys.L) && _hoveredObject is { } lockTarget && IsDoor(lockTarget))
             TryLockpick(lockTarget);
 
-        // V: cycle the called-shot location (uncalled → head … groin → uncalled).
-        // A minimal stand-in for the engine's aim dialog — harder to hit, more
-        // likely to crit, +1 AP. A documented PoC simplification.
+        // V: open the called-shot dialog (P49 — replaces the cycle; pick a hit location by
+        // click / 1-9). The location feeds the unchanged TryAttack(target, AimLocation) path.
         if (IsKeyPressed(keyboard, Keys.V))
-        {
-            AimLocation = (AimLocation + 1) % (Formats.Combat.CriticalTables.LocationUncalled + 1);
-            Log($"Aiming: {AimName(AimLocation)}.");
-        }
+            OpenAimDialog();
 
         // F: attack the hovered critter at the current aim location, using the selected
         // weapon mode (P15 M1 — burst when the slot is set to BURST on a burst gun).
@@ -6721,6 +6742,7 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
             DrawAutomap();
             DrawOptions();
             DrawSaveLoad();
+            DrawAimDialog();
         }
         _spriteBatch.End();
 
@@ -8112,6 +8134,104 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
             Rectangle r = SaveLoadSlotRect(i);
             Color c = i == hovered ? hot : (info.Occupied && !info.VersionMismatch ? green : gray);
             _fontRenderer.Draw(_spriteBatch, $"{i}. {label}", new Vector2(r.X + 6, r.Y + 2), c);
+        }
+    }
+
+    // ====================================================================
+    //  Called-shot click dialog (P49-M1)
+    // ====================================================================
+    //
+    // Replaces the V-key aim CYCLE with a click dialog (the engine's CALLED.frm body-part
+    // picker, combat.cc:5476 calledShotSelectHitLocation): V opens it, 1-9 / click a row picks
+    // a hit location, Esc cancels. Each row shows the location's to-hit penalty (the defining
+    // per-location stat, combat.cc:172 hit_location_penalty). The location feeds the unchanged
+    // TryAttack(target, AimLocation) path (penalty + crit-table lookup). DIVERGENCE: a single-
+    // column text list, not the authentic CALLED.frm critter-pic overlay (art residual, the
+    // Skilldex text-then-art pattern); the live per-part to-hit % is a residual (penalty shown).
+
+    private bool _aimDialogOpen;
+
+    // The dialog rows -> AimLocation values, in the engine's CALLED.frm button order
+    // (head/eyes/right-arm/right-leg, then torso/groin/left-arm/left-leg — combat.cc:1894-1907),
+    // then uncalled. AimNames/LocationPenalty are indexed by the AimLocation value.
+    private static readonly int[] AimDialogOrder = { 0, 6, 2, 4, 3, 7, 1, 5, 8 };
+
+    private void OpenAimDialog() => _aimDialogOpen = true;
+
+    private Rectangle AimDialogPanelRect()
+    {
+        Rectangle vp = GraphicsDevice.Viewport.Bounds;
+        int lh = (_fontRenderer?.LineHeight ?? 16) + 8;
+        int w = 320, h = (AimDialogOrder.Length + 2) * lh + 12;
+        return new Rectangle(Math.Max(0, (vp.Width - w) / 2), Math.Max(0, (vp.Height - h) / 2), w, h);
+    }
+
+    private Rectangle AimDialogRowRect(int row)
+    {
+        Rectangle p = AimDialogPanelRect();
+        int lh = (_fontRenderer?.LineHeight ?? 16) + 8;
+        return new Rectangle(p.X + 8, p.Y + 10 + lh + row * lh, p.Width - 16, lh);
+    }
+
+    private int AimDialogRowAt(int mx, int my)
+    {
+        for (int i = 0; i < AimDialogOrder.Length; i++)
+            if (AimDialogRowRect(i).Contains(mx, my))
+                return i;
+        return -1;
+    }
+
+    /// <summary>Pick a hit location from the dialog (a row index 0..8) and close it. Shared by the
+    /// live click + the --aim-click harness so they drive the identical selection path.</summary>
+    private void SelectAimRow(int row)
+    {
+        if (row < 0 || row >= AimDialogOrder.Length)
+            return;
+        AimLocation = AimDialogOrder[row];
+        _aimDialogOpen = false;
+        Log($"Aiming: {AimName(AimLocation)}.");
+    }
+
+    private void HandleAimDialogInput(MouseState mouse, KeyboardState keyboard)
+    {
+        if (IsKeyPressed(keyboard, Keys.Escape))
+        {
+            _aimDialogOpen = false;
+            return;
+        }
+        for (int i = 0; i < AimDialogOrder.Length; i++)
+            if (IsKeyPressed(keyboard, Keys.D1 + i) || IsKeyPressed(keyboard, Keys.NumPad1 + i))
+            {
+                SelectAimRow(i);
+                return;
+            }
+        if (mouse.LeftButton == ButtonState.Pressed && _previousMouse.LeftButton == ButtonState.Released
+            && AimDialogRowAt(mouse.X, mouse.Y) is int clicked && clicked >= 0)
+            SelectAimRow(clicked);
+    }
+
+    private void DrawAimDialog()
+    {
+        if (!_aimDialogOpen || _fontRenderer is null)
+            return;
+        _panelPixel ??= CreatePixel();
+        Rectangle p = AimDialogPanelRect();
+        _spriteBatch.Draw(_panelPixel, p, new Color(8, 16, 8, 240));
+        var green = new Color(0, 252, 0);
+        var hot = new Color(252, 252, 84);
+        _fontRenderer.Draw(_spriteBatch, "AIM - pick a hit location (1-9 / click, Esc cancel)",
+            new Vector2(p.X + 12, p.Y + 8), Color.LightGray);
+        int hovered = AimDialogRowAt(Mouse.GetState().X, Mouse.GetState().Y);
+        for (int i = 0; i < AimDialogOrder.Length; i++)
+        {
+            int loc = AimDialogOrder[i];
+            int penalty = Formats.Combat.CriticalTables.LocationPenalty[loc];
+            string label = loc == Formats.Combat.CriticalTables.LocationUncalled
+                ? $"{i + 1}. uncalled (no aim)"
+                : $"{i + 1}. {AimName(loc)}  ({penalty:+0;-0;+0} to hit)";
+            Rectangle r = AimDialogRowRect(i);
+            _fontRenderer.Draw(_spriteBatch, label, new Vector2(r.X + 6, r.Y + 2),
+                i == hovered ? hot : (loc == AimLocation ? hot : green));
         }
     }
 

@@ -1,0 +1,5 @@
+aim-click: row=0 loc=0 name=head penalty=-40
+aim-click: row=1 loc=6 name=eyes penalty=-60
+aim-click: row=4 loc=3 name=torso penalty=0
+aim-click: row=6 loc=1 name=left arm penalty=-30
+aim-click: row=8 loc=8 name=uncalled penalty=0

@@ -93,6 +93,9 @@ for (int i = 0; i < args.Length; i++)
         case "--show-saveload" when i + 1 < args.Length:
             actions.Add(new ViewerGame.StartupAction.ShowSaveLoad(int.Parse(args[++i])));
             break;
+        case "--aim-click" when i + 1 < args.Length:
+            actions.Add(new ViewerGame.StartupAction.AimClick(int.Parse(args[++i])));
+            break;
         case "--save-to" when i + 1 < args.Length:
             savePath = args[++i];
             saveOnExit = true;

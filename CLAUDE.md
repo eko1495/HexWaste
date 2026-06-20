@@ -185,8 +185,8 @@ STAT_BETTER_CRITICALS; honor the damage multiplier + flags {CRITICAL,
 DEAD, KNOCKED_DOWN, BYPASS}, mask the rest; aimed shot +1 AP + the penalty full-ranged/half-
 melee. GOTCHA: criticals gate on day≥2 (random.cc randomTranslateRoll,
 gameTime/TICKS_PER_DAY≥1) — so the day-1 golden fixtures take ZERO extra
-RNG draws and stay byte-identical; the called-shot UI is a V-cycle, not
-the engine's click dialog — documented simplification), M3 knockback +
+RNG draws and stay byte-identical; the called-shot UI was a V-cycle, not
+the engine's click dialog — SUPERSEDED by P49-M1: V now opens a click dialog), M3 knockback +
 persisting knockdown + explosions (shove dmg/10 along the hex line for
 melee/explosion, NEVER guns — combat.cc:4633, !MULTIHEX/!NO_KNOCKBACK;
 a crit DAM_KNOCKED_DOWN persists prone — +40 to hit combat.cc:4474, 3 AP
@@ -1688,6 +1688,24 @@ prior encounter goldens BYTE-IDENTICAL. Harness --save-dir / --save-slot / --loa
 --reset-slots / --show-saveload (STATE-only: slot + occupied/level, never names); 2 goldens (round-trip
 save+load slot 3 + an empty-slot no-op; a slots-probe). 8 SaveSlotsTests. 639 Formats tests, 80 encounter
 + 16 combat goldens green.
+
+Phase 49 (IN PROGRESS — "Aim Small", the called-shot click dialog + [P50] the AI-disposition window;
+the user's "full faithful" pick of the next-feature list). M0 grounding (workflow). M1 called-shot click
+dialog (DONE): replaces the P9-M2 V-CYCLE with a click dialog (the engine's CALLED.frm body-part picker,
+combat.cc:5476 calledShotSelectHitLocation). V now OPENS a modal listing the 8 hit locations in the
+engine's button order (head/eyes/right-arm/right-leg/torso/groin/left-arm/left-leg, combat.cc:1894-1907)
++ uncalled, each showing its to-hit PENALTY (combat.cc:172 hit_location_penalty — head -40 / eyes -60 /
+torso 0 / arms -30 / legs -20 / groin -30); 1-9 / click picks a location, Esc cancels. The chosen
+AimLocation feeds the UNCHANGED TryAttack(target, AimLocation) path (the penalty + crit-table lookup);
+SelectAimRow is the one seam the live click + the harness share. DOCUMENTED DIVERGENCES: a single-column
+text list, not the authentic CALLED.frm critter-pic overlay (art residual, the Skilldex text-then-art
+pattern); the live per-part to-hit % is a residual (the static penalty is shown — it's the defining
+per-location stat). GOLDEN-SAFE: --aim (the arcaves-aim-eyes-day2 combat golden) sets AimLocation DIRECTLY,
+unchanged; V->dialog is live-only; the dialog is Draw-only -> all 16 combat + 80 prior encounter goldens
+BYTE-IDENTICAL. Harness --aim-click <row> (STATE-only: row/loc/penalty + the part name; row -1 just opens
+it for a screenshot); golden aim-click (head -40 / eyes -60 / torso 0 / groin -30 / uncalled 0). 639
+Formats tests, 81 encounter + 16 combat goldens green. M2-M4 (the full AI-disposition combat-control
+window + the ally-AI wiring) ship as P50.
 
 Phase 10 (DONE, per docs/phase10-research-report.md — "The Wasteland
 Bites Back"): M0 persistence pre-stage (the net: MapList saved=No /
