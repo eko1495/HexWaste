@@ -1,3 +1,4 @@
+using System.Diagnostics.CodeAnalysis;
 using Hexwaste.Formats;
 using Hexwaste.Formats.Art;
 using Hexwaste.Formats.Frm;
@@ -29,9 +30,38 @@ public sealed class FrmCache(GameFileSystem vfs, ArtIndex artIndex, GraphicsDevi
 
     private readonly Dictionary<int, Entry> _entries = [];
     private readonly LinkedList<int> _lru = [];
+    private readonly HashSet<int> _failed = [];
     private byte[] _paletteRgba = palette.ToRgba();
 
     public FrmFile GetFrm(int fid) => GetEntry(fid).Frm;
+
+    /// <summary>
+    /// Non-throwing <see cref="GetFrm"/>: returns false (instead of throwing) when the FRM is
+    /// missing or corrupt, so the per-frame animator / walker paths can SKIP an unrenderable object
+    /// rather than crash the game loop. Off-slice maps (e.g. Modoc) can reference critter art absent
+    /// from a partial extraction — the engine-ethos is soft-fail (cf. the P32 LoadMap hardening + the
+    /// draw path's <c>_failedFids</c> skip). Failures are cached so a missing FID isn't re-probed
+    /// (no repeated VFS hits / exceptions) every frame.
+    /// </summary>
+    public bool TryGetFrm(int fid, [NotNullWhen(true)] out FrmFile? frm)
+    {
+        if (_failed.Contains(fid))
+        {
+            frm = null;
+            return false;
+        }
+        try
+        {
+            frm = GetEntry(fid).Frm;
+            return true;
+        }
+        catch (Exception ex) when (ex is FileNotFoundException or InvalidDataException or NotSupportedException)
+        {
+            _failed.Add(fid);
+            frm = null;
+            return false;
+        }
+    }
 
     /// <summary>Number of loaded FRMs containing animated palette indices.</summary>
     public int CyclingEntryCount => _entries.Values.Count(e => e.HasCyclingColors);

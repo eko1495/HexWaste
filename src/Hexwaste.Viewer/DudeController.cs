@@ -71,7 +71,13 @@ public sealed class DudeController(MapObject dude, FrmCache frmCache, Func<int, 
         if (_rotations is null)
             return;
 
-        FrmFile frm = frmCache.GetFrm(CurrentFid);
+        // Missing/corrupt walk art (off-slice critter absent from a partial extraction): abort the
+        // walk instead of crashing the loop — the object stays put and is skipped by the draw path.
+        if (!frmCache.TryGetFrm(CurrentFid, out FrmFile? frm))
+        {
+            Stop();
+            return;
+        }
         double msPerFrame = 1000.0 / frm.FramesPerSecond;
         _accumulatorMs += elapsedMs;
 

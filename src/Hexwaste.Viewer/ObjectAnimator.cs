@@ -137,10 +137,17 @@ public sealed class ObjectAnimator(FrmCache frmCache)
     public void Update(double elapsedMs)
     {
         List<MapObject>? finishedFidgets = null;
+        List<MapObject>? missingArt = null;
         foreach ((MapObject obj, AnimationState state) in _states)
         {
             int fid = state.DisplayFid != 0 ? state.DisplayFid : obj.Fid;
-            FrmFile frm = frmCache.GetFrm(fid);
+            // Missing/corrupt FRM (off-slice critter art absent from a partial extraction): drop this
+            // object's animation rather than crash the loop — the draw path skips it too (_failedFids).
+            if (!frmCache.TryGetFrm(fid, out FrmFile? frm))
+            {
+                (missingArt ??= []).Add(obj);
+                continue;
+            }
             int rotation = Math.Clamp(obj.Rotation, 0, FrmFile.RotationCount - 1);
             state.Advance(elapsedMs, frm, rotation);
 
@@ -151,5 +158,9 @@ public sealed class ObjectAnimator(FrmCache frmCache)
         if (finishedFidgets is not null)
             foreach (MapObject obj in finishedFidgets)
                 _states.Remove(obj);
+
+        if (missingArt is not null)
+            foreach (MapObject obj in missingArt)
+                _states.Remove(obj); // stop retrying an object whose art can't load
     }
 }
