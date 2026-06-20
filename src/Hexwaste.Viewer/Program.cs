@@ -325,6 +325,9 @@ for (int i = 0; i < args.Length; i++)
         case "--ai-heal-probe" when i + 1 < args.Length:
             actions.Add(new ViewerGame.StartupAction.AiHealProbe(int.Parse(args[++i])));
             break;
+        case "--ai-weapon-probe" when i + 1 < args.Length:
+            actions.Add(new ViewerGame.StartupAction.AiWeaponProbe(int.Parse(args[++i])));
+            break;
         case "--terminate-combat" when i + 1 < args.Length:
             actions.Add(new ViewerGame.StartupAction.TerminateCombatProbe(int.Parse(args[++i])));
             break;

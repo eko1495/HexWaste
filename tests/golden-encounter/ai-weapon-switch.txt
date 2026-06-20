@@ -1,0 +1,1 @@
+ai-weapon-probe: hex=17261 bestWeapon=3 equipped=0x5E carried=[0x5] switchedTo=0x5

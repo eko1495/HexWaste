@@ -109,6 +109,13 @@ public class AiPacketTests
         Assert.Equal(0, table.Get(14)!.ChemUse);  // Peasants: clean (absent)
         Assert.Equal(2, table.Get(12)!.ChemUse);  // Generic Guards: stims_when_hurt_lots
         Assert.Equal(4, table.Get(50)!.ChemUse);  // anytime
+
+        // P43: the real best_weapon prefs (gBestWeaponKeys index). Generic Guards(12) = ranged_over_melee(3),
+        // a real driver (denbus/kladwtwn pkt12 NPCs carry a backup); Animals(8, scorpion) absent → -1 →
+        // the default ordering, but scorpions are non-biped + carry no weapons → never switch → goldens hold.
+        Assert.Equal(3, table.Get(12)!.BestWeapon);  // Generic Guards: ranged_over_melee
+        Assert.Equal(-1, table.Get(8)!.BestWeapon);  // Animals: absent
+        Assert.Equal(-1, table.Get(13)!.BestWeapon); // Thugs: absent
     }
 
     [Theory]
@@ -131,5 +138,29 @@ public class AiPacketTests
     {
         AiPacketTable t = AiPacketTable.Parse("[P]\npacket_num=1\nmin_hp=5\n");
         Assert.Equal(0, t.Get(1)!.ChemUse);
+    }
+
+    [Theory]
+    [InlineData("no_pref", 0)]
+    [InlineData("melee", 1)]
+    [InlineData("melee_over_ranged", 2)]
+    [InlineData("ranged_over_melee", 3)]
+    [InlineData("ranged", 4)]
+    [InlineData("unarmed", 5)]
+    [InlineData("unarmed_over_thrown", 6)]
+    [InlineData("random", 7)]
+    [InlineData("never", -1)]   // a run_away_mode key, not a best_weapon key → unmatched → -1
+    [InlineData("", -1)]
+    public void BestWeaponParsesFromTheGBestWeaponKeys(string value, int expected)
+    {
+        AiPacketTable t = AiPacketTable.Parse($"[P]\npacket_num=1\nbest_weapon={value}\n");
+        Assert.Equal(expected, t.Get(1)!.BestWeapon);
+    }
+
+    [Fact]
+    public void BestWeaponDefaultsToMinusOneWhenAbsent()
+    {
+        AiPacketTable t = AiPacketTable.Parse("[P]\npacket_num=1\nmin_hp=5\n");
+        Assert.Equal(-1, t.Get(1)!.BestWeapon);
     }
 }

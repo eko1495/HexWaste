@@ -623,6 +623,10 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
         /// <summary>Give the critter@Hex a stimpak, drop it to 1 HP, and run the AI heal (the real
         /// TryNpcHeal path), reporting the heal (P42). STATE-only ints.</summary>
         public sealed record AiHealProbe(int Hex) : StartupAction;
+        /// <summary>Force the critter@Hex's wielded gun dry and run the AI inventory weapon switch
+        /// (the real CritterInventoryWeapons → best_weapon fold → EquipWeapon path), reporting its
+        /// best_weapon pref, equipped + carried weapon pids, and what it switched to (P43). STATE-only.</summary>
+        public sealed record AiWeaponProbe(int Hex) : StartupAction;
         /// <summary>Enter combat with the critter@Hex, drop it to ≤half HP, run its fp=4 combat_p_proc, and
         /// report whether terminate_combat ended the fight + the critter's maneuver (P35-M5).</summary>
         public sealed record TerminateCombatProbe(int Hex) : StartupAction;
@@ -1459,6 +1463,24 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
                     hc.CurrentHp = 1;
                     bool healed = TryNpcHeal(hc);
                     Console.WriteLine($"ai-heal-probe: hex={healHex} healed={healed} hp=1->{hc.CurrentHp} max={hmax}");
+                    break;
+                }
+                case StartupAction.AiWeaponProbe(var awHex) when _dude is not null:
+                {
+                    // P43: force the wielded gun dry and run the real AI weapon switch — proves the
+                    // best_weapon backup-draw on a multi-weapon slice NPC (no --fight golden reaches
+                    // one, so this is the live proof; the golden-fight critters carry no weapons).
+                    MapObject? aw = CritterAt(awHex);
+                    if (aw is null) { Console.Error.WriteLine($"ai-weapon-probe: no critter at {awHex}"); break; }
+                    Formats.Combat.AiPacket? ap = GetAiPacket(aw);
+                    (ProtoInfo? eqp, MapObject? eqi) = EquippedWeapon(aw);
+                    if (eqi is not null) eqi.AmmoQuantity = 0; // simulate the gun going dry
+                    string carried = string.Join(",", CritterInventoryWeapons(aw)
+                        .Where(w => w.Item != eqi).Select(w => $"0x{w.Proto.Pid:X}"));
+                    int chosen = _combat.ProbeAiWeaponSwitch(aw, _dude.Dude);
+                    Console.WriteLine($"ai-weapon-probe: hex={awHex} bestWeapon={ap?.BestWeapon ?? -1} "
+                        + $"equipped=0x{eqp?.Pid:X} carried=[{carried}] switchedTo="
+                        + (chosen < 0 ? "fists" : $"0x{chosen:X}"));
                     break;
                 }
                 case StartupAction.LoadAmmo(var ammoPid) when _dude is not null:
@@ -4566,6 +4588,38 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
         }
 
         return (null, null);
+    }
+
+    /// <summary>The critter's carried weapon items (proto + item) for the AI inventory weapon
+    /// switch (_ai_search_inven_weap). Returns ALL weapons in the bag — the CombatEngine fold skips
+    /// the one being replaced; a non-weapon or unknown proto is dropped. P43.</summary>
+    public IReadOnlyList<(ProtoInfo Proto, MapObject Item)> CritterInventoryWeapons(MapObject critter)
+    {
+        List<MapObject> bag = critter == _dude?.Dude ? _dudeInventory : critter.Inventory;
+        var result = new List<(ProtoInfo, MapObject)>();
+        foreach (MapObject item in bag)
+        {
+            try
+            {
+                ProtoInfo proto = _protos.Get(item.Pid);
+                if (proto.Weapon is not null)
+                    result.Add((proto, item));
+            }
+            catch (Exception ex) when (ex is FileNotFoundException or InvalidDataException)
+            {
+            }
+        }
+        return result;
+    }
+
+    /// <summary>Wield a carried weapon: clear every in-hand flag in the bag, then set the new item's
+    /// right hand (_inven_wield HAND_RIGHT) so <see cref="EquippedWeapon"/> returns it. P43.</summary>
+    public void EquipWeapon(MapObject critter, MapObject weaponItem)
+    {
+        List<MapObject> bag = critter == _dude?.Dude ? _dudeInventory : critter.Inventory;
+        foreach (MapObject it in bag)
+            it.Flags &= ~(MapObject.FlagInLeftHand | MapObject.FlagInRightHand);
+        weaponItem.Flags |= MapObject.FlagInRightHand;
     }
 
     /// <summary>Loaded rounds; -1 sentinel hydrates from the proto capacity

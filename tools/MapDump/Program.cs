@@ -89,6 +89,15 @@ for (int elevation = 0; elevation < MapFile.ElevationCount; elevation++)
             int scriptIndex = c.Sid != -1 && map.ScriptsBySid.TryGetValue(c.Sid, out MapScriptRecord? rec)
                 ? rec.ScriptListIndex : -1;
             Console.WriteLine($"      hex {c.HexTile} pid 0x{c.Pid:X} aiPacket {pkt} hp {c.CurrentHp} script {scriptIndex}");
+
+            // Inventory weapon census (AI best_weapon driver check): pids of carried weapons,
+            // marking the wielded one (in-hand flag). A critter with >1 weapon is a best_weapon driver.
+            var weps = c.Inventory
+                .Where(it => Fid.Type(it.Fid) == ObjectType.Item && IsWeapon(it.Pid))
+                .Select(it => $"0x{it.Pid:X}{(it.IsInHand ? "*" : "")}")
+                .ToList();
+            if (weps.Count > 0)
+                Console.WriteLine($"        weapons: {string.Join(", ", weps)} (*=wielded)");
         }
     }
 
@@ -128,4 +137,10 @@ int TryGetSubType(int pid)
     {
         return -1;
     }
+}
+
+bool IsWeapon(int pid)
+{
+    try { return protos.Get(pid).Weapon is not null; }
+    catch (Exception ex) when (ex is FileNotFoundException or InvalidDataException) { return false; }
 }

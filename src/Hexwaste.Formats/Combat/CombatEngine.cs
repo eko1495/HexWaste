@@ -1799,6 +1799,92 @@ public sealed class CombatEngine
             _actingEnemyAp -= 2;
     }
 
+    /// <summary>
+    /// _ai_switch_weapons → _ai_search_inven_weap (combat_ai.cc:2596/2002): the wielded weapon is
+    /// unusable (here: a dry gun with no reload), so scan the critter's CARRIED weapons for the best
+    /// one its ai.txt <c>best_weapon</c> preference allows and wield it. Returns the new weapon, or
+    /// (null, null) for fists when nothing qualifies (the engine's punch fallback). Only BIPED/ROBOTIC
+    /// bodies search inventory (combat_ai.cc:2004); others keep fists.
+    ///
+    /// DOCUMENTED SIMPLIFICATIONS vs the engine: the avg-damage score omits the weapon-perk ×2 and the
+    /// explosive-radius ×(extras+1) factors (Hexwaste tracks neither); _combat_safety_invalidate_weapon
+    /// (ally-in-line-of-fire / over-range "ignore") is not applied (Ignore stays false); ranged ammo
+    /// availability is approximated by the loaded/proto-default count (aiHaveAmmo bag-search not ported);
+    /// art-exists is assumed. Only the dry-gun trigger is wired (the slice driver); the engine also
+    /// switches on arm-crippled / out-of-range-no-weapon (combat_ai.cc:2800/2823) — same helper, not wired.
+    /// </summary>
+    private (ProtoInfo?, MapObject?) AiSwitchWeapon(MapObject enemy, AiPacket? ai, int distance,
+        MapObject? currentItem)
+    {
+        CritterState? self = _host.GetCritterState(enemy);
+        int bodyType = self?.Proto.BodyType ?? -1;
+        if (bodyType is not (0 or 2)) // BODY_TYPE_BIPED / BODY_TYPE_ROBOTIC
+            return (null, null);
+
+        int bestWeapon = ai?.BestWeapon ?? -1;
+        int minToHit = ai?.MinToHit ?? 0;
+        int results = enemy.CombatResults;
+        bool bothArmsCrippled =
+            (results & CriticalTables.DamCripArmLeft) != 0 && (results & CriticalTables.DamCripArmRight) != 0;
+        bool anyArmCrippled = (results & (CriticalTables.DamCripArmLeft | CriticalTables.DamCripArmRight)) != 0;
+
+        // Fold seed = the unarmed "punch" option: UNARMED if punch reaches (dist ≤ 1) else NONE
+        // (order 999); avg damage 0 (the engine leaves avgDamage1 = 0 for weapon1 == null).
+        var best = new AiBestWeapon.Choice(
+            distance <= 1 ? WeaponClass.AttackUnarmed : WeaponClass.AttackNone, AvgDamage: 0, Cost: 0);
+        (ProtoInfo Proto, MapObject Item)? winner = null;
+
+        if (!bothArmsCrippled)
+        {
+            foreach ((ProtoInfo proto, MapObject item) in _host.CritterInventoryWeapons(enemy))
+            {
+                if (item == currentItem || proto.Weapon is not { } weapon)
+                    continue;
+                int attackType = WeaponClass.AttackType(proto.ExtendedFlags);
+
+                // _ai_can_use_weapon (combat_ai.cc:1972): two-handed gate, skill ≥ min_to_hit, pref match.
+                if (anyArmCrippled && WeaponProtoStats.IsTwoHanded(proto.ExtendedFlags))
+                    continue;
+                if (self is not null
+                    && self.SkillValue(WeaponClass.Skill(proto.ExtendedFlags, weapon.DamageType)) < minToHit)
+                    continue;
+                if (!AiBestWeapon.HasWeapPrefType(bestWeapon, attackType))
+                    continue;
+                if (attackType == WeaponClass.AttackRanged && _host.WeaponAmmo(proto, item) <= 0)
+                    continue; // a ranged weapon needs ammo to be a candidate
+
+                var cand = new AiBestWeapon.Choice(attackType,
+                    (weapon.MinDamage + weapon.MaxDamage) / 2, proto.Cost, IsFlare: proto.Pid == 79);
+                bool favorB = bestWeapon == 7 && _rng.Next(1, 101) <= 50; // RANDOM coin (inert on slice)
+                if (AiBestWeapon.Prefers(bestWeapon, best, cand, favorB))
+                {
+                    best = cand;
+                    winner = (proto, item);
+                }
+            }
+        }
+
+        if (winner is { } w)
+        {
+            _host.EquipWeapon(enemy, w.Item);
+            return (w.Proto, w.Item);
+        }
+        return (null, null); // fists
+    }
+
+    /// <summary>P43 harness: run the AI inventory weapon switch for <paramref name="enemy"/> as if its
+    /// wielded weapon went dry, equipping + returning the chosen weapon's pid (-1 = fists fallback).
+    /// Drives the real <see cref="AiSwitchWeapon"/> path (CritterInventoryWeapons → best_weapon fold →
+    /// EquipWeapon) against <paramref name="target"/> for the distance term.</summary>
+    public int ProbeAiWeaponSwitch(MapObject enemy, MapObject target)
+    {
+        AiPacket? ai = _host.GetAiPacket(enemy);
+        int distance = HexGrid.Distance(enemy.HexTile, target.HexTile);
+        (_, MapObject? curItem) = _host.EquippedWeapon(enemy);
+        (ProtoInfo? proto, _) = AiSwitchWeapon(enemy, ai, distance, curItem);
+        return proto?.Pid ?? -1;
+    }
+
     private bool TryEnemyAction(MapObject enemy)
     {
         MapObject? dude = _host.Dude;
@@ -1878,7 +1964,7 @@ public sealed class CombatEngine
         int enemyDistance = HexGrid.Distance(enemy.HexTile, dudeTile);
 
         // _ai_try_attack shape: reload-if-empty, approach if blocked/far, else
-        // stand and shoot; melee fallback when dry.
+        // stand and shoot; switch to a carried backup (best_weapon) when dry, fists otherwise.
         if (enemyGun && _host.WeaponAmmo(enemyWeapon!, enemyWeaponItem!) <= 0)
         {
             if (_actingEnemyAp >= RangedMath.ReloadApCost
@@ -1887,9 +1973,10 @@ public sealed class CombatEngine
                 _actingEnemyAp -= RangedMath.ReloadApCost;
                 return true;
             }
-            enemyWeapon = null; // dry and no ammo: fists
-            enemyWeaponItem = null;
-            enemyGun = false;
+            // Dry with no ammo: scan the inventory for the packet-preferred backup weapon and wield
+            // it (_ai_switch_weapons → _ai_search_inven_weap, combat_ai.cc:2596). None → fists.
+            (enemyWeapon, enemyWeaponItem) = AiSwitchWeapon(enemy, ai, enemyDistance, enemyWeaponItem);
+            enemyGun = enemyWeapon?.Weapon is { } ew2 && ew2.IsGun(enemyWeapon.ExtendedFlags);
         }
 
         int attackRange = enemyGun ? enemyWeapon!.Weapon!.MaxRange1

@@ -57,6 +57,14 @@ public interface ICombatHost
     /// fumbles have no such gate. Default false (P41; the fake host has no clock).</summary>
     bool DudeCritFailuresEnabled => false;
     (ProtoInfo? Proto, MapObject? Item) EquippedWeapon(MapObject critter); // :2305
+    /// <summary>The critter's CARRIED weapon items (proto + item), EXCLUDING the one currently in
+    /// hand — the AI inventory-weapon-switch candidate pool (_ai_search_inven_weap, combat_ai.cc:2002).
+    /// Default empty so the fake test host stays inert (no inventory model) and the combat goldens
+    /// hold (the golden-fight critters carry no weapons). P43.</summary>
+    IReadOnlyList<(ProtoInfo Proto, MapObject Item)> CritterInventoryWeapons(MapObject critter) => [];
+    /// <summary>Wield a carried weapon (clear the old hand flag, set the new) — the AI weapon switch
+    /// equips its best inventory weapon (_inven_wield, combat_ai.cc:2623). Default no-op (P43).</summary>
+    void EquipWeapon(MapObject critter, MapObject weaponItem) { }
     int WeaponAmmo(ProtoInfo weaponProto, MapObject item);              // :2326
     AmmoProtoStats? LoadedAmmo(ProtoInfo weaponProto, MapObject item);  // :2333
     bool TryReload(MapObject holder, ProtoInfo weaponProto, MapObject item); // :2363

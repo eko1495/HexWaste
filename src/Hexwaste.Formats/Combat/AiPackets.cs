@@ -24,7 +24,13 @@ public sealed record AiPacket(
     /// <summary>ai.txt <c>chem_use</c> mode (gChemUseKeys order): 0 clean, 1 stims_when_hurt_little,
     /// 2 stims_when_hurt_lots, 3 sometimes, 4 anytime, 5 always (combat_ai.cc:192). Drives the AI's
     /// mid-fight healing (P42); the non-healing combat-drug branch is a documented residual.</summary>
-    int ChemUse = 0);
+    int ChemUse = 0,
+    /// <summary>ai.txt <c>best_weapon</c> preference (gBestWeaponKeys index, combat_ai.cc:180):
+    /// 0 no_pref, 1 melee, 2 melee_over_ranged, 3 ranged_over_melee, 4 ranged, 5 unarmed,
+    /// 6 unarmed_over_thrown, 7 random. -1 = absent (the engine's pre-parse default, which uses the
+    /// same RANGED,THROW,MELEE,UNARMED ordering as no_pref). Drives the AI inventory weapon switch
+    /// (<see cref="AiBestWeapon"/>) when the wielded weapon becomes unusable.</summary>
+    int BestWeapon = -1);
 
 /// <summary>
 /// The parsed <c>data\ai.txt</c> table, keyed by <c>packet_num</c>. Built once and
@@ -58,7 +64,8 @@ public sealed class AiPacketTable
         {
             if (fields.TryGetValue("packet_num", out string? pn) && int.TryParse(pn, out int num))
                 packets.Add(new AiPacket(num, name, I("min_to_hit"), I("min_hp"), I("max_dist"),
-                    S("distance"), S("disposition"), ParseHurt(S("hurt_too_much")), ParseChemUse(S("chem_use"))));
+                    S("distance"), S("disposition"), ParseHurt(S("hurt_too_much")), ParseChemUse(S("chem_use")),
+                    ParseBestWeapon(S("best_weapon"))));
             fields.Clear();
         }
 
@@ -120,5 +127,21 @@ public sealed class AiPacketTable
         "anytime" => 4,
         "always" => 5,
         _ => 0, // "clean" / absent
+    };
+
+    /// <summary>ai.txt <c>best_weapon</c> string → the gBestWeaponKeys index (combat_ai.cc:180).
+    /// Absent/unknown → -1 (the engine's pre-parse default; _cai_match_str_to_list leaves the value
+    /// untouched on no match). Note "unarmed_over_thrown" is the spelling in ai.txt.</summary>
+    internal static int ParseBestWeapon(string value) => value.Trim().ToLowerInvariant() switch
+    {
+        "no_pref" => 0,
+        "melee" => 1,
+        "melee_over_ranged" => 2,
+        "ranged_over_melee" => 3,
+        "ranged" => 4,
+        "unarmed" => 5,
+        "unarmed_over_thrown" => 6,
+        "random" => 7,
+        _ => -1, // absent / unknown
     };
 }

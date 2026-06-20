@@ -1517,6 +1517,38 @@ winnable real fight. Golden ai-heal (denbus1 Average Merchant @16910 heals 1→1
 clean-skip tests); 568 Formats tests, 70 encounter + 16 combat goldens green. map_update_p_proc stays on
 the backlog pending a proper M0 RunMapUpdate diagnostic to confirm (not assume) its lighting payoff.
 
+Phase 43 (DONE — "Draw Your Backup", AI best_weapon inventory switch; the user's "Full combat AI" ask,
+M2 — chem_use M1 already shipped in P42). The engine's _ai_switch_weapons (combat_ai.cc:2596) → _ai_search_
+inven_weap (:2002) → _ai_best_weapon (:1817): when a critter's wielded weapon becomes unusable it scans its
+CARRIED weapons and wields the best one its ai.txt best_weapon preference allows. GROUNDING (MapDump's new
+inventory-weapon census, verified on real data): multi-weapon NPCs DO exist on the slice — denbus1 17261
+(Tough Guard pkt22 = ranged_over_melee) with a backup 0x5; kladwtwn/denbus2 pkt12/pkt24/pkt34 NPCs with
+backups — while the golden-fight arcaves scorpions are non-biped + carry NO weapons (inert). Ported:
+Formats.Combat.WeaponClass (item.cc _attack_subtype/_attack_skill[9] → ATTACK_TYPE + SKILL from extFlags&0xF,
+with the SMALL_GUNS→ENERGY[laser/plasma/electrical]/BIG_GUNS[0x100] refinement); Formats.Combat.AiBestWeapon
+(the _weapPrefOrderings[9][5] table indexed [best_weapon+1] + the pairwise Prefers: order term, ±5-damage
+cost tiebreak, flare deprioritise, the best_weapon==-1/≥UNARMED_OVER_THROW damage override, RANDOM coin);
+AiPacket.BestWeapon (-1 default = the engine pre-parse value, same ordering as no_pref) parsed via
+ParseBestWeapon. CombatEngine.AiSwitchWeapon folds the candidates (CritterInventoryWeapons host seam) with
+the _ai_can_use_weapon filter (both-arms-crippled / one-arm+two-handed gate, skill≥min_to_hit, pref-type
+match, ranged-needs-ammo) over an unarmed "punch" seed (attackType UNARMED if dist≤1 else NONE, avgDamage 0
+— the engine's weapon1==null), gated on BIPED/ROBOTIC bodies (combat_ai.cc:2004); wired into TryEnemyAction's
+dry-gun branch (the slice's clean hook) BEFORE the fists fallback, with EquipWeapon (host) actually wielding
+the pick. DOCUMENTED SIMPLIFICATIONS: the avg-damage score omits the weapon-perk ×2 + explosive ×(extras+1)
+factors (Hexwaste tracks neither); _combat_safety_invalidate_weapon (ally-in-LoF / over-range Ignore) not
+applied; ranged ammo = loaded/proto-default (aiHaveAmmo bag-search approximated); only the dry-gun switch
+trigger is wired (the engine also switches on arm-crippled / out-of-range-no-weapon — same helper, not wired,
+no slice driver). INERT: the golden-fight scorpions are non-biped + weaponless → the switch never fires →
+all 16 combat + 70 prior encounter goldens BYTE-IDENTICAL (verified by a clean check BEFORE recording).
+MapDump gained a critter inventory-weapon census (pids + *=wielded). Harness --ai-weapon-probe <hex> forces
+the gun dry + runs the REAL switch path (no --fight golden reaches a multi-weapon NPC, so this is the live
+proof); golden ai-weapon-switch (denbus1 Tough Guard 17261 0x5E→0x5). KEY FINDING (verified, not guessed):
+the kladwtwn multi-weapon NPCs' RUNTIME packets (24 Tough Citizen / 34 Torr, no best_weapon) differ from
+MapDump's static read because kladwtwn map_enter spawns/replaces them — both reads are correct; denbus1
+17261 (pkt22, consistent) is the clean demonstrator. 45 new test cases (AiBestWeaponTests pairwise + WeaponClass
++ best_weapon parse + GameDataFact pkt12=ranged_over_melee + 4 fake-host CombatEngine switch/fists/non-biped/
+skill-gate); 608 Formats tests (548 run + 60 game-data-gated), 71 encounter + 16 combat goldens green.
+
 Phase 10 (DONE, per docs/phase10-research-report.md — "The Wasteland
 Bites Back"): M0 persistence pre-stage (the net: MapList saved=No /
 random_start_point parse + IsTransient; the 3-clause transient guards as

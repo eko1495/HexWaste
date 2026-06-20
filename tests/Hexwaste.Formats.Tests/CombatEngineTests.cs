@@ -345,6 +345,104 @@ public class CombatEngineTests
         Assert.Contains(enemy, host.CarriesStimpak);   // stimpak untouched
     }
 
+    // --- P43: AI inventory weapon switch (best_weapon) --------------------------------
+
+    private static ProtoInfo TestWeapon(int pid, int ext, int min, int max, int cost = 0, int dmgType = 0)
+    {
+        // ext low nibble = the attack-anim code (0x06 single-fire ranged, 0x03 swing melee, 0x01 punch).
+        var w = new WeaponProtoStats(0, min, max, dmgType, 40, 0, 0, 0, 4, 0, 0, 0, -1, 12, 0);
+        return new ProtoInfo(pid, 0, 0x06000000, 0, ext, 3, Cost: cost, Weapon: w);
+    }
+
+    private static MapObject TestItem(int pid) => new()
+    {
+        Id = pid, HexTile = 0, X = 0, Y = 0, Frame = 0, Rotation = 0, Fid = 0x06000000, Flags = 0, Pid = pid, Sid = -1,
+    };
+
+    [Fact]
+    public void AiSwitchesToTheCarriedBackupMatchingItsWeaponPreference()
+    {
+        // _ai_switch_weapons → _ai_search_inven_weap → _ai_best_weapon: a biped enemy whose gun went dry
+        // draws the carried backup its best_weapon preference favours. ranged_over_melee → the pistol.
+        var host = new FakeCombatHost { LoadedAmmoCount = 10 };
+        MapObject dude = host.SetDude(NewCritter(tile: 20100, hp: 30, ap: 10));
+        MapObject enemy = host.AddCritter(NewCritter(tile: HexGrid.TileInDirection(20100, 0), hp: 30, ap: 10));
+        host.AiPackets[enemy] = new AiPacket(12, "Guard", MinToHit: 0, MinHp: 0, 0, "", "", 0, 0, BestWeapon: 3);
+        host.Equipped = (TestWeapon(0x100, 0x06, 5, 12), TestItem(0x100)); // the dry equipped gun
+
+        MapObject rangedItem = TestItem(0x201);
+        host.InventoryWeapons[enemy] =
+        [
+            (TestWeapon(0x200, 0x03, 1, 6), TestItem(0x200)),    // a melee club (swing)
+            (TestWeapon(0x201, 0x06, 4, 10), rangedItem),        // a ranged pistol (single)
+        ];
+        var engine = new CombatEngine(host, new MinRng());
+
+        int chosen = engine.ProbeAiWeaponSwitch(enemy, dude);
+
+        Assert.Equal(0x201, chosen);                       // ranged_over_melee → the pistol
+        Assert.Contains((enemy, rangedItem), host.Equips); // and it was actually wielded
+    }
+
+    [Fact]
+    public void AiKeepsFistsWhenNoCarriedWeaponQualifies()
+    {
+        // The inert-by-default invariant: an empty inventory → no candidate → fists (-1), nothing wielded.
+        // The golden-fight critters carry no weapons → the switch never fires → byte-identical goldens.
+        var host = new FakeCombatHost();
+        MapObject dude = host.SetDude(NewCritter(tile: 20100, hp: 30, ap: 10));
+        MapObject enemy = host.AddCritter(NewCritter(tile: HexGrid.TileInDirection(20100, 0), hp: 30, ap: 10));
+        host.AiPackets[enemy] = new AiPacket(8, "Animal", MinToHit: 0, MinHp: 0, 0, "", "", 0, 0, BestWeapon: -1);
+        var engine = new CombatEngine(host, new MinRng());
+
+        Assert.Equal(-1, engine.ProbeAiWeaponSwitch(enemy, dude));
+        Assert.Empty(host.Equips);
+    }
+
+    [Fact]
+    public void NonBipedCritterNeverSearchesInventory()
+    {
+        // _ai_search_inven_weap gates on BIPED/ROBOTIC (combat_ai.cc:2004): a QUADRUPED scorpion never
+        // switches even with a backup in the bag — why the arcaves scorpion goldens are byte-identical.
+        var host = new FakeCombatHost { LoadedAmmoCount = 10 };
+        MapObject dude = host.SetDude(NewCritter(tile: 20100, hp: 30, ap: 10));
+        int[] b = new int[35];
+        b[CritterStat.MaximumHitPoints] = 30;
+        b[CritterStat.MaximumActionPoints] = 10;
+        var quadProto = new CritterProtoStats(0, 0, 0, b, new int[35], new int[18], 1 /* BODY_TYPE_QUADRUPED */, 0, 0, 0);
+        var enemy = new MapObject
+        {
+            Id = 2, HexTile = HexGrid.TileInDirection(20100, 0), X = 0, Y = 0, Frame = 0, Rotation = 0,
+            Fid = 0x01000000, Flags = 0, Pid = 0x01000005, Sid = -1,
+        };
+        enemy.CurrentHp = 30;
+        host.AddCritter((enemy, quadProto));
+        host.AiPackets[enemy] = new AiPacket(8, "Scorpion", MinToHit: 0, MinHp: 0, 0, "", "", 0, 0, BestWeapon: -1);
+        host.Equipped = (TestWeapon(0x100, 0x06, 5, 12), TestItem(0x100));
+        host.InventoryWeapons[enemy] = [(TestWeapon(0x201, 0x06, 4, 10), TestItem(0x201))];
+        var engine = new CombatEngine(host, new MinRng());
+
+        Assert.Equal(-1, engine.ProbeAiWeaponSwitch(enemy, dude)); // non-biped → no inventory search
+        Assert.Empty(host.Equips);
+    }
+
+    [Fact]
+    public void AiRejectsACarriedWeaponBelowItsMinToHitSkill()
+    {
+        // _ai_can_use_weapon: skillGetValue(critter, weaponSkill) < min_to_hit → not a candidate. With
+        // all skills 0 and min_to_hit 50, the carried pistol is rejected → fists.
+        var host = new FakeCombatHost { LoadedAmmoCount = 10 };
+        MapObject dude = host.SetDude(NewCritter(tile: 20100, hp: 30, ap: 10));
+        MapObject enemy = host.AddCritter(NewCritter(tile: HexGrid.TileInDirection(20100, 0), hp: 30, ap: 10, skill: 0));
+        host.AiPackets[enemy] = new AiPacket(12, "Guard", MinToHit: 50, MinHp: 0, 0, "", "", 0, 0, BestWeapon: 3);
+        host.Equipped = (TestWeapon(0x100, 0x06, 5, 12), TestItem(0x100));
+        host.InventoryWeapons[enemy] = [(TestWeapon(0x201, 0x06, 4, 10), TestItem(0x201))];
+        var engine = new CombatEngine(host, new MinRng());
+
+        Assert.Equal(-1, engine.ProbeAiWeaponSwitch(enemy, dude)); // skill 0 < 50 → no candidate
+        Assert.Empty(host.Equips);
+    }
+
     [Fact]
     public void EnemyWithAchievableMinToHitStillAttacks()
     {
@@ -1485,6 +1583,11 @@ public class CombatEngineTests
         public AiPacket? GetAiPacket(MapObject critter) => AiPackets.GetValueOrDefault(critter);
         public (ProtoInfo? Proto, MapObject? Item) Equipped = (null, null);
         public (ProtoInfo? Proto, MapObject? Item) EquippedWeapon(MapObject critter) => Equipped;
+        public readonly Dictionary<MapObject, List<(ProtoInfo Proto, MapObject Item)>> InventoryWeapons = []; // P43
+        public IReadOnlyList<(ProtoInfo Proto, MapObject Item)> CritterInventoryWeapons(MapObject critter) =>
+            InventoryWeapons.GetValueOrDefault(critter, []);
+        public readonly List<(MapObject Critter, MapObject Item)> Equips = []; // P43 EquipWeapon
+        public void EquipWeapon(MapObject critter, MapObject weaponItem) => Equips.Add((critter, weaponItem));
         public int LoadedAmmoCount; // settable magazine for burst/gun tests
         public int WeaponAmmo(ProtoInfo weaponProto, MapObject item) => LoadedAmmoCount;
         public AmmoProtoStats? LoadedAmmo(ProtoInfo weaponProto, MapObject item) => null;
