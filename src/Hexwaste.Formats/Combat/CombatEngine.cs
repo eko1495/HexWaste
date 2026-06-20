@@ -86,10 +86,14 @@ public sealed class CombatEngine
 
     private CombatPhase _phase = CombatPhase.Idle;
     private readonly HashSet<MapObject> _hostiles = [];
-    private readonly Queue<MapObject> _enemyQueue = new();
+    // The round's INTERLEAVED turn order (dude + hostiles + allies), ported from combat.cc
+    // _combat() iterating the sorted _combat_list: round 1 is attacker/defender/dude-first
+    // (_combat_sequence_init), rounds 2+ are sorted by Sequence (Luck tiebreak) via _compare_faster
+    // in _combat_sequence. _orderIndex is the current slot; the dude's slot pauses for input.
+    private readonly List<MapObject> _order = [];
+    private int _orderIndex;
     private MapObject? _actingEnemy;
     private int _actingEnemyAp;
-    private readonly Queue<MapObject> _allyQueue = new();
     private MapObject? _actingAlly;
     private int _actingAllyAp;
     private int _round;
@@ -1441,10 +1445,11 @@ public sealed class CombatEngine
         _combatTick = 0;
         _events.ClearAll();
         _hostiles.Clear();
-        _enemyQueue.Clear();
-        _actingEnemy = null;
         _hostiles.Add(target);
         AddJoiners();
+        // The dude opened combat → round-1 order is dude (attacker) first, target (defender) second
+        // (_combat_sequence_init). The dude's slot is index 0, so the turn stays his — he attacks now.
+        BuildTurnOrder(firstRound: true, _host.Dude, target);
         _host.Log($"Combat begins — round 1, your turn (AP {_dudeAp}).");
     }
 
@@ -1464,8 +1469,6 @@ public sealed class CombatEngine
         _combatTick = 0;
         _events.ClearAll();
         _hostiles.Clear();
-        _enemyQueue.Clear();
-        _actingEnemy = null;
         foreach (MapObject c in combatants)
             if (!c.IsDead && c != dude && c.Team != dude.Team)
             {
@@ -1474,6 +1477,7 @@ public sealed class CombatEngine
             }
         if (_host.GetCritterState(dude) is { } stats)
             ResetDudeAp(stats);
+        BuildTurnOrder(firstRound: true, dude, null); // opens on the dude's turn (he can watch or wade in)
         var teams = _hostiles.Select(h => h.Team).Distinct().OrderBy(t => t).ToList();
         _host.Log($"You stumble into a battle! ({_hostiles.Count} combatants).");
         _host.Transcript($"brawl: combatants={_hostiles.Count} teams=[{string.Join(",", teams)}]");
@@ -1533,22 +1537,61 @@ public sealed class CombatEngine
             || _pendingAttack is not null || _pendingBurst is not null || _pendingThrow is not null)
             return;
 
+        // The dude's slot in the interleaved order is done — advance to the next
+        // combatant (the engine's _combat() loop moving past gDude's _combat_turn).
+        _orderIndex++;
         _phase = CombatPhase.EnemyTurn;
-        BuildEnemyQueue();
     }
 
-    private void BuildEnemyQueue()
+    /// <summary>
+    /// Build the round's interleaved turn order (dude + living hostiles + living party members),
+    /// ported from combat.cc. ROUND 1 (<paramref name="firstRound"/>) places the attacker first, the
+    /// defender second and the dude third (_combat_sequence_init) — the one who opened combat acts
+    /// first, NOT by initiative. ROUNDS 2+ sort by Sequence descending, Luck as the tiebreak
+    /// (_compare_faster in _combat_sequence). Knocked-out / disengaging critters are dropped (the
+    /// engine moves them to the non-combatant list). The sort is STABLE for fully-tied critters (a
+    /// documented divergence from the engine's unstable qsort — keeps the goldens reproducible).
+    /// </summary>
+    private void BuildTurnOrder(bool firstRound, MapObject? attacker, MapObject? defender)
     {
-        _enemyQueue.Clear();
+        _order.Clear();
         _actingEnemy = null;
-        foreach (MapObject hostile in _hostiles.Where(h => !h.IsDead)
-            .OrderByDescending(h => _host.GetCritterState(h)?.Sequence ?? 0))
-            _enemyQueue.Enqueue(hostile);
-
-        _allyQueue.Clear();
         _actingAlly = null;
-        foreach (MapObject ally in _host.PartyMembers.Where(m => !m.IsDead))
-            _allyQueue.Enqueue(ally);
+        MapObject? dude = _host.Dude;
+
+        var combatants = new List<MapObject>();
+        if (dude is not null && !dude.IsDead)
+            combatants.Add(dude);
+        foreach (MapObject h in _hostiles)
+            if (!h.IsDead && !combatants.Contains(h))
+                combatants.Add(h);
+        foreach (MapObject a in _host.PartyMembers)
+            if (!a.IsDead && !combatants.Contains(a))
+                combatants.Add(a);
+
+        if (firstRound)
+        {
+            void PlaceFirst(MapObject? o)
+            {
+                if (o is not null && combatants.Remove(o))
+                    _order.Add(o);
+            }
+            PlaceFirst(attacker);
+            PlaceFirst(defender);
+            if (attacker != dude && defender != dude)
+                PlaceFirst(dude);
+            _order.AddRange(combatants); // the rest, in collection order
+        }
+        else
+        {
+            // KO/disengaging critters don't act this round (combat_ai DISENGAGING maneuver / DAM_KNOCKED_OUT).
+            _order.AddRange(combatants
+                .Where(c => c == dude || (c.CombatResults & CriticalTables.DamKnockedOut) == 0
+                    && (c.Maneuver & ManeuverDisengaging) == 0)
+                .OrderByDescending(c => _host.GetCritterState(c)?.Sequence ?? 0)
+                .ThenByDescending(c => _host.GetCritterState(c)?.Stat(CritterStat.Luck) ?? 0));
+        }
+        _orderIndex = 0;
     }
 
     /// <summary>A script's attack external fired (scripted aggro). The aggressor
@@ -1574,8 +1617,9 @@ public sealed class CombatEngine
             AddJoiners();
             if (_host.GetCritterState(dude) is { } stats)
                 ResetDudeAp(stats);
+            // The ambusher opened combat → it acts first (round-1 attacker, dude as defender).
+            BuildTurnOrder(firstRound: true, attacker, dude);
             _phase = CombatPhase.EnemyTurn;
-            BuildEnemyQueue();
             _host.Log($"The {_host.ObjectName(attacker)} attacks you!");
             _host.Transcript($"scripted-aggro: {_host.ObjectName(attacker)}@{attacker.HexTile} starts combat");
         }
@@ -1614,8 +1658,9 @@ public sealed class CombatEngine
 
         _phase = CombatPhase.Idle;
         _hostiles.Clear();
-        _enemyQueue.Clear();
+        _order.Clear();
         _actingEnemy = null;
+        _actingAlly = null;
         if (_host.Dude is { } dude && _host.GetCritterState(dude) is { } stats)
             ResetDudeAp(stats);
         _host.Log("Combat ends.");
@@ -1693,7 +1738,7 @@ public sealed class CombatEngine
         }
 
         if (_phase == CombatPhase.EnemyTurn)
-            StepEnemyTurn();
+            StepTurnOrder();
     }
 
     /// <summary>Remove living hostiles farther than sight range from every member
@@ -1716,71 +1761,104 @@ public sealed class CombatEngine
         return best;
     }
 
-    private void StepEnemyTurn()
+    /// <summary>
+    /// Step the INTERLEAVED round order one combatant at a time (ported from combat.cc _combat()'s
+    /// <c>for (; curIndex &lt; _list_com; curIndex++) _combat_turn(_combat_list[curIndex])</c>): finish
+    /// an in-flight NPC action, then advance to the next actor. The dude's slot pauses the machine in
+    /// PlayerTurn (the engine's blocking _combat_turn(gDude) → _combat_input); an NPC slot auto-resolves
+    /// via TryEnemyAction/TryAllyAction. When the order is exhausted, start the next round and re-sort.
+    /// </summary>
+    private void StepTurnOrder()
     {
-        if (_actingEnemy is { } acting && !acting.IsDead)
+        MapObject? dude = _host.Dude;
+
+        // Continue an NPC action that spans Step calls (a walk/attack mid-animation).
+        if (_actingEnemy is { } ae)
         {
-            if (TryEnemyAction(acting))
+            if (!ae.IsDead && TryEnemyAction(ae))
                 return;
             _actingEnemy = null;
+            _orderIndex++;
         }
-
-        while (_enemyQueue.Count > 0)
+        else if (_actingAlly is { } aa)
         {
-            MapObject enemy = _enemyQueue.Dequeue();
-            if (enemy.IsDead)
-                continue;
-            _actingEnemy = enemy;
-            _actingEnemyAp = _host.GetCritterState(enemy)?.MaxActionPoints ?? 5;
-            if (TryEnemyAction(enemy))
-                return;
-            _actingEnemy = null;
-        }
-
-        // Companions take their swings after the hostiles.
-        if (_actingAlly is { } actingAlly && !actingAlly.IsDead)
-        {
-            if (TryAllyAction(actingAlly))
+            if (!aa.IsDead && TryAllyAction(aa))
                 return;
             _actingAlly = null;
+            _orderIndex++;
         }
 
-        while (_allyQueue.Count > 0)
+        // Walk the order to the next actor that can act.
+        while (true)
         {
-            MapObject ally = _allyQueue.Dequeue();
-            if (ally.IsDead)
-                continue;
-            _actingAlly = ally;
-            _actingAllyAp = _host.GetCritterState(ally)?.MaxActionPoints ?? 5;
-            if (TryAllyAction(ally))
-                return;
-            _actingAlly = null;
-        }
+            if (_orderIndex >= _order.Count)
+            {
+                StartNewRound();
+                if (_order.Count == 0)
+                    return; // nothing left (CombatShouldEnd guards the real end)
+            }
 
-        // Everyone acted: next round. Advance the combat tick and fire any due
-        // knockout wakes (P14-M2) before the new round's turns are taken.
+            MapObject actor = _order[_orderIndex];
+            if (actor.IsDead)
+            {
+                _orderIndex++;
+                continue;
+            }
+
+            if (actor == dude)
+            {
+                // The dude's slot — incapacitated dudes forfeit it (the wake fires as rounds advance),
+                // otherwise pause in PlayerTurn for input (the engine's blocking _combat_turn(gDude)).
+                if (!CanAct(dude!))
+                {
+                    SkipTurnIfIncapacitated(dude!);
+                    _host.Transcript($"dude-skip: round {_round}");
+                    _orderIndex++;
+                    continue;
+                }
+                if (_host.GetCritterState(dude!) is { } stats)
+                {
+                    ResetDudeAp(stats);
+                    if (StandUpIfProne(dude!, _dudeAp) is var afterStand && afterStand >= 0)
+                        _dudeAp = afterStand; // the dude stands at the cost of 3 AP
+                }
+                _phase = CombatPhase.PlayerTurn;
+                _host.Log($"Round {_round} — your turn (AP {_dudeAp}).");
+                return;
+            }
+
+            // An NPC slot: a party ally or a hostile (different targeting logic).
+            _phase = CombatPhase.EnemyTurn;
+            if (_host.PartyMembers.Contains(actor))
+            {
+                _actingAlly = actor;
+                _actingAllyAp = _host.GetCritterState(actor)?.MaxActionPoints ?? 5;
+                if (TryAllyAction(actor))
+                    return;
+                _actingAlly = null;
+            }
+            else
+            {
+                _actingEnemy = actor;
+                _actingEnemyAp = _host.GetCritterState(actor)?.MaxActionPoints ?? 5;
+                if (TryEnemyAction(actor))
+                    return;
+                _actingEnemy = null;
+            }
+            _orderIndex++;
+        }
+    }
+
+    /// <summary>Advance to the next round (combat.cc _combat_sequence at the bottom of the round loop):
+    /// tick the combat clock + fire due knockout wakes (P14-M2), let joiners in, then rebuild the
+    /// Sequence-sorted turn order.</summary>
+    private void StartNewRound()
+    {
         _round++;
         _combatTick += TicksPerRound;
         _events.Process(_combatTick, OnCombatEvent);
         AddJoiners();
-        if (_host.Dude is { } dude && _host.GetCritterState(dude) is { } stats)
-        {
-            // The dude is unconscious / loses this turn: skip straight back to the
-            // enemy turn (the wake fires as rounds advance). Avoids a dead player turn.
-            if (!CanAct(dude))
-            {
-                SkipTurnIfIncapacitated(dude);
-                _host.Transcript($"dude-skip: round {_round}");
-                _phase = CombatPhase.EnemyTurn;
-                BuildEnemyQueue();
-                return;
-            }
-            ResetDudeAp(stats);
-            if (StandUpIfProne(dude, _dudeAp) is var afterStand && afterStand >= 0)
-                _dudeAp = afterStand; // the dude stands at the cost of 3 AP
-        }
-        _phase = CombatPhase.PlayerTurn;
-        _host.Log($"Round {_round} — your turn (AP {_dudeAp}).");
+        BuildTurnOrder(firstRound: false, null, null);
     }
 
     /// <summary>One AI action: punch when adjacent, else an AP-budgeted approach
@@ -2239,8 +2317,9 @@ public sealed class CombatEngine
         _phase = CombatPhase.Idle;
         _terminateRequested = false; // P35-M5
         _hostiles.Clear();
-        _enemyQueue.Clear();
+        _order.Clear();
         _actingEnemy = null;
+        _actingAlly = null;
         _pendingAttack = null;
         _pendingThrow = null;
         _pendingBurst = null;

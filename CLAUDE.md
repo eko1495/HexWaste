@@ -1549,6 +1549,31 @@ MapDump's static read because kladwtwn map_enter spawns/replaces them — both r
 + best_weapon parse + GameDataFact pkt12=ranged_over_melee + 4 fake-host CombatEngine switch/fists/non-biped/
 skill-gate); 608 Formats tests (548 run + 60 game-data-gated), 71 encounter + 16 combat goldens green.
 
+Phase 44 (DONE — "Initiative", interleaved combat turn order by Sequence; the user's pick from the
+"bigger features still to move from f2ce" survey — the biggest remaining combat-fidelity gap). Combat ran
+in FIXED BLOCKS (dude → all hostiles → all allies); the engine interleaves EVERY combatant by the
+Sequence stat. Ported combat.cc: _combat_sequence (rounds 2+ qsort by _compare_faster = Sequence desc,
+Luck tiebreak; drops dead + KO/disengaging to noncom) + _combat_sequence_init (ROUND 1 is attacker-first /
+defender-second / dude-third — initiative does NOT apply the opening round; the one who started combat
+goes first) + the _combat() round loop iterating the sorted list. CombatEngine: replaced the
+_enemyQueue/_allyQueue two-block model with ONE interleaved _order list + _orderIndex; BuildTurnOrder
+(round-1 special vs OrderByDescending Sequence/Luck — STABLE for ties, a documented divergence from the
+engine's unstable qsort, for golden reproducibility); StepTurnOrder walks the order one actor per Step
+(an NPC slot auto-resolves via TryEnemyAction/TryAllyAction unchanged; the DUDE's slot pauses in PlayerTurn
+for input — the engine's blocking _combat_turn(gDude)); EndPlayerTurn advances _orderIndex; StartNewRound
+ticks the combat clock + wakes + joiners then re-sorts. The phase enum is unchanged (PlayerTurn = the
+dude's slot; EnemyTurn = auto-stepping NPC slots — the viewer only reads Idle/PlayerTurn, so both the
+headless --fight driver and interactive play work untouched). KEY OUTCOME (de-risk: clean check BEFORE
+record): 15 of 16 combat goldens BYTE-IDENTICAL — the arcaves scorpions have Sequence ≤ the dude (Narg),
+so dude-first order is unchanged; the reorder only bites when an enemy OUT-sequences the dude. The lone
+re-record (denbus2-fight-flee, where Den humans out-sequence Narg) is SANE: same outcome (dude dies to the
+24-slave swarm) in 5 rounds instead of 9 — the faster death is the faithful order (the humans now correctly
+act before him). 71 encounter goldens BYTE-IDENTICAL (the brawl/combat-proc goldens capture state summaries,
+not per-turn order). 73 CombatEngine fake-host tests (HigherSequenceEnemyActsBeforeTheDudeInRoundTwo locks
+it: an ap-4 seq-20 enemy attacks in BOTH round 1 and round 2 before the dude's round-2 slot — old model = 1,
+new = 2). 609 Formats tests. DOCUMENTED: round-per-round game-clock advance (gameTimeAddSeconds(5)) NOT
+wired (combat stays wall-time; _combatTick is the knockout-wake source only, unchanged).
+
 Phase 10 (DONE, per docs/phase10-research-report.md — "The Wasteland
 Bites Back"): M0 persistence pre-stage (the net: MapList saved=No /
 random_start_point parse + IsTransient; the 3-clause transient guards as

@@ -29,7 +29,9 @@ filing an issue.
 - **Companions**: recruit (including Vic's legitimate VM-driven rescue), a
   wait/follow/dismiss/rejoin control hub, a flat 1:1 inventory trade panel, and
   per-companion proto level-ups (`party.txt`, live on the recruited Vic).
-- **Gameplay**: turn-based melee + gun combat with the engine's depth — to-hit /
+- **Gameplay**: turn-based melee + gun combat with the engine's depth — initiative
+  turn order (every combatant interleaved by Sequence each round, the opener acting
+  first in round 1), to-hit /
   line-of-fire (screen-Bresenham) / ammo+reload, single + burst fire (with the
   left/right collateral cone), AP-gated movement (a crippled leg crawls at 4× the
   AP/hex, a crippled arm blocks a two-handed weapon), AI behaviour packets

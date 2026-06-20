@@ -246,6 +246,42 @@ public class CombatEngineTests
     }
 
     [Fact]
+    public void HigherSequenceEnemyActsBeforeTheDudeInRoundTwo()
+    {
+        // P44 (combat.cc _combat_sequence): rounds 2+ are interleaved by Sequence, so an enemy that
+        // out-sequences the dude takes its turn BEFORE the dude's. Round 1 still favours the attacker
+        // (the dude here), but by the time the dude reaches its round-2 turn, the faster enemy has
+        // already acted twice (round 1 + round 2). The old fixed-block model would show only once.
+        var host = new FakeCombatHost();
+        MapObject dude = host.SetDude(NewCritter(tile: 20100, hp: 100, ap: 10, seq: 1)); // SLOW
+        // ap 4 = exactly one 3-AP punch per turn (it's adjacent, so no move), making the count exact.
+        MapObject fast = host.AddCritter(NewCritter(tile: HexGrid.TileInDirection(20100, 0), hp: 30, ap: 4, seq: 20));
+        var engine = new CombatEngine(host, new MinRng());
+
+        Assert.True(engine.TryAttack(fast)); // round 1: the dude (attacker) opens
+        host.Animating.Clear();
+        engine.ProcessAnimations();
+        host.AttackOrder.Clear();            // ignore the dude's round-1 swing
+        engine.EndPlayerTurn();              // hand round 1 over to the enemy
+
+        for (int i = 0; i < 400 && !dude.IsDead; i++)
+        {
+            host.Animating.Clear();
+            engine.Step();
+            if (engine.Phase == CombatPhase.PlayerTurn)
+            {
+                if (engine.Round >= 2)
+                    break;                   // the dude's round-2 turn has arrived
+                engine.EndPlayerTurn();
+            }
+        }
+
+        // The faster enemy acted in round 1 AND round 2 before the dude's round-2 slot.
+        Assert.Equal(2, host.AttackOrder.Count(a => a == fast));
+        Assert.Equal(2, engine.Round);
+    }
+
+    [Fact]
     public void LoseTurnEnemySkipsOneTurnThenActs()
     {
         var host = new FakeCombatHost();
@@ -1603,7 +1639,12 @@ public class CombatEngineTests
         public void PlaceCritter(MapObject critter, int tile) => critter.HexTile = tile;
         public void StopDude() { }
         public void ClearAnimation(MapObject critter) => Animating.Remove(critter);
-        public void OnAttackStarted(MapObject attacker, MapObject target, ProtoInfo? weaponProto) => Animating.Add(attacker);
+        public readonly List<MapObject> AttackOrder = []; // P44: records attacker order for turn-order tests
+        public void OnAttackStarted(MapObject attacker, MapObject target, ProtoInfo? weaponProto)
+        {
+            Animating.Add(attacker);
+            AttackOrder.Add(attacker);
+        }
         public void OnThrowStarted(MapObject thrower, int targetTile, ProtoInfo weaponProto) => Animating.Add(thrower);
         public void RemoveFromHand(MapObject thrower, MapObject item) { }
         public readonly List<(int Pid, int Tile)> Dropped = [];

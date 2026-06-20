@@ -39,7 +39,9 @@ Prebuilt self-contained builds (Linux x64 / Windows x64) are produced by
   loot a footlocker in the Den, walk to the Temple and back, it stays
   looted; F5/F9 saves the whole visited world as JSON.
 - **Combat**: turn-based fights with engine-accurate sequencing (outcome
-  rolled before the animation, damage applied when it completes), AP
+  rolled before the animation, damage applied when it completes) and
+  initiative-ordered turns (every combatant interleaved by their Sequence
+  stat each round — a faster foe acts before you), AP
   budgets, melee weapons and armor (equip flags straight from the MAP
   files — enemies use their own spears), healing items, death falls (a
   hefty burst, laser, or explosion leaves a suitably gory corpse) and
