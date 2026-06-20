@@ -28,7 +28,8 @@ Prebuilt self-contained builds (Linux x64 / Windows x64) are produced by
 ## What works
 
 - **World**: DAT2 archives, FRM sprites + palette cycling, AAF fonts, full
-  static lighting (light pools, day/night clock), roofs/egg transparency,
+  static lighting (light pools, day/night clock, script-set ambient — caves dim
+  to their cavern level on entry), roofs/egg transparency,
   sound (a C# port of the Interplay ACM decoder — music, sfx, footsteps),
   ambient NPC life (fidgets, wander, script-driven brahmin behavior).
 - **Scripts**: a micro INT-bytecode VM with a real script host — map-entry

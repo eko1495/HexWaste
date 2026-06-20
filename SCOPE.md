@@ -18,7 +18,9 @@ filing an issue.
   text (damage numbers, "Missed", and crit feedback rising and fading over a struck
   critter — a presentation layer on the engine's `text_object.cc` float mechanism,
   since Fallout 2 itself routes combat outcomes to the monitor log).
-- **A micro INT script VM** + script host: map-entry scripts, dialog (`gsay`
+- **A micro INT script VM** + script host: map-entry + map-update scripts (the
+  periodic per-map hook — e.g. a cave dims itself to its cavern light level on
+  load), dialog (`gsay`
   trees, with IQ-gated dumb/smart options keyed to the dude's real Intelligence),
   examine, locks/lockpick, use / use-on-object, pickup, timers, spatial
   traps, the critter heartbeat, ~70 real engine externals.

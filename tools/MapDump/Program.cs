@@ -1,4 +1,5 @@
 using Hexwaste.Formats;
+using Hexwaste.Formats.Int;
 using Hexwaste.Formats.Map;
 using Hexwaste.Formats.Proto;
 
@@ -23,6 +24,7 @@ if (gameDir is null)
 
 using GameFileSystem vfs = GameFileSystem.Open(gameDir);
 var protos = new ProtoDatabase(vfs);
+ScriptList scriptList = ScriptList.Load(vfs);
 
 MapFile map;
 using (Stream stream = vfs.OpenRead($@"maps\{mapName}"))
@@ -33,6 +35,39 @@ Console.WriteLine($"map '{h.Name}' (version {h.Version}, index {h.Index})");
 Console.WriteLine($"  entering: tile {h.EnteringTile}, elevation {h.EnteringElevation}, rotation {h.EnteringRotation}");
 Console.WriteLine($"  vars: {map.GlobalVariables.Length} global, {map.LocalVariables.Length} local");
 Console.WriteLine($"  flags: 0x{h.Flags:X}, darkness {h.Darkness}");
+
+// map_update_p_proc census (M0 diagnostic): does this map's MAP script or any object/
+// spatial script DEFINE map_update_p_proc (SCRIPT_PROC_MAP_UPDATE = 23)? The engine runs
+// it on the map script + every object/spatial script that defines it, once on load then
+// every 600 game ticks (scripts.cc scriptsExecMapUpdateScripts / mapUpdateEventProcess).
+// A purely STATIC check of the .int procedure table (IntProgram.FindProcedure) — no
+// bytecode execution — so it cannot perturb anything; it just answers "is it live here?".
+{
+    Console.WriteLine("  map_update_p_proc census (SCRIPT_PROC 23):");
+    int mapIdx = h.ScriptIndex - 1;
+    (bool Update, bool Enter, bool UpdateImported)? mp = h.ScriptIndex > 0 ? ScriptProcs(mapIdx) : null;
+    string mapVerdict = mp is null
+        ? "(no map script)"
+        : $"map_update={(mp.Value.Update ? (mp.Value.UpdateImported ? "IMPORTED" : "DEFINED") : "no")}"
+          + $" map_enter={(mp.Value.Enter ? "yes" : "no")}";
+    Console.WriteLine($"    map script: index {mapIdx} '{scriptList.GetName(mapIdx) ?? "-"}' {mapVerdict}");
+
+    List<int> objIdxs = map.ScriptsBySid.Values.Select(r => r.ScriptListIndex)
+        .Concat(map.SpatialScripts.Select(s => s.ScriptListIndex))
+        .Where(i => i >= 0)
+        .Distinct().OrderBy(i => i).ToList();
+    var defining = new List<string>();
+    foreach (int idx in objIdxs)
+    {
+        (bool Update, bool Enter, bool UpdateImported)? p = ScriptProcs(idx);
+        if (p is { Update: true })
+            defining.Add($"{idx}:{scriptList.GetName(idx) ?? "?"}{(p.Value.UpdateImported ? "(imp)" : "")}");
+    }
+    Console.WriteLine($"    object/spatial scripts: {objIdxs.Count} distinct, {defining.Count} define map_update"
+        + (defining.Count > 0 ? $" [{string.Join(", ", defining)}]" : ""));
+    bool anyDefined = (mp?.Update ?? false) || defining.Count > 0;
+    Console.WriteLine($"    => map_update_p_proc {(anyDefined ? "IS LIVE on this map" : "is ABSENT (dead code) on this map")}");
+}
 
 for (int elevation = 0; elevation < MapFile.ElevationCount; elevation++)
 {
@@ -126,6 +161,28 @@ for (int elevation = 0; elevation < MapFile.ElevationCount; elevation++)
 }
 
 return 0;
+
+// Static .int procedure-table check for the M0 diagnostic: does scripts.lst[scriptListIndex]
+// DEFINE map_update_p_proc / map_enter_p_proc? Returns null if the script can't be loaded.
+// An IMPORTED procedure (a forward declaration, never the local handler) is flagged separately.
+(bool Update, bool Enter, bool UpdateImported)? ScriptProcs(int scriptListIndex)
+{
+    string? path = scriptList.GetScriptPath(scriptListIndex);
+    if (path is null)
+        return null;
+    try
+    {
+        using Stream s = vfs.OpenRead(path);
+        IntProgram prog = IntProgram.Load(s);
+        int u = prog.FindProcedure("map_update_p_proc");
+        int e = prog.FindProcedure("map_enter_p_proc");
+        return (u >= 0, e >= 0, u >= 0 && prog.Procedures[u].IsImported);
+    }
+    catch (Exception ex) when (ex is FileNotFoundException or InvalidDataException or EndOfStreamException)
+    {
+        return null;
+    }
+}
 
 int TryGetSubType(int pid)
 {

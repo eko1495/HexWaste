@@ -129,6 +129,13 @@ SCENARIOS=(
   # animator; redundant with FRM auto-loop on the slice, faithful for the critter case). Both
   # were arity-stubbed no-ops before. The probes report the results.
   "script-light|--map artemple.map --light-probe --reg-anim-probe --rng-seed 1"
+  # P46 map_update_p_proc (SCRIPT_PROC 23): the engine runs it once on load after map_enter
+  # (map.cc:1010-1011) then every 600 game ticks. On the slice its sole observable payload is a
+  # set_light_level — arcaves' map_update dims the cave to the "cavern" level 50 (ambient 40960) that
+  # map_enter left at max; the other slice maps re-set max (inert). light-arcaves proves the live
+  # dimmed ambient; map-update-arcaves is the diagnostic (levels=[50], 1 light call, no new stubs).
+  "light-arcaves|--map arcaves.map --light-probe --rng-seed 1"
+  "map-update-arcaves|--map arcaves.map --map-update-probe --rng-seed 1"
   # P12 M1 — the Pip-Boy rest options: a timed rest (6h heals proportionally) then an
   # until-healed rest from near-death to full. --hurt sets up the wound; deterministic
   # clock math + heal amounts (artemple has no enemy near the entry, so rest is allowed).
@@ -277,7 +284,7 @@ SCENARIOS=(
 
 # Keep only the deterministic transcript lines (drop map-load / animate / stub /
 # dialog-text noise — NEVER capture REPLY/OPTION game-asset strings).
-FILTER='^(encounter|travel-from|companion|dismiss-persist|trade:|party:|party-count:|set-global:|hud-click:|use-skill:|hurt:|rest:|automap:|weapon-mode:|panel-click:|menu-click:|travel-resume:|travel-step:|travel-save-mid:|worldmap-fog:|weight:|iq-probe:|death-probe:|trait-probe:|perk-probe:|perk-pick:|combat-walk:|light:|reg-anim:|encounter-fight:|brawl:|sneak-probe:|sneak-roll:|backstab-probe:|detect-probe:|karma-probe:|set-karma:|rep-title:|town-rep:|karma-titles:|get-global:|place-probe:|reg-anim-move:|critter-state:|hurt-too-much:|run-probe:|outline:|sfx-probe:|reaction-probe:|combat-proc:|combat-proc-hit:|poison-tick:|multihex-probe:|drug-probe:|addict-probe:|kills-probe:|book:|ammo-select:|unload:|ai-heal-probe:|ai-weapon-probe:|float-text:|  spawn|  flat|  wait:|  follow:|  dismiss:|  rejoin:)'
+FILTER='^(encounter|travel-from|companion|dismiss-persist|trade:|party:|party-count:|set-global:|hud-click:|use-skill:|hurt:|rest:|automap:|weapon-mode:|panel-click:|menu-click:|travel-resume:|travel-step:|travel-save-mid:|worldmap-fog:|weight:|iq-probe:|death-probe:|trait-probe:|perk-probe:|perk-pick:|combat-walk:|light:|map-update:|reg-anim:|encounter-fight:|brawl:|sneak-probe:|sneak-roll:|backstab-probe:|detect-probe:|karma-probe:|set-karma:|rep-title:|town-rep:|karma-titles:|get-global:|place-probe:|reg-anim-move:|critter-state:|hurt-too-much:|run-probe:|outline:|sfx-probe:|reaction-probe:|combat-proc:|combat-proc-hit:|poison-tick:|multihex-probe:|drug-probe:|addict-probe:|kills-probe:|book:|ammo-select:|unload:|ai-heal-probe:|ai-weapon-probe:|float-text:|  spawn|  flat|  wait:|  follow:|  dismiss:|  rejoin:)'
 
 echo "Building viewer..."
 dotnet build src/Hexwaste.Viewer -c Debug >/dev/null || { echo "build failed"; exit 2; }

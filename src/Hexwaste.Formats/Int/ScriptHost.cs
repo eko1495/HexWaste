@@ -613,6 +613,40 @@ public sealed class ScriptHost(GameFileSystem vfs, ScriptList scripts, Hexwaste.
             RunObjectProc(obj, map, dude, firstRun, -1, "map_enter_p_proc");
     }
 
+    /// <summary>
+    /// Runs map-update scripts like fallout2-ce scripts.cc scriptsExecMapUpdateScripts():
+    /// the MAP script's map_update_p_proc first, then every scripted object's. The engine
+    /// fires this once on map load (after map_enter) then every 600 game ticks
+    /// (mapUpdateEventProcess, SCRIPT_PROC_MAP_UPDATE = 23). map_update takes no fixed param.
+    /// Hexwaste runs it once on load (the engine's map.cc:1010-1011 sequence); the periodic
+    /// 600-tick re-run is deferred (no time-varying map_update content on the slice).
+    /// </summary>
+    public void RunMapUpdate(MapFile map, IEnumerable<MapObject> objects, MapObject? dude)
+    {
+        if (map.Header.ScriptIndex > 0)
+        {
+            var owner = new MapObject
+            {
+                Id = -2,
+                HexTile = 1,
+                X = 0,
+                Y = 0,
+                Frame = 0,
+                Rotation = 0,
+                Fid = Fid.Build(ObjectType.Misc, 12),
+                Flags = 0,
+                Pid = 0x05000010,
+                Sid = -1,
+            };
+            var record = new MapScriptRecord(map.Header.ScriptIndex - 1, -1, 0);
+            RunProc(record.ScriptListIndex, map, sid: -2, record, owner, dude,
+                fixedParam: 0, -1, ["map_update_p_proc"]);
+        }
+
+        foreach (MapObject obj in objects.ToList())
+            RunObjectProc(obj, map, dude, 0, -1, "map_update_p_proc");
+    }
+
     /// <summary>Revisit tracking: metarule 14 FIRST_RUN consults this.</summary>
     private readonly Dictionary<string, bool> _firstRunByMap = [];
 

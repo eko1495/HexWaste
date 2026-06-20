@@ -1610,6 +1610,39 @@ the off-screen placement cascade is the primary anchor only. Harness --float-tex
 — count/cap/lifetime/anchor + the colour hex ints, never the message text); golden float-text-probe. 8
 FloatTextTests; 622 Formats tests, 72 encounter + 16 combat goldens green.
 
+Phase 46 (DONE — "Let There Be (Less) Light", map_update_p_proc wiring + a latent lighting-clobber
+fix; the P42-backlogged item, its M0 diagnostic finally run). M0 grounding (workflow) + a STATIC census
+(MapDump + IntProgram.FindProcedure — a pure .int procedure-table read, no bytecode exec) + a RUNTIME
+trace (--map-update-probe). FINDINGS: SCRIPT_PROC_MAP_UPDATE=23 fires once on load AFTER map_enter
+(map.cc:1010-1011) then every 600 game ticks (mapUpdateEventProcess), on the map script + every object
+script that defines it; no combat gate (scripts.cc scriptsExecMapUpdateScripts). The census found
+map_update_p_proc is LIVE on EVERY slice map — the map script + many object scripts (doors/boxes/critters
+incl. dcVic/Kcsulik/KCTorr/dcG2Grd) define it — so it is NOT dead code (overturns the P42 "might be
+inert" worry). The runtime trace found it drives lighting via set_light_level (1 call/map): on 5 of 6 it
+re-sets level 100 (=max, INERT — map_enter already pinned max); on ARCAVES it sets level 50 (the P21-
+documented "cavern" level) → dims ambient 65536→40960 (62.5%). No unhandled externals (only debug_msg, a
+no-op). So the P42 skepticism is RESOLVED: map_update DOES drive lighting (confirmed, not assumed), but
+the "day/night curve" framing was wrong — it's a one-shot static cavern set_light_level. M1 wiring (the
+user's "full, all scripts" choice): ScriptHost.RunMapUpdate (the faithful scriptsExecMapUpdateScripts —
+map script + ALL object scripts) wired into LoadMap right after RunMapEnter (the engine's load sequence);
+the periodic 600-tick re-run is DEFERRED (the diagnostic found no time-varying map_update content on the
+slice — once-on-load suffices). TWO faithful fixes the diagnostic surfaced as prerequisites: (1) reg_anim_
+animate_forever is now IDEMPOTENT per object (the engine has ONE anim slot/object) — artemple's Animfrvr
+script defines map_update_p_proc that re-registers the same firepits map_enter already did, so running
+map_update doubled the _regAnimForever record (script-light forever 2→4); deduping restores forever=2 +
+drops a redundant looping entry. (2) A LATENT P21 BUG: RebuildLighting clobbered the script-pinned ambient
+back to InitialAmbient (it IGNORED AmbientFixed, unlike the day/night clock at ViewerGame.cs:8606 which
+respects it) — so set_light_level only ever "worked" because every shipped value coincided with max. Fixed:
+RebuildLighting now PRESERVES the pinned ambient (the clock's pattern), and AmbientFixed RESETS per map
+load so each map re-pins via its own scripts. Net: arcaves' cavern dim (40960) now actually renders (a
+real, modest fidelity fix — the cave was lit at 100%). GOLDEN-SAFE: lighting is Draw-only → all 16 combat
++ 72 prior encounter goldens BYTE-IDENTICAL (the lone ambient golden, artemple script-light, is unchanged
+— artemple sets max; no other golden reports ambient; script-light stayed byte-identical AFTER the reg-
+anim dedupe). Tooling: MapDump gained a per-map map_update_p_proc census (LIVE/ABSENT verdict);
+--map-update-probe (state-only runtime trace: lightCalls/levels/ambient-delta/new-stubs); ScriptHost.Run
+MapUpdate. 2 new goldens — light-arcaves (the live 40960 dim) + map-update-arcaves (the diagnostic:
+levels=[50], 1 light call, no new stubs). 622 Formats tests, 74 encounter + 16 combat goldens green.
+
 Phase 10 (DONE, per docs/phase10-research-report.md — "The Wasteland
 Bites Back"): M0 persistence pre-stage (the net: MapList saved=No /
 random_start_point parse + IsTransient; the 3-clause transient guards as

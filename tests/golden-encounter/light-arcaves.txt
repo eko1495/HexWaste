@@ -1,0 +1,1 @@
+light: map=arcaves.map ambient=40960/65536 fixed=True

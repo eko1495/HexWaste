@@ -596,6 +596,10 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
         /// STATE — count, lifetime, the outcome colours (as hex ints), and the engine anchor offset
         /// (P45). STATE-only: never the message text (a damage NUMBER / the hardcoded "Missed" only).</summary>
         public sealed record FloatTextProbe(int Hex) : StartupAction;
+        /// <summary>M0 diagnostic: run the map's map_update_p_proc (map script + object scripts,
+        /// SCRIPT_PROC 23) once and report its observable side effects — lighting calls, the ambient
+        /// before/after, and any NEW stubbed externals. STATE-only (counts/ids), no game strings.</summary>
+        public sealed record MapUpdateProbe : StartupAction;
         /// <summary>Run the critter@Hex's per-turn combat_p_proc (fp=4) and report whether it defines the
         /// proc + whether it script_overrides the turn (P35).</summary>
         public sealed record CombatProcProbe(int Hex) : StartupAction;
@@ -869,7 +873,13 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
                     // loops its FRM. SLICE NOTE: every slice usage targets SCENERY (firepits,
                     // a waterfall) which our multi-frame art already auto-loops, so the call is
                     // faithful but visually redundant here; the critter path lights up for free.
-                    _regAnimForever.Add($"{ObjectName(obj)}@{obj.HexTile}:{Fid.Type(obj.Fid)}:anim{anim}");
+                    // Idempotent per object (the engine has ONE anim slot per object): a script's
+                    // map_enter AND map_update both register the same firepits (P46 map_update wiring),
+                    // so skip a re-registration rather than stack a duplicate loop / double-count.
+                    string foreverKey = $"{ObjectName(obj)}@{obj.HexTile}:{Fid.Type(obj.Fid)}:anim{anim}";
+                    if (_regAnimForever.Contains(foreverKey))
+                        return;
+                    _regAnimForever.Add(foreverKey);
                     if (Fid.Type(obj.Fid) is ObjectType.Critter)
                         _animator.SetCritterAnimation(obj, Fid.Build(ObjectType.Critter, Fid.Index(obj.Fid), anim,
                             Fid.WeaponCode(obj.Fid), obj.Rotation));
@@ -1366,6 +1376,39 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
                         + $"anchorOff16x11=({sx},{sy}) "
                         + $"damageNpc={Hex(CombatFloatColors.DamageNpc)} damageDude={Hex(CombatFloatColors.DamageDude)} "
                         + $"crit={Hex(CombatFloatColors.Critical)} miss={Hex(CombatFloatColors.Miss)}");
+                    break;
+                }
+                case StartupAction.MapUpdateProbe when _map is not null && _scriptHost is not null:
+                {
+                    // M0 diagnostic: run map_update_p_proc (the map script + every scripted object —
+                    // scripts.cc scriptsExecMapUpdateScripts) and TRACE its observable side effects.
+                    // map_enter already ran on load, so _stubbedExternals + the lightgrid hold its state;
+                    // we snapshot, run map_update, and diff. The lighting callbacks are wrapped to count
+                    // calls (the P21 set_light_level / obj_set_light_level path). Transient diagnostic
+                    // (the process exits after printing), so the in-memory side effects never persist.
+                    int ambientBefore = _lightGrid.Ambient;
+                    bool fixedBefore = AmbientFixed;
+                    int lightCalls = 0, objLightCalls = 0;
+                    var lightLevels = new List<int>();
+                    Action<int>? prevLight = _scriptHost.LightLevelRequested;
+                    Action<MapObject, int, int>? prevObjLight = _scriptHost.ObjectLightRequested;
+                    _scriptHost.LightLevelRequested = lvl => { lightCalls++; lightLevels.Add(lvl); prevLight?.Invoke(lvl); };
+                    _scriptHost.ObjectLightRequested = (o, ii, dd) => { objLightCalls++; prevObjLight?.Invoke(o, ii, dd); };
+                    var stubsBefore = new HashSet<string>(_stubbedExternals.Keys);
+
+                    IEnumerable<MapObject> muObjs = _map.Elevations
+                        .Where(e => e is not null)
+                        .SelectMany(e => e!.Objects)
+                        .Where(o => o.Sid != -1 && o != _dude?.Dude);
+                    _scriptHost.RunMapUpdate(_map, muObjs, _dude?.Dude);
+
+                    _scriptHost.LightLevelRequested = prevLight;
+                    _scriptHost.ObjectLightRequested = prevObjLight;
+                    var newStubs = _stubbedExternals.Keys.Where(k => !stubsBefore.Contains(k)).OrderBy(k => k).ToList();
+                    Console.WriteLine($"map-update: map={_currentMapName} ran=1 "
+                        + $"lightCalls={lightCalls} levels=[{string.Join(",", lightLevels)}] objLightCalls={objLightCalls} "
+                        + $"ambient={ambientBefore}->{_lightGrid.Ambient} fixed={(fixedBefore ? 1 : 0)}->{(AmbientFixed ? 1 : 0)} "
+                        + $"newStubbedExternals={newStubs.Count}[{string.Join(",", newStubs)}]");
                     break;
                 }
                 case StartupAction.CombatProcProbe(var cpHex):
@@ -2563,6 +2606,7 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
         _floatDefender = null;
         _seenObjects.Clear(); // automap fog resets per map (P20-M2)
         _regAnimForever.Clear(); // reg_anim record resets per map (P21-M1)
+        AmbientFixed = false; // each map re-pins its own ambient via its scripts' set_light_level (P46)
         _regAnimMoves.Clear(); // reg_anim_func batch record resets per map (P33-M1)
         _npcWalkers.Clear();
         _homeTiles.Clear();
@@ -2655,6 +2699,16 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
             _scriptHost.RunMapEnter(_map, scripted, _dude?.Dude,
                 firstRunOverride: transient ? true : delta is not null ? false : null);
             _scriptHost.SpatialsEnabled = true;
+
+            // The engine's load sequence runs map_enter THEN map_update once each, both on
+            // load (map.cc:1010-1011) — map_update is the per-map periodic hook, fired again
+            // every 600 game ticks (mapUpdateEventProcess). On the slice its sole observable
+            // payload is a one-shot set_light_level (the M0 diagnostic): arcaves dims to the
+            // "cavern" level 50 (62.5%) that map_enter left at max; the other slice maps re-set
+            // the same max (inert). `scripted` is re-evaluated, so map_enter-created objects are
+            // included (faithful). The periodic 600-tick re-run is DEFERRED — the diagnostic
+            // found no time-varying map_update content on the slice, so once-on-load suffices.
+            _scriptHost.RunMapUpdate(_map, scripted, _dude?.Dude);
         }
 
         foreach ((MapObject obj, int ordinal) in _objectOrdinals)
@@ -3550,9 +3604,18 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
     {
         const int objectLighting = 0x20;
 
+        // A script's set_light_level pins the ambient (AmbientFixed) — PRESERVE it across a rebuild,
+        // exactly as the day/night clock already does (ViewerGame.cs:8606). Without this, the
+        // RebuildLighting after map_enter/map_update clobbered the script ambient back to the
+        // InitialAmbient default, so a non-max set_light_level was lost — a latent P21 bug that only
+        // hid because every shipped value happened to be max. Fixing it lets arcaves' map_update
+        // cavern level (50 -> 40960) actually dim the cave (P46).
+        int pinnedAmbient = _lightGrid.Ambient;
         _lightGrid.Reset();
-        _lightGrid.Ambient = (int)Math.Clamp(InitialAmbient * Formats.Light.LightGrid.IntensityMax,
-            Formats.Light.LightGrid.IntensityMin, Formats.Light.LightGrid.IntensityMax);
+        _lightGrid.Ambient = AmbientFixed
+            ? pinnedAmbient
+            : (int)Math.Clamp(InitialAmbient * Formats.Light.LightGrid.IntensityMax,
+                Formats.Light.LightGrid.IntensityMin, Formats.Light.LightGrid.IntensityMax);
 
         List<MapObject> all = [.. _flatObjects[_elevation], .. _solidObjects[_elevation]];
         var byTile = all.GroupBy(o => o.HexTile).ToDictionary(g => g.Key, g => g.ToList());
