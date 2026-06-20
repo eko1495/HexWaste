@@ -1574,6 +1574,42 @@ it: an ap-4 seq-20 enemy attacks in BOTH round 1 and round 2 before the dude's r
 new = 2). 609 Formats tests. DOCUMENTED: round-per-round game-clock advance (gameTimeAddSeconds(5)) NOT
 wired (combat stays wall-time; _combatTick is the knockout-wake source only, unchanged).
 
+Phase 45 (DONE — "Numbers in the Air", floating/overhead combat text; combat outcomes only
+reached the monitor log before). M0 grounding (workflow). KEY FINDING (the headline, verified — not
+guessed): Fallout 2 does NOT float combat outcomes — combat.cc _combat_display routes every hit/miss/
+crit/damage line to the scrolling MONITOR LOG (displayMonitorAddMessage), ONE colour, no float; the
+text_object.cc float layer is real but used only for AI taunts (combat_ai.cc, colour from ai.txt),
+skill-use responses (actions.cc, YELLOW), level-up (party_member.cc, WHITE), and the script float_msg
+external. So "floating damage numbers" is a DOCUMENTED PRESENTATION DIVERGENCE built on the engine's
+real float MECHANISM + its real float_msg/_colorTable colour vocabulary (interpreter_extra.cc:3150-3190;
+color.cc RGB555→idx) — NOT an invented _combat_display colour scheme. M1 pure Formats.Combat.FloatText
+ports the text_object.cc timing/placement: TEXT_OBJECTS_MAX_COUNT=20 (:19), gTextObjectsBaseDelay 3500
+(:48) + gTextObjectsLineDelay 1399 (:51) → LifetimeMs = lineDelay*lines + base (:337, 4899 ms/line);
+AnchorOffset (16 − w/2, −(h+60)) = textObjectFindPlacement's primary placement (:379-383, centre on the
+32-px tile + lift above the head; the 8-position off-screen-bounds cascade :386-454 is simplified to the
+primary anchor — the camera clamps the world); + a rise + alpha fade (presentation — the engine's floats
+are STATIC + NON-fading, hold solid then expire :338). M2 viewer CombatTextLayer + wiring: a float is
+spawned from Log() by parsing the damage int out of the Hexwaste-AUTHORED "...for N damage." line (NOT a
+combat.msg game string — Log is the in-memory monitor buffer, never stdout) and placed over the defender
+tracked at OnAttackStarted/OnThrowStarted. WHY the tracked object, not the Log wording: ResolveAttack
+keys the hit/miss text on byDude, so an NPC-vs-NPC blow still reads "...hits you..." (the wording can't be
+trusted); the tracked object is also the ONLY signal for the dude AS defender, which OnTargetHit/
+OnTargetDodge deliberately skip (the camera-anchor dude doesn't visibly react — P34-M6) and which the
+"different shade for the dude" needs — so CombatEngine is UNTOUCHED. One float per tile (the engine's
+textObjectsRemoveByOwner one-per-owner, :276/460) + the global cap; colours = the real float_msg
+constants: damage RED [31744] over an NPC / LIGHT_RED [32074] over the dude (a readability shade — the
+engine distinguishes by message-id, NOT colour, so documented), crit YELLOW [32747], miss WHITE [32767],
+black fading outline (idx 0, :257). Drawn between the roofs and the HUD bar; ticked wall-time in Update.
+KEY DE-RISK: the layer is Draw-only + wall-time-ticked, so the headless harness pumps neither its ticker
+nor Draw → ALL 16 combat + 71 prior encounter goldens BYTE-IDENTICAL (verified by a clean check BEFORE
+recording the new fixture; the float spawns DO run headless in Log but only mutate an in-memory list,
+never the console). DOCUMENTED CUTS: burst collateral bystander floats omitted (the "also catches" line
+names a bystander, not the tracked defender — the main target still floats); a non-lethal NPC thrown-hit
+and a prone/KO miss have no tracked-defender-matching callback → their float is dropped (rare, cosmetic);
+the off-screen placement cascade is the primary anchor only. Harness --float-text-probe <hex> (STATE-only
+— count/cap/lifetime/anchor + the colour hex ints, never the message text); golden float-text-probe. 8
+FloatTextTests; 622 Formats tests, 72 encounter + 16 combat goldens green.
+
 Phase 10 (DONE, per docs/phase10-research-report.md — "The Wasteland
 Bites Back"): M0 persistence pre-stage (the net: MapList saved=No /
 random_start_point parse + IsTransient; the 3-clause transient guards as

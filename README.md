@@ -73,6 +73,11 @@ Prebuilt self-contained builds (Linux x64 / Windows x64) are produced by
   the same spread the engine rolls. You choose what to load: unload (Shift+R) and
   use another ammo box to switch between, say, armor-piercing and hollow-point —
   AP punches through a foe's armor, JHP doubles the damage to an unarmored one.
+  Every blow floats its damage over the target — a red number for a hit (a lighter
+  shade when it's you taking it), yellow for a critical, a white "Missed" for a
+  whiff — rising and fading above the struck critter (the real Fallout 2 prints
+  combat results to the message log; Hexwaste floats them too, reusing the engine's
+  own text-object timing, placement and colours).
   Sneak (the Skilldex Sneak skill toggles it):
   a periodic skill roll decides whether you're really hidden, and while you are an
   NPC's perception range shrinks — sneak wide around a foe and its scripted aggro

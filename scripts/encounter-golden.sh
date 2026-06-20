@@ -269,11 +269,15 @@ SCENARIOS=(
   # No --fight golden reaches a multi-weapon NPC (the golden-fight scorpions are non-biped + carry nothing →
   # the switch never fires → all combat goldens byte-identical), so this is the live proof.
   "ai-weapon-switch|--character combat --map denbus1.map --ai-weapon-probe 17261 --rng-seed 1"
+  # P45 floating combat text (text_object.cc port): the float-text layer's STATE over a real critter
+  # — count/lifetime/cap/anchor + the engine float_msg colours. Draw-only (the layer is never ticked
+  # or drawn headless), so every other golden stays byte-identical; this proves the spawn + constants.
+  "float-text-probe|--map arcaves.map --float-text-probe 20529 --rng-seed 1"
 )
 
 # Keep only the deterministic transcript lines (drop map-load / animate / stub /
 # dialog-text noise — NEVER capture REPLY/OPTION game-asset strings).
-FILTER='^(encounter|travel-from|companion|dismiss-persist|trade:|party:|party-count:|set-global:|hud-click:|use-skill:|hurt:|rest:|automap:|weapon-mode:|panel-click:|menu-click:|travel-resume:|travel-step:|travel-save-mid:|worldmap-fog:|weight:|iq-probe:|death-probe:|trait-probe:|perk-probe:|perk-pick:|combat-walk:|light:|reg-anim:|encounter-fight:|brawl:|sneak-probe:|sneak-roll:|backstab-probe:|detect-probe:|karma-probe:|set-karma:|rep-title:|town-rep:|karma-titles:|get-global:|place-probe:|reg-anim-move:|critter-state:|hurt-too-much:|run-probe:|outline:|sfx-probe:|reaction-probe:|combat-proc:|combat-proc-hit:|poison-tick:|multihex-probe:|drug-probe:|addict-probe:|kills-probe:|book:|ammo-select:|unload:|ai-heal-probe:|ai-weapon-probe:|  spawn|  flat|  wait:|  follow:|  dismiss:|  rejoin:)'
+FILTER='^(encounter|travel-from|companion|dismiss-persist|trade:|party:|party-count:|set-global:|hud-click:|use-skill:|hurt:|rest:|automap:|weapon-mode:|panel-click:|menu-click:|travel-resume:|travel-step:|travel-save-mid:|worldmap-fog:|weight:|iq-probe:|death-probe:|trait-probe:|perk-probe:|perk-pick:|combat-walk:|light:|reg-anim:|encounter-fight:|brawl:|sneak-probe:|sneak-roll:|backstab-probe:|detect-probe:|karma-probe:|set-karma:|rep-title:|town-rep:|karma-titles:|get-global:|place-probe:|reg-anim-move:|critter-state:|hurt-too-much:|run-probe:|outline:|sfx-probe:|reaction-probe:|combat-proc:|combat-proc-hit:|poison-tick:|multihex-probe:|drug-probe:|addict-probe:|kills-probe:|book:|ammo-select:|unload:|ai-heal-probe:|ai-weapon-probe:|float-text:|  spawn|  flat|  wait:|  follow:|  dismiss:|  rejoin:)'
 
 echo "Building viewer..."
 dotnet build src/Hexwaste.Viewer -c Debug >/dev/null || { echo "build failed"; exit 2; }

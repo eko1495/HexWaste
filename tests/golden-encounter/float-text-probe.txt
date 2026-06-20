@@ -1,0 +1,1 @@
+float-text: hex=20529 count=1 maxCount=20 lifetimeMs=4899 anchorOff16x11=(8,-71) damageNpc=FF0000 damageDude=FF5252 crit=FFFF5A miss=FFFFFF

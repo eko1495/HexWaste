@@ -14,7 +14,10 @@ filing an issue.
   per-vertex floor lighting, static light pools with occlusion, day/night clock,
   egg-style wall transparency, per-type object translucency (glass/steam/energy/
   red/wall), silhouette outlines (typed red-hostile / green-friendly team outlines
-  on every visible, line-of-sight combatant during combat).
+  on every visible, line-of-sight combatant during combat), and floating combat
+  text (damage numbers, "Missed", and crit feedback rising and fading over a struck
+  critter — a presentation layer on the engine's `text_object.cc` float mechanism,
+  since Fallout 2 itself routes combat outcomes to the monitor log).
 - **A micro INT script VM** + script host: map-entry scripts, dialog (`gsay`
   trees, with IQ-gated dumb/smart options keyed to the dude's real Intelligence),
   examine, locks/lockpick, use / use-on-object, pickup, timers, spatial

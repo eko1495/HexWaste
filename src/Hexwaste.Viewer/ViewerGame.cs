@@ -592,6 +592,10 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
         /// <summary>Report the reaction-anim codes (hit/dodge/fall/getup) the critter at Hex would get
         /// from an attacker at AttackerRotation (P34-M6).</summary>
         public sealed record ReactionProbe(int Hex, int AttackerRotation) : StartupAction;
+        /// <summary>Spawn a sample combat float over the critter at Hex and report the float-text layer's
+        /// STATE — count, lifetime, the outcome colours (as hex ints), and the engine anchor offset
+        /// (P45). STATE-only: never the message text (a damage NUMBER / the hardcoded "Missed" only).</summary>
+        public sealed record FloatTextProbe(int Hex) : StartupAction;
         /// <summary>Run the critter@Hex's per-turn combat_p_proc (fp=4) and report whether it defines the
         /// proc + whether it script_overrides the turn (P35).</summary>
         public sealed record CombatProcProbe(int Hex) : StartupAction;
@@ -1346,6 +1350,22 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
                         + $"hit={Formats.Combat.ReactionAnims.HitReaction(front, backArt)} "
                         + $"dodge={Formats.Combat.ReactionAnims.Dodge} fall={Formats.Combat.ReactionAnims.KnockdownFall(front)} "
                         + $"getup={Formats.Combat.ReactionAnims.StandUp(Formats.Combat.ReactionAnims.FallBack)} backArt={(backArt ? 1 : 0)}");
+                    break;
+                }
+                case StartupAction.FloatTextProbe(var ftHex):
+                {
+                    // P45: exercise the float-text layer's spawn path over a real critter and report its
+                    // STATE — never the message text. Hex-int colours = the engine float_msg constants.
+                    MapObject? ftc = CritterAt(ftHex, includeFlat: true);
+                    if (ftc is null) { Console.Error.WriteLine($"float-text: no critter at {ftHex}"); break; }
+                    _floatText.Add(ftc.HexTile, _elevation, "10", CombatFloatColors.DamageNpc); // a sample damage float
+                    (int sx, int sy) = Formats.Combat.FloatText.AnchorOffset(16, 11); // a fixed sample size (camera-independent)
+                    static string Hex(Microsoft.Xna.Framework.Color c) => $"{c.R:X2}{c.G:X2}{c.B:X2}";
+                    Console.WriteLine($"float-text: hex={ftHex} count={_floatText.Count} "
+                        + $"maxCount={Formats.Combat.FloatText.MaxCount} lifetimeMs={Formats.Combat.FloatText.LifetimeMs(1)} "
+                        + $"anchorOff16x11=({sx},{sy}) "
+                        + $"damageNpc={Hex(CombatFloatColors.DamageNpc)} damageDude={Hex(CombatFloatColors.DamageDude)} "
+                        + $"crit={Hex(CombatFloatColors.Critical)} miss={Hex(CombatFloatColors.Miss)}");
                     break;
                 }
                 case StartupAction.CombatProcProbe(var cpHex):
@@ -2539,6 +2559,8 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
         _hoveredObject = null;
         _dude = null;
         _openDoors.Clear();
+        _floatText.Clear(); // P45: stale combat-text floats don't survive a map change
+        _floatDefender = null;
         _seenObjects.Clear(); // automap fog resets per map (P20-M2)
         _regAnimForever.Clear(); // reg_anim record resets per map (P21-M1)
         _regAnimMoves.Clear(); // reg_anim_func batch record resets per map (P33-M1)
@@ -3209,6 +3231,7 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
         _dude?.Update(gameTime.ElapsedGameTime.TotalMilliseconds);
         UpdateAmbientLife(gameTime.ElapsedGameTime.TotalMilliseconds);
         TickAmbientSfx(gameTime.ElapsedGameTime.TotalMilliseconds); // P34-M5 ambient sfx
+        _floatText.Tick(gameTime.ElapsedGameTime.TotalMilliseconds); // P45 floating combat text
 
         // Script timers: pumped only here — dialog/loot/worldmap modes return
         // earlier in Update, matching the engine's _gdialogActive() gate.
@@ -5307,6 +5330,8 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
 
     public void OnThrowStarted(MapObject thrower, int targetTile, ProtoInfo weaponProto)
     {
+        // P45: the throw's defender for the float-text layer (null = an empty/AoE landing tile).
+        _floatDefender = CritterAt(targetTile);
         const int animThrow = 18; // ANIM_THROW_ANIM (item.cc _attack_anim[5])
         int code = weaponProto.Weapon?.AnimationCode ?? 0;
         int fid = Fid.Build(ObjectType.Critter, Fid.Index(thrower.Fid), animThrow, code);
@@ -5450,6 +5475,13 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
 
     public void OnAttackStarted(MapObject attacker, MapObject target, ProtoInfo? weaponProto)
     {
+        // P45: remember THIS attack's real defender for the floating combat-text layer. The
+        // outcome Log line ("...hits you for N damage.") names the defender as "you" even for
+        // an NPC-vs-NPC blow (ResolveAttack keys the wording on byDude, not the real defender),
+        // so the wording can't be trusted — the tracked object can. This also covers the dude
+        // AS defender, which OnTargetHit/OnTargetDodge deliberately skip (the camera-anchor dude
+        // doesn't visibly react — P34-M6) and which the "different shade for the dude" needs.
+        _floatDefender = target;
         if (weaponProto?.Weapon is not null)
             PlayWeaponSfx(weaponProto);
         // Unarmed/melee swing grunt (actions.cc:625 sfxBuildCharName(attacker, ANIM_THROW_PUNCH, CONTACT)) —
@@ -6506,6 +6538,7 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
                 DrawProjectiles();
                 if (_roofsVisible)
                     DrawRoofs();
+                DrawCombatText(); // P45: over the world, under the HUD bar
                 DrawInterfaceBar();
             }
             DrawTextOverlay();
@@ -6884,6 +6917,72 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
         _messageLog.Add(message);
         if (_messageLog.Count > 5)
             _messageLog.RemoveAt(0);
+        QueueCombatFloat(message);
+    }
+
+    // ====================================================================
+    //  Floating combat text (P45 — "Numbers in the Air")
+    // ====================================================================
+
+    /// <summary>The floating combat-text layer: damage numbers / "Missed" / crit
+    /// feedback rising over struck critters. Draw-only + wall-time-ticked, so the
+    /// golden suites stay byte-identical (it never writes the transcript).</summary>
+    private readonly CombatTextLayer _floatText = new();
+
+    /// <summary>P45: the in-flight attack's real defender, captured at OnAttackStarted/
+    /// OnThrowStarted (the Log wording can't be trusted for it). Drives where the float
+    /// lands and the dude-vs-NPC colour shade.</summary>
+    private MapObject? _floatDefender;
+
+    /// <summary>Present a combat OUTCOME as a floating number / "Missed" over the
+    /// defender. The damage int is parsed from the SAME value the host logs (the
+    /// Hexwaste-authored Log line — NOT a combat.msg game string), and the defender
+    /// object comes from <see cref="_floatDefender"/>. DOCUMENTED DIVERGENCE: Fallout 2
+    /// sends combat outcomes to the monitor log, not floats (combat.cc _combat_display);
+    /// this is a presentation layer on the engine's real text_object.cc float mechanism.</summary>
+    private void QueueCombatFloat(string line)
+    {
+        if (_floatDefender is not { } defender)
+            return;
+        // Burst collateral ("The burst also catches the X ...") names a bystander, not the
+        // tracked defender — its float is a documented cut (the main target's still floats).
+        if (line.Contains("also catches", StringComparison.Ordinal))
+            return;
+
+        Microsoft.Xna.Framework.Color color;
+        string text;
+        System.Text.RegularExpressions.Match dmg =
+            System.Text.RegularExpressions.Regex.Match(line, @"for (\d+) damage\.");
+        if (dmg.Success) // a landed hit: "...for N damage." (single / burst / thrown, you- or NPC-phrased)
+        {
+            bool crit = line.EndsWith("Critical hit!", StringComparison.Ordinal);
+            bool dudeHit = defender == _dude?.Dude;
+            color = crit ? CombatFloatColors.Critical
+                : dudeHit ? CombatFloatColors.DamageDude
+                : CombatFloatColors.DamageNpc;
+            text = dmg.Groups[1].Value;
+        }
+        else if (System.Text.RegularExpressions.Regex.IsMatch(line, @"(missed the |misses you\b| misses\.$|burst misses )"))
+        {
+            color = CombatFloatColors.Miss;
+            text = "Missed"; // a hardcoded English word — NOT read from the user's combat.msg
+        }
+        else
+        {
+            return; // not a combat-outcome line (script/status text, "X dies.", etc.)
+        }
+
+        _floatText.Add(defender.HexTile, _elevation, text, color);
+        // One outcome per attack: clear so a later non-combat "...for N damage." line can't reuse a
+        // stale defender. Every attack re-sets it via OnAttackStarted/OnThrowStarted before its Log.
+        _floatDefender = null;
+    }
+
+    /// <summary>Render the floating combat text — over the world, under the HUD bar.</summary>
+    private void DrawCombatText()
+    {
+        if (_fontRenderer is not null)
+            _floatText.Draw(_spriteBatch, _fontRenderer, _camera.HexToScreen, _elevation);
     }
 
     private void Examine(MapObject obj)
