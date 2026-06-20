@@ -713,6 +713,16 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
         public sealed record Transit(string MapFile, int Tile, int Elevation) : StartupAction;
         public sealed record SaveNow : StartupAction;
         public sealed record LoadNow : StartupAction;
+        /// <summary>P48: save the game into slot N (0..9), under SaveDir. STATE-only report.</summary>
+        public sealed record SaveToSlot(int Slot) : StartupAction;
+        /// <summary>P48: load the game from slot N if occupied. STATE-only report.</summary>
+        public sealed record LoadFromSlot(int Slot) : StartupAction;
+        /// <summary>P48: report every slot's state (empty / L&lt;level&gt; / old) — STATE-only, no names.</summary>
+        public sealed record SlotsProbe : StartupAction;
+        /// <summary>P48: clear the slot files in SaveDir (a fresh-slate harness primitive for goldens).</summary>
+        public sealed record ResetSlots : StartupAction;
+        /// <summary>P48: open the save/load slot picker (Mode 0=save, 1=load) — for screenshots.</summary>
+        public sealed record ShowSaveLoad(int Mode) : StartupAction;
         public sealed record GrantXp(int Amount) : StartupAction;
         public sealed record SpendSkill(int Skill) : StartupAction;
         public sealed record OpenSkills : StartupAction;
@@ -2460,6 +2470,39 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
                 case StartupAction.LoadNow:
                     LoadGame();
                     break;
+                case StartupAction.SaveToSlot(var ssSlot):
+                    SaveGameToSlot(ssSlot);
+                    Console.WriteLine($"save-slot: slot={ssSlot} saved=1");
+                    break;
+                case StartupAction.LoadFromSlot(var lsSlot):
+                {
+                    bool occupied = SaveState.Load(SlotPath(lsSlot)) is not null;
+                    if (occupied)
+                        LoadGameFromSlot(lsSlot);
+                    Console.WriteLine($"load-slot: slot={lsSlot} occupied={(occupied ? 1 : 0)}");
+                    break;
+                }
+                case StartupAction.SlotsProbe:
+                {
+                    RefreshSlotInfos();
+                    var sb = new System.Text.StringBuilder("slots:");
+                    for (int s = 0; s < Formats.SaveSlots.Count; s++)
+                    {
+                        Formats.SlotInfo info = _slotInfos[s];
+                        string st = !info.Occupied ? "empty" : info.VersionMismatch ? "old" : $"L{info.Level}";
+                        sb.Append($" {s}={st}");
+                    }
+                    Console.WriteLine(sb.ToString());
+                    break;
+                }
+                case StartupAction.ResetSlots:
+                    for (int s = 0; s < Formats.SaveSlots.Count; s++)
+                        if (File.Exists(SlotPath(s)))
+                            File.Delete(SlotPath(s));
+                    break;
+                case StartupAction.ShowSaveLoad(var slMode):
+                    OpenSaveLoad(slMode == 1 ? SaveLoadMode.Load : SaveLoadMode.Save);
+                    break;
                 case StartupAction.GrantXp(var amount):
                     AwardXp(amount);
                     break;
@@ -2952,6 +2995,41 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
             return;
         }
 
+        // The multi-slot save/load picker (P48): 0-9 / click a slot to save into / load from it.
+        if (_saveLoadOpen)
+        {
+            int slrow = mouse.LeftButton == ButtonState.Pressed && _previousMouse.LeftButton == ButtonState.Released
+                ? SaveLoadSlotAt(mouse.X, mouse.Y) : -1;
+            int keySlot = -1;
+            for (int i = 0; i < Formats.SaveSlots.Count; i++)
+                if (IsKeyPressed(keyboard, Keys.D0 + i) || IsKeyPressed(keyboard, Keys.NumPad0 + i))
+                {
+                    keySlot = i;
+                    break;
+                }
+            int pick = slrow >= 0 ? slrow : keySlot;
+            if (pick >= 0)
+            {
+                if (_saveLoadMode == SaveLoadMode.Save)
+                {
+                    SaveGameToSlot(pick);
+                    _saveLoadOpen = false;
+                }
+                else if (_slotInfos[pick].Occupied && !_slotInfos[pick].VersionMismatch)
+                {
+                    LoadGameFromSlot(pick);
+                    _saveLoadOpen = false;
+                }
+            }
+            if (IsKeyPressed(keyboard, Keys.Escape))
+                _saveLoadOpen = false;
+
+            _previousMouse = mouse;
+            _previousKeyboard = keyboard;
+            base.Update(gameTime);
+            return;
+        }
+
         // Options / pause menu (Esc or the OPT button): S save, L load, M main menu,
         // Q quit to desktop, Esc/D resume (options.cc showOptions key set).
         if (_optionsOpen)
@@ -2960,8 +3038,8 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
             // 0 Save, 1 Load, 2 Main Menu, 3 Quit, 4 Resume.
             int orow = mouse.LeftButton == ButtonState.Pressed && _previousMouse.LeftButton == ButtonState.Released
                 ? OptionsRowAt(mouse.X, mouse.Y) : -1;
-            if (IsKeyPressed(keyboard, Keys.S) || orow == 0) { _optionsOpen = false; SaveGame(); }
-            else if (IsKeyPressed(keyboard, Keys.L) || orow == 1) { _optionsOpen = false; LoadGame(); }
+            if (IsKeyPressed(keyboard, Keys.S) || orow == 0) { _optionsOpen = false; OpenSaveLoad(SaveLoadMode.Save); }
+            else if (IsKeyPressed(keyboard, Keys.L) || orow == 1) { _optionsOpen = false; OpenSaveLoad(SaveLoadMode.Load); }
             else if (IsKeyPressed(keyboard, Keys.M) || orow == 2) { _optionsOpen = false; QuitToMainMenu(); }
             else if (IsKeyPressed(keyboard, Keys.Q) || orow == 3) Exit();
             else if (IsKeyPressed(keyboard, Keys.Escape) || IsKeyPressed(keyboard, Keys.D) || orow == 4) _optionsOpen = false;
@@ -6642,6 +6720,7 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
             DrawPipboy();
             DrawAutomap();
             DrawOptions();
+            DrawSaveLoad();
         }
         _spriteBatch.End();
 
@@ -7923,6 +8002,116 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
             Rectangle r = OptionsRowRect(i);
             int tw = _fontRenderer.MeasureWidth(OptionsItems[i]);
             _fontRenderer.Draw(_spriteBatch, OptionsItems[i], new Vector2(px + (ow - tw) / 2, r.Y + 2), i == hovered ? hot : green);
+        }
+    }
+
+    // ====================================================================
+    //  Multi-slot save/load picker (P48)
+    // ====================================================================
+    //
+    // A 10-slot save/load modal (the engine's LSGAME screen, loadsave.cc), opened from the
+    // Options Save/Load rows: each row shows a slot's metadata (character / level / map / date)
+    // or "- EMPTY -", click or 0-9 to save into / load from it. One JSON file per slot
+    // (hexwaste-slotN.json) under SaveDir. F5/F9 stay a separate quicksave on the default path.
+    // DIVERGENCE: a dark text panel, not the authentic LSGAME.frm art (an art residual, the
+    // Skilldex text-then-art pattern); no overwrite-confirm dialog (a click saves directly).
+
+    private enum SaveLoadMode { Save, Load }
+    private bool _saveLoadOpen;
+    private SaveLoadMode _saveLoadMode;
+    private readonly Formats.SlotInfo[] _slotInfos = new Formats.SlotInfo[Formats.SaveSlots.Count];
+
+    /// <summary>The directory holding the per-slot save files (the harness --save-dir; default cwd).</summary>
+    public string SaveDir { get; set; } = "";
+
+    private string SlotPath(int slot) => string.IsNullOrEmpty(SaveDir)
+        ? Formats.SaveSlots.SlotFileName(slot)
+        : Path.Combine(SaveDir, Formats.SaveSlots.SlotFileName(slot));
+
+    private void RefreshSlotInfos()
+    {
+        for (int i = 0; i < Formats.SaveSlots.Count; i++)
+            _slotInfos[i] = Formats.SaveSlots.Describe(SaveState.Load(SlotPath(i)));
+    }
+
+    private void OpenSaveLoad(SaveLoadMode mode)
+    {
+        _saveLoadMode = mode;
+        RefreshSlotInfos();
+        _saveLoadOpen = true;
+    }
+
+    private void SaveGameToSlot(int slot)
+    {
+        if (!string.IsNullOrEmpty(SaveDir))
+            Directory.CreateDirectory(SaveDir);
+        string prev = SavePath;
+        try { SavePath = SlotPath(slot); SaveGame(); }
+        finally { SavePath = prev; }
+        RefreshSlotInfos();
+    }
+
+    private void LoadGameFromSlot(int slot)
+    {
+        string prev = SavePath;
+        try { SavePath = SlotPath(slot); LoadGame(); }
+        finally { SavePath = prev; }
+    }
+
+    // The centred modal + per-slot row geometry (one helper shared by render + hit-test, the
+    // OptionsRowRect pattern). Row layout: a title line, then the 10 slot rows below it.
+    private const int SaveLoadPanelWidth = 470;
+
+    private Rectangle SaveLoadPanelRect()
+    {
+        Rectangle vp = GraphicsDevice.Viewport.Bounds;
+        int lh = (_fontRenderer?.LineHeight ?? 16) + 8;
+        int h = (Formats.SaveSlots.Count + 2) * lh + 16;
+        int x = Math.Max(0, (vp.Width - SaveLoadPanelWidth) / 2);
+        int y = Math.Max(0, (vp.Height - h) / 2);
+        return new Rectangle(x, y, SaveLoadPanelWidth, h);
+    }
+
+    private Rectangle SaveLoadSlotRect(int slot)
+    {
+        Rectangle p = SaveLoadPanelRect();
+        int lh = (_fontRenderer?.LineHeight ?? 16) + 8;
+        return new Rectangle(p.X + 8, p.Y + 12 + lh + slot * lh, p.Width - 16, lh);
+    }
+
+    private int SaveLoadSlotAt(int mx, int my)
+    {
+        for (int i = 0; i < Formats.SaveSlots.Count; i++)
+            if (SaveLoadSlotRect(i).Contains(mx, my))
+                return i;
+        return -1;
+    }
+
+    private void DrawSaveLoad()
+    {
+        if (!_saveLoadOpen || _fontRenderer is null)
+            return;
+        _panelPixel ??= CreatePixel();
+        Rectangle p = SaveLoadPanelRect();
+        _spriteBatch.Draw(_panelPixel, p, new Color(8, 16, 8, 240));
+        var green = new Color(0, 252, 0);
+        var hot = new Color(252, 252, 84);
+        var gray = new Color(140, 140, 140);
+        string title = _saveLoadMode == SaveLoadMode.Save
+            ? "SAVE GAME - pick a slot (0-9 / click, Esc cancel)"
+            : "LOAD GAME - pick a slot (0-9 / click, Esc cancel)";
+        _fontRenderer.Draw(_spriteBatch, title, new Vector2(p.X + 12, p.Y + 10), Color.LightGray);
+
+        int hovered = SaveLoadSlotAt(Mouse.GetState().X, Mouse.GetState().Y);
+        for (int i = 0; i < Formats.SaveSlots.Count; i++)
+        {
+            Formats.SlotInfo info = _slotInfos[i];
+            string label = !info.Occupied ? "- EMPTY -"
+                : info.VersionMismatch ? "- OLD VERSION -"
+                : $"{info.Character} L{info.Level}  {info.Map}  {info.Date}";
+            Rectangle r = SaveLoadSlotRect(i);
+            Color c = i == hovered ? hot : (info.Occupied && !info.VersionMismatch ? green : gray);
+            _fontRenderer.Draw(_spriteBatch, $"{i}. {label}", new Vector2(r.X + 6, r.Y + 2), c);
         }
     }
 

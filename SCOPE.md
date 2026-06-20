@@ -88,7 +88,8 @@ filing an issue.
 - **Interface**: the authentic bottom HUD bar plus its panels — inventory (with
   drag-and-drop equip: drag an item onto the weapon/armor slot to equip, or off to
   unequip; click-to-use still works), character sheet, the Skilldex use-skill picker,
-  the Pip-Boy (status + rest), and an in-game options/pause menu.
+  the Pip-Boy (status + rest), and an in-game options/pause menu whose Save/Load
+  open a 10-slot save picker (one JSON file per slot; F5/F9 stay a quicksave).
 
 ## What's out (by design, today)
 

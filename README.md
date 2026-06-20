@@ -161,12 +161,12 @@ Prebuilt self-contained builds (Linux x64 / Windows x64) are produced by
 | I | inventory (drag an item onto the weapon/armor slot to equip, or click / 1–9 use/equip/consume, Shift+1–9 drop) |
 | C / K | character sheet (spend level-up skill points) |
 | Z | rest to heal (when no enemies are near) |
-| F5 / F9 | save / load |
+| F5 / F9 | quicksave / quickload (default slot) |
 | R / Shift+R | reload the equipped gun (2 AP in combat) / unload it (to switch ammo type) |
 | F4 / T / PgUp / PgDn | roofs / walk-cycle / elevation (PgUp/PgDn page an open item panel) |
 | [ / ] | ambient light (night ↔ day) |
 | M | worldmap |
-| Esc | options / pause menu (save / load / main menu / quit / resume) |
+| Esc | options / pause menu (save / load → a 10-slot picker / main menu / quit / resume) |
 
 A large set of `--flags` exists for headless testing (screenshots, scripted
 dialog/combat transcripts, deterministic RNG); see `src/Hexwaste.Viewer/Program.cs`.

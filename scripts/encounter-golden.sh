@@ -144,6 +144,12 @@ SCENARIOS=(
   "drag-equip-armor|--character combat --map arcaves.map --give 3 --drag-equip 0 2 --rng-seed 1"
   "drag-equip-reject|--character combat --map arcaves.map --give 9 --drag-equip 0 2 --rng-seed 1"
   "drag-equip-drop|--character combat --map arcaves.map --give 9 --drag-equip 0 -1 --rng-seed 1"
+  # P48 multi-slot save UI (loadsave.cc 10-slot LSGAME): one JSON file per slot under --save-dir.
+  # --save-slot/--load-slot/--slots-probe drive the real save-to/load-from-slot path; --reset-slots
+  # clears the dir for a deterministic probe. Round-trip: save slot 3 then load it (party-count
+  # matches); load an empty slot is a no-op; the probe reports each slot's state (L<level>/empty).
+  "save-slot-roundtrip|--character combat --map denbus2.map --give 41:500 --save-dir /tmp/hexwaste-p48-rt --reset-slots --save-slot 3 --party-count --load-slot 3 --party-count --load-slot 5 --rng-seed 1"
+  "save-slots-probe|--character combat --map denbus2.map --save-dir /tmp/hexwaste-p48-sp --reset-slots --save-slot 0 --save-slot 5 --slots-probe --rng-seed 1"
   # P12 M1 — the Pip-Boy rest options: a timed rest (6h heals proportionally) then an
   # until-healed rest from near-death to full. --hurt sets up the wound; deterministic
   # clock math + heal amounts (artemple has no enemy near the entry, so rest is allowed).
@@ -292,7 +298,7 @@ SCENARIOS=(
 
 # Keep only the deterministic transcript lines (drop map-load / animate / stub /
 # dialog-text noise — NEVER capture REPLY/OPTION game-asset strings).
-FILTER='^(encounter|travel-from|companion|dismiss-persist|trade:|party:|party-count:|set-global:|hud-click:|use-skill:|hurt:|rest:|automap:|weapon-mode:|panel-click:|menu-click:|travel-resume:|travel-step:|travel-save-mid:|worldmap-fog:|weight:|iq-probe:|death-probe:|trait-probe:|perk-probe:|perk-pick:|combat-walk:|light:|map-update:|drag-equip:|reg-anim:|encounter-fight:|brawl:|sneak-probe:|sneak-roll:|backstab-probe:|detect-probe:|karma-probe:|set-karma:|rep-title:|town-rep:|karma-titles:|get-global:|place-probe:|reg-anim-move:|critter-state:|hurt-too-much:|run-probe:|outline:|sfx-probe:|reaction-probe:|combat-proc:|combat-proc-hit:|poison-tick:|multihex-probe:|drug-probe:|addict-probe:|kills-probe:|book:|ammo-select:|unload:|ai-heal-probe:|ai-weapon-probe:|float-text:|  spawn|  flat|  wait:|  follow:|  dismiss:|  rejoin:)'
+FILTER='^(encounter|travel-from|companion|dismiss-persist|trade:|party:|party-count:|set-global:|hud-click:|use-skill:|hurt:|rest:|automap:|weapon-mode:|panel-click:|menu-click:|travel-resume:|travel-step:|travel-save-mid:|worldmap-fog:|weight:|iq-probe:|death-probe:|trait-probe:|perk-probe:|perk-pick:|combat-walk:|light:|map-update:|drag-equip:|save-slot:|load-slot:|slots:|reg-anim:|encounter-fight:|brawl:|sneak-probe:|sneak-roll:|backstab-probe:|detect-probe:|karma-probe:|set-karma:|rep-title:|town-rep:|karma-titles:|get-global:|place-probe:|reg-anim-move:|critter-state:|hurt-too-much:|run-probe:|outline:|sfx-probe:|reaction-probe:|combat-proc:|combat-proc-hit:|poison-tick:|multihex-probe:|drug-probe:|addict-probe:|kills-probe:|book:|ammo-select:|unload:|ai-heal-probe:|ai-weapon-probe:|float-text:|  spawn|  flat|  wait:|  follow:|  dismiss:|  rejoin:)'
 
 echo "Building viewer..."
 dotnet build src/Hexwaste.Viewer -c Debug >/dev/null || { echo "build failed"; exit 2; }

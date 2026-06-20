@@ -22,6 +22,7 @@ int? doorTile = null;
 double ambient = 1.0;
 bool ambientFixed = false;
 string? savePath = null;
+string? saveDir = null;
 bool saveOnExit = false;
 bool loadOnStart = false;
 bool worldmap = false;
@@ -73,6 +74,24 @@ for (int i = 0; i < args.Length; i++)
             break;
         case "--save-path" when i + 1 < args.Length: // set the file for in-process --save/--load
             savePath = args[++i];
+            break;
+        case "--save-dir" when i + 1 < args.Length: // P48: the directory for the 10 save slots
+            saveDir = args[++i];
+            break;
+        case "--save-slot" when i + 1 < args.Length:
+            actions.Add(new ViewerGame.StartupAction.SaveToSlot(int.Parse(args[++i])));
+            break;
+        case "--load-slot" when i + 1 < args.Length:
+            actions.Add(new ViewerGame.StartupAction.LoadFromSlot(int.Parse(args[++i])));
+            break;
+        case "--slots-probe":
+            actions.Add(new ViewerGame.StartupAction.SlotsProbe());
+            break;
+        case "--reset-slots":
+            actions.Add(new ViewerGame.StartupAction.ResetSlots());
+            break;
+        case "--show-saveload" when i + 1 < args.Length:
+            actions.Add(new ViewerGame.StartupAction.ShowSaveLoad(int.Parse(args[++i])));
             break;
         case "--save-to" when i + 1 < args.Length:
             savePath = args[++i];
@@ -619,6 +638,7 @@ using var game = new ViewerGame(gameDir!, mapName, screenshot, roofs)
     SaveOnExit = saveOnExit,
     LoadOnStart = loadOnStart,
     SavePath = savePath ?? "hexwaste-save.json",
+    SaveDir = saveDir ?? "",
     StartOnWorldmap = worldmap,
     TravelToArea = travelArea,
     DisableAudio = noAudio,

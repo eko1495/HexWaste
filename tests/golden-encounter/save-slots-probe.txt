@@ -1,0 +1,3 @@
+save-slot: slot=0 saved=1
+save-slot: slot=5 saved=1
+slots: 0=L1 1=empty 2=empty 3=empty 4=empty 5=L1 6=empty 7=empty 8=empty 9=empty

@@ -1666,6 +1666,29 @@ equipped flag + AC/DT/DR, never the item name); 4 goldens (weapon equips in-hand
 DT 0->12 DR 0->40; a weapon onto the armor slot is rejected; drop removes from the bag). 9 EquipRulesTests.
 631 Formats tests, 78 encounter + 16 combat goldens green.
 
+Phase 48 (DONE — "Ten Slots", multi-slot save UI; the P5/P7 single-slot residual). M0 grounding
+(workflow): fo2ce loadsave.cc — the 10-slot LSGAME screen (SLOT##/SAVE.DAT, per-slot metadata
+[description/character/game-date/location], the EMPTY/OCCUPIED/ERROR states, the 224x133 thumbnail);
+Hexwaste saves ONE versioned JSON SaveState to SavePath (single slot) with the Options Save/Load rows
+firing SaveGame/LoadGame immediately. M1 pure Formats.SaveSlots: Count=10 (LOAD_SAVE_SLOT_COUNT) +
+SlotFileName(n) + Describe(SaveState?) -> SlotInfo (occupied / version-mismatch / character / level /
+map / date) — the loadsave.cc _DrawInfoBox display reduced to what the JSON SaveState carries. M2 viewer:
+a 10-slot picker modal (mirrors the Options window — SaveLoadSlotRect/At, the OptionsRowRect pattern)
+opened from the Options Save(S)/Load(L) rows; each row shows the slot's metadata ("combat L3 denbus2.map
+July 25, 2241") or "- EMPTY -" / "- OLD VERSION -", colour-coded, 0-9 / click to save into / load from it;
+one JSON file per slot (hexwaste-slotN.json) under SaveDir; load refuses an empty / mismatched slot. F5/F9
+stay a SEPARATE quicksave on the default SavePath (unchanged). DOCUMENTED DIVERGENCES: a dark text panel,
+not the authentic LSGAME.frm art (art residual, the Skilldex text-then-art pattern); no overwrite-confirm
+dialog (a click saves directly); no thumbnail; and the Title-screen "continue/load" is a residual — the
+in-game picker loads any slot MID-SESSION (the F9/Options-Load path), but a cold-start-from-title load is a
+separate flow (Hexwaste's title goes Title->New Game). GOLDEN-SAFE: F5/F9 + --save-now/--load-now (the
+vic-save-roundtrip) use the DEFAULT SavePath, UNCHANGED; the Options Save/Load reroute is only driven live
+(no golden — menu-click-options tests the Resume row only); the picker is Draw-only -> all 16 combat + 76
+prior encounter goldens BYTE-IDENTICAL. Harness --save-dir / --save-slot / --load-slot / --slots-probe /
+--reset-slots / --show-saveload (STATE-only: slot + occupied/level, never names); 2 goldens (round-trip
+save+load slot 3 + an empty-slot no-op; a slots-probe). 8 SaveSlotsTests. 639 Formats tests, 80 encounter
++ 16 combat goldens green.
+
 Phase 10 (DONE, per docs/phase10-research-report.md — "The Wasteland
 Bites Back"): M0 persistence pre-stage (the net: MapList saved=No /
 random_start_point parse + IsTransient; the 3-clause transient guards as

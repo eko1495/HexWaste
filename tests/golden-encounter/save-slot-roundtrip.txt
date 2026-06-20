@@ -1,0 +1,5 @@
+save-slot: slot=3 saved=1
+party-count: members=1 caps=500 []
+load-slot: slot=3 occupied=1
+party-count: members=1 caps=500 []
+load-slot: slot=5 occupied=0
