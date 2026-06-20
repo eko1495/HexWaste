@@ -2023,14 +2023,14 @@ public sealed class CombatEngine
 
         // min_hp flee (RAW current HP, combat_ai.cc:3077): too wounded to fight.
         if (ai is { MinHp: > 0 } && (_host.GetCritterState(enemy)?.CurrentHp ?? int.MaxValue) < ai.MinHp)
-            return TryFlee(enemy, dudeTile);
+            return TryFlee(enemy, dudeTile, ref _actingEnemyAp);
 
         // hurt_too_much flee (combat_ai.cc:3076): a crippled/blinded critter whose AI packet lists
         // that damage flag flees. INERT by default — HurtTooMuch defaults 0 and no slice golden enemy
         // carries a crip/blind bit on a turn it takes. (Order vs min_hp is immaterial — both OR into TryFlee.)
         // ported from fallout2-ce src/combat_ai.cc _combat_ai()
         if (ai is { HurtTooMuch: not 0 } && (enemy.CombatResults & ai.HurtTooMuch) != 0)
-            return TryFlee(enemy, dudeTile);
+            return TryFlee(enemy, dudeTile, ref _actingEnemyAp);
 
         // chem_use: a hurt BIPED quaffs healing items before attacking (combat_ai.cc _ai_check_drugs,
         // after the flee gate, before _ai_try_attack). P42.
@@ -2068,7 +2068,7 @@ public sealed class CombatEngine
         // it can never land a shot — flee rather than flail (combat_ai.cc:2812).
         if (minToHit > 0 && self is not null && def is not null
             && ComputeToHit(self, def, enemyWeapon, enemyWeaponItem, 1, 0, false) < minToHit)
-            return TryFlee(enemy, dudeTile);
+            return TryFlee(enemy, dudeTile, ref _actingEnemyAp);
 
         int enemyCritters = 0;
         bool shotBlocked = false;
@@ -2118,9 +2118,11 @@ public sealed class CombatEngine
     /// neighbour that most increases distance, up to the AP budget (the engine's
     /// _ai_run_away, combat_ai.cc:2812 — our greedy hex-distance approximation).
     /// Returns false (and takes no turn) if hemmed in.</summary>
-    private bool TryFlee(MapObject critter, int threatTile)
+    // P50: takes the actor's AP by ref so BOTH the enemy turn (_actingEnemyAp) and an ally's
+    // run-away (CompanionAi.ShouldFlee → _actingAllyAp) can flee through the same path.
+    private bool TryFlee(MapObject critter, int threatTile, ref int actorAp)
     {
-        if (_actingEnemyAp < 1)
+        if (actorAp < 1)
             return false;
 
         int fromTile = critter.HexTile;
@@ -2130,7 +2132,7 @@ public sealed class CombatEngine
         // Try the full-AP distance first, shrinking until a reachable retreat tile is found.
         int rotation = HexGrid.RotationTo(threatTile, fromTile);
         int target = -1;
-        for (int dist = _actingEnemyAp; dist > 0 && target < 0; dist--)
+        for (int dist = actorAp; dist > 0 && target < 0; dist--)
         {
             foreach (int dir in (ReadOnlySpan<int>)[rotation, (rotation + 1) % 6, (rotation + 5) % 6])
             {
@@ -2146,14 +2148,20 @@ public sealed class CombatEngine
         if (target < 0)
             return false; // hemmed in — no reachable retreat
 
-        _actingEnemyAp = 0; // the run uses the whole turn (animationRegisterRunToTile, full ap)
+        actorAp = 0; // the run uses the whole turn (animationRegisterRunToTile, full ap)
         _host.Log($"The {_host.ObjectName(critter)} flees!");
         _host.Transcript($"flee: {_host.ObjectName(critter)}@{fromTile} -> {target}");
         return _host.StartWalk(critter, target);
     }
 
-    /// <summary>A companion's action: punch/shoot the nearest living hostile, else
-    /// approach it — the same minimal AI the enemies run.</summary>
+    /// <summary>How close a "stay close to me" companion keeps to the dude before regrouping (P50;
+    /// combat_ai.cc _cai_perform_distance_prefs ~5 hexes).</summary>
+    private const int AllyStayCloseHexes = 5;
+
+    /// <summary>A companion's action, honouring its P50 combat-control settings (disposition / attack-who
+    /// / run-away / distance / chem-use). The DEFAULT settings (Aggressive) resolve to the pre-P50
+    /// behaviour — attack the nearest hostile, never flee, no distance constraint — so an un-configured
+    /// ally is byte-identical to the old AI.</summary>
     private bool TryAllyAction(MapObject ally)
     {
         if (SkipTurnIfIncapacitated(ally))
@@ -2170,11 +2178,34 @@ public sealed class CombatEngine
                 return false;
         }
 
-        MapObject? target = _hostiles.Where(h => !h.IsDead)
-            .OrderBy(h => HexGrid.Distance(ally.HexTile, h.HexTile))
-            .FirstOrDefault();
-        if (target is null)
+        CompanionAi ai = _host.CompanionSettings(ally).Effective(); // P50 disposition → effective knobs
+        List<MapObject> hostiles = _hostiles.Where(h => !h.IsDead).ToList();
+        if (hostiles.Count == 0)
             return false;
+
+        CritterState? selfState = _host.GetCritterState(ally);
+
+        // P50 run-away: too wounded for this disposition → flee (combat_ai.cc:3077, the ally path).
+        if (selfState is not null && _actingAllyAp >= 1
+            && CompanionAi.ShouldFlee(ai.RunAway, selfState.CurrentHp, selfState.MaxHp))
+        {
+            int threatTile = hostiles.OrderBy(h => HexGrid.Distance(ally.HexTile, h.HexTile)).First().HexTile;
+            return TryFlee(ally, threatTile, ref _actingAllyAp);
+        }
+
+        // P50 chem-use: quaff a healing item when hurt past the threshold (reuses the P42 host heal).
+        if (selfState is not null && _actingAllyAp >= 2 && AllyShouldHeal(ai.ChemUse, selfState) && _host.TryNpcHeal(ally))
+        {
+            _actingAllyAp -= 2;
+            return true;
+        }
+
+        // P50 attack-who: pick the target by priority. Closest (the default) == the old nearest-hostile.
+        // DOCUMENTED: WhoeverAttackingMe degrades to Closest — Hexwaste has no per-ally whoHitMe tracker.
+        List<(int Hp, int Distance, bool HitMe)> ranked = hostiles
+            .Select(h => (_host.GetCritterState(h)?.CurrentHp ?? 0, HexGrid.Distance(ally.HexTile, h.HexTile), false))
+            .ToList();
+        MapObject target = hostiles[CompanionAi.PickTarget(ai.AttackWho, ranked)];
 
         (ProtoInfo? weaponProto, MapObject? weaponItem) = _host.EquippedWeapon(ally);
         bool isGun = weaponProto?.Weapon is { } w && w.IsGun(weaponProto.ExtendedFlags);
@@ -2228,9 +2259,19 @@ public sealed class CombatEngine
             return true;
         }
 
+        // P50 distance preference for the approach: Stay holds position; StayClose regroups with the
+        // dude when too far; Charge/OnYourOwn/Snipe close on the target (OnYourOwn = the old default;
+        // Snipe's keep-distance back-away is a documented residual).
+        if (ai.Distance == Distance.Stay)
+            return false;
+        int moveTo = target.HexTile;
+        if (ai.Distance == Distance.StayClose && _host.Dude is { } leader
+            && HexGrid.Distance(ally.HexTile, leader.HexTile) > AllyStayCloseHexes)
+            moveTo = leader.HexTile;
+
         if (_actingAllyAp < 1)
             return false;
-        byte[]? path = Pathfinder.FindPath(ally.HexTile, target.HexTile, tile => _host.IsBlocked(tile));
+        byte[]? path = Pathfinder.FindPath(ally.HexTile, moveTo, tile => _host.IsBlocked(tile));
         if (path is null || path.Length <= 1)
             return false;
         int steps = Math.Min(path.Length - 1, _actingAllyAp);
@@ -2239,6 +2280,23 @@ public sealed class CombatEngine
         for (int i = 0; i < steps; i++)
             walkTarget = HexGrid.TileInDirection(walkTarget, path[i]);
         return _host.StartWalk(ally, walkTarget);
+    }
+
+    /// <summary>P50: an ally heals when hurt past its chem-use threshold (combat_ai.cc _ai_check_drugs
+    /// HealHpRatio mapping). Clean never heals (the default → byte-identical).</summary>
+    private static bool AllyShouldHeal(ChemUse mode, CritterState st)
+    {
+        if (st.MaxHp <= 0 || mode == ChemUse.Clean)
+            return false;
+        int pct = st.CurrentHp * 100 / st.MaxHp;
+        return mode switch
+        {
+            ChemUse.WhenHurtLittle => pct < 60,
+            ChemUse.WhenHurtLots => pct < 30,
+            ChemUse.Sometimes => pct < 50,
+            ChemUse.Anytime => pct < 100,
+            _ => false,
+        };
     }
 
     private void EnemyAttack(MapObject enemy, MapObject defenderObj, ProtoInfo? weaponProto,

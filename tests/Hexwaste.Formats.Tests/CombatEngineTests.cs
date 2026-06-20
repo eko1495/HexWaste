@@ -1540,6 +1540,39 @@ public class CombatEngineTests
         Assert.Equal(30, new CritterState(obj, proto, perkRanks: ranks).DamageResistance); // +20 from Toughness
     }
 
+    // P50: drive a wounded ally's turn — a Coward disposition flees (RunAway), the default (Aggressive →
+    // RunAway.Never) does not. Proves the CompanionAi.ShouldFlee wiring is connected to TryAllyAction.
+    private static List<string> RunWoundedAllyTurn(CompanionAi ai)
+    {
+        var host = new FakeCombatHost();
+        host.SetDude(NewCritter(tile: 20100, hp: 100, ap: 10));
+        MapObject ally = host.AddAlly(NewCritter(tile: HexGrid.TileInDirection(20100, 2), hp: 30, ap: 10), ai);
+        ally.CurrentHp = 5; // badly wounded (5 / 30)
+        MapObject enemy = host.AddCritter(NewCritter(tile: HexGrid.TileInDirection(20100, 0), hp: 30, ap: 10));
+        var engine = new CombatEngine(host, new MinRng());
+
+        Assert.True(engine.TryAttack(enemy)); // the dude opens combat (adjacent, unarmed) — the ally joins
+        host.Animating.Clear();
+        engine.ProcessAnimations();
+        host.Transcripts.Clear();
+        engine.EndPlayerTurn();
+        for (int i = 0; i < 200 && engine.Phase != CombatPhase.PlayerTurn; i++)
+        {
+            host.Animating.Clear();
+            engine.Step();
+        }
+        return host.Transcripts;
+    }
+
+    [Fact]
+    public void WoundedCowardAllyFlees() =>
+        Assert.Contains(RunWoundedAllyTurn(CompanionAi.Default with { Disposition = Disposition.Coward }),
+            t => t.StartsWith("flee:"));
+
+    [Fact]
+    public void WoundedDefaultAllyDoesNotFlee() => // Aggressive → RunAway.Never (the byte-identical default)
+        Assert.DoesNotContain(RunWoundedAllyTurn(CompanionAi.Default), t => t.StartsWith("flee:"));
+
     private static (MapObject Obj, CritterProtoStats Proto) NewCritter(
         int tile, int hp, int ap = 10, int seq = 1, int exp = 0, int betterCrit = 0, int meleeDmg = 0, int skill = 0, int endurance = 0, int dr = 0, int killType = 0)
     {
@@ -1605,6 +1638,18 @@ public class CombatEngineTests
             _critters.Add(c.Obj);
             return c.Obj;
         }
+
+        // P50: a party-member ally (NOT a hostile) + its combat-control disposition.
+        public readonly List<MapObject> Allies = [];
+        public readonly Dictionary<MapObject, CompanionAi> Dispositions = [];
+        public MapObject AddAlly((MapObject Obj, CritterProtoStats Proto) c, CompanionAi ai)
+        {
+            _states[c.Obj] = new CritterState(c.Obj, c.Proto);
+            Allies.Add(c.Obj);
+            Dispositions[c.Obj] = ai;
+            return c.Obj;
+        }
+        public CompanionAi CompanionSettings(MapObject ally) => Dispositions.GetValueOrDefault(ally, CompanionAi.Default);
 
         public readonly Dictionary<MapObject, AiPacket> AiPackets = [];
         public bool CriticalsEnabled { get; set; }
@@ -1675,7 +1720,7 @@ public class CombatEngineTests
         public IReadOnlyList<string> RunDamageProc(MapObject target, MapObject? source, int damage) => [];
         public (IReadOnlyList<string> Lines, bool Overridden) RunDestroyProc(MapObject critter, MapObject? killer) => ([], false);
         public void RemovePartyMember(MapObject critter) { }
-        public IReadOnlyCollection<MapObject> PartyMembers => [];
+        public IReadOnlyCollection<MapObject> PartyMembers => Allies;
         public IEnumerable<MapObject> CombatCritters => _critters;
         public void AwardXp(int amount) => XpAwarded += amount;
         public readonly List<MapObject> RecordedKills = []; // P38: killsIncByType

@@ -1707,6 +1707,36 @@ it for a screenshot); golden aim-click (head -40 / eyes -60 / torso 0 / groin -3
 Formats tests, 81 encounter + 16 combat goldens green. M2-M4 (the full AI-disposition combat-control
 window + the ally-AI wiring) ship as P50.
 
+Phase 50 (DONE — "Tactics", the AI-disposition combat-control window + the ally-AI wiring; the user's
+"full faithful" pick + P49's second half). M0 grounding (the P49 workflow). KEY FINDING: the engine's
+party combat-control window (game_dialog.cc:3354) has 7 LIVE settings, but Hexwaste's TryAllyAction was a
+2-line "attack the nearest hostile" with ZERO knobs — so porting the WINDOW alone would be cosmetic. Per
+the prime directive (no inert features — cf. P38's karma rejection), wired REAL ally-AI behaviour. M1
+pure Formats.Combat.CompanionAi: the enums (Disposition / AttackWho / Distance / RunAway / ChemUse) +
+Effective() (a non-Custom disposition PRESETS the knobs — Aggressive/Berserk/Defensive/Coward) + the
+decision helpers (ShouldFlee HP-fraction thresholds, PickTarget priority). GOTCHA (record-struct trap):
+`new()` zero-inits a record struct (IGNORING the primary-ctor defaults → Berserk/AbjectCoward), so
+CompanionAi.Default is built EXPLICITLY as Aggressive/Closest/OnYourOwn/Never/Clean = the pre-P50
+behaviour. M2 CombatEngine.TryAllyAction wired through a new ICombatHost.CompanionSettings seam (default
+= Default): attack-who target priority (Closest = the old nearest; Strongest/Weakest by HP; WhoeverAttacking
+Me DEGRADES to Closest — no per-ally whoHitMe tracker, documented), run-away flee (TryFlee parameterised
+to take the actor AP by ref so allies + enemies share the one _ai_run_away path), distance (StayClose
+regroups with the dude past 5 hexes / Stay holds / Charge+OnYourOwn close on the target; Snipe back-away is
+a residual), chem-use heal (reuses the P42 host TryNpcHeal). The DEFAULT (Aggressive) resolves to the EXACT
+pre-P50 behaviour, so it is BYTE-IDENTICAL. M3 viewer: the combat-control window (the OptionsRowRect modal
+pattern) opened from the companion hub ("Set your tactics."); 5 cycle-able rows (disposition + the 4 knobs)
++ Done, a detail-row cycle flips disposition to Custom (the engine's model). Persistence: PartyMemberState
++5 additive-V2 ints (default = CompanionAi.Default → old saves byte-identical). DOCUMENTED RESIDUALS: the
+engine's area-attack + best-weapon rows are omitted (no ally burst on the slice; ally best-weapon is a P43
+residual); a dark text panel, not control.frm art. KEY DE-RISK: NO shippable golden configures a disposition,
+and the default = the old behaviour, so all 16 combat + 81 prior encounter goldens BYTE-IDENTICAL (verified
+by a clean check; the behaviour is PROVEN by fake-host tests, the P42/P43 pattern — the slice allies never
+fight a configured disposition). Harness --companion-tactics <hex> <row> <count> (drives the real window-
+cycle path; STATE-only — the effective enum names); golden companion-tactics. 18 CompanionAiTests + 2
+fake-host turn tests (a wounded Coward ally FLEES, the default does not). 659 Formats tests, 82 encounter +
+16 combat goldens green. P49 + P50 = the user's "#3" (the called-shot click dialog + the full AI-disposition
+window), both shipped.
+
 Phase 10 (DONE, per docs/phase10-research-report.md — "The Wasteland
 Bites Back"): M0 persistence pre-stage (the net: MapList saved=No /
 random_start_point parse + IsTransient; the 3-clause transient guards as
@@ -1738,7 +1768,8 @@ and is WRONG for this slice — partymbr.msg does not exist in the game data,
 "partymbr" appears nowhere in the fallout2-ce source, and message list 14
 resolves to Generic.int/generic.msg (no party strings); the only dedicated
 party UI is the AI-disposition combat-control window (game_dialog.cc:3354),
-which reads proto.msg/misc.msg and is out of scope. The follow loop stays
+which reads proto.msg/misc.msg and was out of scope (SUPERSEDED — shipped in P50
+as the companion-hub "Set your tactics." combat-control window). The follow loop stays
 100% script-side. (#8: as-written infeasible — no partymbr artifact exists —
 so closed as a documentation correction.), M5 1:1 trade panel (the loot panel
 pointed at the follower, flat barter-modifier-0 — bypasses priced barter;

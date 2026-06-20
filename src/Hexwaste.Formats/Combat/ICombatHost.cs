@@ -173,6 +173,12 @@ public interface ICombatHost
     /// combat_ai.cc:999): find a healing drug, apply its heal to the critter, consume it; return whether
     /// it healed (P42). Default false (the fake host has no inventory/proto model).</summary>
     bool TryNpcHeal(MapObject critter) => false;
+
+    /// <summary>The companion's combat-control settings (P50 AI-disposition window, game_dialog.cc:3354).
+    /// Default = the pre-P50 ally behaviour (Aggressive: attack the nearest hostile, never flee, no
+    /// distance constraint), so an un-configured ally + the fake test host stay byte-identical.</summary>
+    CompanionAi CompanionSettings(MapObject ally) => CompanionAi.Default;
+
     void GameOver();                                                    // :2856
 
     // --- Output -----------------------------------------------------------

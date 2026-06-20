@@ -154,6 +154,11 @@ SCENARIOS=(
   # hit location. --aim-click <row> drives the real SelectAimRow; reports the location + to-hit penalty
   # per the engine's CALLED.frm button order (head/eyes/r-arm/r-leg/torso/groin/l-arm/l-leg/uncalled).
   "aim-click|--map arcaves.map --aim-click 0 --aim-click 1 --aim-click 4 --aim-click 6 --aim-click 8 --rng-seed 1"
+  # P50 companion combat-control / AI-disposition window (game_dialog.cc:3354). --companion-tactics
+  # <hex> <row> <count> drives the real window-cycle path + reports the EFFECTIVE disposition/knobs the
+  # ally AI honours. row 0 cycles the disposition (Berserk→Aggressive→Defensive→Coward→Custom); rows 1-4
+  # cycle the custom knobs (forcing Custom). The arcaves scorpion@20529 is the stand-in critter.
+  "companion-tactics|--map arcaves.map --companion-tactics 20529 0 2 --companion-tactics 20529 1 2 --companion-tactics 20529 3 1 --rng-seed 1"
   # P12 M1 — the Pip-Boy rest options: a timed rest (6h heals proportionally) then an
   # until-healed rest from near-death to full. --hurt sets up the wound; deterministic
   # clock math + heal amounts (artemple has no enemy near the entry, so rest is allowed).
@@ -302,7 +307,7 @@ SCENARIOS=(
 
 # Keep only the deterministic transcript lines (drop map-load / animate / stub /
 # dialog-text noise — NEVER capture REPLY/OPTION game-asset strings).
-FILTER='^(encounter|travel-from|companion|dismiss-persist|trade:|party:|party-count:|set-global:|hud-click:|use-skill:|hurt:|rest:|automap:|weapon-mode:|panel-click:|menu-click:|travel-resume:|travel-step:|travel-save-mid:|worldmap-fog:|weight:|iq-probe:|death-probe:|trait-probe:|perk-probe:|perk-pick:|combat-walk:|light:|map-update:|drag-equip:|save-slot:|load-slot:|slots:|aim-click:|reg-anim:|encounter-fight:|brawl:|sneak-probe:|sneak-roll:|backstab-probe:|detect-probe:|karma-probe:|set-karma:|rep-title:|town-rep:|karma-titles:|get-global:|place-probe:|reg-anim-move:|critter-state:|hurt-too-much:|run-probe:|outline:|sfx-probe:|reaction-probe:|combat-proc:|combat-proc-hit:|poison-tick:|multihex-probe:|drug-probe:|addict-probe:|kills-probe:|book:|ammo-select:|unload:|ai-heal-probe:|ai-weapon-probe:|float-text:|  spawn|  flat|  wait:|  follow:|  dismiss:|  rejoin:)'
+FILTER='^(encounter|travel-from|companion|dismiss-persist|trade:|party:|party-count:|set-global:|hud-click:|use-skill:|hurt:|rest:|automap:|weapon-mode:|panel-click:|menu-click:|travel-resume:|travel-step:|travel-save-mid:|worldmap-fog:|weight:|iq-probe:|death-probe:|trait-probe:|perk-probe:|perk-pick:|combat-walk:|light:|map-update:|drag-equip:|save-slot:|load-slot:|slots:|aim-click:|tactics:|reg-anim:|encounter-fight:|brawl:|sneak-probe:|sneak-roll:|backstab-probe:|detect-probe:|karma-probe:|set-karma:|rep-title:|town-rep:|karma-titles:|get-global:|place-probe:|reg-anim-move:|critter-state:|hurt-too-much:|run-probe:|outline:|sfx-probe:|reaction-probe:|combat-proc:|combat-proc-hit:|poison-tick:|multihex-probe:|drug-probe:|addict-probe:|kills-probe:|book:|ammo-select:|unload:|ai-heal-probe:|ai-weapon-probe:|float-text:|  spawn|  flat|  wait:|  follow:|  dismiss:|  rejoin:)'
 
 echo "Building viewer..."
 dotnet build src/Hexwaste.Viewer -c Debug >/dev/null || { echo "build failed"; exit 2; }

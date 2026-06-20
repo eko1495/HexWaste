@@ -180,7 +180,12 @@ public sealed class SaveState
         // Per-companion perk ranks (P29-M6; gPartyMemberPerkRanks). Additive within V2 — null on old
         // saves and on the shippable slice (no companion gains perks today), so it's inert
         // infrastructure that lights up for free when future content levels a companion's perks.
-        int[]? PerkRanks = null);
+        int[]? PerkRanks = null,
+        // Combat-control disposition (P50; the AI-disposition window). The 5 ints are the
+        // CompanionAi enum values; the defaults are CompanionAi.Default (Aggressive / Closest /
+        // OnYourOwn / Never / Clean) so an old save (missing fields) deserializes to the pre-P50
+        // behaviour — byte-identical.
+        int Disposition = 1, int AttackWho = 4, int Distance = 3, int RunAway = 5, int ChemUse = 0);
 
     /// <summary>A dismissed companion left standing on a map: enough to recreate the
     /// inert body and rejoin it (P10 #3).</summary>

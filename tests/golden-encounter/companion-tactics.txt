@@ -1,0 +1,6 @@
+tactics: open for Radscorpion disposition=Aggressive
+tactics: hex=20529 disposition=Coward attackWho=Weakest distance=StayClose runAway=FingerHurts chemUse=Clean
+tactics: open for Radscorpion disposition=Coward
+tactics: hex=20529 disposition=Custom attackWho=Closest distance=StayClose runAway=FingerHurts chemUse=Clean
+tactics: open for Radscorpion disposition=Custom
+tactics: hex=20529 disposition=Custom attackWho=Closest distance=StayClose runAway=Bleeding chemUse=Clean

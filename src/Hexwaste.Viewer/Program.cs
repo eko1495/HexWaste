@@ -96,6 +96,11 @@ for (int i = 0; i < args.Length; i++)
         case "--aim-click" when i + 1 < args.Length:
             actions.Add(new ViewerGame.StartupAction.AimClick(int.Parse(args[++i])));
             break;
+        case "--companion-tactics" when i + 3 < args.Length:
+            actions.Add(new ViewerGame.StartupAction.CompanionTactics(
+                int.Parse(args[i + 1]), int.Parse(args[i + 2]), int.Parse(args[i + 3])));
+            i += 3;
+            break;
         case "--save-to" when i + 1 < args.Length:
             savePath = args[++i];
             saveOnExit = true;

@@ -244,7 +244,7 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
 
     // Companion control hub (phase-10 M4): talking to a recruited (or dismissed)
     // member opens a wait/follow/dismiss/rejoin hub instead of scripted dialog.
-    private enum CompanionCmd { Talk, Trade, Wait, Follow, Dismiss, Rejoin, Cancel }
+    private enum CompanionCmd { Talk, Trade, Wait, Follow, Dismiss, Rejoin, Tactics, Cancel }
     private MapObject? _companionHub;
     /// <summary>The companion whose inventory the trade panel is pointed at (phase-10
     /// M5). Non-null = the loot panel is in TRADE mode: a flat 1:1 item move (no caps,
@@ -607,6 +607,10 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
         /// <summary>Drive the called-shot dialog's row selection (P49): pick dialog row 0..8 and report
         /// the resulting AimLocation + its to-hit penalty. STATE-only (ints + the part name).</summary>
         public sealed record AimClick(int Row) : StartupAction;
+        /// <summary>Drive the combat-control window (P50): open it for the critter at Hex, cycle window
+        /// row Row Count times (the real CycleTacticsRow path), and report the resulting EFFECTIVE
+        /// disposition/knobs. STATE-only (enum names).</summary>
+        public sealed record CompanionTactics(int Hex, int Row, int Count) : StartupAction;
         /// <summary>Run the critter@Hex's per-turn combat_p_proc (fp=4) and report whether it defines the
         /// proc + whether it script_overrides the turn (P35).</summary>
         public sealed record CombatProcProbe(int Hex) : StartupAction;
@@ -1460,6 +1464,21 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
                     int pen = Formats.Combat.CriticalTables.LocationPenalty[
                         Math.Clamp(AimLocation, 0, Formats.Combat.CriticalTables.LocationPenalty.Length - 1)];
                     Console.WriteLine($"aim-click: row={acRow} loc={AimLocation} name={AimName(AimLocation)} penalty={pen}");
+                    break;
+                }
+                case StartupAction.CompanionTactics(var ctHex, var ctRow, var ctCount):
+                {
+                    // P50: open the combat-control window for the critter + cycle a row, via the REAL path.
+                    MapObject? ctc = CritterAt(ctHex, includeFlat: true);
+                    if (ctc is null) { Console.Error.WriteLine($"tactics: no critter at {ctHex}"); break; }
+                    OpenTactics(ctc);
+                    for (int n = 0; n < ctCount; n++)
+                        TacticsActivate(ctRow);
+                    if (ctRow >= 0) // row -1 = leave the window OPEN (for a screenshot)
+                        _tacticsMember = null;
+                    Formats.Combat.CompanionAi eff = CompanionSettings(ctc).Effective();
+                    Console.WriteLine($"tactics: hex={ctHex} disposition={CompanionSettings(ctc).Disposition} "
+                        + $"attackWho={eff.AttackWho} distance={eff.Distance} runAway={eff.RunAway} chemUse={eff.ChemUse}");
                     break;
                 }
                 case StartupAction.CombatProcProbe(var cpHex):
@@ -3014,6 +3033,16 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
         if (_aimDialogOpen)
         {
             HandleAimDialogInput(mouse, keyboard);
+            _previousMouse = mouse;
+            _previousKeyboard = keyboard;
+            base.Update(gameTime);
+            return;
+        }
+
+        // The companion combat-control window (P50): modal while open — cycle the tactics, Esc done.
+        if (_tacticsMember is not null)
+        {
+            HandleTacticsInput(mouse, keyboard);
             _previousMouse = mouse;
             _previousKeyboard = keyboard;
             base.Update(gameTime);
@@ -6743,6 +6772,7 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
             DrawOptions();
             DrawSaveLoad();
             DrawAimDialog();
+            DrawTactics();
         }
         _spriteBatch.End();
 
@@ -9757,7 +9787,12 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
                 LevelUpLevel: _companionLevelState.GetValueOrDefault(m)?.Level ?? 0,
                 LevelUpNumLevelUps: _companionLevelState.GetValueOrDefault(m)?.NumLevelUps ?? 0,
                 LevelUpIsEarly: _companionLevelState.GetValueOrDefault(m)?.IsEarly ?? 0,
-                PerkRanks: _companionPerkRanks.GetValueOrDefault(m)))], // P29-M6 (null on the slice)
+                PerkRanks: _companionPerkRanks.GetValueOrDefault(m), // P29-M6 (null on the slice)
+                Disposition: (int)CompanionSettings(m).Disposition, // P50 combat-control settings
+                AttackWho: (int)CompanionSettings(m).AttackWho,
+                Distance: (int)CompanionSettings(m).Distance,
+                RunAway: (int)CompanionSettings(m).RunAway,
+                ChemUse: (int)CompanionSettings(m).ChemUse))],
             WorldPosX = _worldPosX,
             WorldPosY = _worldPosY,
             CurrentAreaId = _currentAreaId,
@@ -10005,6 +10040,12 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
                 // P29-M6: restore per-companion perk ranks (null/empty on the slice → nothing to do).
                 if (saved.PerkRanks is { Length: > 0 })
                     _companionPerkRanks[member] = saved.PerkRanks;
+                // P50: restore the combat-control disposition (old saves default to CompanionAi.Default
+                // via the record's ctor defaults → SetCompanionAi clears it → byte-identical).
+                SetCompanionAi(member, new Formats.Combat.CompanionAi(
+                    (Formats.Combat.Disposition)saved.Disposition, (Formats.Combat.AttackWho)saved.AttackWho,
+                    (Formats.Combat.Distance)saved.Distance, (Formats.Combat.RunAway)saved.RunAway,
+                    (Formats.Combat.ChemUse)saved.ChemUse));
                 // Restore the companion control state (phase-10 #2): the "wait here"
                 // flag and the pre-recruit team so a later dismiss restores it (not 0).
                 if (saved.Waiting)

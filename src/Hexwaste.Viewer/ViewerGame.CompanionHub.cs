@@ -60,6 +60,7 @@ public sealed partial class ViewerGame
             _hubOptions.Add(_waitingCompanions.Contains(member)
                 ? ("Let's go. (follow me)", CompanionCmd.Follow)
                 : ("Wait here.", CompanionCmd.Wait));
+            _hubOptions.Add(("Set your tactics. (combat control)", CompanionCmd.Tactics));
             _hubOptions.Add(("It's time for us to part ways. (dismiss)", CompanionCmd.Dismiss));
         }
         else // a dismissed former companion still standing on the map
@@ -101,6 +102,9 @@ public sealed partial class ViewerGame
                 break;
             case CompanionCmd.Rejoin:
                 RejoinCompanion(member);
+                break;
+            case CompanionCmd.Tactics:
+                OpenTactics(member); // P50: the combat-control / AI-disposition window
                 break;
             case CompanionCmd.Cancel:
                 break;
