@@ -1,0 +1,1 @@
+smoke: map=geckpwpl.map critters=22 containers=26 doors=29 scripted=48 stubs=0[]

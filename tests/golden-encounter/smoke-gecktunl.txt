@@ -1,0 +1,1 @@
+smoke: map=gecktunl.map critters=12 containers=0 doors=7 scripted=12 stubs=0[]

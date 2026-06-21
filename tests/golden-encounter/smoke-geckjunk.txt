@@ -1,0 +1,1 @@
+smoke: map=geckjunk.map critters=13 containers=24 doors=15 scripted=21 stubs=0[]

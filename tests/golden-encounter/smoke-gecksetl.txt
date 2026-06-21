@@ -1,0 +1,1 @@
+smoke: map=gecksetl.map critters=29 containers=15 doors=12 scripted=34 stubs=0[]

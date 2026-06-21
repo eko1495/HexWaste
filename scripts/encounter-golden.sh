@@ -328,6 +328,12 @@ SCENARIOS=(
   # P54-M5: the VC dialogue VM runs end-to-end on real VC content (option counts only, never the
   # copyrighted dialogue text) — proves NPCs talk. Lynette (17100) + Greg (13705) on the Council.
   "vc-dialogue|--map vctycocl.map --iq-probe 17100 5 --iq-probe 13705 5 --rng-seed 1"
+  # Gecko (P55): the SECOND new location — all 4 maps fully covered (stubs=0) for free (Vault City's
+  # P54 wiring already covered the shared externals). Reachable via --travel 5 (Area 05, start_state=On).
+  "smoke-gecksetl|--map gecksetl.map --smoke"
+  "smoke-geckpwpl|--map geckpwpl.map --smoke"
+  "smoke-geckjunk|--map geckjunk.map --smoke"
+  "smoke-gecktunl|--map gecktunl.map --smoke"
 )
 
 # Keep only the deterministic transcript lines (drop map-load / animate / stub /
