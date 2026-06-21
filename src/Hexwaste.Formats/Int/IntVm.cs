@@ -242,6 +242,16 @@ public interface IVmExternals
     /// <summary>obj_pid.</summary>
     int ObjPid(int objectHandle) => -1;
 
+    /// <summary>elevation (0x80EC, opGetObjectElevation): the object's map elevation (0..2).</summary>
+    int ObjElevation(int objectHandle) => 0;
+
+    /// <summary>critter_injure (0x8127, opCritterInjure): OR (or clear, on DAM_PERFORM_REVERSE) the
+    /// DAM_CRIP crippled-limb/blind flags into the critter's combat results.</summary>
+    void CritterInjure(int objectHandle, int damageFlags) { }
+
+    /// <summary>anim (0x810C, opAnim): play animation code <paramref name="anim"/> on the object once.</summary>
+    void Anim(int objectHandle, int anim, int frame) { }
+
     /// <summary>obj_is_carrying_obj_pid (interpreter_extra.cc:1040): the quantity of
     /// <paramref name="pid"/> the critter carries (recursive into nested containers).</summary>
     int ObjIsCarryingPid(int objectHandle, int pid) => 0;
@@ -1530,6 +1540,26 @@ public sealed class IntVm
             }
             case 0x8154: // debug_msg (opDebugMessage): a developer no-op — pop the string and discard
                 Pop();   // (faithful: the engine prints to the debug console only; nothing player-visible)
+                break;
+            case 0x80EC: // elevation (opGetObjectElevation)
+                PushInt(_externals.ObjElevation(PopInt()));
+                break;
+            case 0x8127: // critter_injure (pops flags, then critter)
+            {
+                int flags = PopInt();
+                _externals.CritterInjure(PopInt(), flags);
+                break;
+            }
+            case 0x810C: // anim (pops frame, then anim, then who)
+            {
+                int frame = PopInt();
+                int anim = PopInt();
+                _externals.Anim(PopInt(), anim, frame);
+                break;
+            }
+            case 0x8150: // obj_on_screen (opObjectOnScreen): no camera headless; the engine tests the
+                PopInt(); // viewport — return 1 (visible), the benign map-enter default. DOCUMENTED DIVERGENCE.
+                PushInt(1);
                 break;
             default:
             {

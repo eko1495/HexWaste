@@ -928,6 +928,17 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
                     else
                         _animator.AddLooping(obj);
                 },
+                // P54-M2 (Vault City): elevation(obj) finds which elevation list holds the object
+                // (the dude/party aren't in those lists → fall back to the current elevation, which is theirs).
+                ElevationProvider = ElevationOfObject,
+                // anim(obj, code): play a one-shot animation on a critter (anim codes < ANIM_COUNT≈40);
+                // rotation/invalid codes (the engine's animate-rotation path) are ignored.
+                AnimRequested = (obj, anim) =>
+                {
+                    if (anim is >= 0 and < 40 && Fid.Type(obj.Fid) is ObjectType.Critter)
+                        _animator.PlayActionOnce(obj, Fid.Build(ObjectType.Critter, Fid.Index(obj.Fid), anim,
+                            Fid.WeaponCode(obj.Fid), obj.Rotation));
+                },
                 // First hit of each distinct stub goes to stderr; counts are
                 // dumped per map on exit (gap analysis for wiring externals).
                 OnStubbedExternal = name =>
@@ -2427,6 +2438,18 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
         if (obj.HexTile == dudeTile)
             return true;
         return Enumerable.Range(0, 6).Any(r => Formats.Hex.HexGrid.TileInDirection(dudeTile, r) == obj.HexTile);
+    }
+
+    /// <summary>P54-M2: the elevation list (0..2) that holds <paramref name="obj"/>, for the
+    /// elevation(obj) external. The dude/party live outside the map lists → fall back to the current
+    /// elevation (which is theirs). Linear scan; called rarely (a script query).</summary>
+    private int ElevationOfObject(MapObject obj)
+    {
+        if (_map is not null)
+            for (int e = 0; e < MapFile.ElevationCount; e++)
+                if (_map.Elevations[e]?.Objects.Contains(obj) == true)
+                    return e;
+        return _elevation;
     }
 
     private bool IsContainer(MapObject obj)

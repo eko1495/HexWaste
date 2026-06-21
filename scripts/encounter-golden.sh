@@ -319,6 +319,12 @@ SCENARIOS=(
   "smoke-denbus2|--map denbus2.map --smoke"
   "smoke-denbus1|--map denbus1.map --smoke"
   "smoke-kladwtwn|--map KLAMALL.map --smoke"
+  # Vault City (P54): the first new location — all 4 maps fully covered (stubs=0) after wiring
+  # day/debug_msg (M1) + elevation/obj_on_screen/critter_injure/anim (M2).
+  "smoke-vctyctyd|--map vctyctyd.map --smoke"
+  "smoke-vctydwtn|--map vctydwtn.map --smoke"
+  "smoke-vctycocl|--map vctycocl.map --smoke"
+  "smoke-vctyvlt|--map vctyvlt.map --smoke"
 )
 
 # Keep only the deterministic transcript lines (drop map-load / animate / stub /

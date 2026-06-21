@@ -1,1 +1,1 @@
-smoke: map=KLAMALL.map critters=32 containers=17 doors=24 scripted=53 stubs=1[stubbed external elevation (0x80EC): popped 1, pushed 0]
+smoke: map=KLAMALL.map critters=32 containers=17 doors=24 scripted=53 stubs=0[]

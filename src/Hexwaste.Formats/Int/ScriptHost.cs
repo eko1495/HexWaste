@@ -133,6 +133,12 @@ public sealed class ScriptHost(GameFileSystem vfs, ScriptList scripts, Hexwaste.
     /// <summary>reg_anim_animate_forever: the host loops anim code on the object.</summary>
     public Action<MapObject, int>? AnimateForeverRequested { get; set; }
 
+    /// <summary>P54-M2: elevation(obj) — the host resolves an object's map elevation (0..2).</summary>
+    public Func<MapObject, int>? ElevationProvider { get; set; }
+
+    /// <summary>P54-M2: anim(obj, code) — the host plays a one-shot animation code on the object.</summary>
+    public Action<MapObject, int>? AnimRequested { get; set; }
+
     /// <summary>reg_anim_func END: the host plays a flushed batch of queued reg_anim
     /// actions (moves/animations). (P33-M1.)</summary>
     public Action<IReadOnlyList<RegAnimAction>>? RegAnimRequested { get; set; }
@@ -1027,6 +1033,26 @@ public sealed class ScriptHost(GameFileSystem vfs, ScriptList scripts, Hexwaste.
         }
 
         public int ObjTile(int objectHandle) => _host.ObjectOf(objectHandle)?.HexTile ?? -1;
+
+        // P54-M2: elevation/critter_injure/anim — VC needs these; inert on the existing slice (not fired).
+        public int ObjElevation(int objectHandle) =>
+            _host.ObjectOf(objectHandle) is { } obj ? _host.ElevationProvider?.Invoke(obj) ?? 0 : 0;
+
+        public void CritterInjure(int objectHandle, int flags)
+        {
+            if (_host.ObjectOf(objectHandle) is not { } critter)
+                return;
+            int crip = flags & 0x7C; // DAM_CRIP: crippled legs/arms + blind (opCritterInjure masks to this)
+            critter.CombatResults = (flags & 0x800000) != 0 // DAM_PERFORM_REVERSE → clear instead of set
+                ? critter.CombatResults & ~crip
+                : critter.CombatResults | crip;
+        }
+
+        public void Anim(int objectHandle, int anim, int frame)
+        {
+            if (_host.ObjectOf(objectHandle) is { } obj)
+                _host.AnimRequested?.Invoke(obj, anim);
+        }
 
         public int CurrentMapIndex() => _host.CurrentMapIndexProvider?.Invoke() ?? 0;
 

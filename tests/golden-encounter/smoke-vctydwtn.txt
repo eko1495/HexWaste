@@ -1,0 +1,1 @@
+smoke: map=vctydwtn.map critters=46 containers=41 doors=25 scripted=74 stubs=0[]

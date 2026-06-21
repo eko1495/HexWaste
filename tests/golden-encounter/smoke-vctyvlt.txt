@@ -1,0 +1,1 @@
+smoke: map=vctyvlt.map critters=3 containers=63 doors=19 scripted=21 stubs=0[]
