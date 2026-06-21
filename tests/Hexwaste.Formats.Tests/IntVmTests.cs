@@ -105,17 +105,19 @@ public class IntVmTests
     [GameDataFact]
     public void StubsUnknownExternalsWithoutThrowing()
     {
-        // map_enter_p_proc leans on externals outside IVmExternals
-        // (metarule, obj_lock, set_local_var, cur_map_index, ...); all of
-        // them must be arity-stubbed, reported, and leave the stack intact.
+        // map_enter_p_proc leans on externals outside IVmExternals (metarule, obj_lock,
+        // set_local_var, ...); any the VM doesn't implement must be arity-stubbed — popped,
+        // reported, never throwing — so the proc runs clean and leaves the return stack intact.
+        // INVARIANT (the safety property): a clean run + an empty stack. We do NOT assert a stub
+        // FIRED — as more externals get wired a given script may stub zero of them (the stub path
+        // itself stays exercised by the still-stubbed slice maps in the --smoke goldens).
         IntProgram program = LoadScript(@"scripts\midoor.int");
         var externals = new FakeExternals();
         int stubbed = 0;
         var vm = new IntVm(program, externals, _ => stubbed++);
 
-        Assert.True(vm.TryRunProcedure("map_enter_p_proc"));
-        Assert.True(stubbed > 0, "expected at least one arity-stubbed external call");
-        Assert.Equal(0, vm.ReturnStackDepth);
+        Assert.True(vm.TryRunProcedure("map_enter_p_proc")); // ran without throwing
+        Assert.Equal(0, vm.ReturnStackDepth);                // stack intact (stubs popped their arity)
 
         Assert.False(vm.TryRunProcedure("no_such_procedure"));
     }
