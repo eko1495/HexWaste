@@ -278,6 +278,14 @@ for (int i = 0; i < args.Length; i++)
         case "--get-global" when i + 1 < args.Length:
             actions.Add(new ViewerGame.StartupAction.GetGlobal(int.Parse(args[++i])));
             break;
+        case "--party-probe" when i + 1 < args.Length:
+        {
+            string p = args[++i];
+            int pid = p.StartsWith("0x", StringComparison.OrdinalIgnoreCase)
+                ? Convert.ToInt32(p[2..], 16) : int.Parse(p);
+            actions.Add(new ViewerGame.StartupAction.PartyProbe(pid));
+            break;
+        }
         case "--place-probe" when i + 2 < args.Length:
             actions.Add(new ViewerGame.StartupAction.PlaceProbe(int.Parse(args[i + 1]), int.Parse(args[i + 2])));
             i += 2;

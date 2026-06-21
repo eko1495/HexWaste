@@ -794,6 +794,15 @@ public sealed partial class ViewerGame
                     Console.WriteLine($"get-global: GVAR{ggId} = {_scriptHost?.GlobalVars.GetValueOrDefault(ggId, 0) ?? 0}");
                     break;
                 }
+                case StartupAction.PartyProbe(var ppPid):
+                {
+                    // Is this critter PID a data\party.txt recruitable companion? (Vic-pattern feasible
+                    // vs needs custom content.) Reports membership + level_minimum — state-only, no names.
+                    var desc = PartyTable()?.ForPid(ppPid);
+                    Console.WriteLine($"party-probe: pid=0x{ppPid:X} member={(desc is not null ? 1 : 0)} "
+                        + $"levelMin={desc?.LevelMinimum ?? -1}");
+                    break;
+                }
                 case StartupAction.PlaceProbe(var fromHex, var toHex):
                 {
                     // P32: drive the real critter_attempt_placement relocate path (PlaceObject) on a map

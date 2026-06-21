@@ -578,6 +578,9 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
         public sealed record SetKarma(int Karma, int Reputation) : StartupAction;
         /// <summary>Read a global var (P32-M1; verifies vault13.gam seeding after a new game).</summary>
         public sealed record GetGlobal(int Id) : StartupAction;
+        /// <summary>Report whether a critter PID is a data\party.txt recruitable companion (and its
+        /// level_minimum) — verifies a recruitment is the Vic-pattern (feasible) vs needs custom content.</summary>
+        public sealed record PartyProbe(int Pid) : StartupAction;
         /// <summary>P53: look up a dialogue line's audio field (or force one) + report the composed speech
         /// path + the ShouldSpeak verdict — asset PATHS only, never the message text. ForcedAudio "-" =
         /// the real MSG lookup for (ListId, MsgId); any other value forces that audio basename.</summary>
