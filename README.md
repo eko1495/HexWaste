@@ -129,7 +129,8 @@ Prebuilt self-contained builds (Linux x64 / Windows x64) are produced by
 - **Companions**: recruit, then a control hub (talk to them) — wait here /
   follow / trade / dismiss / rejoin; a 1:1 flat item trade to gear them up; and
   a combat-control window to set their tactics (aggressive/defensive disposition,
-  who to target, when to flee, how close to stay) — which the ally AI obeys.
+  who to target, when to flee, how close to stay, when to burst-fire, which weapon
+  to favour) — which the ally AI obeys.
 - **HUD**: the authentic Fallout 2 interface bar (`iface.frm`) along the bottom —
   the green scrolling message monitor, the equipped-weapon slot with its attack-mode
   label, lit action-point pips, the HP/AC readout in the original digit font, the END

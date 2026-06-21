@@ -1,0 +1,4 @@
+tactics: open for Radscorpion disposition=Aggressive
+tactics: hex=20529 disposition=Custom attackWho=Closest distance=OnYourOwn runAway=Never chemUse=Clean areaAttack=BeSure bestWeapon=NoPref
+tactics: open for Radscorpion disposition=Custom
+tactics: hex=20529 disposition=Custom attackWho=Closest distance=OnYourOwn runAway=Never chemUse=Clean areaAttack=BeSure bestWeapon=Ranged

@@ -1726,9 +1726,9 @@ a residual), chem-use heal (reuses the P42 host TryNpcHeal). The DEFAULT (Aggres
 pre-P50 behaviour, so it is BYTE-IDENTICAL. M3 viewer: the combat-control window (the OptionsRowRect modal
 pattern) opened from the companion hub ("Set your tactics."); 5 cycle-able rows (disposition + the 4 knobs)
 + Done, a detail-row cycle flips disposition to Custom (the engine's model). Persistence: PartyMemberState
-+5 additive-V2 ints (default = CompanionAi.Default → old saves byte-identical). DOCUMENTED RESIDUALS: the
-engine's area-attack + best-weapon rows are omitted (no ally burst on the slice; ally best-weapon is a P43
-residual); a dark text panel, not control.frm art. KEY DE-RISK: NO shippable golden configures a disposition,
++5 additive-V2 ints (default = CompanionAi.Default → old saves byte-identical). RESIDUALS (area-attack +
+best-weapon rows) CLOSED in P51; the lone remaining one is a dark text panel, not control.frm art. KEY
+DE-RISK: NO shippable golden configures a disposition,
 and the default = the old behaviour, so all 16 combat + 81 prior encounter goldens BYTE-IDENTICAL (verified
 by a clean check; the behaviour is PROVEN by fake-host tests, the P42/P43 pattern — the slice allies never
 fight a configured disposition). Harness --companion-tactics <hex> <row> <count> (drives the real window-
@@ -1736,6 +1736,31 @@ cycle path; STATE-only — the effective enum names); golden companion-tactics. 
 fake-host turn tests (a wounded Coward ally FLEES, the default does not). 659 Formats tests, 82 encounter +
 16 combat goldens green. P49 + P50 = the user's "#3" (the called-shot click dialog + the full AI-disposition
 window), both shipped.
+
+Phase 51 (DONE — "Full Tactics", closing the P50 ally area-attack + best-weapon residuals; the user's ask).
+M0 grounding (workflow): the engine's _ai_pick_hit_mode area-attack thresholds (combat_ai.cc:2287 — ALWAYS /
+SOMETIMES [1/secondary_freq] / BE_CAREFUL ≥50% / BE_SURE ≥85% / BE_ABSOLUTELY_SURE ≥95%) + the 8 best_weapon
+options (_weapPrefOrderings, indexed [best_weapon+1]); KEY FINDING — Hexwaste's AiBestWeapon + IsBurstWeapon
+are zero-dude-coupled (reusable), AiSwitchWeapon reads ai.BestWeapon (needs a value-overload for allies), and
+the burst path is dude-coupled only at RollBurst's one attackerIsDude:true. M1 CompanionAi +2 enums: AreaAttack
+{Never/Sometimes/BeCareful/BeSure/BeAbsolutelySure/Always} (Never=default = the pre-P51 single-only ally) +
+WeaponPref {NoPref..Random, values MATCH the engine enum so the int feeds AiBestWeapon directly} + ShouldArea
+Attack (the deterministic thresholds; SOMETIMES is the engine rng). M2 wiring: best-weapon — AiSwitchWeapon
+refactored to a (actor, bestWeapon:int, minToHit:int, ...) overload (the AiPacket entry delegates) + called in
+TryAllyAction's dry-gun branch with CompanionAi.WeaponPref (was a flat drop-to-fists; the P43 enemy switch now
+reaches allies); area-attack — RollBurst parameterised by attackerIsDude (default true → the dude byte-identical)
++ a new TryAllyBurst (the dude's _compute_spray + cone, with the ally AP + attackerIsDude:false, an "ally-burst"
+transcript) fired from the single-attack branch when IsBurstWeapon + AreaAttack != Never + the to-hit threshold.
+M3 viewer: the tactics window grew 6→8 rows (Area attack + Best weapon), PartyMemberState +2 additive ints
+(default 0 = CompanionAi.Default). KEY DE-RISK: AreaAttack.Never + WeaponPref.NoPref = the old behaviour
+(TryAllyBurst skipped; AiSwitchWeapon inert with no carried backup), and NO slice golden configures either, so
+all 16 combat + 82 prior encounter goldens BYTE-IDENTICAL (incl. the dude burst goldens — RollBurst's default
+attackerIsDude:true is unchanged). DOCUMENTED: SOMETIMES uses a fixed 1/3 (allies have no ai.txt secondary_freq);
+the area-attack to-hit uses the single ComputeToHit (not HIT_MODE secondary). Behaviour PROVEN by fake-host tests
+(an AreaAttack.Always ally bursts / the default never bursts / a dry-gun ally switches to its carried club).
+Harness --companion-tactics rows 5/6 + ProbeAllyWeaponSwitch; goldens companion-tactics (report +areaAttack/
+bestWeapon) + companion-tactics-aw. 14 new tests. 673 Formats tests, 83 encounter + 16 combat goldens green.
+Both P50 residuals are CLOSED — the combat-control window is now the full engine set bar control.frm art.
 
 Phase 10 (DONE, per docs/phase10-research-report.md — "The Wasteland
 Bites Back"): M0 persistence pre-stage (the net: MapList saved=No /

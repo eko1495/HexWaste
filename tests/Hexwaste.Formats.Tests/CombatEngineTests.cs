@@ -1573,6 +1573,71 @@ public class CombatEngineTests
     public void WoundedDefaultAllyDoesNotFlee() => // Aggressive → RunAway.Never (the byte-identical default)
         Assert.DoesNotContain(RunWoundedAllyTurn(CompanionAi.Default), t => t.StartsWith("flee:"));
 
+    [Fact]
+    public void AllyBurstsWhenAreaAttackAllows() // P51 area-attack: a burst gun + AreaAttack.Always → ally-burst
+    {
+        var host = new FakeCombatHost { LoadedAmmoCount = 20 };
+        host.SetDude(NewCritter(tile: 20100, hp: 100, ap: 10));
+        host.AddAlly(NewCritter(tile: HexGrid.TileInDirection(20100, 2), hp: 100, ap: 10, skill: 100),
+            CompanionAi.Default with { AreaAttack = AreaAttack.Always });
+        MapObject enemy = host.AddCritter(NewCritter(tile: HexGrid.TileInDirection(20100, 0), hp: 100, ap: 10));
+        host.Equipped = MakeBurstWeapon(rounds: 10, apCost2: 4); // shared: the dude single-shots, the ally bursts
+        var engine = new CombatEngine(host, new MinRng());
+
+        Assert.True(engine.TryAttack(enemy)); // the dude opens combat (a single shot)
+        host.Animating.Clear();
+        engine.ProcessAnimations();
+        host.Transcripts.Clear();
+        engine.EndPlayerTurn();
+        for (int i = 0; i < 200 && engine.Phase != CombatPhase.PlayerTurn; i++)
+        {
+            host.Animating.Clear();
+            engine.Step();
+        }
+
+        Assert.Contains(host.Transcripts, t => t.StartsWith("ally-burst"));
+    }
+
+    [Fact]
+    public void DefaultAllyNeverBursts() // AreaAttack.Never (the default) → single shots only, byte-identical
+    {
+        var host = new FakeCombatHost { LoadedAmmoCount = 20 };
+        host.SetDude(NewCritter(tile: 20100, hp: 100, ap: 10));
+        host.AddAlly(NewCritter(tile: HexGrid.TileInDirection(20100, 2), hp: 100, ap: 10, skill: 100), CompanionAi.Default);
+        MapObject enemy = host.AddCritter(NewCritter(tile: HexGrid.TileInDirection(20100, 0), hp: 100, ap: 10));
+        host.Equipped = MakeBurstWeapon(rounds: 10, apCost2: 4);
+        var engine = new CombatEngine(host, new MinRng());
+
+        Assert.True(engine.TryAttack(enemy));
+        host.Animating.Clear();
+        engine.ProcessAnimations();
+        host.Transcripts.Clear();
+        engine.EndPlayerTurn();
+        for (int i = 0; i < 200 && engine.Phase != CombatPhase.PlayerTurn; i++)
+        {
+            host.Animating.Clear();
+            engine.Step();
+        }
+
+        Assert.DoesNotContain(host.Transcripts, t => t.StartsWith("ally-burst"));
+    }
+
+    [Fact]
+    public void AllyDryGunSwitchesToBackupPerWeaponPref() // P51 best-weapon (the ally AiSwitchWeapon path)
+    {
+        var host = new FakeCombatHost { LoadedAmmoCount = 0 }; // the equipped gun is dry
+        host.SetDude(NewCritter(tile: 20100, hp: 30, ap: 10));
+        MapObject ally = host.AddAlly(NewCritter(tile: 20200, hp: 30, ap: 10, skill: 100), CompanionAi.Default);
+        host.AddCritter(NewCritter(tile: 20201, hp: 30, ap: 10));
+        host.Equipped = (TestWeapon(0x100, 0x06, 5, 12), TestItem(0x100));      // a dry ranged gun
+        host.InventoryWeapons[ally] = [(TestWeapon(0x201, 0x03, 1, 6), TestItem(0x201))]; // a carried melee club
+
+        int chosen = new CombatEngine(host, new MinRng()).ProbeAllyWeaponSwitch(ally, (int)WeaponPref.NoPref, distance: 1);
+
+        Assert.Equal(0x201, chosen);                                            // switched to the club (vs fists)
+        Assert.Contains(host.Equips, e => e.Critter == ally && e.Item.Pid == 0x201);
+    }
+
     private static (MapObject Obj, CritterProtoStats Proto) NewCritter(
         int tile, int hp, int ap = 10, int seq = 1, int exp = 0, int betterCrit = 0, int meleeDmg = 0, int skill = 0, int endurance = 0, int dr = 0, int killType = 0)
     {

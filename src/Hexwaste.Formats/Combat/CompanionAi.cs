@@ -18,6 +18,15 @@ public enum RunAway { AbjectCoward, FingerHurts, Bleeding, NotFeelingGood, Tourn
 /// <summary>When to quaff a healing chem (custom.msg 600-604; combat_ai.cc _ai_check_drugs).</summary>
 public enum ChemUse { Clean, WhenHurtLittle, WhenHurtLots, Sometimes, Anytime }
 
+/// <summary>When to use a burst/secondary attack (custom.msg 100-104; combat_ai.cc:2287 _ai_pick_hit_mode —
+/// the to-hit thresholds). Hexwaste adds NEVER (the default = the pre-P51 single-only ally) since the engine's
+/// unset behaviour (-1) is INT/distance-gated and doesn't map to a window row.</summary>
+public enum AreaAttack { Never, Sometimes, BeCareful, BeSure, BeAbsolutelySure, Always }
+
+/// <summary>Best-weapon preference (custom.msg 300-307; combat_ai.cc:269 _weapPrefOrderings). The values MATCH
+/// the engine's best_weapon enum so the int feeds AiBestWeapon's [best_weapon+1] table directly.</summary>
+public enum WeaponPref { NoPref = 0, Melee = 1, MeleeOverRanged = 2, RangedOverMelee = 3, Ranged = 4, Unarmed = 5, UnarmedOverThrow = 6, Random = 7 }
+
 /// <summary>
 /// A companion's combat-control settings (P50) — Hexwaste's port of the engine's party-member
 /// AI-disposition window (game_dialog.cc:3354 partyMemberControlWindowInit + the combat_ai.cc reads).
@@ -31,13 +40,27 @@ public readonly record struct CompanionAi(
     AttackWho AttackWho = AttackWho.Closest,
     Distance Distance = Distance.OnYourOwn,
     RunAway RunAway = RunAway.Never,
-    ChemUse ChemUse = ChemUse.Clean)
+    ChemUse ChemUse = ChemUse.Clean,
+    AreaAttack AreaAttack = AreaAttack.Never,
+    WeaponPref WeaponPref = WeaponPref.NoPref)
 {
-    /// <summary>The pre-P50 ally behaviour (Aggressive → closest / no-distance / never-flee). NOTE:
-    /// built EXPLICITLY, not <c>new()</c> — a record struct's parameterless ctor zero-inits (ignoring
-    /// the primary-ctor defaults), which would wrongly give Berserk/AbjectCoward.</summary>
+    /// <summary>The pre-P50 ally behaviour (Aggressive → closest / no-distance / never-flee / no burst /
+    /// no-pref weapon). NOTE: built EXPLICITLY, not <c>new()</c> — a record struct's parameterless ctor
+    /// zero-inits (ignoring the primary-ctor defaults), which would wrongly give Berserk/AbjectCoward.</summary>
     public static readonly CompanionAi Default =
-        new(Disposition.Aggressive, AttackWho.Closest, Distance.OnYourOwn, RunAway.Never, ChemUse.Clean);
+        new(Disposition.Aggressive, AttackWho.Closest, Distance.OnYourOwn, RunAway.Never, ChemUse.Clean,
+            AreaAttack.Never, WeaponPref.NoPref);
+
+    /// <summary>Whether an ally should fire a burst this hit (P51; _ai_pick_hit_mode, combat_ai.cc:2287). The
+    /// SOMETIMES random roll is engine-side (a 1/freq draw); this resolves the deterministic modes.</summary>
+    public static bool ShouldAreaAttack(AreaAttack mode, int secondaryToHit) => mode switch
+    {
+        AreaAttack.Always => true,
+        AreaAttack.BeCareful => secondaryToHit >= 50,
+        AreaAttack.BeSure => secondaryToHit >= 85,
+        AreaAttack.BeAbsolutelySure => secondaryToHit >= 95,
+        _ => false, // Never (off); Sometimes is resolved with the rng in the engine
+    };
 
     /// <summary>Resolve the disposition PRESET into the effective AttackWho/Distance/RunAway. A non-Custom
     /// disposition overrides the explicit knobs (game_dialog.cc: the radio selects a strategy; Custom

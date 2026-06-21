@@ -87,4 +87,32 @@ public class CompanionAiTests
     [Fact]
     public void PickTargetEmptyIsMinusOne() =>
         Assert.Equal(-1, CompanionAi.PickTarget(AttackWho.Closest, new List<(int, int, bool)>()));
+
+    [Fact]
+    public void DefaultDoesNotBurstAndHasNoWeaponPref()
+    {
+        Assert.Equal(AreaAttack.Never, CompanionAi.Default.AreaAttack);
+        Assert.Equal(WeaponPref.NoPref, CompanionAi.Default.WeaponPref);
+    }
+
+    [Theory]
+    [InlineData(AreaAttack.Never, 99, false)]   // off, even at 99% to-hit
+    [InlineData(AreaAttack.Always, 1, true)]    // always, even at 1%
+    [InlineData(AreaAttack.BeCareful, 50, true)] // ≥ 50%
+    [InlineData(AreaAttack.BeCareful, 49, false)]
+    [InlineData(AreaAttack.BeSure, 85, true)]    // ≥ 85%
+    [InlineData(AreaAttack.BeSure, 84, false)]
+    [InlineData(AreaAttack.BeAbsolutelySure, 95, true)] // ≥ 95%
+    [InlineData(AreaAttack.BeAbsolutelySure, 94, false)]
+    [InlineData(AreaAttack.Sometimes, 99, false)] // engine-side rng, not the deterministic helper
+    public void ShouldAreaAttackHonoursTheThreshold(AreaAttack mode, int toHit, bool expected) =>
+        Assert.Equal(expected, CompanionAi.ShouldAreaAttack(mode, toHit));
+
+    [Fact]
+    public void WeaponPrefValuesMatchTheEngineEnum() // (int) feeds AiBestWeapon's [best_weapon+1] directly
+    {
+        Assert.Equal(0, (int)WeaponPref.NoPref);
+        Assert.Equal(4, (int)WeaponPref.Ranged);
+        Assert.Equal(7, (int)WeaponPref.Random);
+    }
 }

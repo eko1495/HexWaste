@@ -405,10 +405,11 @@ public sealed class CombatEngine
     /// connected, and the accumulated damage.</summary>
     private (int Accuracy, int RoundsFired, int RoundsHit, int TotalDamage, List<BurstExtra> Extras) RollBurst(
         MapObject dudeObj, MapObject targetObj, CritterState attacker, CritterState defender,
-        ProtoInfo weaponProto, MapObject weaponItem, int distance, int crittersInPath, int loadedAmmo)
+        ProtoInfo weaponProto, MapObject weaponItem, int distance, int crittersInPath, int loadedAmmo,
+        bool attackerIsDude = true) // P51: an ally burst (area-attack) passes false
     {
         int accuracy = Math.Clamp(
-            ComputeToHit(attacker, defender, weaponProto, weaponItem, distance, crittersInPath, attackerIsDude: true),
+            ComputeToHit(attacker, defender, weaponProto, weaponItem, distance, crittersInPath, attackerIsDude),
             0, 95);
 
         int n = Math.Min(loadedAmmo, weaponProto.Weapon!.Rounds);
@@ -1891,7 +1892,13 @@ public sealed class CombatEngine
     /// art-exists is assumed. Only the dry-gun trigger is wired (the slice driver); the engine also
     /// switches on arm-crippled / out-of-range-no-weapon (combat_ai.cc:2800/2823) — same helper, not wired.
     /// </summary>
-    private (ProtoInfo?, MapObject?) AiSwitchWeapon(MapObject enemy, AiPacket? ai, int distance,
+    // Enemy entry: reads best_weapon + min_to_hit from the ai.txt packet.
+    private (ProtoInfo?, MapObject?) AiSwitchWeapon(MapObject enemy, AiPacket? ai, int distance, MapObject? currentItem) =>
+        AiSwitchWeapon(enemy, ai?.BestWeapon ?? -1, ai?.MinToHit ?? 0, distance, currentItem);
+
+    // P51: the core, callable for an ALLY with a best_weapon VALUE (from CompanionAi.WeaponPref) instead
+    // of an ai.txt packet — the same _ai_best_weapon switch the enemies run (combat_ai.cc:1894).
+    private (ProtoInfo?, MapObject?) AiSwitchWeapon(MapObject enemy, int bestWeapon, int minToHit, int distance,
         MapObject? currentItem)
     {
         CritterState? self = _host.GetCritterState(enemy);
@@ -1899,8 +1906,6 @@ public sealed class CombatEngine
         if (bodyType is not (0 or 2)) // BODY_TYPE_BIPED / BODY_TYPE_ROBOTIC
             return (null, null);
 
-        int bestWeapon = ai?.BestWeapon ?? -1;
-        int minToHit = ai?.MinToHit ?? 0;
         int results = enemy.CombatResults;
         bool bothArmsCrippled =
             (results & CriticalTables.DamCripArmLeft) != 0 && (results & CriticalTables.DamCripArmRight) != 0;
@@ -1960,6 +1965,15 @@ public sealed class CombatEngine
         int distance = HexGrid.Distance(enemy.HexTile, target.HexTile);
         (_, MapObject? curItem) = _host.EquippedWeapon(enemy);
         (ProtoInfo? proto, _) = AiSwitchWeapon(enemy, ai, distance, curItem);
+        return proto?.Pid ?? -1;
+    }
+
+    /// <summary>P51: the ALLY best-weapon switch (CompanionAi.WeaponPref → the int AiSwitchWeapon overload),
+    /// equipping + returning the chosen pid (-1 = fists). The companion analogue of ProbeAiWeaponSwitch.</summary>
+    public int ProbeAllyWeaponSwitch(MapObject ally, int bestWeapon, int distance)
+    {
+        (_, MapObject? curItem) = _host.EquippedWeapon(ally);
+        (ProtoInfo? proto, _) = AiSwitchWeapon(ally, bestWeapon, minToHit: 0, distance, curItem);
         return proto?.Pid ?? -1;
     }
 
@@ -2219,9 +2233,11 @@ public sealed class CombatEngine
                 _actingAllyAp -= RangedMath.ReloadApCost;
                 return true;
             }
-            weaponProto = null;
-            weaponItem = null;
-            isGun = false;
+            // P51 best-weapon: a dry gun switches to the best CARRIED weapon for the companion's
+            // preference (the enemies' _ai_best_weapon, P43, now reachable for an ally via WeaponPref) —
+            // or fists when nothing else is carried (the pre-P51 slice behaviour → byte-identical).
+            (weaponProto, weaponItem) = AiSwitchWeapon(ally, (int)ai.WeaponPref, minToHit: 0, distance, weaponItem);
+            isGun = weaponProto?.Weapon is { } gw && gw.IsGun(weaponProto.ExtendedFlags);
         }
 
         int range = isGun ? weaponProto!.Weapon!.MaxRange1
@@ -2238,11 +2254,18 @@ public sealed class CombatEngine
 
         if (distance <= range && !blocked)
         {
+            if (_host.GetCritterState(ally) is not { } attacker || _host.GetCritterState(target) is not { } defender)
+                return false;
+
+            // P51 area-attack: a burst-capable gun + a non-Never area-attack mode + the to-hit threshold →
+            // BURST (the same _compute_spray + cone the dude runs). Default Never → skipped → byte-identical.
+            if (isGun && IsBurstWeapon(weaponProto) && ai.AreaAttack != AreaAttack.Never
+                && TryAllyBurst(ally, target, attacker, defender, weaponProto!, weaponItem!, distance, crittersInPath, ai.AreaAttack))
+                return true;
+
             if (_actingAllyAp < apCost)
                 return false;
             _actingAllyAp -= apCost;
-            if (_host.GetCritterState(ally) is not { } attacker || _host.GetCritterState(target) is not { } defender)
-                return false;
             ally.Rotation = HexGrid.RotationTo(ally.HexTile, target.HexTile);
             (int chance, bool hit, int damage, int critFlags, int delta) = RollAttack(attacker, defender, weaponProto, weaponItem,
                 distance, crittersInPath, attackerIsDude: false, defenderIsDude: false, CriticalTables.LocationUncalled);
@@ -2297,6 +2320,36 @@ public sealed class CombatEngine
             ChemUse.Anytime => pct < 100,
             _ => false,
         };
+    }
+
+    /// <summary>P51: an ally fires a burst (area-attack), the same _compute_spray + cone the dude runs
+    /// (TryBurst), but with the ally's AP + attackerIsDude:false. The area-attack mode gates whether the
+    /// burst fires (the to-hit thresholds, _ai_pick_hit_mode); SOMETIMES rolls a 1/3 here (allies have no
+    /// ai.txt secondary_freq — a documented fixed value). Returns false to fall back to the single shot.</summary>
+    private bool TryAllyBurst(MapObject ally, MapObject target, CritterState attacker, CritterState defender,
+        ProtoInfo weaponProto, MapObject weaponItem, int distance, int crittersInPath, AreaAttack mode)
+    {
+        int apCost = weaponProto.Weapon!.ApCost2 > 0 ? weaponProto.Weapon.ApCost2 : weaponProto.Weapon.ApCost;
+        if (_actingAllyAp < apCost || _host.WeaponAmmo(weaponProto, weaponItem) <= 0)
+            return false;
+        int toHit = Math.Clamp(
+            ComputeToHit(attacker, defender, weaponProto, weaponItem, distance, crittersInPath, attackerIsDude: false), 0, 95);
+        bool fire = mode == AreaAttack.Sometimes ? _rng.Next(1, 4) == 1 : CompanionAi.ShouldAreaAttack(mode, toHit);
+        if (!fire)
+            return false;
+
+        _actingAllyAp -= apCost;
+        ally.Rotation = HexGrid.RotationTo(ally.HexTile, target.HexTile);
+        int ammoBefore = _host.WeaponAmmo(weaponProto, weaponItem);
+        (int acc, int fired, int hits, int total, List<BurstExtra> extras) = RollBurst(
+            ally, target, attacker, defender, weaponProto, weaponItem, distance, crittersInPath, ammoBefore, attackerIsDude: false);
+        _pendingBurst = new PendingBurst(ally, target, weaponProto, weaponItem, ammoBefore, fired, hits, total, extras);
+        _host.Transcript($"ally-burst {_host.ObjectName(ally)} -> {_host.ObjectName(target)}@{target.HexTile}"
+            + $" [{_host.ObjectNameByPid(weaponProto.Pid)} {ammoBefore}rnd d{distance}]: chance={acc}% rounds={fired} hit={hits} damage={total}");
+        foreach (BurstExtra ex in extras)
+            _host.Transcript($"burst-extra: {_host.ObjectName(ex.Victim)}@{ex.Victim.HexTile} hit={ex.RoundsHit} damage={ex.Damage}");
+        _host.OnAttackStarted(ally, target, weaponProto);
+        return true;
     }
 
     private void EnemyAttack(MapObject enemy, MapObject defenderObj, ProtoInfo? weaponProto,

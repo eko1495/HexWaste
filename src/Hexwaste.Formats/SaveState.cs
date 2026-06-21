@@ -185,7 +185,10 @@ public sealed class SaveState
         // CompanionAi enum values; the defaults are CompanionAi.Default (Aggressive / Closest /
         // OnYourOwn / Never / Clean) so an old save (missing fields) deserializes to the pre-P50
         // behaviour — byte-identical.
-        int Disposition = 1, int AttackWho = 4, int Distance = 3, int RunAway = 5, int ChemUse = 0);
+        int Disposition = 1, int AttackWho = 4, int Distance = 3, int RunAway = 5, int ChemUse = 0,
+        // P51 area-attack + best-weapon (the engine's last 2 combat-control rows). Additive; defaults =
+        // CompanionAi.Default (AreaAttack.Never=0 / WeaponPref.NoPref=0) → old saves byte-identical.
+        int AreaAttack = 0, int WeaponPref = 0);
 
     /// <summary>A dismissed companion left standing on a map: enough to recreate the
     /// inert body and rejoin it (P10 #3).</summary>

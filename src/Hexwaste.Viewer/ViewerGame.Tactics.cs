@@ -39,7 +39,7 @@ public sealed partial class ViewerGame
         Console.WriteLine($"tactics: open for {ObjectName(member)} disposition={CompanionSettings(member).Disposition}");
     }
 
-    private const int TacticsRowCount = 6; // 5 cycle-able settings + a Done row
+    private const int TacticsRowCount = 8; // 7 cycle-able settings + a Done row
 
     // Show the EFFECTIVE knobs (the resolved preset under a non-Custom disposition), so the window
     // reflects what the ally actually does — not stale stored values a preset overrides.
@@ -53,6 +53,8 @@ public sealed partial class ViewerGame
             2 => $"Distance:     {e.Distance}",
             3 => $"Run away at:  {e.RunAway}",
             4 => $"Use chems:    {e.ChemUse}",
+            5 => $"Area attack:  {e.AreaAttack}",
+            6 => $"Best weapon:  {e.WeaponPref}",
             _ => "Done",
         };
     }
@@ -70,6 +72,8 @@ public sealed partial class ViewerGame
             2 => c with { Distance = NextEnum(c.Distance) },
             3 => c with { RunAway = NextEnum(c.RunAway) },
             4 => c with { ChemUse = NextEnum(c.ChemUse) },
+            5 => c with { AreaAttack = NextEnum(c.AreaAttack) },
+            6 => c with { WeaponPref = NextEnum(c.WeaponPref) },
             _ => ai,
         };
     }

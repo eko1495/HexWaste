@@ -1478,7 +1478,8 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
                         _tacticsMember = null;
                     Formats.Combat.CompanionAi eff = CompanionSettings(ctc).Effective();
                     Console.WriteLine($"tactics: hex={ctHex} disposition={CompanionSettings(ctc).Disposition} "
-                        + $"attackWho={eff.AttackWho} distance={eff.Distance} runAway={eff.RunAway} chemUse={eff.ChemUse}");
+                        + $"attackWho={eff.AttackWho} distance={eff.Distance} runAway={eff.RunAway} chemUse={eff.ChemUse} "
+                        + $"areaAttack={eff.AreaAttack} bestWeapon={eff.WeaponPref}");
                     break;
                 }
                 case StartupAction.CombatProcProbe(var cpHex):
@@ -9792,7 +9793,9 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
                 AttackWho: (int)CompanionSettings(m).AttackWho,
                 Distance: (int)CompanionSettings(m).Distance,
                 RunAway: (int)CompanionSettings(m).RunAway,
-                ChemUse: (int)CompanionSettings(m).ChemUse))],
+                ChemUse: (int)CompanionSettings(m).ChemUse,
+                AreaAttack: (int)CompanionSettings(m).AreaAttack,
+                WeaponPref: (int)CompanionSettings(m).WeaponPref))],
             WorldPosX = _worldPosX,
             WorldPosY = _worldPosY,
             CurrentAreaId = _currentAreaId,
@@ -10045,7 +10048,8 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
                 SetCompanionAi(member, new Formats.Combat.CompanionAi(
                     (Formats.Combat.Disposition)saved.Disposition, (Formats.Combat.AttackWho)saved.AttackWho,
                     (Formats.Combat.Distance)saved.Distance, (Formats.Combat.RunAway)saved.RunAway,
-                    (Formats.Combat.ChemUse)saved.ChemUse));
+                    (Formats.Combat.ChemUse)saved.ChemUse,
+                    (Formats.Combat.AreaAttack)saved.AreaAttack, (Formats.Combat.WeaponPref)saved.WeaponPref));
                 // Restore the companion control state (phase-10 #2): the "wait here"
                 // flag and the pre-recruit team so a later dismiss restores it (not 0).
                 if (saved.Waiting)

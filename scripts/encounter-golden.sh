@@ -159,6 +159,9 @@ SCENARIOS=(
   # ally AI honours. row 0 cycles the disposition (Berserk→Aggressive→Defensive→Coward→Custom); rows 1-4
   # cycle the custom knobs (forcing Custom). The arcaves scorpion@20529 is the stand-in critter.
   "companion-tactics|--map arcaves.map --companion-tactics 20529 0 2 --companion-tactics 20529 1 2 --companion-tactics 20529 3 1 --rng-seed 1"
+  # P51 area-attack + best-weapon rows (5/6): cycle area-attack x3 (Never->Sometimes->BeCareful->BeSure) and
+  # best-weapon x4 (NoPref->Melee->...->Ranged), exercising the engine's last 2 combat-control settings.
+  "companion-tactics-aw|--map arcaves.map --companion-tactics 20529 5 3 --companion-tactics 20529 6 4 --rng-seed 1"
   # P12 M1 — the Pip-Boy rest options: a timed rest (6h heals proportionally) then an
   # until-healed rest from near-death to full. --hurt sets up the wound; deterministic
   # clock math + heal amounts (artemple has no enemy near the entry, so rest is allowed).

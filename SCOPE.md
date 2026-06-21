@@ -33,8 +33,9 @@ filing an issue.
   combat sfx + per-map weighted ambient sfx with night bird→cricket remap).
 - **Companions**: recruit (including Vic's legitimate VM-driven rescue), a
   wait/follow/dismiss/rejoin control hub with a combat-control window (set a
-  companion's disposition / target priority / flee threshold / stay-close, all
-  honoured by the ally AI), a flat 1:1 inventory trade panel, and
+  companion's disposition / target priority / flee threshold / stay-close / burst
+  use / best-weapon preference, all honoured by the ally AI), a flat 1:1 inventory
+  trade panel, and
   per-companion proto level-ups (`party.txt`, live on the recruited Vic).
 - **Gameplay**: turn-based melee + gun combat with the engine's depth — initiative
   turn order (every combatant interleaved by Sequence each round, the opener acting
