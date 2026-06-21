@@ -1,0 +1,1 @@
+smoke: map=arcaves.map critters=22 containers=7 doors=4 scripted=29 stubs=1[stubbed external debug_msg (0x8154): popped 1]

@@ -1,0 +1,1 @@
+smoke: map=artemple.map critters=1 containers=0 doors=0 scripted=3 stubs=1[stubbed external tile_contains_obj_pid (0x80BB): popped 3, pushed 0]

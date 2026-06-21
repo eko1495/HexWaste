@@ -616,6 +616,11 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
         /// SCRIPT_PROC 23) once and report its observable side effects — lighting calls, the ambient
         /// before/after, and any NEW stubbed externals. STATE-only (counts/ids), no game strings.</summary>
         public sealed record MapUpdateProbe : StartupAction;
+        /// <summary>Per-map content-coverage smoke scan: census the loaded map (critters / containers /
+        /// doors / scripted objects) and report the FULL set of stubbed (unwired) externals its scripts
+        /// fired (map_enter on load + a map_update pass) — a NEW city's silent-quest-gap detector.
+        /// STATE-only (counts + external NAMES), deterministic + headless, no walking / UI / RNG.</summary>
+        public sealed record SmokeScan : StartupAction;
         /// <summary>Drive the real drag-to-equip path (P47): drag the inventory item at FromRow onto a
         /// slot — Slot 0=weapon, 2=armor, -1=drop. Reports pid + equipped flag + AC/DT/DR. STATE-only
         /// (pid + ints), never the item's name/message text.</summary>
@@ -1460,6 +1465,33 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
                         + $"lightCalls={lightCalls} levels=[{string.Join(",", lightLevels)}] objLightCalls={objLightCalls} "
                         + $"ambient={ambientBefore}->{_lightGrid.Ambient} fixed={(fixedBefore ? 1 : 0)}->{(AmbientFixed ? 1 : 0)} "
                         + $"newStubbedExternals={newStubs.Count}[{string.Join(",", newStubs)}]");
+                    break;
+                }
+                case StartupAction.SmokeScan when _map is not null && _scriptHost is not null:
+                {
+                    // A per-map content-coverage smoke scan: census the map + run its map_update pass
+                    // (map_enter already ran on load → its stubs are in _stubbedExternals), then report
+                    // the FULL set of unwired externals the scripts fired — so adding a NEW city, you run
+                    // one command and see what it needs that isn't wired. Deterministic enumeration + the
+                    // script pass only (no walking / UI / RNG). State-only: counts + external NAMES.
+                    int critters = 0, containers = 0, doors = 0, scripted = 0;
+                    foreach (MapObject o in _map.Elevations.Where(e => e is not null).SelectMany(e => e!.Objects))
+                    {
+                        if (o == _dude?.Dude) continue;
+                        if (o.Sid != -1) scripted++;
+                        if (Fid.Type(o.Fid) is ObjectType.Critter) critters++;
+                        else if (IsContainer(o)) containers++;
+                        else if (IsDoor(o)) doors++;
+                    }
+
+                    IEnumerable<MapObject> smokeObjs = _map.Elevations
+                        .Where(e => e is not null).SelectMany(e => e!.Objects)
+                        .Where(o => o.Sid != -1 && o != _dude?.Dude);
+                    _scriptHost.RunMapUpdate(_map, smokeObjs, _dude?.Dude);
+
+                    var stubs = _stubbedExternals.Keys.OrderBy(k => k).ToList();
+                    Console.WriteLine($"smoke: map={_currentMapName} critters={critters} containers={containers} "
+                        + $"doors={doors} scripted={scripted} stubs={stubs.Count}[{string.Join(",", stubs)}]");
                     break;
                 }
                 case StartupAction.DragEquip(var deRow, var deSlot):

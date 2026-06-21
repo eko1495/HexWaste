@@ -324,6 +324,10 @@ for (int i = 0; i < args.Length; i++)
         case "--map-update-probe":
             actions.Add(new ViewerGame.StartupAction.MapUpdateProbe());
             break;
+        case "--smoke":
+            // per-map content+stub coverage census (helps adding new cities): --map <m> --smoke
+            actions.Add(new ViewerGame.StartupAction.SmokeScan());
+            break;
         case "--drag-equip" when i + 2 < args.Length:
             actions.Add(new ViewerGame.StartupAction.DragEquip(int.Parse(args[i + 1]), int.Parse(args[i + 2])));
             i += 2;
