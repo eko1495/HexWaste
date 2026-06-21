@@ -13,6 +13,7 @@ public static class PerkId
     public const int BonusRateOfFire = 5;   // −1 AP per ranged attack (item.cc:1699)
     public const int Sharpshooter = 14;     // +2 effective Perception per rank for ranged to-hit (combat.cc:4355)
     public const int Educated = 18;         // +2 skill points per level-up (character_editor.cc:5689)
+    public const int Empathy = 22;          // tints dialogue options by NPC reaction (game_dialog.cc:2118)
     public const int FlowerChild = 42;      // halves drug addiction chance + withdrawal duration (item.cc:2834/3060)
     public const int Comprehension = 81;    // +50% skill-book gain (proto_instance.cc:780)
     public const int JetAddiction = 70;     // the Jet withdrawal "perk" — PERMANENT until the Jet antidote (item.cc:2984)

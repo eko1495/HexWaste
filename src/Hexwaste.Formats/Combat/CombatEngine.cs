@@ -157,6 +157,43 @@ public sealed class CombatEngine
     //  Attacks
     // ====================================================================
 
+    /// <summary>P52-M4: the live to-hit % for the dude attacking <paramref name="target"/> at a hit
+    /// location — for the called-shot dialog's per-bodypart readout. Mirrors <see cref="RollAttack"/>'s
+    /// accuracy (ComputeToHit + the location penalty, clamped 0..95) WITHOUT rolling or any side effect.
+    /// Returns null when no attack is possible (no dude/weapon, dead/non-critter target, out of range,
+    /// or a blocked line of fire).</summary>
+    public int? PreviewToHit(MapObject target, int hitLocation)
+    {
+        MapObject? dude = _host.Dude;
+        if (dude is null || target == dude || Fid.Type(target.Fid) is not ObjectType.Critter || target.IsDead)
+            return null;
+        if (_host.GetCritterState(dude) is not { } attacker || _host.GetCritterState(target) is not { } defender)
+            return null;
+
+        (ProtoInfo? weaponProto, MapObject? weaponItem) = _host.EquippedWeapon(dude);
+        bool isGun = weaponProto?.Weapon is { } w && w.IsGun(weaponProto.ExtendedFlags);
+        int range = isGun ? weaponProto!.Weapon!.MaxRange1 : Math.Min(weaponProto?.Weapon?.MaxRange1 ?? 1, 2);
+        int distance = HexGrid.Distance(dude.HexTile, target.HexTile);
+        if (distance > range)
+            return null;
+
+        int crittersInPath = 0;
+        if (isGun)
+        {
+            (MapObject? blocker, crittersInPath) = LineOfFire.Trace(
+                dude.HexTile, target.HexTile, tile => _host.ShootBlockerAt(tile, dude, target));
+            if (blocker is not null)
+                return null;
+        }
+
+        int locPenalty = CriticalTables.LocationPenalty[Math.Clamp(hitLocation, 0, CriticalTables.LocationCount - 1)];
+        if (!isGun)
+            locPenalty /= 2;
+        return Math.Clamp(
+            ComputeToHit(attacker, defender, weaponProto, weaponItem, distance, crittersInPath, attackerIsDude: true) + locPenalty,
+            0, 95);
+    }
+
     /// <summary>
     /// Attacks an adjacent/in-range critter. The outcome is rolled HERE, before
     /// any animation — damage waits for the swing to finish (ported from

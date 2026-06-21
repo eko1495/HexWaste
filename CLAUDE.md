@@ -1762,6 +1762,43 @@ Harness --companion-tactics rows 5/6 + ProbeAllyWeaponSwitch; goldens companion-
 bestWeapon) + companion-tactics-aw. 14 new tests. 673 Formats tests, 83 encounter + 16 combat goldens green.
 Both P50 residuals are CLOSED — the combat-control window is now the full engine set bar control.frm art.
 
+Phase 52 (DONE — "Dress the Chrome", a presentation-polish cluster grounded by a 4-reader + critic
+workflow; every milestone is Draw-only / wall-time-only → both golden suites BYTE-IDENTICAL [the headless
+harness pumps neither Draw nor the wall clock], proven by a clean check, not a re-record). M0 verified the
+load-bearing facts FrmDump-first (CONTROL.frm 640x190 / LSGAME.frm 640x480 / LSGBOX 290x85 [the reader's
+224x133 was WRONG — dump, don't trust] all present; PerkId.Empathy=22 cross-checked against the verified
+Educated=18/Slayer=23/Sniper=24 in PerkTable, NOT the perk_defs.h line). M1 Empathy dialogue-reaction
+colouring: the Empathy perk tints each option by the NPC reaction (game_dialog.cc gameDialogOptionOnMouse-
+Enter:2118). Pure Formats.Int.DialogReaction.Classify (GAME_DIALOG_REACTION_GOOD/NEUTRAL/BAD 49/50/51 →
+level, else Neutral); DialogSession.OptionReactions exposes the per-option reaction (already parsed); the
+viewer's DrawConversationPanel reads it when DudePerkRank(Empathy)>0, mapping each level to a colour ported
+from the engine's _colorTable indices (DOCUMENTED DIVERGENCE: the raw RGB555 those indices encode, no palette-
+nearest remap — Hexwaste has no 8-bit dialogue palette). Inert by default (no Empathy → byte-identical).
+M2 CONTROL.frm tactics-window art: DrawTactics renders the authentic party combat-control window when the FRM
+loads (the Skilldex text-then-art pattern), text panel as the fallback. KEY FINDING: CONTROL.frm is a real
+radio/checkbox layout (game_dialog.cc:3389 — TALK@593,41, disposition radios, USE BEST WEAPON/ARMOR check-
+boxes), NOT Hexwaste's flat 8-row cycle model, so the readable cycle-rows are overlaid on the authentic chrome
+with a subtle backing strip (DOCUMENTED STRUCTURAL DIVERGENCE — they don't bind the engine's individual
+widgets). M3 LSGAME.frm + LSGBOX save/load-picker art: DrawSaveLoad renders the authentic 640x480 window (the
+slot-list frame + info box are baked into LSGAME per loadsave.cc) with the 10 slot rows at the engine's
+window-local (55,87) and the hovered slot's metadata in the info box at (396,254). M4 called-shot LIVE per-
+bodypart to-hit %: new side-effect-free CombatEngine.PreviewToHit (mirrors RollAttack's ComputeToHit + the
+halved-for-melee location penalty, clamped 0..95, no roll) feeds DrawAimDialog so each hit-location row shows
+the live % vs the aimed-at hovered critter beside the static penalty. M5 message-log scrollback: pure
+Formats.MonitorScrollback (display_monitor.cc ring window math, Capacity 100) replaces the old 5-line cap; the
+green monitor scrolls via the engine's two invisible click-halves (display_monitor.cc:382/391 — top older /
+bottom newer); a new message jumps to newest; the bar-hidden bottom-left fallback keeps the recent-5 view.
+M6 screen-fade on map transitions: a wall-time black-quad fade-IN ramps over MapFadeSeconds (0.35) after each
+LoadMap (DOCUMENTED DIVERGENCE: the engine's paletteFadeTo is a modal palette lerp + fade-OUT-then-in; Hexwaste
+has no palette texture and a synchronous load, so a GPU quad fade-IN only; pumped + drawn in Draw, gated out
+while screenshotting). GOLDEN-SAFE: all changes are Draw-only / wall-time-only / new-public-method-from-Draw,
+so all 16 combat + 83 prior encounter goldens BYTE-IDENTICAL (verified by a clean check). Screenshot-verified
+both art windows render. 17 new tests (DialogReactionTests + MonitorScrollbackTests + a PreviewToHit fake-host
+test); 690 Formats tests, 83 encounter + 16 combat goldens green. EXCLUDED (critic, documented): inventory
+INVBOX.frm (FID-48 filename unconfirmed in fo2ce source + a 2-slot-vs-3-slot-paperdoll mismatch), egg-mask
+wall transparency (a large 8-bit blend-table kernel, the P4 no-shader decision stands), Snipe back-away
+(combat-logic, wrong theme for a polish phase).
+
 Phase 10 (DONE, per docs/phase10-research-report.md — "The Wasteland
 Bites Back"): M0 persistence pre-stage (the net: MapList saved=No /
 random_start_point parse + IsTransient; the 3-clause transient guards as

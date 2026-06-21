@@ -14,10 +14,12 @@ filing an issue.
   per-vertex floor lighting, static light pools with occlusion, day/night clock,
   egg-style wall transparency, per-type object translucency (glass/steam/energy/
   red/wall), silhouette outlines (typed red-hostile / green-friendly team outlines
-  on every visible, line-of-sight combatant during combat), and floating combat
+  on every visible, line-of-sight combatant during combat), floating combat
   text (damage numbers, "Missed", and crit feedback rising and fading over a struck
   critter — a presentation layer on the engine's `text_object.cc` float mechanism,
-  since Fallout 2 itself routes combat outcomes to the monitor log).
+  since Fallout 2 itself routes combat outcomes to the monitor log), and a
+  fade-in from black on each map transition (a wall-time GPU-quad analogue of the
+  engine's `paletteFadeTo`, since Hexwaste has no palette texture to lerp).
 - **A micro INT script VM** + script host: map-entry + map-update scripts (the
   periodic per-map hook — e.g. a cave dims itself to its cavern light level on
   load), dialog (`gsay`
@@ -92,7 +94,12 @@ filing an issue.
   drag-and-drop equip: drag an item onto the weapon/armor slot to equip, or off to
   unequip; click-to-use still works), character sheet, the Skilldex use-skill picker,
   the Pip-Boy (status + rest), and an in-game options/pause menu whose Save/Load
-  open a 10-slot save picker (one JSON file per slot; F5/F9 stay a quicksave).
+  open a 10-slot save picker (one JSON file per slot; F5/F9 stay a quicksave). The
+  companion combat-control and load/save windows render their authentic engine art
+  (`CONTROL.frm` / `LSGAME.frm`). The HUD's green message monitor keeps a 100-line
+  scroll-back history (click its top/bottom halves to scroll). The called-shot picker
+  shows the live to-hit % per body part, and with the Empathy perk, dialogue options
+  are tinted by the NPC's reaction (good/neutral/bad).
 
 ## What's out (by design, today)
 

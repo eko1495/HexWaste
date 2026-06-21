@@ -781,6 +781,11 @@ public sealed class ScriptHost(GameFileSystem vfs, ScriptList scripts, Hexwaste.
         public string NpcName { get; }
         public string Reply => _context.DialogReplyText;
         public IReadOnlyList<string> Options => _context.DialogOptions.Select(o => o.Text).ToList();
+
+        /// <summary>The raw reaction value (GAME_DIALOG_REACTION_*) per option, parallel to
+        /// <see cref="Options"/> — the Empathy perk tints each option by this (game_dialog.cc:2118).</summary>
+        public IReadOnlyList<int> OptionReactions => _context.DialogOptions.Select(o => o.Reaction).ToList();
+
         public bool Active { get; private set; } = true;
 
         internal DialogSession(IntVm vm, ScriptContext context, string npcName)

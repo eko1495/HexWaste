@@ -64,6 +64,29 @@ public class CombatEngineTests
     }
 
     [Fact]
+    public void PreviewToHitAppliesTheLocationPenaltyAndGatesOutOfRange()
+    {
+        // P52-M4: the called-shot dialog's live per-bodypart to-hit %. Mirrors RollAttack's accuracy
+        // (ComputeToHit + the location penalty, halved for melee, clamped 0..95) with no roll/side effect.
+        var host = new FakeCombatHost();
+        host.SetDude(NewCritter(tile: 20100, hp: 30, ap: 10, skill: 80)); // unarmed (default), usable skill
+        var engine = new CombatEngine(host, new MinRng());
+        MapObject enemy = host.AddCritter(NewCritter(tile: HexGrid.TileInDirection(20100, 0), hp: 30));
+
+        int? uncalled = engine.PreviewToHit(enemy, CriticalTables.LocationUncalled);
+        int? head = engine.PreviewToHit(enemy, 0); // HEAD: -40 penalty, halved to -20 unarmed
+        Assert.NotNull(uncalled);
+        Assert.NotNull(head);
+        Assert.InRange(uncalled!.Value, 0, 95);
+        Assert.True(head < uncalled, "the head penalty must lower the to-hit"); // proves the penalty is applied
+
+        // Gating: a target beyond unarmed range (> 2 hexes) yields no preview.
+        int far = HexGrid.TileInDirection(HexGrid.TileInDirection(HexGrid.TileInDirection(20100, 0), 0), 0);
+        MapObject distant = host.AddCritter(NewCritter(tile: far, hp: 30));
+        Assert.Null(engine.PreviewToHit(distant, CriticalTables.LocationUncalled));
+    }
+
+    [Fact]
     public void BonusHthAttacksPerkLowersUnarmedApCost()
     {
         // P28-M3: Bonus HtH Attacks → −1 AP per melee/unarmed swing (item.cc:1693). A punch is

@@ -128,11 +128,12 @@ Prebuilt self-contained builds (Linux x64 / Windows x64) are produced by
   brawl already in progress — watch them thin each other out, or wade in.
 - **Companions**: recruit, then a control hub (talk to them) — wait here /
   follow / trade / dismiss / rejoin; a 1:1 flat item trade to gear them up; and
-  a combat-control window to set their tactics (aggressive/defensive disposition,
-  who to target, when to flee, how close to stay, when to burst-fire, which weapon
-  to favour) — which the ally AI obeys.
+  a combat-control window (the authentic `CONTROL.frm` art) to set their tactics
+  (aggressive/defensive disposition, who to target, when to flee, how close to stay,
+  when to burst-fire, which weapon to favour) — which the ally AI obeys.
 - **HUD**: the authentic Fallout 2 interface bar (`iface.frm`) along the bottom —
-  the green scrolling message monitor, the equipped-weapon slot with its attack-mode
+  the green message monitor (a 100-line scroll-back history — click its top/bottom
+  halves to page through it), the equipped-weapon slot with its attack-mode
   label, lit action-point pips, the HP/AC readout in the original digit font, the END
   TURN / END COMBAT buttons during a fight, and clickable INV/OPT/MAP/CHA/SKILLDEX/PIP
   tabs (the keyboard shortcuts still work). The SKILLDEX tab opens the use-skill picker —
@@ -141,10 +142,13 @@ Prebuilt self-contained builds (Linux x64 / Windows x64) are produced by
   real Fallout 2 calendar date, level, HP/AC, an embedded mini-map) and a rest menu
   (timed rests or rest-until-healed); press A for the full-window automap, which
   reveals as you explore (fog-of-war). The OPT tab
-  (or Esc) opens the options/pause menu: save, load, main menu, quit, resume. Every
+  (or Esc) opens the options/pause menu: save, load, main menu, quit, resume — and the
+  10-slot save/load picker renders its authentic `LSGAME.frm` window. Every
   panel and menu is fully mouse-navigable — click a row in the inventory/loot/barter/
   trade lists (PgUp/PgDn page past the 9th item) or in the Pip-Boy/Options menus; the
-  keyboard shortcuts still work alongside.
+  keyboard shortcuts still work alongside. The called-shot picker shows the live to-hit
+  % per body part, and with the Empathy perk your dialogue options are tinted by the
+  NPC's reaction. Maps fade in from black as you travel between them.
 
 ## Controls
 

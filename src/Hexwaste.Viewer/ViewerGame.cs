@@ -498,6 +498,18 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
     private FloorRenderer? _floorRenderer;
     private readonly List<string> _messageLog = [];
 
+    /// <summary>P52-M5: lines scrolled back from the newest in the green monitor (display_monitor.cc
+    /// _disp_curr). 0 = newest at the bottom; clamped to the history each frame in DrawInterfaceBar.</summary>
+    private int _monitorScroll;
+    private const int MessageLogFallbackLines = 5; // the bar-hidden bottom-left log keeps the old 5-line cap
+
+    /// <summary>P52-M6: seconds elapsed in the post-load fade-in (>= <see cref="MapFadeSeconds"/> = done).
+    /// A full-screen black quad ramps from opaque to clear over a map load — the visible analogue of the
+    /// engine's modal paletteFadeTo (map.cc mapLoad). DOCUMENTED DIVERGENCE: a GPU quad, not a palette
+    /// lerp, and fade-IN only (our map load is synchronous — no prior-frame budget to fade OUT first).</summary>
+    private double _mapFadeElapsed = MapFadeSeconds;
+    private const double MapFadeSeconds = 0.35;
+
     /// <summary>Open dialog with the object at this screen point on start (testing).</summary>
     public Point? TalkAt { get; set; }
 
@@ -2847,6 +2859,7 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
         _audio?.PlayMusic(_mapList.GetMusic(mapName));
         _mapAmbient = _mapList.GetAmbientSfx(mapName); // P34-M5: per-map ambient sfx list
         _ambientTimerMs = AmbientIntervalMs;
+        _mapFadeElapsed = 0; // P52-M6: fade the freshly-loaded map in from black
     }
 
     /// <summary>
@@ -6775,6 +6788,7 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
             DrawAimDialog();
             DrawTactics();
         }
+        DrawMapFade(gameTime); // P52-M6: the post-load fade-in, on top of everything
         _spriteBatch.End();
 
         if (_screenshotPath is not null && _screenshotTarget is not null)
@@ -7139,8 +7153,10 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
     public void Log(string message)
     {
         _messageLog.Add(message);
-        if (_messageLog.Count > 5)
+        // P52-M5: keep a faithful 100-line history (display_monitor.cc ring) instead of the old 5.
+        if (_messageLog.Count > Formats.MonitorScrollback.Capacity)
             _messageLog.RemoveAt(0);
+        _monitorScroll = 0; // a new message jumps the view to newest (displayMonitorAddMessage: _disp_curr = _disp_start)
         QueueCombatFloat(message);
     }
 
@@ -7207,6 +7223,21 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
     {
         if (_fontRenderer is not null)
             _floatText.Draw(_spriteBatch, _fontRenderer, _camera.HexToScreen, _elevation);
+    }
+
+    /// <summary>P52-M6: the post-load fade-in — a full-screen black quad whose alpha ramps from
+    /// opaque to clear over <see cref="MapFadeSeconds"/> of WALL time, pumped here (so the headless
+    /// harness, which never calls Draw, never advances it). The engine fades via paletteFadeTo
+    /// (map.cc mapLoad); we have no palette texture, so this GPU quad is the visible analogue.
+    /// Skipped while screenshotting so a verification capture shows the composed map, not the fade.</summary>
+    private void DrawMapFade(GameTime gameTime)
+    {
+        if (_mapFadeElapsed >= MapFadeSeconds || _screenshotPath is not null)
+            return;
+        _panelPixel ??= CreatePixel();
+        float alpha = (float)Math.Clamp(1.0 - _mapFadeElapsed / MapFadeSeconds, 0.0, 1.0);
+        _spriteBatch.Draw(_panelPixel, GraphicsDevice.Viewport.Bounds, Color.Black * alpha);
+        _mapFadeElapsed += gameTime.ElapsedGameTime.TotalSeconds;
     }
 
     private void Examine(MapObject obj)
@@ -7328,16 +7359,21 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
             return;
         }
         if (_dialog is not null)
-            DrawConversationPanel(_dialog.NpcName, _dialog.Reply, _dialog.Options);
+            DrawConversationPanel(_dialog.NpcName, _dialog.Reply, _dialog.Options, _dialog.OptionReactions);
     }
 
     /// <summary>The shared conversation panel — reply text + numbered options at the
     /// bottom of the screen. Drives both scripted dialog and the companion-control hub
     /// (phase-10 M4); <see cref="_dialogOptionRects"/> feeds mouse hit-testing.</summary>
-    private void DrawConversationPanel(string name, string reply, IReadOnlyList<string> options)
+    private void DrawConversationPanel(string name, string reply, IReadOnlyList<string> options,
+        IReadOnlyList<int>? reactions = null)
     {
         if (_fontRenderer is null)
             return;
+
+        // P52-M1: with the Empathy perk the engine tints each dialogue option by the NPC's
+        // reaction to it (game_dialog.cc gameDialogOptionOnMouseEnter:2118 / onMouseExit:2162).
+        bool empathy = reactions is not null && DudePerkRank(Formats.Perks.PerkId.Empathy) > 0;
 
         _panelPixel ??= CreatePixel();
 
@@ -7389,13 +7425,30 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
             currentOption = option;
 
             bool hovered = lineRect.Contains(mouse.X, mouse.Y);
+            Color color = hovered ? Color.Yellow : green;
+            if (empathy && option < reactions!.Count)
+                color = EmpathyOptionColor(Formats.Int.DialogReaction.Classify(reactions[option]), hovered);
             _fontRenderer.Draw(_spriteBatch, line,
-                new Vector2(panelX + 16 + (first ? 0 : 12), y), hovered ? Color.Yellow : green);
+                new Vector2(panelX + 16 + (first ? 0 : 12), y), color);
             y += lineHeight;
         }
         if (currentOption >= 0)
             _dialogOptionRects.Add(currentRect);
     }
+
+    /// <summary>Empathy-perk option colour by reaction (game_dialog.cc:2120/2164). The engine picks
+    /// _colorTable[idx] entries; we render the RGB555 those indices encode directly (DOCUMENTED
+    /// DIVERGENCE: no palette-nearest remap — Hexwaste has no 8-bit dialogue palette). Neutral keeps
+    /// the base colour, matching the engine. hovered = the brighter onMouseEnter set.</summary>
+    private static Color EmpathyOptionColor(Formats.Int.DialogReactionLevel level, bool hovered) => level switch
+    {
+        // GOOD: onMouseEnter _colorTable[31775] (R31 G0 B31) / onMouseExit _colorTable[31] (B31).
+        Formats.Int.DialogReactionLevel.Good => hovered ? new Color(255, 0, 255) : new Color(0, 0, 255),
+        // BAD: onMouseEnter _colorTable[32074] (R31 G10 B10) / onMouseExit _colorTable[31744] (R31).
+        Formats.Int.DialogReactionLevel.Bad => hovered ? new Color(255, 82, 82) : new Color(255, 0, 0),
+        // NEUTRAL: the base colours — onMouseEnter _colorTable[32747] / onMouseExit _colorTable[992].
+        _ => hovered ? Color.Yellow : new Color(0, 252, 0),
+    };
 
     /// <summary>The character sheet (C / K): SPECIAL + derived stats + level
     /// on the left, the 18 skills on the right. Read-only, but a skill can be
@@ -8074,6 +8127,11 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
     private SaveLoadMode _saveLoadMode;
     private readonly Formats.SlotInfo[] _slotInfos = new Formats.SlotInfo[Formats.SaveSlots.Count];
 
+    /// <summary>P52-M3: the authentic LSGAME.frm load/save window art (640x480, with the slot-list
+    /// frame + info box baked in), lazily loaded; null falls back to the dark text panel.</summary>
+    private Texture2D? _lsgameFrm;
+    private bool _saveLoadArt; // LSGAME.frm loaded — switches the picker geometry to the art window
+
     /// <summary>The directory holding the per-slot save files (the harness --save-dir; default cwd).</summary>
     public string SaveDir { get; set; } = "";
 
@@ -8115,19 +8173,29 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
     // OptionsRowRect pattern). Row layout: a title line, then the 10 slot rows below it.
     private const int SaveLoadPanelWidth = 470;
 
+    // LSGAME.frm slot list: window-local (55, 87) 230x353, 10 slots evenly (loadsave.cc _ShowSlotList:2032).
+    private const int SaveLoadListTop = 87, SaveLoadListX = 55, SaveLoadSlotH = 35;
+
     private Rectangle SaveLoadPanelRect()
     {
         Rectangle vp = GraphicsDevice.Viewport.Bounds;
+        if (_saveLoadArt)
+        {
+            const int w = 640, h = 480; // LSGAME.frm
+            return new Rectangle(Math.Max(0, (vp.Width - w) / 2), Math.Max(0, (vp.Height - h) / 2), w, h);
+        }
         int lh = (_fontRenderer?.LineHeight ?? 16) + 8;
-        int h = (Formats.SaveSlots.Count + 2) * lh + 16;
+        int th = (Formats.SaveSlots.Count + 2) * lh + 16;
         int x = Math.Max(0, (vp.Width - SaveLoadPanelWidth) / 2);
-        int y = Math.Max(0, (vp.Height - h) / 2);
-        return new Rectangle(x, y, SaveLoadPanelWidth, h);
+        int y = Math.Max(0, (vp.Height - th) / 2);
+        return new Rectangle(x, y, SaveLoadPanelWidth, th);
     }
 
     private Rectangle SaveLoadSlotRect(int slot)
     {
         Rectangle p = SaveLoadPanelRect();
+        if (_saveLoadArt)
+            return new Rectangle(p.X + SaveLoadListX, p.Y + SaveLoadListTop + slot * SaveLoadSlotH, 230, SaveLoadSlotH);
         int lh = (_fontRenderer?.LineHeight ?? 16) + 8;
         return new Rectangle(p.X + 8, p.Y + 12 + lh + slot * lh, p.Width - 16, lh);
     }
@@ -8144,27 +8212,61 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
     {
         if (!_saveLoadOpen || _fontRenderer is null)
             return;
+        // P52-M3: render the authentic LSGAME.frm window when present; the slot-list frame + info box
+        // are baked into the art (loadsave.cc). Fall back to the dark text panel when the asset is absent.
+        _lsgameFrm ??= InterfaceBar.LoadFrm(GraphicsDevice, _vfs, _palette, @"art\intrface\LSGAME.frm");
+        _saveLoadArt = _lsgameFrm is not null;
         _panelPixel ??= CreatePixel();
         Rectangle p = SaveLoadPanelRect();
-        _spriteBatch.Draw(_panelPixel, p, new Color(8, 16, 8, 240));
         var green = new Color(0, 252, 0);
         var hot = new Color(252, 252, 84);
         var gray = new Color(140, 140, 140);
+
+        if (_lsgameFrm is not null)
+            _spriteBatch.Draw(_lsgameFrm, new Vector2(p.X, p.Y), Color.White);
+        else
+            _spriteBatch.Draw(_panelPixel, p, new Color(8, 16, 8, 240));
+
         string title = _saveLoadMode == SaveLoadMode.Save
             ? "SAVE GAME - pick a slot (0-9 / click, Esc cancel)"
             : "LOAD GAME - pick a slot (0-9 / click, Esc cancel)";
-        _fontRenderer.Draw(_spriteBatch, title, new Vector2(p.X + 12, p.Y + 10), Color.LightGray);
+        _fontRenderer.Draw(_spriteBatch, title, new Vector2(p.X + 12, p.Y + (_saveLoadArt ? 60 : 10)), Color.LightGray);
 
         int hovered = SaveLoadSlotAt(Mouse.GetState().X, Mouse.GetState().Y);
         for (int i = 0; i < Formats.SaveSlots.Count; i++)
         {
             Formats.SlotInfo info = _slotInfos[i];
-            string label = !info.Occupied ? "- EMPTY -"
-                : info.VersionMismatch ? "- OLD VERSION -"
-                : $"{info.Character} L{info.Level}  {info.Map}  {info.Date}";
             Rectangle r = SaveLoadSlotRect(i);
             Color c = i == hovered ? hot : (info.Occupied && !info.VersionMismatch ? green : gray);
-            _fontRenderer.Draw(_spriteBatch, $"{i}. {label}", new Vector2(r.X + 6, r.Y + 2), c);
+            if (_saveLoadArt)
+            {
+                // Engine slot block: a "[ SLOT NN: ]" header line, then the description below.
+                string state = !info.Occupied ? "- EMPTY -" : info.VersionMismatch ? "- OLD VERSION -"
+                    : $"{info.Character} L{info.Level}";
+                _fontRenderer.Draw(_spriteBatch, $"[  SLOT {i + 1:00}:  ]", new Vector2(r.X + 4, r.Y + 1), c);
+                _fontRenderer.Draw(_spriteBatch, state, new Vector2(r.X + 14, r.Y + 1 + _fontRenderer.LineHeight), c);
+            }
+            else
+            {
+                string label = !info.Occupied ? "- EMPTY -" : info.VersionMismatch ? "- OLD VERSION -"
+                    : $"{info.Character} L{info.Level}  {info.Map}  {info.Date}";
+                _fontRenderer.Draw(_spriteBatch, $"{i}. {label}", new Vector2(r.X + 6, r.Y + 2), c);
+            }
+        }
+
+        // The info box baked into LSGAME at window-local (396,254) 164x60 (loadsave.cc _DrawInfoBox):
+        // the hovered (else cursor) slot's fuller metadata.
+        if (_saveLoadArt)
+        {
+            Formats.SlotInfo sel = _slotInfos[hovered >= 0 ? hovered : 0];
+            int bx = p.X + 396, by = p.Y + 258;
+            if (sel.Occupied && !sel.VersionMismatch)
+            {
+                _fontRenderer.Draw(_spriteBatch, sel.Character, new Vector2(bx, by), green);
+                _fontRenderer.Draw(_spriteBatch, $"Level {sel.Level}", new Vector2(bx, by + _fontRenderer.LineHeight), green);
+                _fontRenderer.Draw(_spriteBatch, sel.Map, new Vector2(bx, by + 2 * _fontRenderer.LineHeight), green);
+                _fontRenderer.Draw(_spriteBatch, sel.Date, new Vector2(bx, by + 3 * _fontRenderer.LineHeight), green);
+            }
         }
     }
 
@@ -8253,13 +8355,19 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
         _fontRenderer.Draw(_spriteBatch, "AIM - pick a hit location (1-9 / click, Esc cancel)",
             new Vector2(p.X + 12, p.Y + 8), Color.LightGray);
         int hovered = AimDialogRowAt(Mouse.GetState().X, Mouse.GetState().Y);
+        // P52-M4: the LIVE per-location to-hit % against the aimed-at critter (the hovered target the
+        // V key opens the dialog for). Recomputed per row via the same CombatEngine math the attack
+        // uses; shown alongside the static penalty when a critter is targeted.
+        MapObject? aimTarget = _hoveredObject is { } h && h != _dude?.Dude ? h : null;
         for (int i = 0; i < AimDialogOrder.Length; i++)
         {
             int loc = AimDialogOrder[i];
             int penalty = Formats.Combat.CriticalTables.LocationPenalty[loc];
+            int? pct = aimTarget is not null ? _combat.PreviewToHit(aimTarget, loc) : null;
+            string hit = pct is { } pc ? $"  {pc}%" : "";
             string label = loc == Formats.Combat.CriticalTables.LocationUncalled
-                ? $"{i + 1}. uncalled (no aim)"
-                : $"{i + 1}. {AimName(loc)}  ({penalty:+0;-0;+0} to hit)";
+                ? $"{i + 1}. uncalled (no aim){hit}"
+                : $"{i + 1}. {AimName(loc)}  ({penalty:+0;-0;+0}){hit}";
             Rectangle r = AimDialogRowRect(i);
             _fontRenderer.Draw(_spriteBatch, label, new Vector2(r.X + 6, r.Y + 2),
                 i == hovered ? hot : (loc == AimLocation ? hot : green));
@@ -8794,10 +8902,12 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
             var lines = new List<string>();
             foreach (string msg in _messageLog)
                 lines.AddRange(_fontRenderer.WrapText(msg, mw));
+            // P52-M5: show a scroll-back window (clicking the monitor halves moves _monitorScroll).
+            (int start, int end, _monitorScroll) = Formats.MonitorScrollback.Window(lines.Count, maxLines, _monitorScroll);
             int ty = o.Y + my;
-            foreach (string line in lines.Skip(Math.Max(0, lines.Count - maxLines)))
+            for (int i = start; i < end; i++)
             {
-                _fontRenderer.Draw(_spriteBatch, line, new Vector2(o.X + mx, ty), new Color(0, 252, 0), shadow: false);
+                _fontRenderer.Draw(_spriteBatch, lines[i], new Vector2(o.X + mx, ty), new Color(0, 252, 0), shadow: false);
                 ty += _fontRenderer.LineHeight;
             }
         }
@@ -8906,6 +9016,14 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
         if (_interfaceBar is not { Loaded: true } bar || _worldmapOpen)
             return false;
         Point o = bar.Origin(GraphicsDevice.Viewport.Bounds);
+        // P52-M5: the message monitor's two invisible scroll buttons (display_monitor.cc:382/391 —
+        // the top half scrolls toward older history, the bottom half toward the newest).
+        var monitor = new Rectangle(o.X + 24, o.Y + 26, 162, 56);
+        if (monitor.Contains(mouseX, mouseY))
+        {
+            _monitorScroll = Math.Max(0, _monitorScroll + (mouseY < monitor.Y + monitor.Height / 2 ? 1 : -1));
+            return true;
+        }
         bool inCombat = _combat.Phase != Formats.Combat.CombatPhase.Idle;
         foreach (HudButton b in HudButtons())
         {
@@ -8969,7 +9087,7 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
             if (_combat.Phase != Formats.Combat.CombatPhase.Idle)
                 hud += $"  |  round {_combat.Round}: "
                     + (_combat.Phase == Formats.Combat.CombatPhase.PlayerTurn ? "your turn (F attack, Space end turn)" : "enemy turn");
-            int hudY = GraphicsDevice.Viewport.Height - _hudBarHeight - 8 - (_messageLog.Count + 1) * _fontRenderer.LineHeight - 4;
+            int hudY = GraphicsDevice.Viewport.Height - _hudBarHeight - 8 - (Math.Min(_messageLog.Count, MessageLogFallbackLines) + 1) * _fontRenderer.LineHeight - 4;
             _fontRenderer.Draw(_spriteBatch, hud, new Vector2(8, hudY), new Color(252, 252, 84));
         }
 
@@ -9063,8 +9181,12 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
         // bottom-left when the bar is hidden (no iface art / worldmap open).
         if (_hudBarHeight == 0)
         {
-            int y = GraphicsDevice.Viewport.Height - 8 - _messageLog.Count * _fontRenderer.LineHeight;
-            foreach (string message in _messageLog)
+            // The bar-hidden fallback keeps the old recent-5 view (the scrollable history lives in the bar monitor).
+            List<string> recent = _messageLog.Count > MessageLogFallbackLines
+                ? _messageLog.GetRange(_messageLog.Count - MessageLogFallbackLines, MessageLogFallbackLines)
+                : _messageLog;
+            int y = GraphicsDevice.Viewport.Height - 8 - recent.Count * _fontRenderer.LineHeight;
+            foreach (string message in recent)
             {
                 _fontRenderer.Draw(_spriteBatch, message, new Vector2(8, y), green);
                 y += _fontRenderer.LineHeight;

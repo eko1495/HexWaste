@@ -1,6 +1,7 @@
 using Hexwaste.Formats.Combat;
 using Hexwaste.Formats.Map;
 using Microsoft.Xna.Framework;
+using Microsoft.Xna.Framework.Graphics;
 using Microsoft.Xna.Framework.Input;
 
 namespace Hexwaste.Viewer;
@@ -20,6 +21,13 @@ public sealed partial class ViewerGame
 
     /// <summary>The companion whose combat-control window is open, or null.</summary>
     private MapObject? _tacticsMember;
+
+    /// <summary>P52-M2: the authentic CONTROL.frm party combat-control window art (640x190), lazily
+    /// loaded; null if the asset is absent (then the text panel is the fallback).</summary>
+    private Texture2D? _controlFrm;
+
+    /// <summary>True once CONTROL.frm has loaded — switches the window geometry to the art window.</summary>
+    private bool _tacticsArt;
 
     /// <summary>ICombatHost seam — the ally's settings (default = the byte-identical pre-P50 behaviour).</summary>
     public CompanionAi CompanionSettings(MapObject ally) => _companionAi.GetValueOrDefault(ally, CompanionAi.Default);
@@ -87,14 +95,24 @@ public sealed partial class ViewerGame
     private Rectangle TacticsPanelRect()
     {
         Rectangle vp = GraphicsDevice.Viewport.Bounds;
+        if (_tacticsArt)
+        {
+            const int w = 640, h = 190; // CONTROL.frm dimensions
+            return new Rectangle(Math.Max(0, (vp.Width - w) / 2), Math.Max(0, (vp.Height - h) / 2), w, h);
+        }
         int lh = (_fontRenderer?.LineHeight ?? 16) + 8;
-        int w = 440, h = (TacticsRowCount + 2) * lh + 12;
-        return new Rectangle(Math.Max(0, (vp.Width - w) / 2), Math.Max(0, (vp.Height - h) / 2), w, h);
+        int tw = 440, th = (TacticsRowCount + 2) * lh + 12;
+        return new Rectangle(Math.Max(0, (vp.Width - tw) / 2), Math.Max(0, (vp.Height - th) / 2), tw, th);
     }
 
     private Rectangle TacticsRowRect(int row)
     {
         Rectangle p = TacticsPanelRect();
+        if (_tacticsArt)
+            // CONTROL.frm interior: the readable cycle-rows are overlaid in the left column over the
+            // authentic chrome (DOCUMENTED DIVERGENCE: Hexwaste's flat 8-row ally-AI model does not bind
+            // the engine's individual disposition radios / best-weapon+armor checkboxes).
+            return new Rectangle(p.X + 36, p.Y + 32 + row * 18, 290, 18);
         int lh = (_fontRenderer?.LineHeight ?? 16) + 8;
         return new Rectangle(p.X + 8, p.Y + 10 + lh + row * lh, p.Width - 16, lh);
     }
@@ -142,12 +160,27 @@ public sealed partial class ViewerGame
     {
         if (_tacticsMember is not { } member || _fontRenderer is null)
             return;
+        // P52-M2: render the authentic CONTROL.frm window (party combat-control art) when present;
+        // fall back to the dark text panel when the asset is missing (the Skilldex text-then-art pattern).
+        _controlFrm ??= InterfaceBar.LoadFrm(GraphicsDevice, _vfs, _palette, @"art\intrface\CONTROL.frm");
+        _tacticsArt = _controlFrm is not null;
         _panelPixel ??= CreatePixel();
         Rectangle p = TacticsPanelRect();
-        _spriteBatch.Draw(_panelPixel, p, new Color(8, 16, 8, 240));
         var green = new Color(0, 252, 0);
         var hot = new Color(252, 252, 84);
         CompanionAi ai = CompanionSettings(member);
+
+        if (_controlFrm is not null)
+        {
+            _spriteBatch.Draw(_controlFrm, new Vector2(p.X, p.Y), Color.White);
+            // A subtle backing under the readable rows so the overlaid text stays legible over the art.
+            _spriteBatch.Draw(_panelPixel, new Rectangle(p.X + 30, p.Y + 28, 304, TacticsRowCount * 18 + 6), new Color(8, 16, 8, 170));
+        }
+        else
+        {
+            _spriteBatch.Draw(_panelPixel, p, new Color(8, 16, 8, 240));
+        }
+
         _fontRenderer.Draw(_spriteBatch, $"COMBAT CONTROL - {ObjectName(member)} (1-6 / click cycles, Esc done)",
             new Vector2(p.X + 12, p.Y + 8), Color.LightGray);
         int hovered = TacticsRowAt(Mouse.GetState().X, Mouse.GetState().Y);
