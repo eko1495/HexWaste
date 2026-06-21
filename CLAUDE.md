@@ -1831,6 +1831,32 @@ MessageFile audio retention); 698 Formats tests, 84 encounter + 16 combat golden
 (.lip + the talking head) stays out — no assets, no head model; VO lights up free when voiced content installs
 loose sound\speech\*.acm.
 
+MAINTENANCE (2026-06-21, "tend the god-object" — a quality pass ahead of adding more cities; grounded by a
+4-reader + lead-engineer workflow): two changes, both proven SAFE.
+(1) --smoke <map> coverage harness: a headless StartupAction (ViewerGame.Harness.cs) that censuses a map
+(critters/containers/doors/scripted objects) + reports the FULL set of UNWIRED externals its scripts fire
+(map_enter on load + a map_update pass) — the "silent quest gap" detector for a NEW city: run one command on
+the new map, see what it needs that isn't wired. Deterministic + headless (no walk/UI/RNG), state-only output
+(counts + external NAMES). 5 per-map smoke goldens (artemple/arcaves/denbus1/denbus2/kladwtwn) are the cross-
+map regression net. Example: denbus2 fires use_obj_on_obj + tile_in_tile_rect; KLAMALL fires elevation.
+(2) ViewerGame.cs god-object split: the 10,279-line file is now 6,469, with the concern partials
+ViewerGame.Harness.cs (1,642 — the 100+ --probe StartupAction dispatch, extracted from LoadContent as
+RunStartupActions()), .Panels.cs (1,345 — char sheet/perk picker/Skilldex/Pip-Boy/automap/options/saveload
+picker/aim dialog/item panels), .Hud.cs (412 — iface.frm bar + monitor + digit roll), .Rendering.cs (285 —
+floor/object sprite draw + outline/translucency), .Chemistry.cs (224 — drugs/addiction) — plus the pre-
+existing .CompanionHub/.Party/.Tactics. KEY SAFETY INVARIANT: every move is a PURE same-class method move
+(fields stay CENTRAL in ViewerGame.cs) → identical IL → goldens BYTE-IDENTICAL; the build is the fast inner-
+loop gate (it catches a missing using / mis-cut method instantly), the full golden suite the final gate (run
+after each commit). The harness extract was the one extract-method (a call-site change, not a pure move) — its
+golden gate was mandatory. STILL IN THE CORE (deliberately not split — too welded / too small): LoadContent
+(local functions close over fields), Update (input is distributed, not a method group), LoadMap, the dialog
+panel, char-creation, the StartupAction record tree (nested types can't move), and the ICombatHost impl +
+SaveLoad core + Worldmap glue (scattered, not yet extracted — the natural next concerns if the core needs
+further shrinking). Method to extract a concern: new ViewerGame.<Concern>.cs with `namespace Hexwaste.Viewer;
+public sealed partial class ViewerGame { <methods> }` + the file's 9 usings (ImplicitUsings covers System.*);
+cut a contiguous method block (a class member's close is the first `^    }$` — inner braces are deeper), build,
+then golden-gate.
+
 Phase 10 (DONE, per docs/phase10-research-report.md — "The Wasteland
 Bites Back"): M0 persistence pre-stage (the net: MapList saved=No /
 random_start_point parse + IsTransient; the 3-clause transient guards as
