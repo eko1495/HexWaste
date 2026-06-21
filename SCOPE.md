@@ -124,9 +124,12 @@ filing an issue.
 - **The remaining ~80 perks' specific effects** (the table is complete and the
   stat perks + a curated combat/skill set are wired; the rest — timed
   buffs, content/dialog, mutation perks — are data-present), and worldmap car travel.
-- **Dialogue voiceover (VO)** — the ACM speech path is feasible, but no shippable
-  Arroyo→Den NPC is voiced (their dialogue lines carry no speech file), so it would
-  play nothing on the slice; deferred until a voiced NPC is in scope.
+- **Dialogue voiceover (VO)** — the speech path *is* wired (a voiced dialogue reply
+  plays `sound\speech\<audio>.acm` via the ACM decoder), but it is forward-looking
+  infrastructure: no shippable Arroyo→Den NPC is voiced (every dialogue line carries
+  an empty audio field) and the game data ships no `sound\speech\` assets at all, so
+  nothing plays on the slice. It lights up only if voiced content is installed. Lip-sync
+  (the talking head + `.lip` timing) stays out — there is no head model and no assets.
 - **Anything needing assets we can't ship** — Hexwaste requires *your own* legal
   copy of Fallout 2. We never include or distribute game data.
 

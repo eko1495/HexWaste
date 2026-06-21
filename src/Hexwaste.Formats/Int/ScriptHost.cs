@@ -122,6 +122,10 @@ public sealed class ScriptHost(GameFileSystem vfs, ScriptList scripts, Hexwaste.
     /// <summary>set_light_level: the host sets the global ambient light (0-100%, 50=cavern).</summary>
     public Action<int>? LightLevelRequested { get; set; }
 
+    /// <summary>P53: a dialogue reply resolved a message-list entry (messageListId, messageId) — the host
+    /// looks up its audio field via <see cref="LookupAudio"/> and plays the speech file if non-empty.</summary>
+    public Action<int, int>? DialogVoiceRequested { get; set; }
+
     /// <summary>obj_set_light_level: the host sets a per-object light pool (obj, intensity
     /// 0-100%, radius).</summary>
     public Action<MapObject, int, int>? ObjectLightRequested { get; set; }
@@ -712,6 +716,19 @@ public sealed class ScriptHost(GameFileSystem vfs, ScriptList scripts, Hexwaste.
         return messages?.GetText(messageId) ?? "";
     }
 
+    /// <summary>P53: the speech-file basename for a dialogue message (the MSG audio field), or null when
+    /// the line is unvoiced. Shares the same cached message files as <see cref="LookupMessage"/>.</summary>
+    public string? LookupAudio(int messageListId, int messageId)
+    {
+        if (!_dialogMessages.TryGetValue(messageListId, out MessageFile? messages))
+        {
+            string? path = scripts.GetDialogMessagePath(messageListId);
+            messages = path is not null && vfs.Exists(path) ? LoadMessages(path) : null;
+            _dialogMessages[messageListId] = messages;
+        }
+        return messages?.GetAudio(messageId);
+    }
+
     private MessageFile LoadMessages(string path)
     {
         using Stream stream = vfs.OpenRead(path);
@@ -922,6 +939,9 @@ public sealed class ScriptHost(GameFileSystem vfs, ScriptList scripts, Hexwaste.
         }
 
         public string GetMessage(int messageListId, int id) => _host.LookupMessage(messageListId, id);
+
+        public void PlayDialogVoice(int messageListId, int messageId) =>
+            _host.DialogVoiceRequested?.Invoke(messageListId, messageId);
 
         public void SetScriptOverrides() => Overridden = true;
 

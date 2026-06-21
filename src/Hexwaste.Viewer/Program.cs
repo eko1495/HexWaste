@@ -378,6 +378,12 @@ for (int i = 0; i < args.Length; i++)
             actions.Add(new ViewerGame.StartupAction.IqProbe(int.Parse(args[i + 1]), int.Parse(args[i + 2])));
             i += 2;
             break;
+        case "--speech-probe" when i + 3 < args.Length:
+            // --speech-probe <listId> <msgId> <forcedAudio|-> : the dialogue VO compose+gate (P53).
+            actions.Add(new ViewerGame.StartupAction.SpeechProbe(
+                int.Parse(args[i + 1]), int.Parse(args[i + 2]), args[i + 3]));
+            i += 3;
+            break;
         case "--fog-probe" when i + 3 < args.Length:
             // --fog-probe <x> <y> <areaIndex>: travel a worldmap leg from (x,y) toward an
             // area WITH the fog-of-war, reporting the subtile reveal (phase-22).

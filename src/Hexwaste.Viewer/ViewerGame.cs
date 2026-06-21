@@ -578,6 +578,10 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
         public sealed record SetKarma(int Karma, int Reputation) : StartupAction;
         /// <summary>Read a global var (P32-M1; verifies vault13.gam seeding after a new game).</summary>
         public sealed record GetGlobal(int Id) : StartupAction;
+        /// <summary>P53: look up a dialogue line's audio field (or force one) + report the composed speech
+        /// path + the ShouldSpeak verdict — asset PATHS only, never the message text. ForcedAudio "-" =
+        /// the real MSG lookup for (ListId, MsgId); any other value forces that audio basename.</summary>
+        public sealed record SpeechProbe(int ListId, int MsgId, string ForcedAudio) : StartupAction;
         /// <summary>Relocate the critter at FromHex to ToHex via the placement path (P32; verifies
         /// critter_attempt_placement actually moves a critter to a different tile).</summary>
         public sealed record PlaceProbe(int FromHex, int ToHex) : StartupAction;
@@ -965,6 +969,7 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
                 CombatActiveProvider = () => _combat.Phase != Formats.Combat.CombatPhase.Idle, // P34-M1: is_in_combat(0x8128)
                 PoisonRequested = (obj, amount) => ApplyPoison(obj, amount), // P35: poison(0x8122)
                 CombatTerminateRequested = () => _combat.RequestTerminateCombat(), // P35-M5: terminate_combat(0x8153)
+                DialogVoiceRequested = PlayDialogVoice, // P53: a voiced dialogue reply plays its speech file
             };
             if (RngSeed is { } scriptSeed)
                 _scriptHost.Rng = new Random(scriptSeed);
@@ -1338,6 +1343,19 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
                     TalkTo(iqNpc);
                     Console.WriteLine($"iq-probe: hex={iqHex} in={effIn} options={_dialog?.Options.Count ?? 0}");
                     _dialog = null;
+                    break;
+                }
+                case StartupAction.SpeechProbe(var spList, var spMsg, var spForced):
+                {
+                    // P53: report the dialogue VO compose + gate — the audio basename (an asset id),
+                    // the composed sound\speech path, and the ShouldSpeak verdict. NEVER the message
+                    // text. ForcedAudio "-" uses the real MSG lookup (empty on the whole slice).
+                    string? audio = spForced == "-" ? _scriptHost?.LookupAudio(spList, spMsg) : spForced;
+                    bool would = Formats.Sound.SpeechName.ShouldSpeak(isReply: true, headIsValid: true, audio);
+                    string path = string.IsNullOrEmpty(audio) ? "(none)" : Formats.Sound.SpeechName.Path(audio);
+                    Console.WriteLine($"speech-probe: list={spList} msg={spMsg} "
+                        + $"audio={(string.IsNullOrEmpty(audio) ? "(empty)" : audio)} path={path} "
+                        + $"reply=1 head=1 wouldPlay={(would ? 1 : 0)}");
                     break;
                 }
                 case StartupAction.DeathProbe(var dpHex):
@@ -7347,6 +7365,17 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
             if (_dialogOptionRects[i].Contains(x, y))
                 return i;
         return -1;
+    }
+
+    /// <summary>P53: a dialogue REPLY resolved a message-list entry — look up its audio field and play the
+    /// speech file (sound\speech\&lt;audio&gt;.acm). Inert on the slice (every line's audio field is empty, and
+    /// the GOG data ships no speech assets); lights up only when voiced content is installed. headIsValid is
+    /// true — Hexwaste renders no talking head, so the engine's head-FID gate (scripts.cc:2746) cannot apply.</summary>
+    private void PlayDialogVoice(int messageListId, int messageId)
+    {
+        if (_scriptHost?.LookupAudio(messageListId, messageId) is { } audio
+            && Formats.Sound.SpeechName.ShouldSpeak(isReply: true, headIsValid: true, audio))
+            _audio?.PlaySpeech(audio);
     }
 
     /// <summary>Text dialog panel: reply on top, numbered options below (keys 1-9 or click).</summary>

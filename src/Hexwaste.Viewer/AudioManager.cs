@@ -16,8 +16,10 @@ public sealed class AudioManager : IDisposable
 {
     private readonly GameFileSystem _vfs;
     private readonly string _musicDir;
+    private readonly string _speechDir;
     private readonly Dictionary<string, SoundEffect?> _sfxCache = new(StringComparer.OrdinalIgnoreCase);
     private SoundEffectInstance? _music;
+    private SoundEffectInstance? _speech;
     private string? _musicTrack;
     private bool _enabled = true;
 
@@ -25,6 +27,7 @@ public sealed class AudioManager : IDisposable
     {
         _vfs = vfs;
         _musicDir = Path.Combine(gameDir, "sound", "music");
+        _speechDir = Path.Combine(gameDir, "sound", "speech");
     }
 
     public void PlaySfx(string name)
@@ -44,6 +47,36 @@ public sealed class AudioManager : IDisposable
             }
 
             effect?.Play(0.5f, 0f, 0f);
+        }
+        catch (Exception ex) when (ex is NoAudioHardwareException or InvalidOperationException)
+        {
+            Console.Error.WriteLine($"audio disabled: {ex.Message}");
+            _enabled = false;
+        }
+    }
+
+    /// <summary>P53: play a one-shot dialogue speech file. Speech ACMs are LOOSE under
+    /// &lt;gameDir&gt;\sound\speech\ (like music — the VO is not in the DATs); the slice ships none, so this
+    /// is inert until voiced content is installed. <paramref name="name"/> is the MSG audio basename.</summary>
+    public void PlaySpeech(string name)
+    {
+        if (!_enabled)
+            return;
+        try
+        {
+            string file = Path.Combine(_speechDir, name + ".acm");
+            if (!File.Exists(file))
+            {
+                Console.Error.WriteLine($"speech not found: {name}");
+                return;
+            }
+            SoundEffect? effect = CreateEffect(File.ReadAllBytes(file));
+            if (effect is null)
+                return;
+            _speech?.Stop();
+            _speech?.Dispose();
+            _speech = effect.CreateInstance();
+            _speech.Play();
         }
         catch (Exception ex) when (ex is NoAudioHardwareException or InvalidOperationException)
         {
@@ -129,6 +162,8 @@ public sealed class AudioManager : IDisposable
     {
         _music?.Stop();
         _music?.Dispose();
+        _speech?.Stop();
+        _speech?.Dispose();
         foreach (SoundEffect? effect in _sfxCache.Values)
             effect?.Dispose();
     }

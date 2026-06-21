@@ -1799,6 +1799,38 @@ INVBOX.frm (FID-48 filename unconfirmed in fo2ce source + a 2-slot-vs-3-slot-pap
 wall transparency (a large 8-bit blend-table kernel, the P4 no-shader decision stands), Snipe back-away
 (combat-logic, wrong theme for a polish phase).
 
+Phase 53 (DONE — "Lend a Voice", dialogue voiceover; grounded by a 5-reader + critic workflow). FAITHFUL
+FORWARD-LOOKING INFRA — the engine's VO path is real + fully specified, but VERIFIED INERT on the slice:
+Reader 5 + M0 confirmed against the REAL data that every slice dialogue line carries an EMPTY audio field
+({id}{}{text}) — Metzger's 240 lines, Vic's 266, all 17 Den NPCs — AND the GOG game-data ships NO
+sound\speech\ directory at all (only sound\music\). So it's DOUBLY inert (no field + no asset). This is
+NOT karma-auto-award-style invention (P38) — VO has a real engine hook (scripts.cc _scr_get_msg_str_speech),
+it's just empty on this content slice. KEY CORRECTION (the readers conflicted, synthesis + my grep settled
+it): the PLAYED audio is FLAT sound\speech\<audio>.acm (game_sound.cc:1871, _sound_speech_path); the per-head
+sound\speech\<head>\<audio>.lip path is the LIP-SYNC file (lips.cc) — OUT OF SCOPE (no talking head, no .lip
+assets). M1 MessageFile audio retention: the parser READ the audio field (the 2nd of {id}{audio}{text}) then
+DISCARDED it — now a parallel _audio dict + GetAudio(id) keeps it (non-empty only → the slice stores nothing);
+purely additive, GetText unchanged. M2 pure Formats.Sound.SpeechName: Path(audio) => sound\speech\<audio>.acm
+(lowercased, the SfxName pattern) + ShouldSpeak(isReply, headIsValid, audio, msgFlags) — the scripts.cc:2757
+gate: REPLY-only (a3==1; game_dialog.cc:2239 reply vs :2282 option a3=0), head FID is a HEAD (else a3 forced 0,
+:2746), audio non-empty, the 0x01 message flag clear (set → censor beep, not speech). M3 wiring: IVmExternals.
+PlayDialogVoice(listId, msgId) default no-op, fired in IntVm on 0x811E gsay_reply + 0x8120 gsay_message ONLY
+(the reply opcodes), and only for a message-list ref (msg.Tag==TypeInt, never a literal string) — NOT on
+gsay_option (0x811F/0x8121); ScriptContext routes it to ScriptHost.DialogVoiceRequested (the LightLevel/Poison
+callback pattern); ScriptHost.LookupAudio(listId, msgId) parallels LookupMessage (same cached message files →
+MessageFile.GetAudio); the viewer's PlayDialogVoice looks it up + ShouldSpeak-gates + AudioManager.PlaySpeech
+(a one-shot LOOSE read under <gameDir>\sound\speech\, like music — not the DAT; headIsValid assumed true since
+Hexwaste renders no head). GOLDEN-SAFE: --no-audio suppresses playback, PlaySpeech only stderrs on miss, the
+slice's empty audio short-circuits before any I/O, no RNG — all 16 combat + 84 prior encounter goldens
+BYTE-IDENTICAL (incl. the vic-recruit dialog goldens that now fire PlayDialogVoice → empty → no-op); verified
+by a clean check before recording. Harness --speech-probe <listId> <msgId> <forcedAudio|-> (PATHS/ids only,
+never message text): forced "dcmetz01" → sound\speech\dcmetz01.acm wouldPlay=1 (the mechanism); the REAL
+Metzger line (list 46, msg 100) → audio=(empty) wouldPlay=0 through the actual parser (real-data proof of the
+slice's faithful silence). Golden speech-probe. 8 VoiceoverTests (SpeechName Path/gate truth-table +
+MessageFile audio retention); 698 Formats tests, 84 encounter + 16 combat goldens green. RESIDUAL: lip-sync
+(.lip + the talking head) stays out — no assets, no head model; VO lights up free when voiced content installs
+loose sound\speech\*.acm.
+
 Phase 10 (DONE, per docs/phase10-research-report.md — "The Wasteland
 Bites Back"): M0 persistence pre-stage (the net: MapList saved=No /
 random_start_point parse + IsTransient; the 3-clause transient guards as

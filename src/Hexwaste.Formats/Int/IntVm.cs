@@ -126,6 +126,12 @@ public interface IVmExternals
     /// <summary>gsay_reply / the reply part of gsay_message.</summary>
     void DialogReply(string text) { }
 
+    /// <summary>P53: a dialogue REPLY resolved a message-list entry — the host may look up the entry's
+    /// audio field and play <c>sound\speech\&lt;audio&gt;.acm</c> (scripts.cc _scr_get_msg_str_speech, a3==1).
+    /// Fired only for reply opcodes (not options) and only for a message-list reference, never a literal
+    /// string. Default no-op (headless / --no-audio). Inert on the slice — every slice line's audio is empty.</summary>
+    void PlayDialogVoice(int messageListId, int messageId) { }
+
     /// <summary>gsay_option / giq_option (after the IQ filter): an option bound to a procedure index.</summary>
     void DialogOption(string text, int procedureIndex, int reaction) { }
 
@@ -1137,6 +1143,8 @@ public sealed class IntVm
                 Value msg = Pop();
                 int listId = PopInt();
                 _externals.DialogReply(ResolveDialogText(listId, msg));
+                if (msg.Tag == TypeInt) // P53: a message-list reply may carry a speech file (REPLY-only)
+                    _externals.PlayDialogVoice(listId, msg.Raw);
                 break;
             }
             case 0x811F: // gsay_option (pops reaction, proc, msg, msgList)
@@ -1168,6 +1176,8 @@ public sealed class IntVm
                 Value msg = Pop();
                 int listId = PopInt();
                 _externals.DialogReply(ResolveDialogText(listId, msg));
+                if (msg.Tag == TypeInt) // P53: gsay_message is a reply path too (game_dialog.cc:2239)
+                    _externals.PlayDialogVoice(listId, msg.Raw);
                 _externals.DialogEnd();
                 break;
             }

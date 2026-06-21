@@ -1,0 +1,2 @@
+speech-probe: list=0 msg=0 audio=dcmetz01 path=sound\speech\dcmetz01.acm reply=1 head=1 wouldPlay=1
+speech-probe: list=46 msg=100 audio=(empty) path=(none) reply=1 head=1 wouldPlay=0

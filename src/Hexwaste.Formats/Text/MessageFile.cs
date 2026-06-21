@@ -10,9 +10,17 @@ public sealed class MessageFile
 {
     private readonly Dictionary<int, string> _texts = [];
 
+    // P53: the AUDIO field (the second of the three braces) — a speech-file basename, e.g. "dcmetz01"
+    // (message.h MessageListItem.audio). The engine plays sound\speech\<audio>.acm for a dialogue REPLY
+    // whose audio is non-empty. Stored only for non-empty fields (the whole shippable slice is empty).
+    private readonly Dictionary<int, string> _audio = [];
+
     public int Count => _texts.Count;
 
     public string? GetText(int id) => _texts.TryGetValue(id, out string? text) ? text : null;
+
+    /// <summary>The speech-file basename for a message, or null when the line is unvoiced (empty audio field).</summary>
+    public string? GetAudio(int id) => _audio.TryGetValue(id, out string? audio) ? audio : null;
 
     public static MessageFile Load(Stream stream)
     {
@@ -33,7 +41,11 @@ public sealed class MessageFile
                 break;
 
             if (int.TryParse(idField.Trim(), out int id))
+            {
                 result._texts[id] = textField;
+                if (audioField.Trim() is { Length: > 0 } audio)
+                    result._audio[id] = audio; // P53: retain the speech-file name (empty on the slice)
+            }
         }
 
         return result;
