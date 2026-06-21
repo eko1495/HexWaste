@@ -1839,20 +1839,23 @@ MAINTENANCE (2026-06-21, "tend the god-object" — a quality pass ahead of addin
 the new map, see what it needs that isn't wired. Deterministic + headless (no walk/UI/RNG), state-only output
 (counts + external NAMES). 5 per-map smoke goldens (artemple/arcaves/denbus1/denbus2/kladwtwn) are the cross-
 map regression net. Example: denbus2 fires use_obj_on_obj + tile_in_tile_rect; KLAMALL fires elevation.
-(2) ViewerGame.cs god-object split: the 10,279-line file is now 6,469, with the concern partials
+(2) ViewerGame.cs god-object split: the 10,279-line file is now 4,734 (−54%), with the concern partials
 ViewerGame.Harness.cs (1,642 — the 100+ --probe StartupAction dispatch, extracted from LoadContent as
 RunStartupActions()), .Panels.cs (1,345 — char sheet/perk picker/Skilldex/Pip-Boy/automap/options/saveload
-picker/aim dialog/item panels), .Hud.cs (412 — iface.frm bar + monitor + digit roll), .Rendering.cs (285 —
-floor/object sprite draw + outline/translucency), .Chemistry.cs (224 — drugs/addiction) — plus the pre-
-existing .CompanionHub/.Party/.Tactics. KEY SAFETY INVARIANT: every move is a PURE same-class method move
-(fields stay CENTRAL in ViewerGame.cs) → identical IL → goldens BYTE-IDENTICAL; the build is the fast inner-
-loop gate (it catches a missing using / mis-cut method instantly), the full golden suite the final gate (run
-after each commit). The harness extract was the one extract-method (a call-site change, not a pure move) — its
-golden gate was mandatory. STILL IN THE CORE (deliberately not split — too welded / too small): LoadContent
-(local functions close over fields), Update (input is distributed, not a method group), LoadMap, the dialog
-panel, char-creation, the StartupAction record tree (nested types can't move), and the ICombatHost impl +
-SaveLoad core + Worldmap glue (scattered, not yet extracted — the natural next concerns if the core needs
-further shrinking). Method to extract a concern: new ViewerGame.<Concern>.cs with `namespace Hexwaste.Viewer;
+picker/aim dialog/item panels), .CombatHost.cs (852 — the ICombatHost impl + combat glue: weapon/ammo/
+reload/corpse/heal/heartbeat/poison/sfx/animation+throw callbacks/reactions/destroy+combat procs),
+.SaveLoad.cs (599 — the per-map delta snapshot/replay + JSON SaveGame/LoadGame), .Hud.cs (412 — iface.frm
+bar + monitor + digit roll), .Rendering.cs (285 — floor/object sprite draw + outline/translucency),
+.Worldmap.cs (283 — travel/transitions/encounter-engage/Outdoorsman), .Chemistry.cs (224 — drugs/addiction)
+— plus the pre-existing .CompanionHub/.Party/.Tactics. KEY SAFETY INVARIANT: every move is a PURE same-class
+method move (fields stay CENTRAL in ViewerGame.cs) → identical IL → goldens BYTE-IDENTICAL; the build is the
+fast inner-loop gate (it catches a missing using / mis-cut method instantly), the full golden suite the final
+gate (run after each batch). The harness extract was the one extract-method (a call-site change, not a pure
+move) — its golden gate was mandatory. STILL IN THE CORE (deliberately not split — too welded / interleaved /
+small): LoadContent (local functions close over fields), Update (input is distributed, not a method group),
+LoadMap, the dialog panel, char-creation, the StartupAction record tree (nested types can't move), and the
+kills/XP/party-level/skill-points/rest helpers (interleaved between the two CombatHost clusters). Method to
+extract a concern: new ViewerGame.<Concern>.cs with `namespace Hexwaste.Viewer;
 public sealed partial class ViewerGame { <methods> }` + the file's 9 usings (ImplicitUsings covers System.*);
 cut a contiguous method block (a class member's close is the first `^    }$` — inner braces are deeper), build,
 then golden-gate.
