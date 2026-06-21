@@ -148,6 +148,14 @@ for (int elevation = 0; elevation < MapFile.ElevationCount; elevation++)
     if (doors.Count > 0)
         Console.WriteLine($"    doors x{doors.Count} (e.g. {string.Join(", ", doors.Take(6).Select(d => $"hex {d.HexTile} flags 0x{d.Flags:X}"))})");
 
+    // Scripted scenery (non-door) — finds use_p_proc targets like the Gecko reactor terminal/valve.
+    var scriptedScenery = elev.Objects.Where(o =>
+        Fid.Type(o.Fid) == ObjectType.Scenery && o.Sid != -1 && o.Destination is null).ToList();
+    if (scriptedScenery.Count > 0)
+        Console.WriteLine($"    scripted scenery x{scriptedScenery.Count}: " + string.Join(", ",
+            scriptedScenery.OrderBy(s => s.HexTile).Select(s =>
+                $"hex {s.HexTile} script {(map.ScriptsBySid.TryGetValue(s.Sid, out MapScriptRecord? r) ? r.ScriptListIndex : -1)}")));
+
     foreach (var group in elev.Objects
         .Where(o => o.Destination is not null)
         .GroupBy(o => (o.Destination!.Map, o.Destination.Tile, o.Destination.Elevation,

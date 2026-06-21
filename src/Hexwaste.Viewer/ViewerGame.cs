@@ -3440,6 +3440,22 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
             return;
         }
 
+        // P55-M2: a scripted scenery object with a use_p_proc but NO exit-grid Destination — run its
+        // script (the Gecko reactor terminal/reactor/valve are scenery). The engine's _obj_use dispatches
+        // use_p_proc for ANY usable object, scenery included (scripts.cc SCRIPT_PROC_USE); doors and
+        // containers already fire it above. RunObjectProc returns null when the script lacks use_p_proc,
+        // so unscripted/look-only scenery falls through to the examine line unchanged.
+        if (obj.Sid != -1 && Fid.Type(obj.Fid) is ObjectType.Scenery && IsAdjacentToDude(obj)
+            && _scriptHost?.RunObjectProc(obj, _map, _dude?.Dude, "use_p_proc") is { } useResult)
+        {
+            foreach (string line in useResult.Messages)
+                Log(line);
+            // State-only info line (like the "picked:" examine line below), so a harness can confirm the
+            // scenery's use_p_proc ran instead of falling through to the no-op. Never the dialogue text.
+            Console.WriteLine($"scenery-use@{obj.HexTile}: handled overridden={(useResult.Overridden ? 1 : 0)}");
+            return; // the scenery's use_p_proc ran — it handled the interaction
+        }
+
         Console.WriteLine($"picked: {DescribeObject(obj)}");
     }
 
