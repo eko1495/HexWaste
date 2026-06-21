@@ -103,14 +103,17 @@ filing an issue.
 
 ## What's in — locations
 
-- The opening hour (Arroyo → Temple → Klamath → Den) plus **Vault City** (the first
-  location past the slice): all four VC maps (Courtyard / Downtown / Council / Vault)
-  are reachable from the worldmap, walkable, fully script-wired (every external its
-  scripts fire is handled), and its NPCs talk via the real dialogue VM. A new city is
-  mostly *content* — the data-driven engine routes, loads, and renders it for free; the
-  work is wiring the handful of externals its scripts need (use `--smoke <map>` to scope
-  them). The citizenship quest's machinery is wired, though completing the stat-test is
-  content navigation, not engine work.
+- The opening hour (Arroyo → Temple → Klamath → Den) plus **Vault City** and **Gecko**
+  — the first two locations past the slice. All their maps (VC: Courtyard / Downtown /
+  Council / Vault; Gecko: Settlement / Power Plant / Junkyard / Tunnels) are reachable
+  from the worldmap, walkable, fully script-wired (every external their scripts fire is
+  handled), and their NPCs talk via the real dialogue VM. A new town is mostly *content*
+  — the data-driven engine routes, loads, and renders it for free; the per-town work is
+  wiring the handful of externals it needs (use `--smoke <map>` to scope them), and each
+  town pre-clears the next (Gecko needed *zero* new externals — Vault City had already
+  wired the shared ones). Quest *machinery* is wired (Vault City's citizenship test,
+  Gecko's reactor terminal, Lenny's recruitment via `party.txt`), though completing a
+  specific quest is content navigation, not engine work.
 
 ## What's out (by design, today)
 

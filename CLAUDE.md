@@ -1889,6 +1889,33 @@ documented): Cassidy recruitment (script 571, NOT in party.txt — needs custom 
 computer-parts quest (chains to Gecko, out-of-slice), any 2nd quest. 698 tests, 16 combat + 99 encounter
 goldens green. Vault City is reachable + walkable + fully wired + talking — the first new location is in.
 
+Phase 55 (DONE — "Gecko", the SECOND new location; scoped by a 4-reader + lead-engineer workflow that
+ground-truthed + corrected MANY reader hallucinations [the GVAR indices, the reactor script numbers, even
+its own "gecksetl stubs=1" claim — VERIFY everything]). PROVES the recipe is cheap to repeat + that each
+city makes the next cheaper. M0 reachability = ZERO code (`--travel 5`, Area 05 start_state=On → the
+Settlement gecksetl, via the existing ArriveAt). M1 externals = MOOT, stubs=0 across all 4 maps (gecksetl/
+geckpwpl/geckjunk/gecktunl) — Vault City's P54 wiring already covered every external Gecko fires (the
+synthesis's "gecksetl stubs=1[debug_msg]" was a hallucination — verified stubs=0). M2 = the ONE real change:
+scenery use_p_proc. InteractWith fired use_p_proc for containers+doors but a scripted SCENERY object with no
+exit-grid Destination fell through to the no-op 'picked:' line — so the reactor TERMINAL (GsTerm 515 @18677),
+reactor (gsReactr 529 @12666), valve (GSValve 846 @16264) were inert. Added the scenery use_p_proc branch
+(the engine's _obj_use dispatches SCRIPT_PROC_USE for any usable object) + a state-only 'scenery-use@<hex>:
+handled' line. BYTE-IDENTICAL: NO golden ever clicks a scenery object (verified by a clean check) → the new
+path is unreachable by every fixture. DOCUMENTED LIVE-PLAY GAIN (not a regression): existing-slice scenery
+with use_p_proc — denbus2 graves, NR slot machines, wall switches — is now usable (graves ARE diggable in
+FO2). M3 GVARs verified all 0 (no seeding). M4: the reactor-quest dialogue runs (Gordon 2 / a plant NPC 4
+options); the reactor terminal is usable; the OPTIMIZE completion + the VC-McClure bridge (GVAR
+VAULT_GECKO_PLANT=82) are content navigation (the machinery is wired + proven; even with GECKO_ASSIGNED set
+the terminal needs the deeper Skeeter/Science path to flip 93/82) — the documented residual, like VC's
+citizenship. M5: Lenny (GCLenny 138 @16701, pid 0x100006B) VERIFIED a real data\party.txt companion
+(member=1, level_minimum=10; the radscorpion 0x1000005 the member=0 control) → recruitment is the proven
+Vic-pattern party_add machinery (NOT custom content like VC's Cassidy); the recruit drive is the residual.
+TOOLING: new --party-probe <pid> (reusable companion check) + MapDump scripted-scenery listing (hex+script,
+found the reactor terminal). All combat goldens BYTE-IDENTICAL; new goldens gecko-reactor-use/dialogue/lenny
++ 4 smoke. 698 tests, 16 combat + 102 encounter goldens green. KEY LESSON RE-CONFIRMED: each city pre-clears
+the next (shared externals accumulate) — Gecko needed ZERO external wiring, just one proc (scenery use) +
+the quest/companion content sitting on already-wired machinery.
+
 Phase 10 (DONE, per docs/phase10-research-report.md — "The Wasteland
 Bites Back"): M0 persistence pre-stage (the net: MapList saved=No /
 random_start_point parse + IsTransient; the 3-clause transient guards as
