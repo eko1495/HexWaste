@@ -101,10 +101,22 @@ filing an issue.
   shows the live to-hit % per body part, and with the Empathy perk, dialogue options
   are tinted by the NPC's reaction (good/neutral/bad).
 
+## What's in — locations
+
+- The opening hour (Arroyo → Temple → Klamath → Den) plus **Vault City** (the first
+  location past the slice): all four VC maps (Courtyard / Downtown / Council / Vault)
+  are reachable from the worldmap, walkable, fully script-wired (every external its
+  scripts fire is handled), and its NPCs talk via the real dialogue VM. A new city is
+  mostly *content* — the data-driven engine routes, loads, and renders it for free; the
+  work is wiring the handful of externals its scripts need (use `--smoke <map>` to scope
+  them). The citizenship quest's machinery is wired, though completing the stat-test is
+  content navigation, not engine work.
+
 ## What's out (by design, today)
 
-- **Most quest chains** — the opening hour (Arroyo → Temple → Klamath/Den) is
-  the target; the slave-run path is not wired, and while karma/reputation are
+- **Most quest chains** — the target is the opening hour (Arroyo → Temple →
+  Klamath/Den) plus Vault City's arrival; the slave-run path is not wired, and
+  while karma/reputation are
   *displayed* (above), no slice quest *awards* them (the engine never auto-awards
   karma — it is content-driven). Vic's rescue (#10) *is* wired end-to-end, with one
   residual content gap: the

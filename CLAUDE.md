@@ -1860,6 +1860,35 @@ public sealed partial class ViewerGame { <methods> }` + the file's 9 usings (Imp
 cut a contiguous method block (a class member's close is the first `^    }$` — inner braces are deeper), build,
 then golden-gate.
 
+Phase 54 (DONE — "Vault City", the FIRST new location past the Arroyo→Klamath→Den slice; scoped by a
+4-reader + lead-engineer workflow that found the 4 VC maps [vctyctyd Courtyard / vctydwtn Downtown /
+vctycocl Council / vctyvlt Vault], the small external gap, and the worldmap route, and corrected several
+reader errors [GVAR indices off by ~7; critter_p_proc already wired]). HEADLINE: a city is mostly CONTENT —
+the data-driven engine made most of it free. M0 reachability = ZERO code: `--travel 4` already routes the
+worldmap dot to the VC Courtyard via the existing ArriveAt (wmAreaFindFirstValidMap → first-ON entrance →
+maps.txt lookup → LoadMap at the entrance tile), exactly like the Den. M1 wired two SHARED VM externals
+(pure, no seam): day (0x8119, opGetDay — DayFromEpochDay mirroring the existing month 0x8118) + debug_msg
+(0x8154 — a dev no-op, pop+discard); effect: arcaves reaches stubs=0, denbus1/2 drop debug_msg, VC Courtyard
+4→2. M2 wired the 4 seam-requiring externals → ALL 4 VC maps stubs=0: elevation (0x80EC, via a new
+ScriptHost.ElevationProvider — the viewer finds the object's elevation list; KLAMALL also reaches stubs=0),
+critter_injure (0x8127 — OR/clear DAM_CRIP 0x7C into CombatResults, honoring DAM_PERFORM_REVERSE 0x800000,
+reusing the P14 flag model), anim (0x810C — PlayActionOnce on a critter via a new AnimRequested seam; denbus1
+NPCs now animate, Draw-only), obj_on_screen (0x8150 — return 1, no camera headless, DOCUMENTED DIVERGENCE).
+M3 (proc census): the minimum needs NO new proc — VC dialogue runs via the already-wired talk_p_proc; the
+deeper reactions (on-damage damage_p_proc [the documented golden-RISK — census the slice critters first],
+use_p_proc terminals) are deferred. M4 (GVARs): verified — VC globals are all 0 on a fresh game (50/81/91/137
+= TownRep/Citizenship/Quest/Enemy), so the dude enters a neutral non-citizen with the quest available; no
+seeding code (gvar-seed golden extended). M5 (NPCs talk): the dialogue VM runs end-to-end on real VC content
+(Lynette script 127 @17100 → 4 options, Greg 116 → 2, a Courtyard NPC → 2). The citizenship quest's MACHINERY
+(dialogue VM + do_check + set_global_var + GVAR storage) is all wired + proven; completing the stat-test
+(navigating Lynette's nodes to flip GVAR 81) is CONTENT navigation, the documented residual. GOLDEN-SAFE:
+every external is additive (inert on Arroyo→Den except the shared anim/elevation, which are Draw/query-only);
+all 16 combat goldens BYTE-IDENTICAL; the smoke goldens track the wiring (arcaves/KLAMALL → stubs=0; denbus1/2
+drop their shared stubs; 4 new VC smoke goldens at stubs=0) + the new vc-dialogue golden. OUT (decisive line,
+documented): Cassidy recruitment (script 571, NOT in party.txt — needs custom companion content), McClure's
+computer-parts quest (chains to Gecko, out-of-slice), any 2nd quest. 698 tests, 16 combat + 99 encounter
+goldens green. Vault City is reachable + walkable + fully wired + talking — the first new location is in.
+
 Phase 10 (DONE, per docs/phase10-research-report.md — "The Wasteland
 Bites Back"): M0 persistence pre-stage (the net: MapList saved=No /
 random_start_point parse + IsTransient; the 3-clause transient guards as
