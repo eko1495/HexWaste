@@ -413,6 +413,21 @@ public sealed class IntVm
         return month + 1;
     }
 
+    /// <summary>Calendar day-of-month (1..31) for a day count since June 24, 2241 — the day
+    /// component of the same date math as <see cref="MonthFromEpochDay"/> (opGetDay).</summary>
+    private static int DayFromEpochDay(int day)
+    {
+        ReadOnlySpan<int> daysPerMonth = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+        int month = 5;
+        int dayOfMonth = 23 + day; // June 24 is day 0 (the 24th)
+        while (dayOfMonth >= daysPerMonth[month])
+        {
+            dayOfMonth -= daysPerMonth[month];
+            month = (month + 1) % 12;
+        }
+        return dayOfMonth + 1;
+    }
+
     // Data stack (stackValues) and return stack (returnStackValues). Plain
     // lists because store/fetch/fetch_global index into the data stack.
     private readonly List<Value> _stack = [];
@@ -1507,6 +1522,15 @@ public sealed class IntVm
                 PushInt(MonthFromEpochDay(day));
                 break;
             }
+            case 0x8119: // day (1..31; opGetDay — same epoch as month above)
+            {
+                int day = _externals.GameTime() / 864000;
+                PushInt(DayFromEpochDay(day));
+                break;
+            }
+            case 0x8154: // debug_msg (opDebugMessage): a developer no-op — pop the string and discard
+                Pop();   // (faithful: the engine prints to the debug console only; nothing player-visible)
+                break;
             default:
             {
                 if (!ExternalArity.Table.TryGetValue(opcode, out (string Name, int Args, bool Returns) arity))
