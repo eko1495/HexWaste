@@ -187,7 +187,7 @@ SCENARIOS=(
   "karma|--map artemple.map --set-karma 50 5 --set-global 0 100 --set-global 47 30 --set-global 3 1 --karma-probe --rep-title 100 --town-rep 30 --karma-titles --rng-seed 1"
   # P32-M1 vault13.gam GVAR seeding: --create runs StartNewGame which seeds the non-zero globals
   # (Arroyo rep 47:=50, FIND_VIC 619:=1, Salvatore counter 134:=100; everything else 0).
-  "gvar-seed|--map artemple.map --create 5,5,5,5,5,5,5:0,4,5:0 --get-global 0 --get-global 47 --get-global 619 --get-global 134 --rng-seed 1"
+  "gvar-seed|--map artemple.map --create 5,5,5,5,5,5,5:0,4,5:0 --get-global 0 --get-global 47 --get-global 619 --get-global 134 --get-global 50 --get-global 81 --get-global 91 --get-global 137 --rng-seed 1"
   # P33 critter_attempt_placement: relocate a map critter to a different tile via the real placement path
   # (denbus2 has a critter at 14716; move it to 14000). On entry the engine fires this op same-tile (a
   # no-op), so the slice goldens are unchanged — this proves the actual relocate.
@@ -325,6 +325,9 @@ SCENARIOS=(
   "smoke-vctydwtn|--map vctydwtn.map --smoke"
   "smoke-vctycocl|--map vctycocl.map --smoke"
   "smoke-vctyvlt|--map vctyvlt.map --smoke"
+  # P54-M5: the VC dialogue VM runs end-to-end on real VC content (option counts only, never the
+  # copyrighted dialogue text) — proves NPCs talk. Lynette (17100) + Greg (13705) on the Council.
+  "vc-dialogue|--map vctycocl.map --iq-probe 17100 5 --iq-probe 13705 5 --rng-seed 1"
 )
 
 # Keep only the deterministic transcript lines (drop map-load / animate / stub /
