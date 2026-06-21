@@ -126,6 +126,15 @@ Prebuilt self-contained builds (Linux x64 / Windows x64) are produced by
   edge and travel auto-resumes toward your destination. An X-FIGHTING-Y
   encounter spawns its two groups on opposing teams so you stumble into a
   brawl already in progress — watch them thin each other out, or wade in.
+- **Locations**: the opening hour (Arroyo → Temple → Klamath → Den) plus
+  **Vault City** — the first town past the slice. Travel there from the worldmap
+  and all four of its maps (Courtyard / Downtown / Council / Vault) load, walk,
+  and transition; every external its scripts fire is wired, and its NPCs talk via
+  the real dialogue VM. A new town is mostly *content*: the data-driven engine
+  routes, loads, and renders it for free — the per-city work is just wiring the
+  handful of script externals it needs (the `--smoke <map>` dev command scopes
+  them). The Vault City citizenship quest's machinery is in place; finishing the
+  stat-test is content navigation, not engine work.
 - **Companions**: recruit, then a control hub (talk to them) — wait here /
   follow / trade / dismiss / rejoin; a 1:1 flat item trade to gear them up; and
   a combat-control window (the authentic `CONTROL.frm` art) to set their tactics
