@@ -2023,6 +2023,23 @@ live data + engine source — the ultracode "unless already verified" carve-out)
 encounter goldens green. KEY LESSON: as the wired set grows, new cities trend toward zero-code content reuse;
 and a map DEFINING a proc isn't proof the engine FIRES it (check scriptExecProc, not just the proc table).
 
+Phase 60 (DONE — "San Francisco", the SEVENTH new location + the SECOND straight ZERO-engine-code city). The
+wired set (VC+Gecko+Modoc+BH+NR+NCR) now covers SF outright: all 7 maps (SFChina/SFChina2 = the Shi Chinatown,
+SFDock, SFElronb = the Hubologist/Elron base, SFTanker = the PMV Valdez, + 2 shuttle maps) census stubs=0 with
+NO wiring. M0 reachability = ZERO code ([Area 14], start_state=On, entrance_0 "San Fran China" via ArriveAt;
+inter-map = static exit grids). NO new external. NO new proc (SFChina=15 / SFTanker=14 wired families; no
+engine-dead-proc trap this time — the NCR combat_is_over lesson held, nothing unusual defined). NO seeding:
+TOWN_REP_SF 61 + the SAN_FRAN_* quest flags (361/363/365/366/444) all 0 on a fresh game. No party.txt companion
+(no classic recruit in SF). The dialogue VM runs (SFChina script 813 @20504 = 5 options, 819 @20703 = 5; the
+Shi STREET NPCs 743/746 are 0-option guards — the named Shi/Hubologist talkers are the 813/819 scripts). Quest
+drive (the Shi/Hubologist faction war, the tanker fuel/nav for the endgame) = content residual; machinery wired.
+8 new goldens (7 smoke at stubs=0 + sf-dialogue). NO engine code -> all 16 combat + prior encounter goldens
+BYTE-IDENTICAL. Scoped FULLY INLINE (the NCR steady-state: zero externals to port -> no workflow; every fact
+verified directly — smoke x7, the proc census, the GVAR seed check, --party-probe). 698 tests, 16 combat + 135
+encounter goldens green. STEADY-STATE CONFIRMED: late cities are now pure content reuse; the remaining original-
+game towns (Redding, Vault 15, Sierra/Navarro, the deeper Klamath/Den maps) should mostly be zero-code —
+--smoke first; only spin up a grounding workflow if a map shows a non-zero stub count.
+
 Phase 10 (DONE, per docs/phase10-research-report.md — "The Wasteland
 Bites Back"): M0 persistence pre-stage (the net: MapList saved=No /
 random_start_point parse + IsTransient; the 3-clause transient guards as
