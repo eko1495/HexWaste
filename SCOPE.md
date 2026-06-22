@@ -122,7 +122,8 @@ filing an issue.
   wired set now covers them outright). Plus the **Sierra Army Depot** (a discovered-via-quest
   robot dungeon — Skynet's home; the depot levels), which needed two externals, and the
   **Mariposa Military Base** (a super-mutant combat dungeon — entrance + four levels), which
-  needed none. Quest *machinery* is wired (Vault City's citizenship test, Gecko's reactor terminal, Lenny's /
+  needed none, and **Navarro** (the Enclave coastal base), which needed none. Quest *machinery*
+  is wired (Vault City's citizenship test, Gecko's reactor terminal, Lenny's /
   Marcus's / Myron's / the Vault 15 Doc's / Sierra's Skynet recruitment via `party.txt`,
   Modoc's "Jonny in the Well" dialogue + the scripted well, New Reno's crime-family reputation
   counters, Redding's wanamingo-count tally), though completing a specific quest is content

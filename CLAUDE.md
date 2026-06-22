@@ -2107,6 +2107,22 @@ companion). Quest drive (fight through to the FEV vats / destroy the base / Melc
 smoke goldens at stubs=0. NO engine code -> all 16 combat + prior encounter goldens BYTE-IDENTICAL. Scoped fully
 inline. 694 tests, 16 combat + 154 encounter goldens green. Tally: ... P63 Sierra(2) / P64 Military Base(0).
 
+Phase 65 (DONE — "Navarro", the TWELFTH new location — the Enclave coastal base; ZERO-engine-code [even the
+Enclave endgame base is covered by the wired set — the "external-risk" prediction over-estimated]). 1 big map
+(NAVARRO; patch000.dat override -> the VFS resolves the patch). M0 reachability: [Area 15], start_state=Off
+(discovered-via-quest like Sierra; the map loads/walks directly, worldmap discovery via mark_area_known [P58],
+content-gated). NO new external (stubs=0), NO new proc (16 wired families incl. the map_exit/push residuals).
+Enclave GVARs all 0 on a fresh game (TOWN_REP_ENCLAVE 62 / ENCLAVE_TIMER 434 / 431/432/441 — no seed trap). The
+dialogue VM runs (script 721 @25900 = 2 options; most NPCs are hostile Enclave soldiers, silent at IN 5).
+COMPANION (the nuance): K-9 (the cyberdog) is content-gated — the pMCyberdog body (pid 0x1000088, the SAME
+party.txt member=1 that Skynet can use; the cyberdog body is SHARED) is NOT a static NAVARRO critter (the in-
+world K-9 swaps to the party body on recruit), so the machinery is wired but the recruit is content. Quest
+drive (steal the vertibird plans / the FEV sample / the Enclave-armor disguise) = content residual. 2 goldens
+(smoke-navarro at stubs=0 + navarro-dialogue). NO engine code -> all 16 combat + prior encounter goldens BYTE-
+IDENTICAL. Scoped fully inline. 694 tests, 16 combat + 156 encounter goldens green. Tally: ... P64 Military
+Base(0) / P65 Navarro(0). KEY FINDING: the Enclave base needs NO engine code — the only remaining run item is
+the Oil Rig (Area 16 Enclave), the final endgame map.
+
 Phase 10 (DONE, per docs/phase10-research-report.md — "The Wasteland
 Bites Back"): M0 persistence pre-stage (the net: MapList saved=No /
 random_start_point parse + IsTransient; the 3-clause transient guards as
