@@ -1,0 +1,1 @@
+smoke: map=V15ENT.map critters=14 containers=5 doors=10 scripted=19 stubs=0[]

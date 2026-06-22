@@ -1,0 +1,1 @@
+smoke: map=VAULT15.MAP critters=27 containers=5 doors=21 scripted=40 stubs=0[]

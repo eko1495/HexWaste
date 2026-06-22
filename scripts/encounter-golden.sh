@@ -455,6 +455,22 @@ SCENARIOS=(
   "smoke-redwame|--map REDWAME.MAP --smoke"
   "smoke-redwan1|--map redwan1.map --smoke"
   "redding-dialogue|--map REDDOWN.MAP --iq-probe 17063 5 --iq-probe 15312 5 --rng-seed 1"
+
+  # Vault 15 (P62): the NINTH new location — the FOURTH straight ZERO-engine-code city, but (unlike NCR/SF)
+  # it HAS a companion. All 4 maps (VAULT15 the squatter camp / "The Squat A", V15ENT the entrance, V15SENT
+  # the east entrance, V15_ORIG the deep original-vault levels) census stubs=0 with NO wiring. M0 reachable
+  # free ([Area 09], start_state=On, entrance_0 "The Squat A" via ArriveAt; inter-map = static exit grids).
+  # NO new external, NO new proc (15/14 wired families). All Vault 15 GVARs 0 on a fresh game (TOWN_REP_VAULT_
+  # 15 294 / V15_SEED_STATUS 293 / V15_DARION_DEAD 172 / V15_KILL_DARION 474 — no non-zero seed this time).
+  # COMPANION: pid 0x10000A2 (script 556 @12684) IS data\party.txt [Party Member 7] pMDoc (member=1, levelMin
+  # =0) -> recruitment is the proven Vic/Lenny/Marcus/Myron party_add machinery (radscorpion 0x1000005 = the
+  # member=0 control). The dialogue VM runs (the Doc @12684 = 2 options, script 583 @14084 = 2). Quest drive
+  # (Darion's raiders / the NCR squatter deal / the Doc recruit) = content residual; the machinery is wired.
+  "smoke-vault15|--map VAULT15.MAP --smoke"
+  "smoke-v15ent|--map V15ENT.map --smoke"
+  "smoke-v15sent|--map V15SENT.MAP --smoke"
+  "smoke-v15orig|--map V15_ORIG.map --smoke"
+  "v15-dialogue|--map VAULT15.MAP --iq-probe 12684 5 --iq-probe 14084 5 --party-probe 0x10000A2 --party-probe 0x1000005 --rng-seed 1"
   # P57-M2: the BH dialogue VM runs — Marcus (script 599 @18284, the mutant sheriff) 7 options + a townsfolk
   # (594 @10685) 5; Marcus is a real data\party.txt member (member=1, levelMin=12) so recruitment is the
   # proven Vic/Lenny party_add machinery (NOT custom content). BROKEN1/2 proc census = 14 families, all the
