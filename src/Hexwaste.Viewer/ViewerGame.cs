@@ -986,6 +986,27 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
                     else
                         EquipWeapon(critter, item);
                 },
+                // P58 (New Reno): mark_area_known reveals a worldmap area. INERT on the slice — every NR
+                // area is city.txt start_state=On (already discovered) — so this is forward-looking infra.
+                // mode 1 (map-mark, no areaIdx table) + markType -66 (INVISIBLE hide, no fog downgrade) are
+                // documented no-ops. ported from fallout2-ce src/interpreter_extra.cc opMarkAreaKnown()
+                MarkAreaKnownRequested = (markType, areaId, mode) =>
+                {
+                    if (mode != 0 || markType == -66)
+                        return;
+                    if (_cities.Areas.FirstOrDefault(a => a.Index == areaId) is { } area)
+                        WorldFog.MarkRadiusVisited(area.WorldX, area.WorldY);
+                },
+                // game_time_advance bumps the clock by the raw tick count (TicksPerDay==864000, 1:1 with the
+                // engine) then runs the poison/drug/withdrawal catch-up — the engine's queueProcessEvents()
+                // per chunk. ported from fallout2-ce src/interpreter_extra.cc opGameTimeAdvance()
+                GameTimeAdvanceRequested = ticks =>
+                {
+                    _clock.Ticks += ticks;
+                    ProcessPoison();
+                    ProcessDrugs();
+                    ProcessWithdrawals();
+                },
                 // First hit of each distinct stub goes to stderr; counts are
                 // dumped per map on exit (gap analysis for wiring externals).
                 OnStubbedExternal = name =>

@@ -1,0 +1,1 @@
+smoke: map=NewRvb.map critters=8 containers=0 doors=0 scripted=14 stubs=0[]

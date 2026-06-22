@@ -375,6 +375,22 @@ SCENARIOS=(
   "smoke-broken2|--map BROKEN2.map --smoke"
   "smoke-bhrnddst|--map bhrnddst.map --smoke"
   "smoke-bhrndmtn|--map bhrndmtn.map --smoke"
+
+  # New Reno (P58): the FIFTH new location + the biggest yet (11 maps, the mob-family city). M0 reachable
+  # free via ArriveAt ([Area 07], start_state=On, entrance_0 "New Reno 1" tile 25105 -> Newr1; inter-map
+  # movement is STATIC exit grids, no code). M1 wired the FIVE genuinely-new externals (the most of any city,
+  # all ported verbatim, all INERT on the slice -> combat + prior encounter goldens BYTE-IDENTICAL):
+  # obj_art_fid (0x8149, query->Fid; Newr2), critter_is_fleeing (0x8151, Maneuver&0x04) + critter_set_flee_
+  # state (0x8152, set/clear the bit; Newr4/Newrst), mark_area_known (0x80B2, reveal a worldmap area; INERT
+  # since all NR areas start On; Newrcs/Newrst/Newrgo) + game_time_advance (0x80FC, +ticks then the poison/
+  # drug/withdrawal catch-up; NewRvb). No new proc (16/15 families, all wired). Smoke subset = the strip +
+  # the 5 stub-driver maps (the other 5 NR maps are trivially stubs=0).
+  "smoke-newr1|--map Newr1.map --smoke"
+  "smoke-newr2|--map Newr2.map --smoke"
+  "smoke-newr4|--map Newr4.map --smoke"
+  "smoke-newrst|--map Newrst.map --smoke"
+  "smoke-newrvb|--map NewRvb.map --smoke"
+  "smoke-newrcs|--map Newrcs.map --smoke"
   # P57-M2: the BH dialogue VM runs — Marcus (script 599 @18284, the mutant sheriff) 7 options + a townsfolk
   # (594 @10685) 5; Marcus is a real data\party.txt member (member=1, levelMin=12) so recruitment is the
   # proven Vic/Lenny party_add machinery (NOT custom content). BROKEN1/2 proc census = 14 families, all the

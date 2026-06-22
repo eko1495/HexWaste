@@ -1,0 +1,1 @@
+smoke: map=Newr1.map critters=113 containers=25 doors=40 scripted=188 stubs=0[]

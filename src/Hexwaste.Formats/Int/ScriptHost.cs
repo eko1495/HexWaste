@@ -152,6 +152,12 @@ public sealed class ScriptHost(GameFileSystem vfs, ScriptList scripts, Hexwaste.
     /// <summary>P57: wield_obj_critter(critter, item) — the host equips the item on the critter.</summary>
     public Action<MapObject, MapObject>? WieldObjCritterRequested { get; set; }
 
+    /// <summary>P58: mark_area_known(markType, areaId, mode) — the host reveals a worldmap area.</summary>
+    public Action<int, int, int>? MarkAreaKnownRequested { get; set; }
+
+    /// <summary>P58: game_time_advance(ticks) — the host advances the clock + runs the tick catch-up.</summary>
+    public Action<int>? GameTimeAdvanceRequested { get; set; }
+
     /// <summary>True during a save/load replay — gates kill_critter_type (interpreter_extra.cc:2384).</summary>
     public Func<bool>? IsLoadingGameProvider { get; set; }
     public bool IsLoadingGame() => IsLoadingGameProvider?.Invoke() ?? false;
@@ -1110,6 +1116,24 @@ public sealed class ScriptHost(GameFileSystem vfs, ScriptList scripts, Hexwaste.
             if (_host.ObjectOf(critterHandle) is { } critter && _host.ObjectOf(itemHandle) is { } item)
                 _host.WieldObjCritterRequested?.Invoke(critter, item);
         }
+
+        // P58 (New Reno): the object/critter queries + the two world-state mutators.
+        public int ObjArtFid(int objectHandle) => _host.ObjectOf(objectHandle)?.Fid ?? 0;
+
+        public bool CritterIsFleeing(int objectHandle) =>
+            _host.ObjectOf(objectHandle) is { } c && (c.Maneuver & 0x04) != 0; // CRITTER_MANUEVER_FLEEING
+
+        public void CritterSetFleeState(int objectHandle, int fleeing)
+        {
+            if (_host.ObjectOf(objectHandle) is not { } c)
+                return;
+            c.Maneuver = fleeing != 0 ? c.Maneuver | 0x04 : c.Maneuver & ~0x04; // CRITTER_MANUEVER_FLEEING
+        }
+
+        public void MarkAreaKnown(int markType, int areaId, int mode) =>
+            _host.MarkAreaKnownRequested?.Invoke(markType, areaId, mode);
+
+        public void GameTimeAdvance(int ticks) => _host.GameTimeAdvanceRequested?.Invoke(ticks);
 
         public int CurrentMapIndex() => _host.CurrentMapIndexProvider?.Invoke() ?? 0;
 

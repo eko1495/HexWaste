@@ -273,6 +273,21 @@ public interface IVmExternals
     /// (weapon -> right hand; armor -> worn).</summary>
     void WieldObjCritter(int critterHandle, int itemHandle) { }
 
+    /// <summary>obj_art_fid (0x8149, opGetObjectFid): the object's art FID (0 if null).</summary>
+    int ObjArtFid(int objectHandle) => 0;
+
+    /// <summary>critter_is_fleeing (0x8151, opCritterIsFleeing): the critter has the FLEEING maneuver bit.</summary>
+    bool CritterIsFleeing(int objectHandle) => false;
+
+    /// <summary>critter_set_flee_state (0x8152, opCritterSetFleeState): set/clear the critter's FLEEING bit.</summary>
+    void CritterSetFleeState(int objectHandle, int fleeing) { }
+
+    /// <summary>mark_area_known (0x80B2, opMarkAreaKnown): set a worldmap area's known/visited state.</summary>
+    void MarkAreaKnown(int markType, int areaId, int mode) { }
+
+    /// <summary>game_time_advance (0x80FC, opGameTimeAdvance): advance the game clock by <paramref name="ticks"/>.</summary>
+    void GameTimeAdvance(int ticks) { }
+
     /// <summary>obj_is_carrying_obj_pid (interpreter_extra.cc:1040): the quantity of
     /// <paramref name="pid"/> the critter carries (recursive into nested containers).</summary>
     int ObjIsCarryingPid(int objectHandle, int pid) => 0;
@@ -1619,6 +1634,27 @@ public sealed class IntVm
                 _externals.WieldObjCritter(PopInt(), item);
                 break;
             }
+            case 0x8149: // obj_art_fid (opGetObjectFid): pops object, pushes its art FID
+                PushInt(_externals.ObjArtFid(PopInt()));
+                break;
+            case 0x8151: // critter_is_fleeing (opCritterIsFleeing): pops critter, pushes the FLEEING bit
+                PushInt(_externals.CritterIsFleeing(PopInt()) ? 1 : 0);
+                break;
+            case 0x8152: // critter_set_flee_state (opCritterSetFleeState): pops fleeing, then critter
+            {
+                int fleeing = PopInt();
+                _externals.CritterSetFleeState(PopInt(), fleeing);
+                break;
+            }
+            case 0x80B2: // mark_area_known (opMarkAreaKnown): pops markType (data[0]), areaId (data[1]), mode (data[2])
+            {
+                int markType = PopInt(), areaId = PopInt(), mode = PopInt();
+                _externals.MarkAreaKnown(markType, areaId, mode);
+                break;
+            }
+            case 0x80FC: // game_time_advance (opGameTimeAdvance): pops ticks
+                _externals.GameTimeAdvance(PopInt());
+                break;
             default:
             {
                 if (!ExternalArity.Table.TryGetValue(opcode, out (string Name, int Args, bool Returns) arity))
