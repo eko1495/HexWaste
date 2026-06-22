@@ -419,6 +419,24 @@ SCENARIOS=(
   "smoke-ncrent|--map NCRENT.MAP --smoke"
   "smoke-encrctr|--map ENCRCTR.MAP --smoke"
   "ncr-dialogue|--map NCR1.MAP --iq-probe 14725 5 --iq-probe 18720 5 --rng-seed 1"
+
+  # San Francisco (P60): the SEVENTH new location — and the SECOND straight ZERO-engine-code city (the wired
+  # set now covers it outright, the NCR steady-state). All 7 maps (SFChina/SFChina2 the Shi Chinatown, SFDock,
+  # SFElronb the Hubologist base, SFTanker the PMV Valdez, + 2 shuttle maps) census stubs=0 with NO wiring.
+  # M0 reachable free ([Area 14], start_state=On, entrance_0 "San Fran China" via ArriveAt; inter-map = static
+  # exit grids). NO new external, NO new proc (15/14 wired families, no engine-dead-proc trap), NO seeding
+  # (TOWN_REP_SF 61 + the SAN_FRAN_* quest flags 361/363/365/366/444 all 0 on a fresh game), no party.txt
+  # companion (no classic recruit in SF). The dialogue VM runs (SFChina script 813 @20504 = 5 options, 819
+  # @20703 = 5). Quest drive (the Shi/Hubologist faction war, the tanker's fuel/nav for the endgame) = content
+  # residual; the machinery is wired.
+  "smoke-sfchina|--map SFChina.map --smoke"
+  "smoke-sfchina2|--map SFChina2.map --smoke"
+  "smoke-sfdock|--map SFDock.map --smoke"
+  "smoke-sfelronb|--map SFElronb.map --smoke"
+  "smoke-sftanker|--map SFTanker.map --smoke"
+  "smoke-sfshutl1|--map SFSHUTL1.map --smoke"
+  "smoke-sfshutl2|--map SFSHUTL2.MAP --smoke"
+  "sf-dialogue|--map SFChina.map --iq-probe 20504 5 --iq-probe 20703 5 --rng-seed 1"
   # P57-M2: the BH dialogue VM runs — Marcus (script 599 @18284, the mutant sheriff) 7 options + a townsfolk
   # (594 @10685) 5; Marcus is a real data\party.txt member (member=1, levelMin=12) so recruitment is the
   # proven Vic/Lenny party_add machinery (NOT custom content). BROKEN1/2 proc census = 14 families, all the

@@ -1,0 +1,1 @@
+smoke: map=SFElronb.map critters=22 containers=56 doors=26 scripted=27 stubs=0[]

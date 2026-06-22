@@ -1,0 +1,1 @@
+smoke: map=SFDock.map critters=35 containers=4 doors=2 scripted=35 stubs=0[]

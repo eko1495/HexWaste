@@ -1,0 +1,1 @@
+smoke: map=SFChina2.map critters=19 containers=21 doors=34 scripted=44 stubs=0[]

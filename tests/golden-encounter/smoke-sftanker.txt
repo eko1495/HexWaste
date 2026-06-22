@@ -1,0 +1,1 @@
+smoke: map=SFTanker.map critters=43 containers=24 doors=15 scripted=52 stubs=0[]
