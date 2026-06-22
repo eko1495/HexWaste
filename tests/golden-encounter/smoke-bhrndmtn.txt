@@ -1,0 +1,1 @@
+smoke: map=bhrndmtn.map critters=4 containers=0 doors=0 scripted=4 stubs=0[]

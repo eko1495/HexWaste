@@ -363,6 +363,18 @@ SCENARIOS=(
   # Jonny's rescue) is content — the documented residual; the machinery is wired.
   "modoc-dialogue|--map modmain.map --iq-probe 12323 5 --iq-probe 28710 5 --rng-seed 1"
   "modoc-well|--map modmain.map --use-hex 17520 --rng-seed 1"
+
+  # Broken Hills (P57): the FOURTH new location. The TOWN proper (BROKEN1/BROKEN2) was ALREADY stubs=0 —
+  # zero new town externals (cheaper than Modoc). M1 wired the only two genuinely-new externals, both on the
+  # random-encounter SUB-maps: set_exit_grids (0x80E6 — retarget exit-grid objects on an elevation; bhrnddst)
+  # + wield_obj_critter (0x80DA -> opWieldItem — a critter equips an item, weapon->right-hand via EquipWeapon;
+  # bhrndmtn arms its 4 spawned critters). Both INERT on every shippable map (no golden loads a BH map) ->
+  # all combat + prior encounter goldens BYTE-IDENTICAL. Reachable free via ArriveAt ([Area 06], start_state=
+  # On, entrance_0 "Broken Hills 1" -> BROKEN1; entrance_1 -> BROKEN2 is a STATIC exit grid, no code).
+  "smoke-broken1|--map BROKEN1.map --smoke"
+  "smoke-broken2|--map BROKEN2.map --smoke"
+  "smoke-bhrnddst|--map bhrnddst.map --smoke"
+  "smoke-bhrndmtn|--map bhrndmtn.map --smoke"
 )
 
 # Keep only the deterministic transcript lines (drop map-load / animate / stub /

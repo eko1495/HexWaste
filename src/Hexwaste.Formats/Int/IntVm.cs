@@ -264,6 +264,15 @@ public interface IVmExternals
     /// <paramref name="pid"/> (deathFrame 0 = silent remove; else a corpse anim).</summary>
     void KillCritterType(int pid, int deathFrame) { }
 
+    /// <summary>set_exit_grids (0x80E6, opSetExitGrids): rewrite every exit-grid object on the source
+    /// <paramref name="elevation"/> to point at destMap/destTile/destElevation (rotation is discarded
+    /// by the engine, interpreter_extra.cc:2182).</summary>
+    void SetExitGrids(int elevation, int destMap, int destElevation, int destTile) { }
+
+    /// <summary>wield_obj_critter (0x80DA, opWieldItem): the critter equips/wields the item
+    /// (weapon -> right hand; armor -> worn).</summary>
+    void WieldObjCritter(int critterHandle, int itemHandle) { }
+
     /// <summary>obj_is_carrying_obj_pid (interpreter_extra.cc:1040): the quantity of
     /// <paramref name="pid"/> the critter carries (recursive into nested containers).</summary>
     int ObjIsCarryingPid(int objectHandle, int pid) => 0;
@@ -1595,6 +1604,19 @@ public sealed class IntVm
             {
                 int deathFrame = PopInt();
                 _externals.KillCritterType(PopInt(), deathFrame);
+                break;
+            }
+            case 0x80E6: // set_exit_grids (opSetExitGrids): pops rotation, tile, destElev, map, elevation
+            {
+                _ = PopInt(); // destinationRotation — popped + discarded (interpreter_extra.cc:2182)
+                int tile = PopInt(), destElev = PopInt(), map = PopInt();
+                _externals.SetExitGrids(PopInt(), map, destElev, tile); // last pop = source elevation
+                break;
+            }
+            case 0x80DA: // wield_obj_critter (opWieldItem): pops item, then critter
+            {
+                int item = PopInt();
+                _externals.WieldObjCritter(PopInt(), item);
                 break;
             }
             default:

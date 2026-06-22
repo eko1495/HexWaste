@@ -145,6 +145,13 @@ public sealed class ScriptHost(GameFileSystem vfs, ScriptList scripts, Hexwaste.
     /// <summary>P56-M2: kill_critter_type(pid, deathFrame) — the host destroys live critters of a proto.</summary>
     public Action<int, int>? KillCritterTypeRequested { get; set; }
 
+    /// <summary>P57: set_exit_grids(elevation, destMap, destElevation, destTile) — the host retargets
+    /// the exit-grid objects on an elevation.</summary>
+    public Action<int, int, int, int>? SetExitGridsRequested { get; set; }
+
+    /// <summary>P57: wield_obj_critter(critter, item) — the host equips the item on the critter.</summary>
+    public Action<MapObject, MapObject>? WieldObjCritterRequested { get; set; }
+
     /// <summary>True during a save/load replay — gates kill_critter_type (interpreter_extra.cc:2384).</summary>
     public Func<bool>? IsLoadingGameProvider { get; set; }
     public bool IsLoadingGame() => IsLoadingGameProvider?.Invoke() ?? false;
@@ -1091,6 +1098,17 @@ public sealed class ScriptHost(GameFileSystem vfs, ScriptList scripts, Hexwaste.
             if (_host.IsLoadingGame()) // engine: never destroy critters during a load/save replay (:2384)
                 return;
             _host.KillCritterTypeRequested?.Invoke(pid, deathFrame);
+        }
+
+        // P57: set_exit_grids retargets exit-grid objects; wield_obj_critter equips an item on a critter.
+        public void SetExitGrids(int elevation, int destMap, int destElevation, int destTile) =>
+            _host.SetExitGridsRequested?.Invoke(elevation, destMap, destElevation, destTile);
+
+        public void WieldObjCritter(int critterHandle, int itemHandle)
+        {
+            // engine opWieldItem: null-guard both, reject a non-critter target (interpreter_extra.cc:1694).
+            if (_host.ObjectOf(critterHandle) is { } critter && _host.ObjectOf(itemHandle) is { } item)
+                _host.WieldObjCritterRequested?.Invoke(critter, item);
         }
 
         public int CurrentMapIndex() => _host.CurrentMapIndexProvider?.Invoke() ?? 0;

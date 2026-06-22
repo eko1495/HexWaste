@@ -1,0 +1,1 @@
+smoke: map=BROKEN2.map critters=102 containers=45 doors=36 scripted=152 stubs=0[]

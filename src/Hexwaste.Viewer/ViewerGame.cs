@@ -960,6 +960,32 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
                 },
                 KillCritterTypeRequested = KillCrittersByType,
                 IsLoadingGameProvider = () => _isLoadingGame,
+                // P57 (Broken Hills): set_exit_grids retargets every exit-grid object on the source
+                // elevation (the engine discards the rotation arg, so preserve the parsed one).
+                // ported from fallout2-ce src/interpreter_extra.cc opSetExitGrids()
+                SetExitGridsRequested = (elev, destMap, destElev, destTile) =>
+                {
+                    if (elev < 0 || elev >= MapFile.ElevationCount)
+                        return;
+                    foreach (MapObject o in _flatObjects[elev].Concat(_solidObjects[elev]))
+                        if (Fid.IsExitGridPid(o.Pid))
+                            o.Destination = new MapDestination(destMap, destTile, destElev, o.Destination?.Rotation ?? 0);
+                },
+                // wield_obj_critter: the critter equips the item — weapon to the right hand (the proven
+                // P43 EquipWeapon path), armor worn (dude-only AC bonus, mirroring the engine's _adjust_ac;
+                // NPC-armor AC is forward-looking infra — the slice wields weapons only).
+                // ported from fallout2-ce src/interpreter_extra.cc opWieldItem()
+                WieldObjCritterRequested = (critter, item) =>
+                {
+                    if (SafeProto(item.Pid)?.Armor is { } armor)
+                    {
+                        item.Flags |= MapObject.FlagWorn;
+                        if (critter == _dude?.Dude)
+                            ApplyArmorBonus(armor, +1);
+                    }
+                    else
+                        EquipWeapon(critter, item);
+                },
                 // First hit of each distinct stub goes to stderr; counts are
                 // dumped per map on exit (gap analysis for wiring externals).
                 OnStubbedExternal = name =>
