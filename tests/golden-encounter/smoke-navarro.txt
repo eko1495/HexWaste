@@ -1,0 +1,1 @@
+smoke: map=NAVARRO.map critters=51 containers=51 doors=30 scripted=73 stubs=0[]

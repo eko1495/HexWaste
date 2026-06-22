@@ -500,6 +500,19 @@ SCENARIOS=(
   "smoke-mbclose|--map mbclose.map --smoke"
   "smoke-mbase12|--map mbase12.map --smoke"
   "smoke-mbase34|--map mbase34.map --smoke"
+
+  # Navarro (P65): the TWELFTH new location — the Enclave coastal base. ZERO-engine-code (even the Enclave
+  # endgame base is covered by the wired set). 1 big map (NAVARRO; patch000.dat override -> the VFS resolves
+  # the patch). M0 reachable: [Area 15], start_state=Off (discovered-via-quest like Sierra; the map loads/walks
+  # directly, worldmap discovery via mark_area_known [P58], content-gated). NO new external, NO new proc (16
+  # wired families incl. the map_exit/push residuals). Enclave GVARs all 0 on a fresh game (TOWN_REP_ENCLAVE
+  # 62 / ENCLAVE_TIMER 434 / 431/432/441 — no seed trap). The dialogue VM runs (script 721 @25900 = 2 options;
+  # most NPCs are hostile Enclave soldiers, silent at IN 5). COMPANION: K-9 (the cyberdog) is content-gated —
+  # the pMCyberdog body (pid 0x1000088, the SAME party.txt member=1 that Skynet can use) is NOT a static
+  # NAVARRO critter (the in-world K-9 swaps to the body on recruit), so the machinery is wired but the recruit
+  # is content. Quest drive (steal the vertibird plans / the FEV / disguise as Enclave) = content residual.
+  "smoke-navarro|--map NAVARRO.map --smoke"
+  "navarro-dialogue|--map NAVARRO.map --iq-probe 25900 5 --rng-seed 1"
   # P57-M2: the BH dialogue VM runs — Marcus (script 599 @18284, the mutant sheriff) 7 options + a townsfolk
   # (594 @10685) 5; Marcus is a real data\party.txt member (member=1, levelMin=12) so recruitment is the
   # proven Vic/Lenny party_add machinery (NOT custom content). BROKEN1/2 proc census = 14 families, all the
