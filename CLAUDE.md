@@ -2004,6 +2004,25 @@ nr-dialogue + nr-myron + the extended gvar-seed). PATCH NOTE: Newr2/Newrst (+ th
 — the existing VFS already resolves to the patch, no work. GOTCHA: NR is the first city where a fresh-game GVAR
 is NON-zero (the family counters) — always check the actual vault13.gam seed, don't assume 0.
 
+Phase 59 (DONE — "NCR", the SIXTH new location + the CHEAPEST: ZERO new engine code). The now-large wired
+set (VC+Gecko+Modoc+BH+NR) already covers every external NCR's scripts fire, so all 6 maps (NCR1-4, NCRENT,
+ENCRCTR) census stubs=0 with NO wiring. M0 reachability = ZERO code ([Area 10], start_state=On, entrance_0
+"NCR: Bazaar" via ArriveAt; inter-map = static exit grids). NO new external. KEY FINDING — the one apparent
+"new proc" is a NON-issue: NCR1 (script 447 SCCop) DEFINES combat_is_over_p_proc, but SCRIPT_PROC_COMBAT_IS_
+OVER (=27) + _IS_STARTING (=26) are VESTIGIAL enum slots the engine NEVER scriptExecProc's ANYWHERE (scripts.h
+:76-77 are the ONLY refs in the whole fo2ce source — verified by grepping every scriptExecProc call); so
+Hexwaste faithfully NOT firing them is CORRECT, not a gap — wiring it would DIVERGE from the engine (the prime-
+directive trap: a defined-but-engine-dead proc is not a residual to fill). NCR GVARs all 0 on a fresh game
+(TOWN_REP_NCR 57 + quest flags 168/170/172/196 — no P58-style non-zero seed). No party.txt companion (no
+classic recruit in NCR). The dialogue VM runs (NCR1 script 582 @14725 = 5 options, 466 @18720 = 4). Quest drive
+(Tandi / the Vault-15 squatters / brahmin-rustling) = content residual; the machinery is wired. 7 new goldens
+(6 smoke at stubs=0 + ncr-dialogue). NO engine code -> all 16 combat + prior encounter goldens BYTE-IDENTICAL.
+PROCESS NOTE: scoped FULLY INLINE (zero externals to port -> a grounding workflow had nothing to grind on;
+every load-bearing fact [zero externals, the engine-dead proc, GVARs 0, no companion] verified directly against
+live data + engine source — the ultracode "unless already verified" carve-out). 698 tests, 16 combat + 127
+encounter goldens green. KEY LESSON: as the wired set grows, new cities trend toward zero-code content reuse;
+and a map DEFINING a proc isn't proof the engine FIRES it (check scriptExecProc, not just the proc table).
+
 Phase 10 (DONE, per docs/phase10-research-report.md — "The Wasteland
 Bites Back"): M0 persistence pre-stage (the net: MapList saved=No /
 random_start_point parse + IsTransient; the 3-clause transient guards as

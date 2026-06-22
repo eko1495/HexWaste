@@ -104,21 +104,22 @@ filing an issue.
 ## What's in — locations
 
 - The opening hour (Arroyo → Temple → Klamath → Den) plus **Vault City**, **Gecko**,
-  **Modoc**, **Broken Hills**, and **New Reno** — the first five locations past the slice.
-  All their maps (VC: Courtyard / Downtown / Council / Vault; Gecko: Settlement / Power Plant
-  / Junkyard / Tunnels; Modoc: Main Street / Inn / Well / Outhouse; Broken Hills: the two town
-  halves + desert/mountain sub-maps; New Reno: the four strip maps + interiors / boxing arena
-  / chop shop / stables / casinos — 11 in all) are reachable from the worldmap, walkable, fully
-  script-wired (every external their scripts fire is handled), and their NPCs talk via the real
-  dialogue VM. A new town is mostly *content* — the data-driven engine routes, loads, and
-  renders it for free; the per-town work is wiring the handful of externals it needs (use
-  `--smoke <map>` to scope them), and each town pre-clears the next (Gecko needed *zero* new
-  externals — Vault City had already wired the shared ones; Modoc needed four; Broken Hills'
-  town needed *zero*; New Reno, the biggest, needed five). Quest *machinery* is wired (Vault
-  City's citizenship test, Gecko's reactor terminal, Lenny's / Marcus's / Myron's recruitment
-  via `party.txt`, Modoc's "Jonny in the Well" dialogue + the scripted well, New Reno's crime-
-  family reputation counters), though completing a specific quest is content navigation, not
-  engine work.
+  **Modoc**, **Broken Hills**, **New Reno**, and **NCR** — the first six locations past the
+  slice. All their maps (VC: Courtyard / Downtown / Council / Vault; Gecko: Settlement / Power
+  Plant / Junkyard / Tunnels; Modoc: Main Street / Inn / Well / Outhouse; Broken Hills: the two
+  town halves + desert/mountain sub-maps; New Reno: the four strip maps + interiors / boxing
+  arena / chop shop / stables / casinos, 11 in all; NCR: Bazaar / Downtown / Council / the
+  entrance + courthouse) are reachable from the worldmap, walkable, fully script-wired (every
+  external their scripts fire is handled), and their NPCs talk via the real dialogue VM. A new
+  town is mostly *content* — the data-driven engine routes, loads, and renders it for free; the
+  per-town work is wiring the handful of externals it needs (use `--smoke <map>` to scope
+  them), and each town pre-clears the next (Gecko needed *zero* new externals — Vault City had
+  already wired the shared ones; Modoc needed four; Broken Hills' town needed *zero*; New Reno,
+  the biggest, needed five; NCR needed *zero* — the wired set now covers it outright). Quest
+  *machinery* is wired (Vault City's citizenship test, Gecko's reactor terminal, Lenny's /
+  Marcus's / Myron's recruitment via `party.txt`, Modoc's "Jonny in the Well" dialogue + the
+  scripted well, New Reno's crime-family reputation counters), though completing a specific
+  quest is content navigation, not engine work.
 
 ## What's out (by design, today)
 
