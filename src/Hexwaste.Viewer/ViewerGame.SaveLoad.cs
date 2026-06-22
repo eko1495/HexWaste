@@ -421,8 +421,13 @@ public sealed partial class ViewerGame
         // mid-encounter) reloads pristine — and per the documented rule we then drop
         // the player back on the worldmap at the saved worldPos, not mid-ambush.
         bool savedOnTransient = _mapList.IsTransient(state.Map);
-        LoadMap(state.Map, new MapDestination(0, state.DudeTile, state.Elevation, state.DudeRotation),
-            captureOutgoing: false, transient: savedOnTransient);
+        _isLoadingGame = true; // gate kill_critter_type during the restored map's script replay
+        try
+        {
+            LoadMap(state.Map, new MapDestination(0, state.DudeTile, state.Elevation, state.DudeRotation),
+                captureOutgoing: false, transient: savedOnTransient);
+        }
+        finally { _isLoadingGame = false; }
         if (savedOnTransient)
             _worldmapOpen = true;
 

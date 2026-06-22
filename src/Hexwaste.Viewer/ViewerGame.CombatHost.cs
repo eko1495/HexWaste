@@ -276,6 +276,48 @@ public sealed partial class ViewerGame
         RebuildBlockedTiles(_dude?.Dude);
     }
 
+    /// <summary>kill_critter_type (0x80EE): destroy every live critter of a proto
+    /// type on the map. deathFrame==0 silently removes the body; nonzero kills it
+    /// into a corpse (the gore ftList rotation is simplified to the art-resolved
+    /// fall — cosmetic, and no slice map fires this after P56-M1's branch shift, so
+    /// this is faithful forward-looking infra). The count>200 guard mirrors the
+    /// engine's infinite-loop bail. Ported from interpreter_extra.cc opKillCritterType.</summary>
+    private void KillCrittersByType(int pid, int deathFrame)
+    {
+        // Snapshot first — the draw lists mutate as we remove/convert.
+        List<MapObject> victims = _solidObjects
+            .SelectMany(list => list)
+            .Where(o => o.Pid == pid && o != _dude?.Dude
+                && Fid.Type(o.Fid) is ObjectType.Critter && !o.IsHidden && !o.IsDead)
+            .Distinct()
+            .Take(201) // count > 200 → the engine aborts as an infinite loop
+            .ToList();
+
+        foreach (MapObject obj in victims)
+        {
+            if (deathFrame == 0)
+            {
+                _animator.Remove(obj);
+                for (int elevation = 0; elevation < MapFile.ElevationCount; elevation++)
+                {
+                    _solidObjects[elevation].Remove(obj);
+                    _flatObjects[elevation].Remove(obj);
+                }
+                OnCritterRemoved(obj);
+            }
+            else
+            {
+                obj.Sid = -1;
+                obj.CombatResults |= 0x80; // DAM_DEAD
+                obj.CurrentHp = Math.Min(obj.CurrentHp, 0);
+                ConvertToCorpse(obj, PickDeathAnim(obj));
+            }
+        }
+
+        if (victims.Count > 0)
+            RebuildBlockedTiles(_dude?.Dude);
+    }
+
     /// <summary>Does this object get a critter_p_proc this tick: a live, scripted,
     /// non-dude critter that isn't a "wait here" companion (phase-10 M4). The single
     /// source of truth for both the heartbeat pump and the --companion diagnostic.</summary>

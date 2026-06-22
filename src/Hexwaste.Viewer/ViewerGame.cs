@@ -942,6 +942,24 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
                         _animator.PlayActionOnce(obj, Fid.Build(ObjectType.Critter, Fid.Index(obj.Fid), anim,
                             Fid.WeaponCode(obj.Fid), obj.Rotation));
                 },
+                // P56-M2 (Modoc): set_map_start repositions the dude + camera to the new start tile (engine
+                // mapSetStart + tileSetCenter). No dude headless (--map smoke) → only the camera moves, so the
+                // census is unchanged. kill_critter_type destroys a proto type (inert on the slice — no map
+                // fires it after M1's branch shift — but faithful when a quest activates the branch).
+                SetMapStartRequested = (x, y, elev, rot) =>
+                {
+                    int tile = 200 * y + x;
+                    if (_dude is not null)
+                    {
+                        _dude.Dude.HexTile = tile;
+                        _dude.Dude.Rotation = Math.Clamp(rot, 0, 5);
+                    }
+                    if (elev is >= 0 and < MapFile.ElevationCount)
+                        _elevation = elev;
+                    _camera.SetCenter(tile);
+                },
+                KillCritterTypeRequested = KillCrittersByType,
+                IsLoadingGameProvider = () => _isLoadingGame,
                 // First hit of each distinct stub goes to stderr; counts are
                 // dumped per map on exit (gap analysis for wiring externals).
                 OnStubbedExternal = name =>
@@ -1100,6 +1118,11 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
     /// (saved=No): it gets NO delta slot and regenerates pristine each visit
     /// (phase-10 M0; the engine erases its .SAV — map.cc:1456).</summary>
     private bool _currentMapTransient;
+
+    /// <summary>True only while LoadGame replays the restored map's scripts (map_enter/
+    /// map_update). Mirrors the engine's _isLoadingGame() (interpreter_extra.cc:2384) —
+    /// gates kill_critter_type so a save-restore never re-destroys critters.</summary>
+    private bool _isLoadingGame;
 
     /// <summary>The encounter whose group the next transient LoadMap spawns, then
     /// clears (phase-10 M3). Set by the worldmap roll / the --encounter demo right

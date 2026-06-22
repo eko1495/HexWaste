@@ -256,6 +256,14 @@ public interface IVmExternals
     /// (0) / right-hand (1) / left-hand (2) item, or the inventory item count (3).</summary>
     int CritterInventoryObject(int objectHandle, int type) => 0;
 
+    /// <summary>set_map_start (0x80A8, opSetMapStart): set the map's start tile (200*y+x) / elevation /
+    /// rotation and re-centre — repositions the dude on the current map.</summary>
+    void SetMapStart(int x, int y, int elevation, int rotation) { }
+
+    /// <summary>kill_critter_type (0x80EE, opKillCritterType): destroy every live critter of proto
+    /// <paramref name="pid"/> (deathFrame 0 = silent remove; else a corpse anim).</summary>
+    void KillCritterType(int pid, int deathFrame) { }
+
     /// <summary>obj_is_carrying_obj_pid (interpreter_extra.cc:1040): the quantity of
     /// <paramref name="pid"/> the critter carries (recursive into nested containers).</summary>
     int ObjIsCarryingPid(int objectHandle, int pid) => 0;
@@ -1575,6 +1583,18 @@ public sealed class IntVm
             {
                 int type = PopInt();
                 PushInt(_externals.CritterInventoryObject(PopInt(), type));
+                break;
+            }
+            case 0x80A8: // set_map_start (pops rotation, elevation, y, x)
+            {
+                int rotation = PopInt(), elevation = PopInt(), y = PopInt(), x = PopInt();
+                _externals.SetMapStart(x, y, elevation, rotation);
+                break;
+            }
+            case 0x80EE: // kill_critter_type (pops deathFrame, then pid)
+            {
+                int deathFrame = PopInt();
+                _externals.KillCritterType(PopInt(), deathFrame);
                 break;
             }
             default:

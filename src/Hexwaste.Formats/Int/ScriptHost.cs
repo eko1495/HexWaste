@@ -139,6 +139,16 @@ public sealed class ScriptHost(GameFileSystem vfs, ScriptList scripts, Hexwaste.
     /// <summary>P54-M2: anim(obj, code) — the host plays a one-shot animation code on the object.</summary>
     public Action<MapObject, int>? AnimRequested { get; set; }
 
+    /// <summary>P56-M2: set_map_start(x, y, elevation, rotation) — the host repositions the dude/camera.</summary>
+    public Action<int, int, int, int>? SetMapStartRequested { get; set; }
+
+    /// <summary>P56-M2: kill_critter_type(pid, deathFrame) — the host destroys live critters of a proto.</summary>
+    public Action<int, int>? KillCritterTypeRequested { get; set; }
+
+    /// <summary>True during a save/load replay — gates kill_critter_type (interpreter_extra.cc:2384).</summary>
+    public Func<bool>? IsLoadingGameProvider { get; set; }
+    public bool IsLoadingGame() => IsLoadingGameProvider?.Invoke() ?? false;
+
     /// <summary>reg_anim_func END: the host plays a flushed batch of queued reg_anim
     /// actions (moves/animations). (P33-M1.)</summary>
     public Action<IReadOnlyList<RegAnimAction>>? RegAnimRequested { get; set; }
@@ -1070,6 +1080,17 @@ public sealed class ScriptHost(GameFileSystem vfs, ScriptList scripts, Hexwaste.
             };
             return flag != 0 && critter.Inventory.FirstOrDefault(it => (it.Flags & flag) != 0) is { } item
                 ? _host.HandleOf(item) : 0;
+        }
+
+        // P56-M2: set_map_start repositions the dude/camera; kill_critter_type destroys a proto type.
+        public void SetMapStart(int x, int y, int elevation, int rotation) =>
+            _host.SetMapStartRequested?.Invoke(x, y, elevation, rotation);
+
+        public void KillCritterType(int pid, int deathFrame)
+        {
+            if (_host.IsLoadingGame()) // engine: never destroy critters during a load/save replay (:2384)
+                return;
+            _host.KillCritterTypeRequested?.Invoke(pid, deathFrame);
         }
 
         public int CurrentMapIndex() => _host.CurrentMapIndexProvider?.Invoke() ?? 0;
