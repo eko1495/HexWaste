@@ -1976,6 +1976,34 @@ RE-CONFIRMED: a city's cost is its genuinely-new externals + content; here the t
 random sub-maps fired 2 — verify every load-bearing fact (Marcus's hex, the GVAR enum indices, the area number)
 against live data, the scout's "Marcus = @11689 script 588" was a generic-mutant misread the workflow corrected.
 
+Phase 58 (DONE — "New Reno", the FIFTH new location + the BIGGEST yet: 11 maps, the mob-family city;
+scoped by a 4-reader + lead-engineer workflow [new-reno-scope, wf_dc886fc7] that read all 5 engine handlers
+verbatim, recount-confirmed the GVAR ordinals + seed values, and confirmed Myron's party.txt section). M0
+reachability = ZERO code (city.txt [Area 07], start_state=On, entrance_0 "New Reno 1" tile 25105 -> Newr1 via
+ArriveAt; inter-map movement [Newr1<->2<->3<->4 + interiors] is STATIC exit grids, the P2-M5 ApplyTransition
+path, no code). M1 wired the FIVE genuinely-new externals — the MOST of any city, all ported verbatim, all
+INERT on the slice (no golden loads any NR map -> combat + prior encounter goldens BYTE-IDENTICAL): obj_art_fid
+(0x8149, opGetObjectFid:4643 — query, pops object pushes its Fid; the arity table was ALREADY (1,true), the
+stub pushed a placeholder 0, so this is a VALUE-fix on Newr2 not a stack-desync — do NOT touch ExternalArity),
+critter_is_fleeing (0x8151:4740 — pushes Maneuver & 0x04 [CRITTER_MANUEVER_FLEEING]) + critter_set_flee_state
+(0x8152:4756 — pops fleeing THEN critter, sets/clears the bit in place; Newr4/Newrst), mark_area_known
+(0x80B2:737 — pops markType/areaId/mode, reveals a worldmap area via WorldFog.MarkRadiusVisited; INERT — every
+NR area starts On, so already discovered; mode-1 map-mark + INVISIBLE-hide are documented no-ops; Newrcs/
+Newrst/Newrgo), game_time_advance (0x80FC:2761 — pops ticks [1:1, TicksPerDay==864000], bumps _clock.Ticks
+then runs ProcessPoison/Drugs/Withdrawals = the engine's queueProcessEvents catch-up, NOT just a clock bump;
+NewRvb). No new proc (Newr1=16 / Newr2=15 families, all wired; map_exit/push the pre-existing residuals). All
+11 NR maps now census stubs=0. M2 GVARs (KEY CORRECTION — the "all 0 on a fresh game" premise is FALSE for NR:
+the FOUR crime-family counters SALVATORE 134 / BISHOP 135 / MORDINO 136 / WRIGHT 216 seed to 100 in vault13.gam,
+already written by SeedGlobalVars [P32], they count DOWN as you wrong a family; TOWN_REP_NR 55 / MADE_MAN 230 /
+PRIZEFIGHTER 231 / PORN_STAR 232 / MYRON 284 = 0) — gvar-seed golden EXTENDED to assert the family counters.
+Dialogue VM runs (Newr1 script 452 @11280 = 4 options, 326 @12114 = 2). Myron (the Mordino chemist, script 436
+@19327 on Newrst, pid 0x10000A0) IS a real data\party.txt member (member=1, levelMin=6) so recruitment is the
+proven Vic/Lenny/Marcus party_add machinery, NOT custom content; his quest-gated recruit DRIVE (Mordino Jet-
+lab) is content — the residual. M3 docs. 698 tests, 16 combat + 120 encounter goldens green (6 smoke subset +
+nr-dialogue + nr-myron + the extended gvar-seed). PATCH NOTE: Newr2/Newrst (+ their .int) are in patch000.dat
+— the existing VFS already resolves to the patch, no work. GOTCHA: NR is the first city where a fresh-game GVAR
+is NON-zero (the family counters) — always check the actual vault13.gam seed, don't assume 0.
+
 Phase 10 (DONE, per docs/phase10-research-report.md — "The Wasteland
 Bites Back"): M0 persistence pre-stage (the net: MapList saved=No /
 random_start_point parse + IsTransient; the 3-clause transient guards as

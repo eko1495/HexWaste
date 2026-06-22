@@ -187,7 +187,7 @@ SCENARIOS=(
   "karma|--map artemple.map --set-karma 50 5 --set-global 0 100 --set-global 47 30 --set-global 3 1 --karma-probe --rep-title 100 --town-rep 30 --karma-titles --rng-seed 1"
   # P32-M1 vault13.gam GVAR seeding: --create runs StartNewGame which seeds the non-zero globals
   # (Arroyo rep 47:=50, FIND_VIC 619:=1, Salvatore counter 134:=100; everything else 0).
-  "gvar-seed|--map artemple.map --create 5,5,5,5,5,5,5:0,4,5:0 --get-global 0 --get-global 47 --get-global 619 --get-global 134 --get-global 50 --get-global 81 --get-global 91 --get-global 137 --rng-seed 1"
+  "gvar-seed|--map artemple.map --create 5,5,5,5,5,5,5:0,4,5:0 --get-global 0 --get-global 47 --get-global 619 --get-global 134 --get-global 50 --get-global 81 --get-global 91 --get-global 137 --get-global 55 --get-global 135 --get-global 136 --get-global 216 --get-global 284 --rng-seed 1"
   # P33 critter_attempt_placement: relocate a map critter to a different tile via the real placement path
   # (denbus2 has a critter at 14716; move it to 14000). On entry the engine fires this op same-tile (a
   # no-op), so the slice goldens are unchanged — this proves the actual relocate.
@@ -391,6 +391,16 @@ SCENARIOS=(
   "smoke-newrst|--map Newrst.map --smoke"
   "smoke-newrvb|--map NewRvb.map --smoke"
   "smoke-newrcs|--map Newrcs.map --smoke"
+  # P58-M2: the NR dialogue VM runs (Newr1 NPCs script 452 @11280 = 4 options, 326 @12114 = 2). Myron (the
+  # Mordino chemist, script 436 @19327 on Newrst) IS a real data\party.txt member (member=1, levelMin=6) so
+  # recruitment is the proven Vic/Lenny/Marcus party_add machinery (the radscorpion 0x1000005 is the member=0
+  # control). NR GVARs on a fresh game: TOWN_REP_NR 55 / MADE_MAN 230 / PRIZEFIGHTER 231 / PORN_STAR 232 /
+  # MYRON 284 = 0, but the FOUR crime-family counters (SALVATORE 134 / BISHOP 135 / MORDINO 136 / WRIGHT 216)
+  # seed to 100 in vault13.gam (already written by SeedGlobalVars; they count DOWN as you wrong a family) —
+  # the gvar-seed golden below asserts them. The quest DRIVE (made-man / prizefighter / Myron's Jet-lab
+  # recruit) is content — the residual; the machinery (dialogue VM + the family GVARs + party_add) is wired.
+  "nr-dialogue|--map Newr1.map --iq-probe 11280 5 --iq-probe 12114 5 --rng-seed 1"
+  "nr-myron|--map Newrst.map --party-probe 0x10000A0 --party-probe 0x1000005 --rng-seed 1"
   # P57-M2: the BH dialogue VM runs — Marcus (script 599 @18284, the mutant sheriff) 7 options + a townsfolk
   # (594 @10685) 5; Marcus is a real data\party.txt member (member=1, levelMin=12) so recruitment is the
   # proven Vic/Lenny party_add machinery (NOT custom content). BROKEN1/2 proc census = 14 families, all the
