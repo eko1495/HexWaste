@@ -2040,6 +2040,22 @@ encounter goldens green. STEADY-STATE CONFIRMED: late cities are now pure conten
 game towns (Redding, Vault 15, Sierra/Navarro, the deeper Klamath/Den maps) should mostly be zero-code —
 --smoke first; only spin up a grounding workflow if a map shows a non-zero stub count.
 
+Phase 61 (DONE — "Redding", the EIGHTH new location + the THIRD straight ZERO-engine-code city). All 6 maps
+(REDDOWN downtown, REDDTUN tunnels, REDMENT/REDMTUN the Kokoweef mine, REDWAME/redwan1 the Wanamingo mine)
+census stubs=0 with NO wiring. M0 reachability = ZERO code ([Area 13], start_state=On, entrance_0 "Redding
+Downtown" via ArriveAt; inter-map = static exit grids). NO new external, NO new proc (REDDOWN/REDMENT = 13
+wired families, no trap). THE P58 NON-ZERO-SEED TRAP STRUCK AGAIN (and the playbook caught it): GVAR_TOTAL_
+WANAMINGOS (461) seeds to 20 on a fresh game — the Wanamingo Mine's initial creature count (you exterminate
+them for the quest; already written by SeedGlobalVars), NOT 0; the other Redding GVARs (TOWN_REP 56 / QUEST_
+REDDING_PROBLEM 94 / MAYOR 334 / SHERIFF 387 / WANAMINGO_OCCUPADO 389) are 0. gvar-seed golden EXTENDED to
+assert 461=20. No party.txt companion. The dialogue VM runs (REDDOWN script 809 @17063 = 5 options, 681 @15312
+= 4). Quest drive (the mine-ownership war / the Wanamingo extermination / Jet) = content residual; machinery
+wired. 7 new goldens (6 smoke at stubs=0 + redding-dialogue; gvar-seed extended). NO engine code -> all 16
+combat + prior encounter goldens BYTE-IDENTICAL. Scoped fully inline (the steady-state ~6-command loop). 698
+tests, 16 combat + 142 encounter goldens green. LESSON RE-CONFIRMED: the non-zero GVAR seed is NOT a New-Reno
+one-off — Redding's wanamingo count is the same pattern (a creature/quest tally seeded from vault13.gam); ALWAYS
+run the fresh-game --get-global check, never assume 0.
+
 Phase 10 (DONE, per docs/phase10-research-report.md — "The Wasteland
 Bites Back"): M0 persistence pre-stage (the net: MapList saved=No /
 random_start_point parse + IsTransient; the 3-clause transient guards as

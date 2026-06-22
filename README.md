@@ -127,24 +127,25 @@ Prebuilt self-contained builds (Linux x64 / Windows x64) are produced by
   encounter spawns its two groups on opposing teams so you stumble into a
   brawl already in progress — watch them thin each other out, or wade in.
 - **Locations**: the opening hour (Arroyo → Temple → Klamath → Den) plus
-  **Vault City**, **Gecko**, **Modoc**, **Broken Hills**, **New Reno**, **NCR**, and
-  **San Francisco** — the first seven towns past the slice. Travel there from the
-  worldmap and every map (VC: Courtyard / Downtown / Council / Vault; Gecko: Settlement /
-  Power Plant / Junkyard / Tunnels; Modoc: Main Street / Inn / Well / Outhouse; Broken
-  Hills: the two town halves + desert/mountain sub-maps; New Reno: the four strip maps +
-  interiors / boxing arena / chop shop / stables / casinos, 11 in all; NCR: Bazaar /
-  Downtown / Council / entrance + courthouse; San Francisco: the Shi Chinatown / docks /
-  Hubologist base / the PMV Valdez tanker / shuttle) loads, walks, and transitions; every
+  **Vault City**, **Gecko**, **Modoc**, **Broken Hills**, **New Reno**, **NCR**,
+  **San Francisco**, and **Redding** — the first eight towns past the slice. Travel there
+  from the worldmap and every map (VC: Courtyard / Downtown / Council / Vault; Gecko:
+  Settlement / Power Plant / Junkyard / Tunnels; Modoc: Main Street / Inn / Well /
+  Outhouse; Broken Hills: the two town halves + desert/mountain sub-maps; New Reno: the
+  four strip maps + interiors / boxing arena / chop shop / stables / casinos, 11 in all;
+  NCR: Bazaar / Downtown / Council / entrance + courthouse; San Francisco: the Shi
+  Chinatown / docks / Hubologist base / the PMV Valdez tanker / shuttle; Redding: Downtown
+  + tunnels + the Kokoweef and Wanamingo mines) loads, walks, and transitions; every
   external their scripts fire is wired, and their NPCs talk via the real dialogue VM. A
   new town is mostly *content*: the data-driven engine routes, loads, and renders it for
   free — the per-town work is just wiring the handful of script externals it needs (the
   `--smoke <map>` dev command scopes them), and each town makes the next cheaper (Gecko
   needed *no* new externals; Modoc four; Broken Hills' town none; New Reno, the biggest,
-  five; NCR and San Francisco none — the wired set now covers them outright). Quest
-  machinery is in place — Vault City's citizenship test, Gecko's reactor terminal, Lenny's
-  / Marcus's / Myron's recruitment (real `party.txt` companions), and Modoc's "Jonny in
-  the Well" dialogue + scripted well; finishing a specific quest is content navigation,
-  not engine work.
+  five; NCR, San Francisco, and Redding none — the wired set now covers them outright).
+  Quest machinery is in place — Vault City's citizenship test, Gecko's reactor terminal,
+  Lenny's / Marcus's / Myron's recruitment (real `party.txt` companions), and Modoc's
+  "Jonny in the Well" dialogue + scripted well; finishing a specific quest is content
+  navigation, not engine work.
 - **Companions**: recruit, then a control hub (talk to them) — wait here /
   follow / trade / dismiss / rejoin; a 1:1 flat item trade to gear them up; and
   a combat-control window (the authentic `CONTROL.frm` art) to set their tactics
