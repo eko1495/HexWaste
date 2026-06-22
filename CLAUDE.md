@@ -1916,6 +1916,37 @@ found the reactor terminal). All combat goldens BYTE-IDENTICAL; new goldens geck
 the next (shared externals accumulate) — Gecko needed ZERO external wiring, just one proc (scenery use) +
 the quest/companion content sitting on already-wired machinery.
 
+Phase 56 (DONE — "Modoc", the THIRD new location). Confirms the recipe holds and that the only remaining
+per-city cost is the genuinely-new externals each map fires (Modoc fired TWO Vault-City/Gecko hadn't).
+M0 reachability = ZERO code (city.txt [Area 03] Modoc, start_state=On, entrance_0 "Modoc Main Street" ->
+modmain via the proven ArriveAt — same path as VC/Gecko). M1 the two PURE-QUERY externals: tile_in_tile_rect
+(0x80CF — a verbatim HexGrid.TileInTileRect port; the engine's ASYMMETRIC corners c1=(minX,maxY)/c4=(maxX,
+minY), args c2/c3 popped-but-IGNORED — interpreter_extra.cc:1447) + critter_inven_obj (0x8106 — type 3 =
+Inventory.Count, else the handle of the FlagWorn/RightHand/LeftHand item). Wiring them CHANGES modinn's
+map_enter branch (with real values the branch that called kill_critter_type is no longer taken), so smoke-
+denbus1/denbus2 re-recorded (they fire tile_in_tile_rect too); combat BYTE-IDENTICAL. M2 the two MUTATING
+externals: set_map_start (0x80A8 — repositions the dude/camera to 200*y+x / elevation / rotation; no-op
+headless, no dude in the --smoke census) + kill_critter_type (0x80EE — KillCrittersByType ported from
+opKillCritterType: deathFrame 0 = silent remove, nonzero = corpse via ConvertToCorpse; count>200 guard; dude
+excluded). The engine's _isLoadingGame() guard (:2384) wired FAITHFULLY — a _isLoadingGame flag wraps
+LoadGame's LoadMap call (the only window restored scripts replay map_enter/map_update) so a save-restore
+never re-destroys critters. INERT on the slice: after M1's branch shift NO map fires kill_critter_type, and
+set_map_start is headless-inert — so all 4 Modoc maps census stubs=0 (modinn drops its last two stubs),
+combat + encounter BYTE-IDENTICAL. M3 proc census (tools/ProcAnalyze on all 4 maps): Modoc introduces NO new
+proc requirement — the whole quest spine (talk/use_p/use_obj_on/use_skill_on/critter_p/map_enter/map_update/
+timed_event/damage/combat) is ALREADY wired (CORRECTS the pre-verification note: use_obj_on_p_proc + timed_
+event_p_proc are BOTH wired, not OUT). The only unwired procs Modoc defines are map_exit_p_proc + push_p_proc
+— PRE-EXISTING engine-wide residuals (denbus2, a shipped Den map, already defines them; never fired across the
+whole slice), not quest-blocking. M4 GVARs: all 6 Modoc globals are 0 on a fresh game (verified via --create
++ --get-global at the real enum indices — TOWN_REP 52, JONNY_STATE 114, JONNY_TILE 115, TOOL_FLAG 118,
+ROSE_FLAG 123, JONNY_HOME 129; FIND_VIC 619 cross-checked against the known P32 seed). No seeding code (matches
+VC/Gecko). M5 quest drive: the dialogue VM runs end-to-end — Balthas (script 96 @12323, the "Jonny in the
+Well" quest-giver) offers 3 options, Grisha (100 @28710) 2; the well (miWell 572 @17520) fires its scripted
+use_p_proc (scenery-use, the quest mechanic, P55-M2). The quest DRIVE (navigating Jonny's rescue) is content
+— the documented residual; the machinery is wired. 6 new goldens (smoke-modmain/modinn/modwell/modshit at
+stubs=0 + modoc-dialogue + modoc-well). 694 tests, 16 combat + 108 encounter goldens green. KEY LESSON: a new
+city's cost is exactly its genuinely-new externals (Modoc: 4) + content; everything else is free reuse.
+
 Phase 10 (DONE, per docs/phase10-research-report.md — "The Wasteland
 Bites Back"): M0 persistence pre-stage (the net: MapList saved=No /
 random_start_point parse + IsTransient; the 3-clause transient guards as

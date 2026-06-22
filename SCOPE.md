@@ -103,17 +103,19 @@ filing an issue.
 
 ## What's in — locations
 
-- The opening hour (Arroyo → Temple → Klamath → Den) plus **Vault City** and **Gecko**
-  — the first two locations past the slice. All their maps (VC: Courtyard / Downtown /
-  Council / Vault; Gecko: Settlement / Power Plant / Junkyard / Tunnels) are reachable
-  from the worldmap, walkable, fully script-wired (every external their scripts fire is
-  handled), and their NPCs talk via the real dialogue VM. A new town is mostly *content*
-  — the data-driven engine routes, loads, and renders it for free; the per-town work is
-  wiring the handful of externals it needs (use `--smoke <map>` to scope them), and each
-  town pre-clears the next (Gecko needed *zero* new externals — Vault City had already
-  wired the shared ones). Quest *machinery* is wired (Vault City's citizenship test,
-  Gecko's reactor terminal, Lenny's recruitment via `party.txt`), though completing a
-  specific quest is content navigation, not engine work.
+- The opening hour (Arroyo → Temple → Klamath → Den) plus **Vault City**, **Gecko**, and
+  **Modoc** — the first three locations past the slice. All their maps (VC: Courtyard /
+  Downtown / Council / Vault; Gecko: Settlement / Power Plant / Junkyard / Tunnels; Modoc:
+  Main Street / Bed-and-Breakfast Inn / Well / Outhouse) are reachable from the worldmap,
+  walkable, fully script-wired (every external their scripts fire is handled), and their
+  NPCs talk via the real dialogue VM. A new town is mostly *content* — the data-driven
+  engine routes, loads, and renders it for free; the per-town work is wiring the handful of
+  externals it needs (use `--smoke <map>` to scope them), and each town pre-clears the next
+  (Gecko needed *zero* new externals — Vault City had already wired the shared ones; Modoc
+  needed just four). Quest *machinery* is wired (Vault City's citizenship test, Gecko's
+  reactor terminal, Lenny's recruitment via `party.txt`, Modoc's "Jonny in the Well"
+  dialogue + the scripted well), though completing a specific quest is content navigation,
+  not engine work.
 
 ## What's out (by design, today)
 
