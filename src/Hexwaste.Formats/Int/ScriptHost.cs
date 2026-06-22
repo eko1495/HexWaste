@@ -1054,6 +1054,24 @@ public sealed class ScriptHost(GameFileSystem vfs, ScriptList scripts, Hexwaste.
                 _host.AnimRequested?.Invoke(obj, anim);
         }
 
+        // P56-M1: critter_inven_obj — the handle of the worn/in-hand item or the inventory count.
+        public int CritterInventoryObject(int objectHandle, int type)
+        {
+            if (_host.ObjectOf(objectHandle) is not { } critter)
+                return 0;
+            if (type == 3) // INVEN_TYPE_INV_COUNT
+                return critter.Inventory.Count;
+            int flag = type switch
+            {
+                0 => MapObject.FlagWorn,        // INVEN_TYPE_WORN
+                1 => MapObject.FlagInRightHand, // INVEN_TYPE_RIGHT_HAND
+                2 => MapObject.FlagInLeftHand,  // INVEN_TYPE_LEFT_HAND
+                _ => 0,
+            };
+            return flag != 0 && critter.Inventory.FirstOrDefault(it => (it.Flags & flag) != 0) is { } item
+                ? _host.HandleOf(item) : 0;
+        }
+
         public int CurrentMapIndex() => _host.CurrentMapIndexProvider?.Invoke() ?? 0;
 
         public int CapsTotal(int objectHandle) =>

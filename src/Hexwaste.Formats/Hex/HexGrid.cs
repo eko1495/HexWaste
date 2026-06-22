@@ -228,6 +228,18 @@ public static class HexGrid
         return prev;
     }
 
+    /// <summary>op_tile_in_tile_rect (interpreter_extra.cc:1436 opTileInTileRect): is the test tile inside
+    /// the rectangle defined by two corner tiles? Ported VERBATIM incl. the engine's asymmetric corner
+    /// mapping — the 5 args are the popped points[0..4]; only [0] (test), [1] and [4] (corners) are used
+    /// ([2]/[3] are popped-but-ignored). tile = 200*y + x.</summary>
+    public static int TileInTileRect(int testTile, int c1, int c2, int c3, int c4)
+    {
+        int x = testTile % 200, y = testTile / 200;
+        int minX = c1 % 200, maxX = c4 % 200;
+        int minY = c4 / 200, maxY = c1 / 200;
+        return x >= minX && x <= maxX && y >= minY && y <= maxY ? 1 : 0;
+    }
+
     /// <summary>ported from fallout2-ce src/tile.cc tileGetRotationTo():
     /// the facing rotation from one hex toward another (screen-space angle).</summary>
     public static int RotationTo(int tile1, int tile2)

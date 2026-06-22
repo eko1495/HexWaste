@@ -1,1 +1,1 @@
-smoke: map=denbus2.map critters=86 containers=40 doors=19 scripted=143 stubs=2[stubbed external tile_in_tile_rect (0x80CF): popped 5, pushed 0,stubbed external use_obj_on_obj (0x8145): popped 2]
+smoke: map=denbus2.map critters=86 containers=40 doors=19 scripted=143 stubs=1[stubbed external use_obj_on_obj (0x8145): popped 2]

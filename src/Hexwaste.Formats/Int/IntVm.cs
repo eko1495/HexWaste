@@ -252,6 +252,10 @@ public interface IVmExternals
     /// <summary>anim (0x810C, opAnim): play animation code <paramref name="anim"/> on the object once.</summary>
     void Anim(int objectHandle, int anim, int frame) { }
 
+    /// <summary>critter_inven_obj (0x8106, opCritterGetInventoryObject): the handle of the critter's worn
+    /// (0) / right-hand (1) / left-hand (2) item, or the inventory item count (3).</summary>
+    int CritterInventoryObject(int objectHandle, int type) => 0;
+
     /// <summary>obj_is_carrying_obj_pid (interpreter_extra.cc:1040): the quantity of
     /// <paramref name="pid"/> the critter carries (recursive into nested containers).</summary>
     int ObjIsCarryingPid(int objectHandle, int pid) => 0;
@@ -1561,6 +1565,18 @@ public sealed class IntVm
                 PopInt(); // viewport — return 1 (visible), the benign map-enter default. DOCUMENTED DIVERGENCE.
                 PushInt(1);
                 break;
+            case 0x80CF: // tile_in_tile_rect (opTileInTileRect): pops 5 (points[0..4] in pop order)
+            {
+                int p0 = PopInt(), p1 = PopInt(), p2 = PopInt(), p3 = PopInt(), p4 = PopInt();
+                PushInt(Hex.HexGrid.TileInTileRect(p0, p1, p2, p3, p4));
+                break;
+            }
+            case 0x8106: // critter_inven_obj (pops type, then critter)
+            {
+                int type = PopInt();
+                PushInt(_externals.CritterInventoryObject(PopInt(), type));
+                break;
+            }
             default:
             {
                 if (!ExternalArity.Table.TryGetValue(opcode, out (string Name, int Args, bool Returns) arity))

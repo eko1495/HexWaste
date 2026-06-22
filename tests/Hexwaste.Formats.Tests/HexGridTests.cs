@@ -5,6 +5,18 @@ namespace Hexwaste.Formats.Tests;
 public class HexGridTests
 {
     [Fact]
+    public void TileInTileRectUsesTheEngineAsymmetricCorners()
+    {
+        // P56: rect x in [10,20], y in [30,40]. Engine corners (interpreter_extra.cc:1447): c1=(minX,maxY)
+        // = (10,40), c4=(maxX,minY)=(20,30). tile = 200*y + x. Args c2/c3 are popped-but-IGNORED.
+        int c1 = 200 * 40 + 10, c4 = 200 * 30 + 20;
+        Assert.Equal(1, HexGrid.TileInTileRect(200 * 35 + 15, c1, 99999, 88888, c4)); // (15,35) inside; junk c2/c3
+        Assert.Equal(1, HexGrid.TileInTileRect(200 * 40 + 10, c1, 0, 0, c4));         // (10,40) corner — inclusive
+        Assert.Equal(0, HexGrid.TileInTileRect(200 * 35 + 5, c1, 0, 0, c4));          // (5,35)  x < minX
+        Assert.Equal(0, HexGrid.TileInTileRect(200 * 45 + 15, c1, 0, 0, c4));         // (15,45) y > maxY
+    }
+
+    [Fact]
     public void OppositeDirectionsRoundTrip()
     {
         // Walking one hex in direction r then in direction (r+3)%6 must
