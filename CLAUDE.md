@@ -2095,6 +2095,18 @@ assembling the body), but SKYNET (pMCyberdog, pid 0x1000088) IS a data\party.txt
 party-probe confirms membership regardless). 5 goldens (3 smoke at stubs=0 + sierra-skynet + the smoke-artemple
 re-record). 694 tests, 16 combat + 151 encounter goldens green. Running tally: ... P62 Vault 15(0) / P63 Sierra(2).
 
+Phase 64 (DONE — "Military Base / Mariposa", the ELEVENTH new location — back to ZERO-engine-code after
+Sierra's 2). 3 maps (mbclose the caved-in entrance, mbase12 Levels 1-2, mbase34 Levels 3-4) census stubs=0 with
+NO wiring. M0 reachability = ZERO code ([Area 12], start_state=On, entrance_0 "Military Base Entrance" via
+ArriveAt; maps resolve via maps.txt Map 049-051 = mbase12/mbase34/mbclose; inter-map = static exit grids). NO
+new external, NO new proc (mbase12/mbase34 = 14 wired families, no trap). It's a pure super-mutant COMBAT
+DUNGEON: NO dialogue talkers (the mutants are combat-only at IN 5 — verified across all 3 maps), NO party.txt
+companion, and the single GVAR (MILITARY_BASE_FLAGS 215) is 0 on a fresh game (no seed trap). So the deliverable
+is reachable + walkable + fully wired — smoke-only goldens (a dungeon, like Sierra's combat half but with no
+companion). Quest drive (fight through to the FEV vats / destroy the base / Melchior) = content residual. 3
+smoke goldens at stubs=0. NO engine code -> all 16 combat + prior encounter goldens BYTE-IDENTICAL. Scoped fully
+inline. 694 tests, 16 combat + 154 encounter goldens green. Tally: ... P63 Sierra(2) / P64 Military Base(0).
+
 Phase 10 (DONE, per docs/phase10-research-report.md — "The Wasteland
 Bites Back"): M0 persistence pre-stage (the net: MapList saved=No /
 random_start_point parse + IsTransient; the 3-clause transient guards as

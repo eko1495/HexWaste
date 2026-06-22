@@ -143,7 +143,8 @@ Prebuilt self-contained builds (Linux x64 / Windows x64) are produced by
   command scopes them), and each town makes the next cheaper (Gecko needed *no* new
   externals; Modoc four; Broken Hills' town none; New Reno, the biggest, five; NCR, San
   Francisco, Redding, and Vault 15 none — the wired set now covers them outright; the
-  **Sierra Army Depot** robot dungeon needed two). Quest machinery is in place — Vault
+  **Sierra Army Depot** robot dungeon needed two, the **Mariposa Military Base**
+  super-mutant dungeon none). Quest machinery is in place — Vault
   City's citizenship test, Gecko's reactor terminal, Lenny's / Marcus's / Myron's / the
   Vault 15 Doc's / Sierra's Skynet recruitment (real `party.txt` companions), and Modoc's
   "Jonny in the Well" dialogue + scripted well; finishing a specific quest is content
