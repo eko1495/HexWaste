@@ -1,0 +1,1 @@
+smoke: map=NCR2.MAP critters=26 containers=11 doors=17 scripted=44 stubs=0[]

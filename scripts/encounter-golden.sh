@@ -401,6 +401,24 @@ SCENARIOS=(
   # recruit) is content — the residual; the machinery (dialogue VM + the family GVARs + party_add) is wired.
   "nr-dialogue|--map Newr1.map --iq-probe 11280 5 --iq-probe 12114 5 --rng-seed 1"
   "nr-myron|--map Newrst.map --party-probe 0x10000A0 --party-probe 0x1000005 --rng-seed 1"
+
+  # NCR (P59): the SIXTH new location — and the CHEAPEST: ZERO new engine code. The now-large wired set
+  # (VC+Gecko+Modoc+BH+NR) covers everything NCR's scripts fire, so all 6 maps are stubs=0 with no wiring.
+  # M0 reachable free ([Area 10], start_state=On, entrance_0 "NCR: Bazaar" via ArriveAt; inter-map = static
+  # exit grids). NO new external. NO new proc: NCR1 DEFINES combat_is_over_p_proc (SCRIPT_PROC_COMBAT_IS_OVER
+  # =27, script 447 SCCop) but that enum slot is VESTIGIAL — the engine NEVER scriptExecProc's it anywhere
+  # (scripts.h:76-77 are the only refs), so Hexwaste faithfully NOT firing it is CORRECT, not a gap (same for
+  # combat_is_starting=26). All NCR GVARs (TOWN_REP_NCR 57 + the quest flags 168/170/172/196) are 0 on a
+  # fresh game (no P58-style non-zero seed). No party.txt companion (no classic recruit in NCR). The dialogue
+  # VM runs (NCR1 script 582 @14725 = 5 options, 466 @18720 = 4). Quest drive (Tandi / the Vault-15 squatters
+  # / the brahmin-rustling) = content residual; the machinery is wired.
+  "smoke-ncr1|--map NCR1.MAP --smoke"
+  "smoke-ncr2|--map NCR2.MAP --smoke"
+  "smoke-ncr3|--map NCR3.MAP --smoke"
+  "smoke-ncr4|--map NCR4.MAP --smoke"
+  "smoke-ncrent|--map NCRENT.MAP --smoke"
+  "smoke-encrctr|--map ENCRCTR.MAP --smoke"
+  "ncr-dialogue|--map NCR1.MAP --iq-probe 14725 5 --iq-probe 18720 5 --rng-seed 1"
   # P57-M2: the BH dialogue VM runs — Marcus (script 599 @18284, the mutant sheriff) 7 options + a townsfolk
   # (594 @10685) 5; Marcus is a real data\party.txt member (member=1, levelMin=12) so recruitment is the
   # proven Vic/Lenny party_add machinery (NOT custom content). BROKEN1/2 proc census = 14 families, all the

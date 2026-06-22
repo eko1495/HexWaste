@@ -1,0 +1,1 @@
+smoke: map=NCR4.MAP critters=8 containers=0 doors=0 scripted=9 stubs=0[]

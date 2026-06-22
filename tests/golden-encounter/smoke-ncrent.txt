@@ -1,0 +1,1 @@
+smoke: map=NCRENT.MAP critters=46 containers=11 doors=24 scripted=80 stubs=0[]
