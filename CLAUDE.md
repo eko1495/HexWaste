@@ -2005,8 +2005,11 @@ nr-dialogue + nr-myron + the extended gvar-seed). PATCH NOTE: Newr2/Newrst (+ th
 is NON-zero (the family counters) — always check the actual vault13.gam seed, don't assume 0.
 
 Phase 59 (DONE — "NCR", the SIXTH new location + the CHEAPEST: ZERO new engine code). The now-large wired
-set (VC+Gecko+Modoc+BH+NR) already covers every external NCR's scripts fire, so all 6 maps (NCR1-4, NCRENT,
-ENCRCTR) census stubs=0 with NO wiring. M0 reachability = ZERO code ([Area 10], start_state=On, entrance_0
+set (VC+Gecko+Modoc+BH+NR) already covers every external NCR's scripts fire, so all 5 maps (NCR1-4, NCRENT)
+census stubs=0 with NO wiring. (P66 CORRECTION: this entry originally listed a 6th map "ENCRCTR" — that was a
+false grep-match on "eNCRctr"; ENCRCTR is the ENCLAVE REACTOR [maps.txt Map 133], correctly grouped with the
+P66 Oil Rig. NCR proper is 5 maps. The smoke-encrctr golden was always valid [stubs=0]; only its label moved.)
+M0 reachability = ZERO code ([Area 10], start_state=On, entrance_0
 "NCR: Bazaar" via ArriveAt; inter-map = static exit grids). NO new external. KEY FINDING — the one apparent
 "new proc" is a NON-issue: NCR1 (script 447 SCCop) DEFINES combat_is_over_p_proc, but SCRIPT_PROC_COMBAT_IS_
 OVER (=27) + _IS_STARTING (=26) are VESTIGIAL enum slots the engine NEVER scriptExecProc's ANYWHERE (scripts.h
@@ -2122,6 +2125,27 @@ drive (steal the vertibird plans / the FEV sample / the Enclave-armor disguise) 
 IDENTICAL. Scoped fully inline. 694 tests, 16 combat + 156 encounter goldens green. Tally: ... P64 Military
 Base(0) / P65 Navarro(0). KEY FINDING: the Enclave base needs NO engine code — the only remaining run item is
 the Oil Rig (Area 16 Enclave), the final endgame map.
+
+Phase 66 (DONE — "Enclave Oil Rig", the THIRTEENTH new location + the FINAL endgame map; ZERO-engine-code —
+the "Enclave = external-risk" prediction was wrong, the wired set covers the WHOLE original-game map set). 7
+maps (encdock the dock arrival, encdet Detention, encgd Guard Barracks, encpres Presidential [Richardson],
+encrctr the Reactor, enctrp the Trap Room, encfite the End Fight [Frank Horrigan]; ENCPRES has a patch000
+override). M0 reachability: [Area 16] Enclave, start_state=Off (endgame; maps load/walk directly, worldmap
+discovery via mark_area_known [P58], content-gated). NO new external (all 7 stubs=0), NO new proc (encfite=14 /
+encpres=13 wired families, no engine-dead-proc trap). Enclave/Oil-Rig GVARs all 0 on a fresh game (ENCLAVE_
+ALARM 433 / REACTOR 435 / COMPUTER 440 / MARTIN 441 — no seed trap). No party.txt companion (the endgame). The
+dialogue VM runs on the Presidential level (script @12320 = 3 options, @13684 = 3 — President Richardson + the
+Enclave computer/advisor; the detention/soldier NPCs are silent at IN 5). RIDER (P59 correction): smoke-encrctr
+was a false grep-match mis-grouped under NCR — ENCRCTR is the Enclave Reactor, now correctly here; the golden
+was always valid (stubs=0), only its label moved. Quest drive (the FEV/self-destruct / Horrigan / Richardson)
+= content residual; the machinery is wired. 8 goldens (6 new smoke at stubs=0 + the moved smoke-encrctr +
+oilrig-dialogue). NO engine code -> all 16 combat + prior encounter goldens BYTE-IDENTICAL. Scoped fully inline.
+694 tests, 16 combat + 163 encounter goldens green. Tally: ... P65 Navarro(0) / P66 Oil Rig(0). MILESTONE: with
+this run (P63-66 = Sierra/Military Base/Navarro/Oil Rig) the ENTIRE original-game map set — every town, dungeon,
+special site, and the endgame — now LOADS, WALKS, transitions, and runs its scripts (every external wired); the
+remaining gaps are all CONTENT (quest navigation, content-gated recruits), not engine. The 13-city run
+(P54-P66) needed engine code on only 4 cities (Modoc 4 / BH 2 / NR 5 / Sierra 2 = 13 externals total); the
+other 9 were pure content reuse.
 
 Phase 10 (DONE, per docs/phase10-research-report.md — "The Wasteland
 Bites Back"): M0 persistence pre-stage (the net: MapList saved=No /

@@ -144,8 +144,9 @@ Prebuilt self-contained builds (Linux x64 / Windows x64) are produced by
   externals; Modoc four; Broken Hills' town none; New Reno, the biggest, five; NCR, San
   Francisco, Redding, and Vault 15 none — the wired set now covers them outright; the
   **Sierra Army Depot** robot dungeon needed two, the **Mariposa Military Base**
-  super-mutant dungeon none, **Navarro** the Enclave base none). Quest machinery is in
-  place — Vault
+  super-mutant dungeon none, **Navarro** the Enclave base none, the **Enclave Oil Rig**
+  endgame none) — the entire original-game map set now loads, walks, and runs its scripts.
+  Quest machinery is in place — Vault
   City's citizenship test, Gecko's reactor terminal, Lenny's / Marcus's / Myron's / the
   Vault 15 Doc's / Sierra's Skynet recruitment (real `party.txt` companions), and Modoc's
   "Jonny in the Well" dialogue + scripted well; finishing a specific quest is content
