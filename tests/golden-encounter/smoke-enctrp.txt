@@ -1,0 +1,1 @@
+smoke: map=enctrp.map critters=19 containers=15 doors=18 scripted=49 stubs=0[]

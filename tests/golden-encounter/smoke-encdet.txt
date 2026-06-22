@@ -1,0 +1,1 @@
+smoke: map=encdet.map critters=57 containers=20 doors=15 scripted=68 stubs=0[]

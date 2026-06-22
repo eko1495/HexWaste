@@ -1,0 +1,1 @@
+smoke: map=encgd.map critters=46 containers=73 doors=16 scripted=57 stubs=0[]

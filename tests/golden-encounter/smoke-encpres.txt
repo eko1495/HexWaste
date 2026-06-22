@@ -1,0 +1,1 @@
+smoke: map=encpres.map critters=26 containers=21 doors=27 scripted=38 stubs=0[]

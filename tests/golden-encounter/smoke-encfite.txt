@@ -1,0 +1,1 @@
+smoke: map=encfite.map critters=12 containers=0 doors=4 scripted=16 stubs=0[]

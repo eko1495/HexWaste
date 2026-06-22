@@ -1,0 +1,1 @@
+smoke: map=encdock.map critters=0 containers=0 doors=0 scripted=0 stubs=0[]

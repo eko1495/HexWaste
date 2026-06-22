@@ -403,7 +403,9 @@ SCENARIOS=(
   "nr-myron|--map Newrst.map --party-probe 0x10000A0 --party-probe 0x1000005 --rng-seed 1"
 
   # NCR (P59): the SIXTH new location — and the CHEAPEST: ZERO new engine code. The now-large wired set
-  # (VC+Gecko+Modoc+BH+NR) covers everything NCR's scripts fire, so all 6 maps are stubs=0 with no wiring.
+  # (VC+Gecko+Modoc+BH+NR) covers everything NCR's scripts fire, so all 5 maps are stubs=0 with no wiring.
+  # (P66 CORRECTION: smoke-encrctr was originally mis-grouped here — ENCRCTR is the ENCLAVE REACTOR, a false
+  # grep-match on "eNCRctr"; it's now correctly in the Oil Rig block below. NCR proper = NCR1-4 + NCRENT.)
   # M0 reachable free ([Area 10], start_state=On, entrance_0 "NCR: Bazaar" via ArriveAt; inter-map = static
   # exit grids). NO new external. NO new proc: NCR1 DEFINES combat_is_over_p_proc (SCRIPT_PROC_COMBAT_IS_OVER
   # =27, script 447 SCCop) but that enum slot is VESTIGIAL — the engine NEVER scriptExecProc's it anywhere
@@ -417,7 +419,6 @@ SCENARIOS=(
   "smoke-ncr3|--map NCR3.MAP --smoke"
   "smoke-ncr4|--map NCR4.MAP --smoke"
   "smoke-ncrent|--map NCRENT.MAP --smoke"
-  "smoke-encrctr|--map ENCRCTR.MAP --smoke"
   "ncr-dialogue|--map NCR1.MAP --iq-probe 14725 5 --iq-probe 18720 5 --rng-seed 1"
 
   # San Francisco (P60): the SEVENTH new location — and the SECOND straight ZERO-engine-code city (the wired
@@ -513,6 +514,27 @@ SCENARIOS=(
   # is content. Quest drive (steal the vertibird plans / the FEV / disguise as Enclave) = content residual.
   "smoke-navarro|--map NAVARRO.map --smoke"
   "navarro-dialogue|--map NAVARRO.map --iq-probe 25900 5 --rng-seed 1"
+
+  # Enclave Oil Rig (P66): the THIRTEENTH new location + the FINAL endgame map — ZERO-engine-code (the
+  # "Enclave = external-risk" prediction was wrong twice; the wired set covers the WHOLE game). 7 maps (encdock
+  # the dock arrival, encdet Detention, encgd Guard Barracks, encpres Presidential [Richardson], encrctr the
+  # Reactor, enctrp the Trap Room, encfite the End Fight [Frank Horrigan]; ENCPRES has a patch000 override).
+  # M0 reachable: [Area 16] Enclave, start_state=Off (endgame; maps load/walk directly, worldmap discovery via
+  # mark_area_known [P58], content-gated). NO new external (all 7 stubs=0), NO new proc (encfite=14 / encpres=13
+  # wired families, no engine-dead-proc trap). Enclave/Oil-Rig GVARs all 0 on a fresh game (ENCLAVE_ALARM 433 /
+  # REACTOR 435 / COMPUTER 440 / MARTIN 441 — no seed trap). No party.txt companion (the endgame). The dialogue
+  # VM runs on the Presidential level (script @12320 = 3 options, @13684 = 3 — President Richardson + the Enclave
+  # computer/advisor; the detention/soldier NPCs are silent at IN 5). smoke-encrctr is here (NOT NCR — the P59
+  # false-match fix; it's the Enclave Reactor). Quest drive (the FEV/self-destruct / Horrigan / Richardson) =
+  # content residual; the machinery is wired. The game's full original-map set now loads + walks + talks.
+  "smoke-encdock|--map encdock.map --smoke"
+  "smoke-encdet|--map encdet.map --smoke"
+  "smoke-encgd|--map encgd.map --smoke"
+  "smoke-encpres|--map encpres.map --smoke"
+  "smoke-encrctr|--map ENCRCTR.MAP --smoke"
+  "smoke-enctrp|--map enctrp.map --smoke"
+  "smoke-encfite|--map encfite.map --smoke"
+  "oilrig-dialogue|--map encpres.map --iq-probe 12320 5 --iq-probe 13684 5 --rng-seed 1"
   # P57-M2: the BH dialogue VM runs — Marcus (script 599 @18284, the mutant sheriff) 7 options + a townsfolk
   # (594 @10685) 5; Marcus is a real data\party.txt member (member=1, levelMin=12) so recruitment is the
   # proven Vic/Lenny party_add machinery (NOT custom content). BROKEN1/2 proc census = 14 families, all the
