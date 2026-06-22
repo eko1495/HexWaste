@@ -1,0 +1,3 @@
+iq-probe: hex=18284 in=5 options=7
+iq-probe: hex=10685 in=5 options=5
+party-probe: pid=0x10000A1 member=1 levelMin=12

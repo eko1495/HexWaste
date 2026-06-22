@@ -1947,6 +1947,35 @@ use_p_proc (scenery-use, the quest mechanic, P55-M2). The quest DRIVE (navigatin
 stubs=0 + modoc-dialogue + modoc-well). 694 tests, 16 combat + 108 encounter goldens green. KEY LESSON: a new
 city's cost is exactly its genuinely-new externals (Modoc: 4) + content; everything else is free reuse.
 
+Phase 57 (DONE — "Broken Hills", the FOURTH new location; scoped by a 4-reader + lead-engineer workflow
+[broken-hills-scope, wf_c30970a0] that ground-truthed the 2 externals verbatim from source, recount-confirmed
+the GVAR indices, and caught a scouted Marcus-identity error). HEADLINE: the TOWN proper (BROKEN1/BROKEN2) was
+ALREADY stubs=0 — ZERO new town externals (cheaper than Modoc's 4), the data-driven engine handling it for
+free. The only genuinely-new code is TWO externals, both on the random-encounter SUB-maps (bhrnddst/bhrndmtn).
+M0 reachability = ZERO code (city.txt [Area 06], start_state=On, entrance_0 "Broken Hills 1" -> BROKEN1 via
+the proven ArriveAt; entrance_1 -> BROKEN2 is a STATIC exit grid in the .map trailer, the P2-M5 ApplyTransition
+path, no code). M1 the two externals, ported verbatim: set_exit_grids (0x80E6, opSetExitGrids:2180 — pops
+rotation[DISCARDED by the engine]/tile/destElev/map/elevation; rewrites every exit-grid-pid [0x5000010..17]
+object on the SOURCE elevation's Destination to map/tile/destElev, preserving the parsed rotation; bhrnddst
+stubs=1->0) + wield_obj_critter (0x80DA -> opWieldItem:1689, the SAME handler as wield_obj — pops item THEN
+critter; the critter equips it: weapon -> right hand via the proven P43 EquipWeapon, armor -> worn + dude-only
+AC bonus [NPC-armor AC is forward-looking infra — the slice wields weapons only]; bhrndmtn arms its 4 spawned
+critters, stubs=1->0). The _isLoadingGame guard is N/A here (neither external destroys). INERT on every
+shippable map: no golden loads a BH map (set_exit_grids fires only on bhrnddst, wield only on bhrndmtn) -> all
+16 combat + prior encounter goldens BYTE-IDENTICAL (verified by a clean check BEFORE recording). M2 proc census
+(tools/ProcAnalyze BROKEN1/2 = 14 proc families, the SAME as Modoc — quest spine all wired; map_exit_p_proc +
+push_p_proc the pre-existing engine-wide residuals) + GVARs (all 6 BH globals 0 on a fresh game: TOWN_REP 54,
+FRAUD 147, ENEMY 309, READ_FRANCIS_NOTE 524, MARCUS_DEAD 526, CARAVAN 562 — no seeding, matches VC/Gecko/Modoc)
++ dialogue drive (Marcus the mutant sheriff @18284 script 599 = 7 options; a townsperson @10685 = 5; Marcus IS
+a real data\party.txt member [member=1, levelMin=12] so recruitment is the proven Vic[P10]/Lenny[P55] party_add
+machinery, NOT custom content like VC's Cassidy). The quest DRIVE (uranium fraud / Francis / the Marcus recruit)
+is content — the documented residual; the machinery (dialogue VM + GVARs + party_add) is wired. 5 new goldens
+(smoke-broken1/broken2/bhrnddst/bhrndmtn at stubs=0 + bh-dialogue). 698 tests, 16 combat + 114 encounter goldens
+green. GOTCHA: the .map file is bhrndmtn (maps.txt has a typo "bhrndmnt"); --smoke loads by filename. KEY LESSON
+RE-CONFIRMED: a city's cost is its genuinely-new externals + content; here the town needed ZERO and only the
+random sub-maps fired 2 — verify every load-bearing fact (Marcus's hex, the GVAR enum indices, the area number)
+against live data, the scout's "Marcus = @11689 script 588" was a generic-mutant misread the workflow corrected.
+
 Phase 10 (DONE, per docs/phase10-research-report.md — "The Wasteland
 Bites Back"): M0 persistence pre-stage (the net: MapList saved=No /
 random_start_point parse + IsTransient; the 3-clause transient guards as

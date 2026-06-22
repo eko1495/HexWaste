@@ -127,18 +127,20 @@ Prebuilt self-contained builds (Linux x64 / Windows x64) are produced by
   encounter spawns its two groups on opposing teams so you stumble into a
   brawl already in progress — watch them thin each other out, or wade in.
 - **Locations**: the opening hour (Arroyo → Temple → Klamath → Den) plus
-  **Vault City**, **Gecko**, and **Modoc** — the first three towns past the slice.
-  Travel there from the worldmap and every map (VC: Courtyard / Downtown / Council /
-  Vault; Gecko: Settlement / Power Plant / Junkyard / Tunnels; Modoc: Main Street /
-  Inn / Well / Outhouse) loads, walks, and transitions; every external their scripts
-  fire is wired, and their NPCs talk via the real dialogue VM. A new town is mostly
-  *content*: the data-driven engine routes, loads, and renders it for free — the
-  per-town work is just wiring the handful of script externals it needs (the
+  **Vault City**, **Gecko**, **Modoc**, and **Broken Hills** — the first four towns
+  past the slice. Travel there from the worldmap and every map (VC: Courtyard /
+  Downtown / Council / Vault; Gecko: Settlement / Power Plant / Junkyard / Tunnels;
+  Modoc: Main Street / Inn / Well / Outhouse; Broken Hills: the two town halves +
+  desert/mountain sub-maps) loads, walks, and transitions; every external their
+  scripts fire is wired, and their NPCs talk via the real dialogue VM. A new town is
+  mostly *content*: the data-driven engine routes, loads, and renders it for free —
+  the per-town work is just wiring the handful of script externals it needs (the
   `--smoke <map>` dev command scopes them), and each town makes the next cheaper
-  (Gecko needed *no* new externals; Modoc just four). Quest machinery is in place —
-  Vault City's citizenship test, Gecko's reactor terminal, Lenny's recruitment (a
-  real `party.txt` companion), and Modoc's "Jonny in the Well" dialogue + scripted
-  well; finishing a specific quest is content navigation, not engine work.
+  (Gecko needed *no* new externals; Modoc four; Broken Hills' town none, only its two
+  random sub-maps two). Quest machinery is in place — Vault City's citizenship test,
+  Gecko's reactor terminal, Lenny's and Marcus's recruitment (real `party.txt`
+  companions), and Modoc's "Jonny in the Well" dialogue + scripted well; finishing a
+  specific quest is content navigation, not engine work.
 - **Companions**: recruit, then a control hub (talk to them) — wait here /
   follow / trade / dismiss / rejoin; a 1:1 flat item trade to gear them up; and
   a combat-control window (the authentic `CONTROL.frm` art) to set their tactics

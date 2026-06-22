@@ -375,6 +375,13 @@ SCENARIOS=(
   "smoke-broken2|--map BROKEN2.map --smoke"
   "smoke-bhrnddst|--map bhrnddst.map --smoke"
   "smoke-bhrndmtn|--map bhrndmtn.map --smoke"
+  # P57-M2: the BH dialogue VM runs — Marcus (script 599 @18284, the mutant sheriff) 7 options + a townsfolk
+  # (594 @10685) 5; Marcus is a real data\party.txt member (member=1, levelMin=12) so recruitment is the
+  # proven Vic/Lenny party_add machinery (NOT custom content). BROKEN1/2 proc census = 14 families, all the
+  # quest spine already wired (map_exit/push the pre-existing residuals). All 6 BH GVARs (TOWN_REP 54, FRAUD
+  # 147, ENEMY 309, READ_FRANCIS_NOTE 524, MARCUS_DEAD 526, CARAVAN 562) are 0 on a fresh game; no seeding.
+  # The quest DRIVE (uranium fraud / Francis / Marcus recruit) is content — the residual; machinery is wired.
+  "bh-dialogue|--map BROKEN1.map --iq-probe 18284 5 --iq-probe 10685 5 --party-probe 0x10000A1 --rng-seed 1"
 )
 
 # Keep only the deterministic transcript lines (drop map-load / animate / stub /
