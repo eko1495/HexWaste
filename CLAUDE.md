@@ -2073,6 +2073,28 @@ goldens BYTE-IDENTICAL. Scoped fully inline (the steady-state ~6-command loop). 
 encounter goldens green. Running tally: P54 VC / P55 Gecko(0) / P56 Modoc(4) / P57 BH(2) / P58 NR(5) / P59
 NCR(0) / P60 SF(0) / P61 Redding(0) / P62 Vault 15(0).
 
+Phase 63 (DONE — "Sierra Army Depot", the TENTH new location + the first in the endgame batch to need
+engine code [breaking the 4-city zero-code streak]). 3 maps (depolv1 the Battlefield, depolva Levels 1-3,
+depolvb Level 4); [Area 08], start_state=Off — a DISCOVERED-VIA-QUEST location (not worldmap-visible from game
+start; the maps load/walk directly, worldmap discovery is via mark_area_known [P58] — content-gated, a
+documented divergence, like the other Off sub-areas). depolva fired TWO new externals (scoped inline — the 2
+were simple enough that a grounding workflow would've been ceremonial; both handlers read VERBATIM, the
+Hexwaste seams [reverse-anim + tile-scan] already existed, arity already correct, no golden loads a depolv
+map): tile_contains_obj_pid (0x80BB, opTileContainsObjectWithPid:1057 — a QUERY, pops pid/elevation/tile,
+pushes 1 if any object at (tile,elev) has the pid; scans _solidObjects+_flatObjects) + animate_stand_reverse_
+obj (0x80CD, opAnimateStandReverse:1363 — pops object/self, !combat-gated, plays ANIM_STAND[=0]; DOCUMENTED
+SIMPLIFICATION: the engine plays it REVERSED [a lie/sit-down], we play forward via the proven P54 Anim path —
+cosmetic, Draw-only, never in a golden). GOTCHA (the de-risk caught it): tile_contains_obj_pid is ALSO fired
+by artemple's map_enter, so wiring it dropped artemple's stub -> smoke-artemple re-recorded (stubs=1->0, the
+Modoc-M1 pattern); NO behavior golden changed (gvar-seed/script-light byte-identical — the query's return value
+doesn't gate a golden-visible branch), and all 16 combat goldens byte-identical. All 3 Sierra maps now stubs=0.
+NO new proc. Sierra GVARs all 0 on a fresh game (TOWN_REP 53 / contamination-timer 149 / 150/152/153/157 — no
+seed trap). It's a robot/combat DUNGEON (no dialogue talkers — Skynet's dialogue is content-gated behind
+assembling the body), but SKYNET (pMCyberdog, pid 0x1000088) IS a data\party.txt member (member=1, levelMin=9)
+-> the Sierra companion (probed via sierra-skynet golden; not a static map critter — assembled at runtime, the
+party-probe confirms membership regardless). 5 goldens (3 smoke at stubs=0 + sierra-skynet + the smoke-artemple
+re-record). 694 tests, 16 combat + 151 encounter goldens green. Running tally: ... P62 Vault 15(0) / P63 Sierra(2).
+
 Phase 10 (DONE, per docs/phase10-research-report.md — "The Wasteland
 Bites Back"): M0 persistence pre-stage (the net: MapList saved=No /
 random_start_point parse + IsTransient; the 3-clause transient guards as

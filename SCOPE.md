@@ -119,11 +119,13 @@ filing an issue.
   scope them), and each town pre-clears the next (Gecko needed *zero* new externals — Vault City
   had already wired the shared ones; Modoc needed four; Broken Hills' town needed *zero*; New
   Reno, the biggest, needed five; NCR, San Francisco, Redding, and Vault 15 needed *zero* — the
-  wired set now covers them outright). Quest *machinery* is wired (Vault City's citizenship
-  test, Gecko's reactor terminal, Lenny's / Marcus's / Myron's / the Vault 15 Doc's recruitment
-  via `party.txt`, Modoc's "Jonny in the Well" dialogue + the scripted well, New Reno's
-  crime-family reputation counters, Redding's wanamingo-count tally), though completing a
-  specific quest is content navigation, not engine work.
+  wired set now covers them outright). Plus the **Sierra Army Depot** (a discovered-via-quest
+  robot dungeon — Skynet's home; the depot levels), which needed two externals. Quest
+  *machinery* is wired (Vault City's citizenship test, Gecko's reactor terminal, Lenny's /
+  Marcus's / Myron's / the Vault 15 Doc's / Sierra's Skynet recruitment via `party.txt`,
+  Modoc's "Jonny in the Well" dialogue + the scripted well, New Reno's crime-family reputation
+  counters, Redding's wanamingo-count tally), though completing a specific quest is content
+  navigation, not engine work.
 
 ## What's out (by design, today)
 

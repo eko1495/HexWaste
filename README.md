@@ -142,11 +142,12 @@ Prebuilt self-contained builds (Linux x64 / Windows x64) are produced by
   work is just wiring the handful of script externals it needs (the `--smoke <map>` dev
   command scopes them), and each town makes the next cheaper (Gecko needed *no* new
   externals; Modoc four; Broken Hills' town none; New Reno, the biggest, five; NCR, San
-  Francisco, Redding, and Vault 15 none — the wired set now covers them outright). Quest
-  machinery is in place — Vault City's citizenship test, Gecko's reactor terminal, Lenny's
-  / Marcus's / Myron's / the Vault 15 Doc's recruitment (real `party.txt` companions), and
-  Modoc's "Jonny in the Well" dialogue + scripted well; finishing a specific quest is
-  content navigation, not engine work.
+  Francisco, Redding, and Vault 15 none — the wired set now covers them outright; the
+  **Sierra Army Depot** robot dungeon needed two). Quest machinery is in place — Vault
+  City's citizenship test, Gecko's reactor terminal, Lenny's / Marcus's / Myron's / the
+  Vault 15 Doc's / Sierra's Skynet recruitment (real `party.txt` companions), and Modoc's
+  "Jonny in the Well" dialogue + scripted well; finishing a specific quest is content
+  navigation, not engine work.
 - **Companions**: recruit, then a control hub (talk to them) — wait here /
   follow / trade / dismiss / rejoin; a 1:1 flat item trade to gear them up; and
   a combat-control window (the authentic `CONTROL.frm` art) to set their tactics
