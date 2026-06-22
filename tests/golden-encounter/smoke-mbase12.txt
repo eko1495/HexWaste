@@ -1,0 +1,1 @@
+smoke: map=mbase12.map critters=39 containers=21 doors=6 scripted=32 stubs=0[]

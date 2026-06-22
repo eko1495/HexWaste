@@ -489,6 +489,17 @@ SCENARIOS=(
   "smoke-depolva|--map depolva.map --smoke"
   "smoke-depolvb|--map depolvb.map --smoke"
   "sierra-skynet|--map depolva.map --party-probe 0x1000088 --party-probe 0x1000005 --rng-seed 1"
+
+  # Military Base / Mariposa (P64): the ELEVENTH new location — back to ZERO-engine-code. 3 maps (mbclose the
+  # caved-in entrance, mbase12 Levels 1-2, mbase34 Levels 3-4) census stubs=0 with NO wiring. M0 reachable free
+  # ([Area 12], start_state=On, entrance_0 "Military Base Entrance" via ArriveAt; inter-map = static exit
+  # grids). NO new external, NO new proc (14 wired families). It's a pure super-mutant COMBAT DUNGEON: no
+  # dialogue talkers (the mutants are combat-only at IN 5), no party.txt companion, and the single GVAR
+  # (MILITARY_BASE_FLAGS 215) is 0 on a fresh game. So the deliverable is reachable + walkable + fully wired
+  # (smoke-only). Quest drive (fight through to the FEV vats / destroy the base / Melchior) = content residual.
+  "smoke-mbclose|--map mbclose.map --smoke"
+  "smoke-mbase12|--map mbase12.map --smoke"
+  "smoke-mbase34|--map mbase34.map --smoke"
   # P57-M2: the BH dialogue VM runs — Marcus (script 599 @18284, the mutant sheriff) 7 options + a townsfolk
   # (594 @10685) 5; Marcus is a real data\party.txt member (member=1, levelMin=12) so recruitment is the
   # proven Vic/Lenny party_add machinery (NOT custom content). BROKEN1/2 proc census = 14 families, all the

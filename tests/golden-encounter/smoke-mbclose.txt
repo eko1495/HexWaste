@@ -1,0 +1,1 @@
+smoke: map=mbclose.map critters=11 containers=8 doors=1 scripted=14 stubs=0[]
