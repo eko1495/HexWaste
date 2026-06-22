@@ -115,4 +115,16 @@ public class CompanionAiTests
         Assert.Equal(4, (int)WeaponPref.Ranged);
         Assert.Equal(7, (int)WeaponPref.Random);
     }
+
+    [Theory] // P68: ai.txt distance= keyword -> the shared Distance enum (the enemy-AI distance map)
+    [InlineData("stay_close", Distance.StayClose)]
+    [InlineData("charge", Distance.Charge)]
+    [InlineData("snipe", Distance.Snipe)]
+    [InlineData("stay", Distance.Stay)]
+    [InlineData("on_your_own", Distance.OnYourOwn)]
+    [InlineData("", Distance.OnYourOwn)]        // absent field (the golden scorpion/peasant) -> default
+    [InlineData("random", Distance.OnYourOwn)]  // unmapped keyword -> default
+    [InlineData(null, Distance.OnYourOwn)]
+    public void AiDistanceModeParsesTheEngineKeywords(string? keyword, Distance expected) =>
+        Assert.Equal(expected, AiDistanceMode.Parse(keyword));
 }

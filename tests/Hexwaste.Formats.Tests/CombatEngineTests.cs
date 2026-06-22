@@ -404,6 +404,65 @@ public class CombatEngineTests
         Assert.Contains(enemy, host.CarriesStimpak);   // stimpak untouched
     }
 
+    // --- P68: AI-packet enemy distance (stay / snipe) ---------------------------------
+
+    [Fact]
+    public void StayDistanceEnemyHoldsPositionInsteadOfApproaching()
+    {
+        // P68 (DISTANCE_STAY, combat_ai.cc:1223/2361): an enemy with distance=stay never closes the gap —
+        // it only attacks if already in range. Out of range here → it holds (a turret/stationary guard).
+        var host = new FakeCombatHost();
+        MapObject dude = host.SetDude(NewCritter(tile: 20100, hp: 30, ap: 10));
+        int eTile = HexGrid.TileInDirection(HexGrid.TileInDirection(HexGrid.TileInDirection(20100, 0), 0), 0);
+        MapObject enemy = host.AddCritter(NewCritter(tile: eTile, hp: 30, ap: 10));
+        host.AiPackets[enemy] = new AiPacket(99, "Turret", MinToHit: 0, MinHp: 0, 0, "stay", "");
+        var engine = new CombatEngine(host, new MinRng());
+
+        engine.BeginScriptAggro(enemy, dude);
+        engine.Step();
+
+        Assert.Equal(eTile, enemy.HexTile);  // held position — never approached
+        Assert.Equal(30, dude.CurrentHp);    // out of range, so no attack either
+    }
+
+    [Fact]
+    public void AbsentDistanceEnemyStillApproaches()
+    {
+        // The byte-identical control: the golden scorpion (pkt8) / peasant (pkt14) carry NO distance field
+        // → the engine default -1 → OnYourOwn here → they approach exactly as before. Only stay/snipe differ.
+        var host = new FakeCombatHost();
+        MapObject dude = host.SetDude(NewCritter(tile: 20100, hp: 30, ap: 10));
+        int eTile = HexGrid.TileInDirection(HexGrid.TileInDirection(HexGrid.TileInDirection(20100, 0), 0), 0);
+        MapObject enemy = host.AddCritter(NewCritter(tile: eTile, hp: 30, ap: 10));
+        host.AiPackets[enemy] = new AiPacket(8, "Scorpion", MinToHit: 0, MinHp: 0, 0, "", ""); // no distance
+        var engine = new CombatEngine(host, new MinRng());
+
+        engine.BeginScriptAggro(enemy, dude);
+        engine.Step();
+
+        Assert.True(HexGrid.Distance(enemy.HexTile, dude.HexTile) < HexGrid.Distance(eTile, dude.HexTile));
+    }
+
+    [Fact]
+    public void SnipeEnemyBacksAwayFromAnAdjacentTarget()
+    {
+        // P68 (DISTANCE_SNIPE, combat_ai.cc:3001): a ranged sniper closed to melee range kites — it steps
+        // away to reopen range instead of firing point-blank (one-step, the documented simplification).
+        var host = new FakeCombatHost { LoadedAmmoCount = 10 };
+        MapObject dude = host.SetDude(NewCritter(tile: 20100, hp: 30, ap: 10));
+        int eTile = HexGrid.TileInDirection(20100, 0); // adjacent
+        MapObject enemy = host.AddCritter(NewCritter(tile: eTile, hp: 30, ap: 10));
+        host.AiPackets[enemy] = new AiPacket(13, "Sniper", MinToHit: 0, MinHp: 0, 0, "snipe", "");
+        host.Equipped = (TestWeapon(0x100, 0x06, 5, 12), TestItem(0x100)); // a loaded ranged gun
+        var engine = new CombatEngine(host, new MinRng());
+
+        engine.BeginScriptAggro(enemy, dude);
+        engine.Step();
+
+        Assert.True(HexGrid.Distance(enemy.HexTile, dude.HexTile) > 1); // kited away to reopen range
+        Assert.Equal(30, dude.CurrentHp);                              // did not shoot this turn
+    }
+
     // --- P43: AI inventory weapon switch (best_weapon) --------------------------------
 
     private static ProtoInfo TestWeapon(int pid, int ext, int min, int max, int cost = 0, int dmgType = 0)

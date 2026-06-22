@@ -2130,6 +2130,22 @@ public sealed class CombatEngine
             shotBlocked = blocker is not null;
         }
 
+        // P68: the enemy honours its ai.txt distance preference (was parsed but never consumed for enemies).
+        // SNIPE — a ranged sniper closed to melee range backs away to reopen its preferred distance instead
+        // of shooting point-blank (combat_ai.cc:3001, simplified to a one-step kite when the target is
+        // adjacent, without the combat-rating gate). No golden enemy is a sniper -> byte-identical.
+        // ported from fallout2-ce src/combat_ai.cc _cai_perform_distance_prefs()
+        Distance distMode = AiDistanceMode.Parse(ai?.Distance);
+        if (distMode == Distance.Snipe && enemyGun && enemyDistance <= 2 && _actingEnemyAp >= 1)
+        {
+            int back = HexGrid.TileInDirection(enemy.HexTile, (HexGrid.RotationTo(enemy.HexTile, dudeTile) + 3) % 6);
+            if (back != enemy.HexTile && !_host.IsBlocked(back))
+            {
+                _actingEnemyAp -= 1;
+                return _host.StartWalk(enemy, back);
+            }
+        }
+
         if (enemyDistance <= attackRange && !shotBlocked)
         {
             int toHit = self is not null && def is not null
@@ -2147,6 +2163,13 @@ public sealed class CombatEngine
             // to the approach, re-evaluated next turn). The slice has no snipers,
             // so closing toward is the right move (combat_ai.cc:2845 simplified).
         }
+
+        // P68: DISTANCE_STAY holds position — it attacks if already in range (above) but never closes the
+        // gap (combat_ai.cc:1223/2361, _ai_move_away/_ai_move_steps_closer return -1 for DISTANCE_STAY).
+        // The golden enemies (scorpion pkt8 / peasant pkt14) carry NO distance field -> the engine default
+        // -1 -> OnYourOwn here -> they approach as before -> byte-identical.
+        if (distMode == Distance.Stay)
+            return false;
 
         if (_actingEnemyAp < 1)
             return false;

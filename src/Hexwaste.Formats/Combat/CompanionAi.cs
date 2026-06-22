@@ -11,6 +11,22 @@ public enum AttackWho { WhoeverAttackingMe, Strongest, Weakest, Whomever, Closes
 /// combat_ai.cc _cai_perform_distance_prefs).</summary>
 public enum Distance { StayClose, Charge, Snipe, OnYourOwn, Stay }
 
+/// <summary>Maps an ai.txt <c>distance=</c> keyword to the shared <see cref="Distance"/> enum
+/// (combat_ai.cc gDistanceModeKeys: stay_close/charge/snipe/on_your_own). An absent field, "random",
+/// or any unknown keyword falls back to OnYourOwn — the engine's pre-parse default <c>-1</c> means
+/// "no distance preference", which behaves like free movement. (P68: the enemy-AI distance gap.)</summary>
+public static class AiDistanceMode
+{
+    public static Distance Parse(string? keyword) => keyword switch
+    {
+        "stay_close" => Distance.StayClose,
+        "charge" => Distance.Charge,
+        "snipe" => Distance.Snipe,
+        "stay" => Distance.Stay,
+        _ => Distance.OnYourOwn,
+    };
+}
+
 /// <summary>The HP threshold at which to flee (custom.msg 200-205; combat_ai.cc run_away_mode → min_hp).
 /// Hexwaste maps the engine's min_hp levels to HP fractions (a documented approximation).</summary>
 public enum RunAway { AbjectCoward, FingerHurts, Bleeding, NotFeelingGood, Tourniquet, Never }

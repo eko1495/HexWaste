@@ -2164,6 +2164,24 @@ long name can extend toward the paperdoll — Hexwaste is a text-list inventory,
 dual-wield slot (the P47 single-weapon model). Screenshot-verified the INVBOX window renders over the real art.
 New harness --show-inventory (opens the INVBOX for a screenshot, the --show-create pattern; additive, no golden).
 
+Phase 68 (DONE — "AI-packet enemy distance"): the ai.txt distance= field was PARSED into AiPacket.Distance
+since P9 but never CONSUMED for enemies (only the P50/P51 COMPANION distance knob was). Now CombatEngine.Try
+EnemyAction honours it: new pure CompanionAi.AiDistanceMode.Parse (the gDistanceModeKeys map: stay_close/charge/
+snipe/on_your_own/stay; absent/"random"/unknown -> OnYourOwn, the engine's pre-parse -1 "no preference"). Two
+behaviours wired (the two that fit Hexwaste's attack-first per-turn flow): DISTANCE_STAY -> hold position (never
+close the gap; attacks only if already in range — combat_ai.cc:1223/2361 _ai_move_away/_ai_move_steps_closer
+return -1 for STAY), and DISTANCE_SNIPE -> a ranged sniper closed to melee range (<=2) steps AWAY one hex to
+reopen range instead of firing point-blank (combat_ai.cc:3001, simplified: a one-step kite without the combat-
+rating gate). DOCUMENTED RESIDUALS (same level as the existing ally-distance code): CHARGE/STAY_CLOSE/ON_YOUR_
+OWN all map to the current approach (CHARGE's ignore-fleeing + STAY_CLOSE's leader-regroup don't fit the enemy-
+vs-dude attack-first model); the SNIPE kite is one-step + ungated (no _combatai_rating comparison, no multi-step
+retreat to range ~10). KEY DE-RISK (verified BYTE-IDENTICAL on all 16 combat + encounter goldens): the golden
+enemies — arcaves Scorpion (pkt8) and denbus2 Peasants (pkt14) — carry NO distance field in ai.txt (the engine
+default -1), so AiDistanceMode.Parse("") -> OnYourOwn -> they approach exactly as before; only an enemy whose
+packet sets distance=stay/snipe diverges, and none is in a golden. 11 new tests (3 fake-host CombatEngine: Stay
+holds / absent-distance approaches [the control] / Snipe kites-when-adjacent; an 8-case AiDistanceMode.Parse
+theory). 705 Formats tests.
+
 Phase 10 (DONE, per docs/phase10-research-report.md — "The Wasteland
 Bites Back"): M0 persistence pre-stage (the net: MapList saved=No /
 random_start_point parse + IsTransient; the 3-clause transient guards as
