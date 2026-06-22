@@ -471,6 +471,24 @@ SCENARIOS=(
   "smoke-v15sent|--map V15SENT.MAP --smoke"
   "smoke-v15orig|--map V15_ORIG.map --smoke"
   "v15-dialogue|--map VAULT15.MAP --iq-probe 12684 5 --iq-probe 14084 5 --party-probe 0x10000A2 --party-probe 0x1000005 --rng-seed 1"
+
+  # Sierra Army Depot (P63): the TENTH new location — the FIRST in this batch to need engine code. 3 maps
+  # (depolv1 the Battlefield, depolva Levels 1-3, depolvb Level 4); [Area 08], start_state=Off (a discovered-
+  # via-quest location, not worldmap-visible from game start — maps load/walk directly; worldmap discovery is
+  # via mark_area_known [P58], content-gated). depolva fired TWO new externals (now wired, all 3 maps stubs=0):
+  # tile_contains_obj_pid (0x80BB, opTileContainsObjectWithPid — a query: 1 if any object at (tile,elev) has
+  # the pid; ALSO fired by artemple, so smoke-artemple re-recorded as the stub drops) + animate_stand_reverse_
+  # obj (0x80CD, opAnimateStandReverse — cosmetic !combat-gated stand anim; the engine plays it REVERSED, we
+  # play forward via the P54 Anim path, a documented Draw-only simplification). NO new proc. Sierra GVARs all
+  # 0 on a fresh game (TOWN_REP_SIERRA 53 / contamination-timer 149 / 150/152/153/157 — no seed trap). It's a
+  # robot/combat DUNGEON (no dialogue talkers — Skynet's dialogue is content-gated behind assembling the body),
+  # but SKYNET (pMCyberdog, pid 0x1000088) IS a data\party.txt member (member=1, levelMin=9) -> the Sierra
+  # companion (radscorpion 0x1000005 = the member=0 control). Quest drive (assemble Skynet / the brain-bot
+  # fight / the evac holodisk) = content residual; the machinery is wired.
+  "smoke-depolv1|--map depolv1.map --smoke"
+  "smoke-depolva|--map depolva.map --smoke"
+  "smoke-depolvb|--map depolvb.map --smoke"
+  "sierra-skynet|--map depolva.map --party-probe 0x1000088 --party-probe 0x1000005 --rng-seed 1"
   # P57-M2: the BH dialogue VM runs — Marcus (script 599 @18284, the mutant sheriff) 7 options + a townsfolk
   # (594 @10685) 5; Marcus is a real data\party.txt member (member=1, levelMin=12) so recruitment is the
   # proven Vic/Lenny party_add machinery (NOT custom content). BROKEN1/2 proc census = 14 families, all the

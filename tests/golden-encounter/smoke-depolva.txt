@@ -1,0 +1,1 @@
+smoke: map=depolva.map critters=52 containers=44 doors=26 scripted=126 stubs=0[]

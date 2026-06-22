@@ -158,6 +158,12 @@ public sealed class ScriptHost(GameFileSystem vfs, ScriptList scripts, Hexwaste.
     /// <summary>P58: game_time_advance(ticks) — the host advances the clock + runs the tick catch-up.</summary>
     public Action<int>? GameTimeAdvanceRequested { get; set; }
 
+    /// <summary>P63: tile_contains_obj_pid(tile, elevation, pid) — 1 if a matching object is at the tile.</summary>
+    public Func<int, int, int, bool>? TileContainsObjPidProvider { get; set; }
+
+    /// <summary>P63: animate_stand_reverse_obj(obj) — the host plays the object's stand anim.</summary>
+    public Action<MapObject>? AnimateStandReverseRequested { get; set; }
+
     /// <summary>True during a save/load replay — gates kill_critter_type (interpreter_extra.cc:2384).</summary>
     public Func<bool>? IsLoadingGameProvider { get; set; }
     public bool IsLoadingGame() => IsLoadingGameProvider?.Invoke() ?? false;
@@ -1134,6 +1140,18 @@ public sealed class ScriptHost(GameFileSystem vfs, ScriptList scripts, Hexwaste.
             _host.MarkAreaKnownRequested?.Invoke(markType, areaId, mode);
 
         public void GameTimeAdvance(int ticks) => _host.GameTimeAdvanceRequested?.Invoke(ticks);
+
+        // P63 (Sierra Army Depot): a tile-object-pid query + a cosmetic stand animation.
+        public bool TileContainsObjPid(int tile, int elevation, int pid) =>
+            _host.TileContainsObjPidProvider?.Invoke(tile, elevation, pid) ?? false;
+
+        public void AnimateStandReverse(int objectHandle)
+        {
+            // engine: falls back to self if the handle is null (interpreter_extra.cc:1366) — the slice
+            // passes an explicit object, so the self-fallback is a documented cut.
+            if (_host.ObjectOf(objectHandle) is { } obj)
+                _host.AnimateStandReverseRequested?.Invoke(obj);
+        }
 
         public int CurrentMapIndex() => _host.CurrentMapIndexProvider?.Invoke() ?? 0;
 

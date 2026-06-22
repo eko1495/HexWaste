@@ -1,0 +1,2 @@
+party-probe: pid=0x1000088 member=1 levelMin=9
+party-probe: pid=0x1000005 member=0 levelMin=-1

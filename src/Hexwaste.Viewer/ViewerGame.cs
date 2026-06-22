@@ -1007,6 +1007,21 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
                     ProcessDrugs();
                     ProcessWithdrawals();
                 },
+                // P63 (Sierra Army Depot): tile_contains_obj_pid scans every object at (tile, elevation) for
+                // the pid (the engine's objectFindFirstAtLocation loop). ported from opTileContainsObjectWithPid.
+                TileContainsObjPidProvider = (tile, elevation, pid) =>
+                    elevation >= 0 && elevation < MapFile.ElevationCount
+                    && _solidObjects[elevation].Concat(_flatObjects[elevation]).Any(o => o.HexTile == tile && o.Pid == pid),
+                // animate_stand_reverse_obj: the object plays its ANIM_STAND once, !combat-gated like the engine.
+                // DOCUMENTED SIMPLIFICATION: the engine plays the stand anim REVERSED (a lie/sit-down); we play
+                // it forward via the proven P54 Anim path (cosmetic, Draw-only, never in a golden).
+                // ported from fallout2-ce src/interpreter_extra.cc opAnimateStandReverse()
+                AnimateStandReverseRequested = obj =>
+                {
+                    if (_combat.Phase == Formats.Combat.CombatPhase.Idle && Fid.Type(obj.Fid) is ObjectType.Critter)
+                        _animator.PlayActionOnce(obj, Fid.Build(ObjectType.Critter, Fid.Index(obj.Fid),
+                            0 /* ANIM_STAND */, Fid.WeaponCode(obj.Fid), obj.Rotation));
+                },
                 // First hit of each distinct stub goes to stderr; counts are
                 // dumped per map on exit (gap analysis for wiring externals).
                 OnStubbedExternal = name =>

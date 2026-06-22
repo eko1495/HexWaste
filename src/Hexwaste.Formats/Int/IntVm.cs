@@ -288,6 +288,14 @@ public interface IVmExternals
     /// <summary>game_time_advance (0x80FC, opGameTimeAdvance): advance the game clock by <paramref name="ticks"/>.</summary>
     void GameTimeAdvance(int ticks) { }
 
+    /// <summary>tile_contains_obj_pid (0x80BB, opTileContainsObjectWithPid): 1 if any object at
+    /// (<paramref name="tile"/>, <paramref name="elevation"/>) has proto <paramref name="pid"/>.</summary>
+    bool TileContainsObjPid(int tile, int elevation, int pid) => false;
+
+    /// <summary>animate_stand_reverse_obj (0x80CD, opAnimateStandReverse): the object plays its
+    /// stand animation (reversed in the engine; not in combat).</summary>
+    void AnimateStandReverse(int objectHandle) { }
+
     /// <summary>obj_is_carrying_obj_pid (interpreter_extra.cc:1040): the quantity of
     /// <paramref name="pid"/> the critter carries (recursive into nested containers).</summary>
     int ObjIsCarryingPid(int objectHandle, int pid) => 0;
@@ -1654,6 +1662,15 @@ public sealed class IntVm
             }
             case 0x80FC: // game_time_advance (opGameTimeAdvance): pops ticks
                 _externals.GameTimeAdvance(PopInt());
+                break;
+            case 0x80BB: // tile_contains_obj_pid (opTileContainsObjectWithPid): pops pid, elevation, tile
+            {
+                int pid = PopInt(), elevation = PopInt();
+                PushInt(_externals.TileContainsObjPid(PopInt(), elevation, pid) ? 1 : 0);
+                break;
+            }
+            case 0x80CD: // animate_stand_reverse_obj (opAnimateStandReverse): pops object
+                _externals.AnimateStandReverse(PopInt());
                 break;
             default:
             {

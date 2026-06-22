@@ -1,0 +1,1 @@
+smoke: map=depolvb.map critters=10 containers=6 doors=10 scripted=27 stubs=0[]
