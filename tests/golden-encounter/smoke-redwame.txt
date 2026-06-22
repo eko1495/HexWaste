@@ -1,0 +1,1 @@
+smoke: map=REDWAME.MAP critters=16 containers=7 doors=18 scripted=34 stubs=0[]

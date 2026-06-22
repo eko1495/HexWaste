@@ -1,0 +1,1 @@
+smoke: map=REDMENT.MAP critters=46 containers=22 doors=28 scripted=93 stubs=0[]

@@ -11,3 +11,5 @@ get-global: GVAR135 = 100
 get-global: GVAR136 = 100
 get-global: GVAR216 = 100
 get-global: GVAR284 = 0
+get-global: GVAR56 = 0
+get-global: GVAR461 = 20

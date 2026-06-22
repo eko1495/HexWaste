@@ -1,0 +1,1 @@
+smoke: map=REDDTUN.MAP critters=7 containers=4 doors=4 scripted=10 stubs=0[]

@@ -1,0 +1,1 @@
+smoke: map=redwan1.map critters=24 containers=4 doors=2 scripted=17 stubs=0[]

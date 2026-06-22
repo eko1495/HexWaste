@@ -187,7 +187,7 @@ SCENARIOS=(
   "karma|--map artemple.map --set-karma 50 5 --set-global 0 100 --set-global 47 30 --set-global 3 1 --karma-probe --rep-title 100 --town-rep 30 --karma-titles --rng-seed 1"
   # P32-M1 vault13.gam GVAR seeding: --create runs StartNewGame which seeds the non-zero globals
   # (Arroyo rep 47:=50, FIND_VIC 619:=1, Salvatore counter 134:=100; everything else 0).
-  "gvar-seed|--map artemple.map --create 5,5,5,5,5,5,5:0,4,5:0 --get-global 0 --get-global 47 --get-global 619 --get-global 134 --get-global 50 --get-global 81 --get-global 91 --get-global 137 --get-global 55 --get-global 135 --get-global 136 --get-global 216 --get-global 284 --rng-seed 1"
+  "gvar-seed|--map artemple.map --create 5,5,5,5,5,5,5:0,4,5:0 --get-global 0 --get-global 47 --get-global 619 --get-global 134 --get-global 50 --get-global 81 --get-global 91 --get-global 137 --get-global 55 --get-global 135 --get-global 136 --get-global 216 --get-global 284 --get-global 56 --get-global 461 --rng-seed 1"
   # P33 critter_attempt_placement: relocate a map critter to a different tile via the real placement path
   # (denbus2 has a critter at 14716; move it to 14000). On entry the engine fires this op same-tile (a
   # no-op), so the slice goldens are unchanged — this proves the actual relocate.
@@ -437,6 +437,24 @@ SCENARIOS=(
   "smoke-sfshutl1|--map SFSHUTL1.map --smoke"
   "smoke-sfshutl2|--map SFSHUTL2.MAP --smoke"
   "sf-dialogue|--map SFChina.map --iq-probe 20504 5 --iq-probe 20703 5 --rng-seed 1"
+
+  # Redding (P61): the EIGHTH new location — and the THIRD straight ZERO-engine-code city (the steady-state).
+  # All 6 maps (REDDOWN downtown, REDDTUN tunnels, REDMENT/REDMTUN the Kokoweef mine, REDWAME/redwan1 the
+  # Wanamingo mine) census stubs=0 with NO wiring. M0 reachable free ([Area 13], start_state=On, entrance_0
+  # "Redding Downtown" via ArriveAt; inter-map = static exit grids). NO new external, NO new proc (13 wired
+  # families). THE P58 TRAP STRUCK AGAIN: GVAR_TOTAL_WANAMINGOS (461) seeds to 20 on a fresh game (the mine's
+  # initial creature count, already written by SeedGlobalVars — you clear them for the quest), NOT 0; the
+  # other Redding GVARs (TOWN_REP_REDDING 56 / QUEST_REDDING_PROBLEM 94 / MAYOR 334 / SHERIFF 387 /
+  # WANAMINGO_OCCUPADO 389) are 0. No party.txt companion. The dialogue VM runs (REDDOWN script 809 @17063 =
+  # 5 options, 681 @15312 = 4). Quest drive (the mine-ownership war / the Wanamingo extermination / Jet) =
+  # content residual; machinery wired. (gvar-seed below extended to assert TOTAL_WANAMINGOS=20.)
+  "smoke-reddown|--map REDDOWN.MAP --smoke"
+  "smoke-reddtun|--map REDDTUN.MAP --smoke"
+  "smoke-redment|--map REDMENT.MAP --smoke"
+  "smoke-redmtun|--map REDMTUN.MAP --smoke"
+  "smoke-redwame|--map REDWAME.MAP --smoke"
+  "smoke-redwan1|--map redwan1.map --smoke"
+  "redding-dialogue|--map REDDOWN.MAP --iq-probe 17063 5 --iq-probe 15312 5 --rng-seed 1"
   # P57-M2: the BH dialogue VM runs — Marcus (script 599 @18284, the mutant sheriff) 7 options + a townsfolk
   # (594 @10685) 5; Marcus is a real data\party.txt member (member=1, levelMin=12) so recruitment is the
   # proven Vic/Lenny party_add machinery (NOT custom content). BROKEN1/2 proc census = 14 families, all the
