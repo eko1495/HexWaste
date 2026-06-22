@@ -1,0 +1,1 @@
+smoke: map=modmain.map critters=25 containers=13 doors=21 scripted=84 stubs=0[]

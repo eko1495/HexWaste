@@ -1,0 +1,1 @@
+smoke: map=modinn.map critters=26 containers=18 doors=23 scripted=45 stubs=0[]

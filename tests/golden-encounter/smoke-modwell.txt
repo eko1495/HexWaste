@@ -1,0 +1,1 @@
+smoke: map=modwell.map critters=0 containers=0 doors=0 scripted=15 stubs=0[]

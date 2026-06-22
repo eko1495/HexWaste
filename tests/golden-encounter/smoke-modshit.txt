@@ -1,0 +1,1 @@
+smoke: map=modshit.map critters=1 containers=1 doors=0 scripted=3 stubs=0[]

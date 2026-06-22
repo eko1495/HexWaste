@@ -345,6 +345,24 @@ SCENARIOS=(
   # recruitment is the proven Vic-pattern (the radscorpion 0x1000005 is the member=0 control). The recruit
   # DRIVE (navigating his quest-gated node) is the residual; the party_add machinery is wired.
   "gecko-lenny|--map gecksetl.map --iq-probe 16701 5 --party-probe 0x100006B --party-probe 0x1000005 --rng-seed 1"
+
+  # Modoc (P56): the THIRD new location — all 4 maps fully covered (stubs=0) after M2 wired the last two
+  # externals (set_map_start 0x80A8, kill_critter_type 0x80EE). Reachable for free via the generic ArriveAt
+  # (city.txt [Area 03] Modoc, start_state=On, entrance_0 "Modoc Main Street" -> modmain.map). The quest
+  # spine (talk/use_p/use_obj_on/use_skill_on/timed_event) was ALREADY wired; the only unwired procs Modoc
+  # defines are map_exit_p_proc + push_p_proc — PRE-EXISTING engine-wide residuals (denbus2 already defines
+  # them, never fired across the whole Arroyo->Den slice), not quest-blocking.
+  "smoke-modmain|--map modmain.map --smoke"
+  "smoke-modinn|--map modinn.map --smoke"
+  "smoke-modwell|--map modwell.map --smoke"
+  "smoke-modshit|--map modshit.map --smoke"
+  # P56-M5: the Modoc dialogue VM runs end-to-end — Balthas (script 96 @12323, the "Jonny in the Well"
+  # quest-giver) + Grisha (100 @28710). The well (miWell 572 @17520) fires its scripted use_p_proc (the
+  # quest mechanic; scenery-use, P55-M2). All 6 Modoc GVARs (TOWN_REP 52, JONNY_STATE 114, JONNY_TILE 115,
+  # TOOL_FLAG 118, ROSE_FLAG 123, JONNY_HOME 129) are 0 on a fresh game. The quest DRIVE (navigating
+  # Jonny's rescue) is content — the documented residual; the machinery is wired.
+  "modoc-dialogue|--map modmain.map --iq-probe 12323 5 --iq-probe 28710 5 --rng-seed 1"
+  "modoc-well|--map modmain.map --use-hex 17520 --rng-seed 1"
 )
 
 # Keep only the deterministic transcript lines (drop map-load / animate / stub /
