@@ -2147,6 +2147,23 @@ remaining gaps are all CONTENT (quest navigation, content-gated recruits), not e
 (P54-P66) needed engine code on only 4 cities (Modoc 4 / BH 2 / NR 5 / Sierra 2 = 13 externals total); the
 other 9 were pure content reuse.
 
+Phase 67 (DONE — "Paperdoll inventory window", the authentic INVBOX.frm): the inventory panel was a text-
+list with two equip-slot BOXES beside it (P47); now it renders the real art\intrface\INVBOX.frm (interface FID
+48, 499x377 — the P52 "FID-48 unconfirmed" blocker RESOLVED via intrface.lst[48]=INVBOX.FRM) centred, with the
+dude PAPERDOLL in the body view (local 176,37,60,100 — the live critter art, reflects worn armor) and the two
+equip slots positioned on the window's authentic slot art (armor 154,183; our single weapon -> the right-hand
+slot 245,286; the left-hand slot 154,286 stays decorative, the single-weapon model). The item list moves into
+the window's left column. KEY GOLDEN-SAFETY: every window-relative position is gated on _invBox being LOADED,
+which only happens on a live Draw — headless (the goldens) _invBox is null so InvBoxOrigin()/InventoryPanelX()
+fall back to the ORIGINAL x=40 list + x=420 boxes, exactly what the --panel-click / --drag-equip / hud-click
+goldens exercise (those use CurrentItemPanels' X + logical slot args, never screen coords) -> all 16 combat +
+156 encounter goldens BYTE-IDENTICAL (verified by a clean check). The INVBOX render reuses InterfaceBar.LoadFrm
+(the PERKWIN/OPBASE/SKLDXBOX lazy-??= pattern); the in-window list uses ItemRowRect (render == hit-test) in the
+narrow left column. DOCUMENTED DIVERGENCES: the readable text rows are wider than the engine's icon column (so a
+long name can extend toward the paperdoll — Hexwaste is a text-list inventory, not an icon grid); no left-hand/
+dual-wield slot (the P47 single-weapon model). Screenshot-verified the INVBOX window renders over the real art.
+New harness --show-inventory (opens the INVBOX for a screenshot, the --show-create pattern; additive, no golden).
+
 Phase 10 (DONE, per docs/phase10-research-report.md — "The Wasteland
 Bites Back"): M0 persistence pre-stage (the net: MapList saved=No /
 random_start_point parse + IsTransient; the 3-clause transient guards as

@@ -981,7 +981,7 @@ public sealed partial class ViewerGame
         }
         else if (_inventoryOpen)
         {
-            panels.Add(new(40, "Inventory - click/1-9 use/equip, Shift drop, Esc close",
+            panels.Add(new(InventoryPanelX(), "Inventory - click/1-9 use/equip, Shift drop, Esc close",
                 _dudeInventory, ItemPanelKind.Inventory, null));
         }
         return panels;
@@ -991,6 +991,7 @@ public sealed partial class ViewerGame
     {
         if (_fontRenderer is null)
             return;
+        DrawInventoryWindow(); // P67: the INVBOX paperdoll backdrop (behind the list); no-op if the art is absent
         foreach (ItemPanel panel in CurrentItemPanels())
         {
             int bottom = DrawItemList(panel.Title, panel.Items, panel.X, panel.Price);
@@ -1018,14 +1019,43 @@ public sealed partial class ViewerGame
     private DragSource _dragSource;     // where the drag started
     private Point _dragStart;           // the press position (to tell a tap from a drag)
 
-    // The two equip-slot rects (screen coords; the inventory list panel is fixed at x=40,
-    // width 360, so x=420 is free — the same column the barter/trade right panel uses).
-    private static readonly Rectangle WeaponSlotRect = new(420, 96, 90, 60);
-    private static readonly Rectangle ArmorSlotRect = new(420, 176, 90, 60);
+    // P67: the authentic INVBOX.frm paperdoll window (interface FID 48, 499x377). Loaded lazily on
+    // the first live Draw; headless it stays null so the panel falls back to the original boxes-beside-
+    // the-list layout — which is what the --panel-click / --drag-equip goldens exercise (they use the
+    // same CurrentItemPanels X + logical slot args), so those goldens are byte-identical.
+    private Texture2D? _invBox;
+    private bool _invBoxTried;
+    private const int InvBoxW = 499, InvBoxH = 377;
+    // Window-local layout (inventory.cc): item list at 44,38; armor slot 154,183; right-hand (our single
+    // weapon) slot 245,286; left-hand slot 154,286 (decorative — single-weapon model); PC body 176,37.
+    private const int InvBoxListLocalX = 44;
+    private static readonly Rectangle InvBoxArmorLocal = new(154, 183, 90, 61);
+    private static readonly Rectangle InvBoxWeaponLocal = new(245, 286, 90, 61);
+    private static readonly Rectangle InvBoxLeftLocal = new(154, 286, 90, 61);
+    private static readonly Rectangle InvBoxBodyLocal = new(176, 37, 60, 100);
 
-    private static Formats.Combat.EquipSlot? EquipSlotAt(int mx, int my) =>
-        WeaponSlotRect.Contains(mx, my) ? Formats.Combat.EquipSlot.Weapon
-        : ArmorSlotRect.Contains(mx, my) ? Formats.Combat.EquipSlot.Armor
+    /// <summary>Top-left of the centred INVBOX window when its art is loaded; null = the fallback
+    /// boxes-beside-the-list layout (headless / art absent).</summary>
+    private Point? InvBoxOrigin() => _invBox is null
+        ? null
+        : new Point(Math.Max(0, (GraphicsDevice.Viewport.Width - InvBoxW) / 2),
+                    Math.Max(0, (GraphicsDevice.Viewport.Height - InvBoxH) / 2));
+
+    /// <summary>The dude inventory list's X: inside the INVBOX window when its art is up, else x=40
+    /// (the boxes layout the harness/goldens use).</summary>
+    private int InventoryPanelX() => InvBoxOrigin() is { } o ? o.X + InvBoxListLocalX : 40;
+
+    // The two equip-slot rects: on the INVBOX paperdoll when its art is up, else free-column boxes (x=420).
+    private Rectangle WeaponSlotRect() => InvBoxOrigin() is { } o
+        ? InvBoxWeaponLocal with { X = o.X + InvBoxWeaponLocal.X, Y = o.Y + InvBoxWeaponLocal.Y }
+        : new Rectangle(420, 96, 90, 60);
+    private Rectangle ArmorSlotRect() => InvBoxOrigin() is { } o
+        ? InvBoxArmorLocal with { X = o.X + InvBoxArmorLocal.X, Y = o.Y + InvBoxArmorLocal.Y }
+        : new Rectangle(420, 176, 90, 60);
+
+    private Formats.Combat.EquipSlot? EquipSlotAt(int mx, int my) =>
+        WeaponSlotRect().Contains(mx, my) ? Formats.Combat.EquipSlot.Weapon
+        : ArmorSlotRect().Contains(mx, my) ? Formats.Combat.EquipSlot.Armor
         : null;
 
     /// <summary>The inventory list row (0..8) under a point, or -1. Shares ItemRowRect with
@@ -1033,7 +1063,7 @@ public sealed partial class ViewerGame
     private int InventoryRowAt(int mx, int my)
     {
         for (int row = 0; row < ItemRowsPerPage; row++)
-            if (ItemRowRect(40, row).Contains(mx, my))
+            if (ItemRowRect(InventoryPanelX(), row).Contains(mx, my))
                 return row;
         return -1;
     }
@@ -1150,32 +1180,69 @@ public sealed partial class ViewerGame
     }
 
     /// <summary>Draw the weapon + armor equip slots and the dragged item's ghost icon. Only in the
-    /// pure-inventory view (loot/barter/trade have no equip slots).</summary>
+    /// pure-inventory view (loot/barter/trade have no equip slots). On the INVBOX paperdoll the slot
+    /// art is baked into the window, so draw just the equipped icon (no box/label).</summary>
     private void DrawEquipSlots()
     {
         if (_fontRenderer is null || !_inventoryOpen || _lootContainer is not null
             || _tradePartner is not null || _barterNpc is not null)
             return;
         _panelPixel ??= CreatePixel();
-        DrawEquipSlot(WeaponSlotRect, "WEAPON", EquippedInSlot(Formats.Combat.EquipSlot.Weapon));
-        DrawEquipSlot(ArmorSlotRect, "ARMOR", EquippedInSlot(Formats.Combat.EquipSlot.Armor));
+        bool onWindow = InvBoxOrigin() is not null;
+        DrawEquipSlot(WeaponSlotRect(), "WEAPON", EquippedInSlot(Formats.Combat.EquipSlot.Weapon), onWindow);
+        DrawEquipSlot(ArmorSlotRect(), "ARMOR", EquippedInSlot(Formats.Combat.EquipSlot.Armor), onWindow);
         if (_dragItem is { } dragged) // the ghost icon follows the cursor (from the last Update mouse)
             DrawItemIcon(dragged, new Rectangle(_previousMouse.X - 14, _previousMouse.Y - 11, 28, 22));
     }
 
-    private void DrawEquipSlot(Rectangle rect, string label, MapObject? item)
+    /// <summary>P67: the authentic INVBOX.frm window + the dude paperdoll, drawn behind the item list
+    /// when the inventory is open. Lazy-loads the art once; if absent, leaves the fallback layout.</summary>
+    private void DrawInventoryWindow()
     {
-        _spriteBatch.Draw(_panelPixel, rect, new Color(8, 8, 8, 230));
-        var border = new Color(0, 252, 0);
-        _spriteBatch.Draw(_panelPixel, new Rectangle(rect.X, rect.Y, rect.Width, 1), border);
-        _spriteBatch.Draw(_panelPixel, new Rectangle(rect.X, rect.Bottom - 1, rect.Width, 1), border);
-        _spriteBatch.Draw(_panelPixel, new Rectangle(rect.X, rect.Y, 1, rect.Height), border);
-        _spriteBatch.Draw(_panelPixel, new Rectangle(rect.Right - 1, rect.Y, 1, rect.Height), border);
-        _fontRenderer!.Draw(_spriteBatch, label, new Vector2(rect.X + 4, rect.Y - 22), Color.LightGray);
+        if (_fontRenderer is null || !_inventoryOpen || _lootContainer is not null
+            || _tradePartner is not null || _barterNpc is not null)
+            return;
+        if (!_invBoxTried)
+        {
+            _invBoxTried = true;
+            _invBox = InterfaceBar.LoadFrm(GraphicsDevice, _vfs, _palette, @"art\intrface\INVBOX.frm");
+        }
+        if (InvBoxOrigin() is not { } o)
+            return; // art absent -> the fallback boxes layout (DrawEquipSlots at x=420)
+        _spriteBatch.Draw(_invBox, new Rectangle(o.X, o.Y, InvBoxW, InvBoxH), Color.White);
+        // The dude paperdoll (its current art reflects worn armor), scaled into the body view (176,37,60,100).
+        if (_dude?.Dude is { } dude)
+        {
+            try
+            {
+                Texture2D doll = _frmCache.GetTexture(dude.Fid, 0, 1); // frame 0, a forward-facing rotation
+                var view = new Rectangle(o.X + InvBoxBodyLocal.X, o.Y + InvBoxBodyLocal.Y, InvBoxBodyLocal.Width, InvBoxBodyLocal.Height);
+                float scale = Math.Min((float)view.Width / doll.Width, (float)view.Height / doll.Height);
+                var size = new Point((int)(doll.Width * scale), (int)(doll.Height * scale));
+                _spriteBatch.Draw(doll, new Rectangle(view.X + (view.Width - size.X) / 2, view.Y + (view.Height - size.Y) / 2, size.X, size.Y), Color.White);
+            }
+            catch (Exception ex) when (ex is FileNotFoundException or InvalidDataException or NotSupportedException)
+            {
+            }
+        }
+    }
+
+    private void DrawEquipSlot(Rectangle rect, string label, MapObject? item, bool onWindow = false)
+    {
+        if (!onWindow) // the boxes-fallback chrome; on the INVBOX paperdoll the slot art is baked in
+        {
+            _spriteBatch.Draw(_panelPixel, rect, new Color(8, 8, 8, 230));
+            var border = new Color(0, 252, 0);
+            _spriteBatch.Draw(_panelPixel, new Rectangle(rect.X, rect.Y, rect.Width, 1), border);
+            _spriteBatch.Draw(_panelPixel, new Rectangle(rect.X, rect.Bottom - 1, rect.Width, 1), border);
+            _spriteBatch.Draw(_panelPixel, new Rectangle(rect.X, rect.Y, 1, rect.Height), border);
+            _spriteBatch.Draw(_panelPixel, new Rectangle(rect.Right - 1, rect.Y, 1, rect.Height), border);
+            _fontRenderer!.Draw(_spriteBatch, label, new Vector2(rect.X + 4, rect.Y - 22), Color.LightGray);
+        }
         if (item is not null)
             DrawItemIcon(item, new Rectangle(rect.X + 8, rect.Y + 6, rect.Width - 16, rect.Height - 12));
-        else
-            _fontRenderer.Draw(_spriteBatch, "(empty)", new Vector2(rect.X + 8, rect.Y + rect.Height / 2 - 8), Color.Gray);
+        else if (!onWindow)
+            _fontRenderer!.Draw(_spriteBatch, "(empty)", new Vector2(rect.X + 8, rect.Y + rect.Height / 2 - 8), Color.Gray);
     }
 
     /// <summary>The carried-weight readout, drawn just below the dude's inventory panel (P24;
@@ -1196,6 +1263,13 @@ public sealed partial class ViewerGame
     private Rectangle ItemRowRect(int x, int displayRow)
     {
         int lineHeight = Math.Max(_fontRenderer?.LineHeight ?? 26, 26);
+        // P67: the inventory list inside the INVBOX window renders in the authentic left column (window-
+        // relative Y, narrow — the paperdoll sits at local x=176). Only matches the inventory panel's X
+        // (loot/barter/trade stay x=40/420); headless _invBox is null so this never fires -> goldens
+        // byte-identical. DOCUMENTED: the readable text rows are wider than the engine's icon column, so a
+        // long name can extend toward the paperdoll (Hexwaste is a text-list inventory, not an icon grid).
+        if (InvBoxOrigin() is { } o && x == o.X + InvBoxListLocalX)
+            return new Rectangle(x, o.Y + 40 + displayRow * lineHeight, 128, lineHeight);
         int rowY = 60 + 8 + lineHeight + 6 + displayRow * lineHeight;
         return new Rectangle(x + 6, rowY - 4, 360 - 12, lineHeight);
     }
@@ -1211,6 +1285,30 @@ public sealed partial class ViewerGame
         int shown = Math.Clamp(items.Count - start, 0, ItemRowsPerPage);
         int panelHeight = (Math.Max(shown, 1) + 2) * lineHeight + 16;
         int y = 60;
+
+        // P67: the inventory list inside the INVBOX window — no dark box (the window art is the bg), rows
+        // positioned via ItemRowRect (so render == hit-test) in the authentic narrow left column. Headless
+        // _invBox is null so this never fires (the loot/barter/trade panels keep the box layout below).
+        if (InvBoxOrigin() is { } wo && x == wo.X + InvBoxListLocalX)
+        {
+            var col = new Color(0, 252, 0);
+            if (items.Count == 0)
+                _fontRenderer.Draw(_spriteBatch, "(empty)", new Vector2(x, wo.Y + 40), Color.Gray);
+            for (int row = 0; row < ItemRowsPerPage; row++)
+            {
+                int gi = start + row;
+                if (gi >= items.Count)
+                    break;
+                MapObject item = items[gi];
+                Rectangle rr = ItemRowRect(x, row);
+                DrawItemIcon(item, new Rectangle(rr.X, rr.Y, 22, rr.Height - 2));
+                string c = item.StackCount > 1 ? $" x{item.StackCount}" : "";
+                _fontRenderer.Draw(_spriteBatch, $"{ObjectName(item)}{c}", new Vector2(rr.X + 24, rr.Y), col);
+            }
+            if (items.Count > ItemRowsPerPage)
+                _fontRenderer.Draw(_spriteBatch, "PgUp/PgDn", new Vector2(x, wo.Y + 44 + ItemRowsPerPage * lineHeight), Color.Gray);
+            return wo.Y + InvBoxH;
+        }
 
         _spriteBatch.Draw(_panelPixel, new Rectangle(x, y, panelWidth, panelHeight), new Color(8, 8, 8, 230));
         _fontRenderer.Draw(_spriteBatch, title, new Vector2(x + 10, y + 8), Color.LightGray);

@@ -573,6 +573,9 @@ for (int i = 0; i < args.Length; i++)
             actions.Add(new ViewerGame.StartupAction.ShowCreate(step));
             break;
         }
+        case "--show-inventory": // P67: open the inventory (INVBOX paperdoll) for a screenshot
+            actions.Add(new ViewerGame.StartupAction.ShowInventory());
+            break;
         case "--advance-days" when i + 1 < args.Length:
             actions.Add(new ViewerGame.StartupAction.AdvanceDays(int.Parse(args[++i])));
             break;

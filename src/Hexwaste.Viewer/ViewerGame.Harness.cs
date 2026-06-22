@@ -1588,6 +1588,11 @@ public sealed partial class ViewerGame
                         _ => MenuState.CreateStats,
                     };
                     break;
+                case StartupAction.ShowInventory:
+                    _inventoryOpen = true;
+                    _panelPage = 0;
+                    PrewarmItemTextures(_dudeInventory);
+                    break;
                 case StartupAction.AdvanceDays(var days):
                     _clock.AdvanceHours(days * 24);
                     Console.WriteLine($"advance: now day {_clock.Day}");
