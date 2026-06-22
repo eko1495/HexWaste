@@ -2056,6 +2056,23 @@ tests, 16 combat + 142 encounter goldens green. LESSON RE-CONFIRMED: the non-zer
 one-off — Redding's wanamingo count is the same pattern (a creature/quest tally seeded from vault13.gam); ALWAYS
 run the fresh-game --get-global check, never assume 0.
 
+Phase 62 (DONE — "Vault 15", the NINTH new location + the FOURTH straight ZERO-engine-code city — but the
+first zero-code city that HAS a companion). All 4 maps (VAULT15 the squatter camp / "The Squat A", V15ENT the
+entrance, V15SENT the east entrance, V15_ORIG the deep original-FO1-vault levels) census stubs=0 with NO
+wiring. M0 reachability = ZERO code ([Area 09], start_state=On, entrance_0 "The Squat A" via ArriveAt; inter-
+map = static exit grids). NO new external, NO new proc (VAULT15=15 / V15ENT=14 wired families, no trap). All
+Vault 15 GVARs 0 on a fresh game (TOWN_REP_VAULT_15 294 / V15_SEED_STATUS 293 / V15_DARION_DEAD 172 / V15_KILL_
+DARION 474 — no non-zero seed this time; the seed trap is real but not universal). COMPANION (the find): pid
+0x10000A2 (script 556 @12684 on VAULT15) IS data\party.txt [Party Member 7] pMDoc (member=1, level_minimum=0)
+-> recruitment is the proven Vic/Lenny/Marcus/Myron party_add machinery (the radscorpion 0x1000005 = the
+member=0 control). So Vault 15 joins Gecko(Lenny)/NR(Myron)/BH(Marcus) as a companion town — NCR/SF had none.
+The dialogue VM runs (the Doc @12684 = 2 options, script 583 @14084 = 2). Quest drive (Darion's raiders / the
+NCR squatter deal / the Doc recruit) = content residual; the machinery is wired. 5 new goldens (4 smoke at
+stubs=0 + v15-dialogue [dialogue + the Doc party-probe]). NO engine code -> all 16 combat + prior encounter
+goldens BYTE-IDENTICAL. Scoped fully inline (the steady-state ~6-command loop). 698 tests, 16 combat + 147
+encounter goldens green. Running tally: P54 VC / P55 Gecko(0) / P56 Modoc(4) / P57 BH(2) / P58 NR(5) / P59
+NCR(0) / P60 SF(0) / P61 Redding(0) / P62 Vault 15(0).
+
 Phase 10 (DONE, per docs/phase10-research-report.md — "The Wasteland
 Bites Back"): M0 persistence pre-stage (the net: MapList saved=No /
 random_start_point parse + IsTransient; the 3-clause transient guards as
