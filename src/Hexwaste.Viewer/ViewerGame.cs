@@ -522,6 +522,7 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
     {
         public sealed record UseHex(int Hex, bool Lockpick) : StartupAction;
         public sealed record ExamineCritter(int Hex) : StartupAction;
+        public sealed record AwarenessProbe(int Hex) : StartupAction; // P69: the Awareness examine gate
         public sealed record Attack(int Hex) : StartupAction;
         public sealed record Burst(int Hex) : StartupAction;
         /// <summary>Burst at TargetHex from an explicit dude tile FromHex (phase-20 M4) —
@@ -4192,8 +4193,22 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
             Log($"{ObjectName(obj)}: {ObjectDescription(obj)}");
         }
 
-        if (obj != _dude?.Dude && GetCritterState(obj) is { } state)
+        // PERK_AWARENESS (proto_instance.cc:294): examining a LIVE critter reveals its HP/condition + the
+        // weapon it wields — but ONLY with the perk. (Hexwaste previously showed HP unconditionally, an over-
+        // generous divergence; gating it makes the perk a real choice + matches the engine. No golden
+        // examines a critter, so this is byte-identical.) Inert at rank 0 -> the default dude sees just the
+        // name + description, like the engine.
+        if (obj != _dude?.Dude && !obj.IsDead && DudePerkRank(Formats.Perks.PerkId.Awareness) > 0
+            && GetCritterState(obj) is { } state)
+        {
             Log($"HP: {state.CurrentHp}/{state.MaxHp}, AC: {state.ArmorClass}");
+            if (EquippedWeapon(obj) is { Proto: { } wproto, Item: { } witem })
+            {
+                string shots = wproto.Weapon is { } w && w.IsGun(wproto.ExtendedFlags)
+                    ? $" ({WeaponAmmo(wproto, witem)}/{w.AmmoCapacity} shots)" : "";
+                Log($"Wielding the {ObjectName(witem)}{shots}.");
+            }
+        }
     }
 
     /// <summary>Effective combat stats for critters with parsed protos; null

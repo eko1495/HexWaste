@@ -8,6 +8,7 @@ namespace Hexwaste.Formats.Perks;
 /// </summary>
 public static class PerkId
 {
+    public const int Awareness = 0;         // examine a critter reveals its HP/condition + wielded weapon (proto_instance.cc:294)
     public const int BonusHthAttacks = 1;   // −1 AP per melee/unarmed attack (item.cc:1693)
     public const int BonusRangedDamage = 4; // +2 damage per rank on a ranged hit (combat.cc:4547)
     public const int BonusRateOfFire = 5;   // −1 AP per ranged attack (item.cc:1699)

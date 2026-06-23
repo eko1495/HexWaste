@@ -71,6 +71,25 @@ public sealed partial class ViewerGame
                         + $" killType={state.Proto.KillType} bodyType={state.Proto.BodyType} damageType={state.Proto.DamageType}");
                     break;
                 }
+                case StartupAction.AwarenessProbe(var awHex):
+                {
+                    // P69: drive the PLAYER examine path (Examine, not the diagnostic dump) + report state-only
+                    // whether the Awareness HP/weapon lines appeared (booleans + the perk rank — never the
+                    // copyrighted name/description text). --perk-probe 0 1 grants Awareness for the with-perk run.
+                    if (CritterAt(awHex) is not { } awCritter)
+                    {
+                        Console.Error.WriteLine($"awareness-probe: no critter at {awHex}");
+                        break;
+                    }
+                    int awBefore = _messageLog.Count;
+                    Examine(awCritter);
+                    var awAdded = _messageLog.Skip(awBefore).ToList();
+                    int awHp = awAdded.Any(l => l.StartsWith("HP:")) ? 1 : 0;
+                    int awWpn = awAdded.Any(l => l.StartsWith("Wielding")) ? 1 : 0;
+                    Console.WriteLine($"awareness-probe: hex={awHex} awareness={DudePerkRank(Formats.Perks.PerkId.Awareness)}"
+                        + $" hpLine={awHp} weaponLine={awWpn}");
+                    break;
+                }
                 case StartupAction.EncounterWalk(var x0, var y0, var x1, var y1, var steps):
                 {
                     // Phase-10 M1 traveling-dot demo: Bresenham from (x0,y0) toward

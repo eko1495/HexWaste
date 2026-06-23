@@ -1,0 +1,3 @@
+awareness-probe: hex=15278 awareness=0 hpLine=0 weaponLine=0
+perk-probe: index=0 frm=72 level=6 minLevel=3 picks=2 canAdd=True rank=1 stat=-1 before=-1 after=-1
+awareness-probe: hex=15278 awareness=1 hpLine=1 weaponLine=1

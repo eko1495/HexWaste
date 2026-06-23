@@ -139,6 +139,9 @@ for (int i = 0; i < args.Length; i++)
         case "--lockpick-hex" when i + 1 < args.Length:
             actions.Add(new ViewerGame.StartupAction.UseHex(int.Parse(args[++i]), Lockpick: true));
             break;
+        case "--awareness-probe" when i + 1 < args.Length: // P69: probe the Awareness examine gate (state-only)
+            actions.Add(new ViewerGame.StartupAction.AwarenessProbe(int.Parse(args[++i])));
+            break;
         case "--examine-critter" when i + 1 < args.Length:
             actions.Add(new ViewerGame.StartupAction.ExamineCritter(int.Parse(args[++i])));
             break;

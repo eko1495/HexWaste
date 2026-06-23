@@ -542,11 +542,19 @@ SCENARIOS=(
   # 147, ENEMY 309, READ_FRANCIS_NOTE 524, MARCUS_DEAD 526, CARAVAN 562) are 0 on a fresh game; no seeding.
   # The quest DRIVE (uranium fraud / Francis / Marcus recruit) is content — the residual; machinery is wired.
   "bh-dialogue|--map BROKEN1.map --iq-probe 18284 5 --iq-probe 10685 5 --party-probe 0x10000A1 --rng-seed 1"
+
+  # P69-M1: the Awareness perk gates the examine combat-intel. Hexwaste previously showed a critter's HP
+  # unconditionally; now examine shows HP/AC + the wielded weapon ONLY with PERK_AWARENESS (proto_instance.cc
+  # :294). State-only probe (hex + perk rank + hpLine/weaponLine booleans, never the copyrighted name text):
+  # Metzger (denbus2 @15278, wields a weapon) shows hpLine=0/weaponLine=0 WITHOUT the perk, then after
+  # --perk-probe 0 6 grants Awareness (minLevel 3), hpLine=1/weaponLine=1. No golden examines a critter via the
+  # player path, so all combat + prior encounter goldens BYTE-IDENTICAL.
+  "awareness-perk|--map denbus2.map --awareness-probe 15278 --perk-probe 0 6 --awareness-probe 15278 --rng-seed 1"
 )
 
 # Keep only the deterministic transcript lines (drop map-load / animate / stub /
 # dialog-text noise — NEVER capture REPLY/OPTION game-asset strings).
-FILTER='^(encounter|travel-from|companion|dismiss-persist|trade:|party:|party-count:|set-global:|hud-click:|use-skill:|hurt:|rest:|automap:|weapon-mode:|panel-click:|menu-click:|travel-resume:|travel-step:|travel-save-mid:|worldmap-fog:|weight:|iq-probe:|death-probe:|trait-probe:|perk-probe:|perk-pick:|combat-walk:|light:|map-update:|drag-equip:|save-slot:|load-slot:|slots:|aim-click:|tactics:|reg-anim:|encounter-fight:|brawl:|sneak-probe:|sneak-roll:|backstab-probe:|detect-probe:|karma-probe:|set-karma:|rep-title:|town-rep:|karma-titles:|get-global:|place-probe:|reg-anim-move:|critter-state:|hurt-too-much:|run-probe:|outline:|sfx-probe:|reaction-probe:|combat-proc:|combat-proc-hit:|poison-tick:|multihex-probe:|drug-probe:|addict-probe:|kills-probe:|book:|ammo-select:|unload:|ai-heal-probe:|ai-weapon-probe:|float-text:|speech-probe:|smoke:|scenery-use@|party-probe:|  spawn|  flat|  wait:|  follow:|  dismiss:|  rejoin:)'
+FILTER='^(encounter|travel-from|companion|dismiss-persist|trade:|party:|party-count:|set-global:|hud-click:|use-skill:|hurt:|rest:|automap:|weapon-mode:|panel-click:|menu-click:|travel-resume:|travel-step:|travel-save-mid:|worldmap-fog:|weight:|iq-probe:|death-probe:|trait-probe:|perk-probe:|perk-pick:|combat-walk:|light:|map-update:|drag-equip:|save-slot:|load-slot:|slots:|aim-click:|tactics:|reg-anim:|encounter-fight:|brawl:|sneak-probe:|sneak-roll:|backstab-probe:|detect-probe:|karma-probe:|set-karma:|rep-title:|town-rep:|karma-titles:|get-global:|place-probe:|reg-anim-move:|critter-state:|hurt-too-much:|run-probe:|outline:|sfx-probe:|reaction-probe:|combat-proc:|combat-proc-hit:|poison-tick:|multihex-probe:|drug-probe:|addict-probe:|kills-probe:|book:|ammo-select:|unload:|ai-heal-probe:|ai-weapon-probe:|float-text:|speech-probe:|smoke:|scenery-use@|party-probe:|awareness-probe:|  spawn|  flat|  wait:|  follow:|  dismiss:|  rejoin:)'
 
 echo "Building viewer..."
 dotnet build src/Hexwaste.Viewer -c Debug >/dev/null || { echo "build failed"; exit 2; }
