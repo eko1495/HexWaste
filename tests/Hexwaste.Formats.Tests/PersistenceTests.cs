@@ -33,6 +33,7 @@ public class SaveStateRoundTripTests
             ContainerInventories = { [55] = [new SaveState.SavedItem(41, 50)] },
             MapVars = [9, 8, 7],
             SnapshotDay = 12,
+            SeenTiles = [28906, 28907, 29106], // P71: the automap fog
         };
 
         SaveState? loaded = SaveState.FromJson(state.ToJson());
@@ -59,6 +60,8 @@ public class SaveStateRoundTripTests
         Assert.Equal(new SaveState.SavedItem(41, 50), Assert.Single(delta.ContainerInventories[55]));
         Assert.Equal([9, 8, 7], delta.MapVars);
         Assert.Equal(12, delta.SnapshotDay);
+        Assert.Equal([28906, 28907, 29106], delta.SeenTiles); // P71 automap fog round-trips
+        Assert.Empty(new SaveState.MapDelta().SeenTiles);      // additive: empty on a pre-P71 delta
     }
 
     [Fact]

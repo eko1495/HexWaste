@@ -2234,6 +2234,31 @@ FLEEING maneuver SOURCE is still arity-stubbed" — set via critter_set_flee_sta
 (only ENGAGING-via-attack + DISENGAGING-via-terminate were connected before). 724 Formats tests, 16 combat + 164
 encounter goldens green.
 
+Phase 71 (DONE — "The Map Remembers Where You've Been II", faithful automap fog: the walked-tile reveal model
++ persistence; the user's Tier-1 pick #1, RESHAPED by M0 grounding). M0 grounding (the headline + a recurring
+verify-don't-guess win): the proposed "true-LoS" reveal is NOT what the engine does — object.cc obj_set_seen()
+(:1443, called from objectSetLocation for every moving object, the DUDE dominating) marks the TILE under each
+mover, then _obj_process_seen() (:3054) flags objects on those tiles + a neighbor spread as OBJECT_SEEN,
+persisted to AUTOMAP.DB. So "seen" is WALKED-TILE accumulation — NO line-of-sight, NO sight radius (object.cc:3099
+is the ONLY OBJECT_SEEN writer). Hexwaste's radius-14 proximity was actually MORE generous than the engine, and
+porting "true-LoS" would have VIOLATED the prime directive (guessing a mechanism); the user chose the faithful
+reshape (persist + path-accumulate). M1 tile-based seen model: _seenObjects (HashSet<MapObject> — object refs that
+CAN'T survive save/load) → _seenTiles (HashSet<int>, the engine's tile model AND persistable); RevealAround marks
+the disc of radius AutomapSeenRadius=4 around each walked tile (the path corridor — a documented approximation of
+_obj_process_seen's ±row/±tile byte-spread, which doesn't map cleanly onto the hex grid); the automap render +
+census derive visibility from _seenTiles.Contains(obj.HexTile). Re-recorded automap-arcaves (spawn reveal: the
+faithful tight path-disc tiles=61/seen=16 vs the old radius-14 sight-circle seen=186 — expected). M2 persistence:
+SeenTiles folded into the per-map MapDelta (additive-V2, empty on a pre-P71 save) — it rides VisitedMaps, so the
+fog survives BOTH save/load AND a map revisit in ONE stroke (CaptureMapDelta snapshots _seenTiles; ApplyDelta-
+BeforeScripts restores it before SpawnDude re-adds the arrival area). M3 harness + golden: --reveal <hex> (drives
+RevealAround as if the dude walked there) makes persistence DISTINGUISHING — automap-persist reveals a far tile
+(20000 → tiles 61→127), saves, loads, re-censuses tiles=127 (the far reveal SURVIVES; broken persistence would show
+only the ~61 spawn disc). GOLDEN-SAFE: the only behaviour change is the automap reveal model (Draw + the census
+probe); no combat/encounter path touched → all 16 combat goldens BYTE-IDENTICAL, every encounter golden byte-
+identical bar the 2 automap fixtures (1 re-record + 1 new). PersistenceTests MultiMapModelRoundTrips extended
+(SeenTiles round-trips + the additive-empty default). The P20 "proximity not LoS, not save-persisted" simplification
+is now CLOSED. 724 Formats tests, 16 combat + 165 encounter goldens green.
+
 Phase 10 (DONE, per docs/phase10-research-report.md — "The Wasteland
 Bites Back"): M0 persistence pre-stage (the net: MapList saved=No /
 random_start_point parse + IsTransient; the 3-clause transient guards as

@@ -186,6 +186,9 @@ for (int i = 0; i < args.Length; i++)
         case "--automap":
             actions.Add(new ViewerGame.StartupAction.OpenAutomap());
             break;
+        case "--reveal" when i + 1 < args.Length: // P71: reveal the automap fog around a hex
+            actions.Add(new ViewerGame.StartupAction.RevealAt(int.Parse(args[++i])));
+            break;
         case "--light-probe":
             // --light-probe: report the ambient after the map's scripted set_light_level (P21).
             actions.Add(new ViewerGame.StartupAction.LightProbe());

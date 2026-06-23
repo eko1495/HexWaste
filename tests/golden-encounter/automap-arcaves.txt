@@ -1,1 +1,1 @@
-automap: map=arcaves.map elev=0 walls=97 scenery=20 critters=1 items=0 misc=68 seen=186/1843 dude=28906
+automap: map=arcaves.map elev=0 walls=0 scenery=0 critters=1 items=0 misc=15 seen=16/1843 tiles=61 dude=28906

@@ -1125,20 +1125,25 @@ public sealed partial class ViewerGame
                     Console.WriteLine($"reg-anim: map={_currentMapName} forever={_regAnimForever.Count}"
                         + $" [{string.Join(", ", _regAnimForever)}]");
                     break;
+                case StartupAction.RevealAt reveal:
+                    RevealAround(reveal.Hex); // P71: simulate the dude exploring this tile
+                    Console.WriteLine($"reveal: hex={reveal.Hex} tiles={_seenTiles.Count}");
+                    break;
                 case StartupAction.OpenAutomap:
                 {
                     _automapOpen = true;
                     // Deterministic census of the dots the automap plots — now gated by the
                     // OBJECT_SEEN fog (P20-M2), so it counts what the dude has actually seen.
                     var live = _flatObjects[_elevation].Concat(_solidObjects[_elevation]).ToList();
-                    int Count(ObjectType t) => live.Count(o => _seenObjects.Contains(o)
+                    int Count(ObjectType t) => live.Count(o => _seenTiles.Contains(o.HexTile)
                         && Fid.Type(o.Fid) == t && !(t == ObjectType.Critter && o.IsDead));
                     int totalPlottable = live.Count(o => AutomapColor(o) is not null);
+                    int seenPlottable = live.Count(o => _seenTiles.Contains(o.HexTile) && AutomapColor(o) is not null);
                     Console.WriteLine($"automap: map={_currentMapName} elev={_elevation}"
                         + $" walls={Count(ObjectType.Wall)} scenery={Count(ObjectType.Scenery)}"
                         + $" critters={Count(ObjectType.Critter)} items={Count(ObjectType.Item)}"
-                        + $" misc={Count(ObjectType.Misc)} seen={_seenObjects.Count(o => AutomapColor(o) is not null)}/{totalPlottable}"
-                        + $" dude={_dude?.Dude.HexTile ?? -1}");
+                        + $" misc={Count(ObjectType.Misc)} seen={seenPlottable}/{totalPlottable}"
+                        + $" tiles={_seenTiles.Count} dude={_dude?.Dude.HexTile ?? -1}");
                     break;
                 }
                 case StartupAction.PartyCount:

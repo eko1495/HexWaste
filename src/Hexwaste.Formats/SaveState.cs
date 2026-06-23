@@ -224,6 +224,12 @@ public sealed class SaveState
         /// merchant containers restock from pristine map data once this is
         /// older than the restock window; 0 = pre-M5 (treated as "today").</summary>
         public int SnapshotDay { get; set; }
+
+        /// <summary>The automap fog: tiles the dude has explored on this map (P71;
+        /// the engine's OBJECT_SEEN walked-tile set, persisted as AUTOMAP.DB). Rides the
+        /// per-map delta so the fog survives both save/load AND a map revisit. Additive
+        /// within V2: empty on a pre-P71 save → only the spawn area re-reveals.</summary>
+        public int[] SeenTiles { get; set; } = [];
     }
 
     private static readonly JsonSerializerOptions Options = new()

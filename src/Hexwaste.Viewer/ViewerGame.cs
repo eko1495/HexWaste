@@ -206,12 +206,17 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
     private bool _automapOpen;
     private Texture2D? _automapBg;
 
-    /// <summary>Objects the dude has come within sight of — the automap's OBJECT_SEEN
-    /// fog-of-war (P20-M2). Cleared per map, accumulated as the dude moves (RevealAround);
-    /// the automap + mini-map plot only seen objects. SIMPLIFICATION: a flat-radius
-    /// proximity reveal (not true line-of-sight), not persisted across save.</summary>
-    private readonly HashSet<MapObject> _seenObjects = [];
-    private const int AutomapSightRadius = 14; // hexes the dude "sees" around itself
+    /// <summary>The TILES the dude has explored — the automap's OBJECT_SEEN fog-of-war,
+    /// ported from fallout2-ce src/object.cc obj_set_seen()/_obj_process_seen(): the engine
+    /// marks the tile under each moving object (the dude dominates), then flags objects on
+    /// those tiles + a neighbor spread as OBJECT_SEEN. So "seen" is WALKED-TILE accumulation,
+    /// NOT a sight radius or line-of-sight (P71). An object shows on the automap iff its tile
+    /// is in this set. Accumulated as the dude moves (RevealAround); persisted per-map across
+    /// save/load + revisits (P71-M2). DOCUMENTED APPROXIMATION: we reveal the disc of radius
+    /// <see cref="AutomapSeenRadius"/> around each walked tile (the engine's _obj_process_seen
+    /// ±row/±tile byte-spread doesn't map cleanly onto the hex grid).</summary>
+    private HashSet<int> _seenTiles = [];
+    private const int AutomapSeenRadius = 4; // the walked-tile neighbor spread (path corridor)
 
     /// <summary>Objects a map's reg_anim_animate_forever registered this map (P21-M1) —
     /// recorded for the --reg-anim-probe; cleared per map.</summary>
@@ -551,6 +556,9 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
         public sealed record UseSkill(int Skill, int TargetHex) : StartupAction;
         public sealed record RestFor(int Minutes) : StartupAction;
         public sealed record OpenAutomap : StartupAction;
+        /// <summary>P71: reveal the automap fog around a hex (as if the dude walked there) —
+        /// drives RevealAround so a --save-now/--load-now round-trip can prove the fog persists.</summary>
+        public sealed record RevealAt(int Hex) : StartupAction;
         /// <summary>Phase-22: travel a worldmap leg from (X,Y) toward AreaIndex (avoiding the
         /// prompt) and report the fog-of-war reveal — proves subtiles get marked VISITED/KNOWN
         /// as the party walks, and that the destination subtile becomes clear.</summary>
@@ -1251,7 +1259,7 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
         _openDoors.Clear();
         _floatText.Clear(); // P45: stale combat-text floats don't survive a map change
         _floatDefender = null;
-        _seenObjects.Clear(); // automap fog resets per map (P20-M2)
+        _seenTiles.Clear(); // automap fog resets per map (P71; M2 restores per-map persisted tiles)
         _regAnimForever.Clear(); // reg_anim record resets per map (P21-M1)
         AmbientFixed = false; // each map re-pins its own ambient via its scripts' set_light_level (P46)
         _regAnimMoves.Clear(); // reg_anim_func batch record resets per map (P33-M1)

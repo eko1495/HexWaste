@@ -29,7 +29,11 @@ public sealed partial class ViewerGame
         if (_currentMapTransient)
             return;
 
-        var delta = new SaveState.MapDelta { MapVars = [.. _map.GlobalVariables], SnapshotDay = _clock.Day };
+        var delta = new SaveState.MapDelta
+        {
+            MapVars = [.. _map.GlobalVariables], SnapshotDay = _clock.Day,
+            SeenTiles = [.. _seenTiles], // P71: persist the automap fog (the explored-tile set)
+        };
 
         var present = new HashSet<MapObject>();
         foreach (MapElevation? elev in _map.Elevations)
@@ -110,6 +114,11 @@ public sealed partial class ViewerGame
     {
         for (int i = 0; i < delta.MapVars.Length && i < _map.GlobalVariables.Length; i++)
             _map.GlobalVariables[i] = delta.MapVars[i];
+
+        // P71: restore the automap fog (the explored-tile set was cleared on map teardown).
+        // SpawnDude's RevealAround then re-adds the spawn area on top, so a revisit shows
+        // everywhere you'd been plus where you arrive.
+        _seenTiles.UnionWith(delta.SeenTiles);
 
         foreach (int ordinal in delta.TakenOrdinals)
         {

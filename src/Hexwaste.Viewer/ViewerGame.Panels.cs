@@ -494,16 +494,26 @@ public sealed partial class ViewerGame
     /// DIVERGENCE: the engine's in-game map hides critters + items (motion-sensor only) and
     /// paints the dude red; we show them (red/yellow) with a WHITE dude so enemies + loot +
     /// you are all distinguishable — a more useful PoC map.</summary>
-    /// <summary>Reveal every current-elevation object within sight of <paramref name="tile"/>
-    /// for the automap fog (P20-M2) — accumulated into <see cref="_seenObjects"/> as the dude
-    /// explores. Proximity, not true LoS (a documented simplification).</summary>
+    /// <summary>Mark the tiles around <paramref name="tile"/> as explored for the automap fog —
+    /// the walked-tile accumulation of object.cc obj_set_seen()/_obj_process_seen() (P71): the
+    /// dude's current tile plus its neighbor spread (the disc of radius <see cref="AutomapSeenRadius"/>)
+    /// go into <see cref="_seenTiles"/>, so the fog reflects where the dude has actually BEEN.
+    /// An object then shows on the automap iff its tile is in the set (DrawAutomap/DrawPipboyMiniMap).</summary>
     private void RevealAround(int tile)
     {
         if (tile < 0)
             return;
-        foreach (MapObject obj in _flatObjects[_elevation].Concat(_solidObjects[_elevation]))
-            if (obj.HexTile >= 0 && Formats.Hex.HexGrid.Distance(tile, obj.HexTile) <= AutomapSightRadius)
-                _seenObjects.Add(obj);
+        int cx = tile % 200, cy = tile / 200;
+        for (int dy = -AutomapSeenRadius - 1; dy <= AutomapSeenRadius + 1; dy++)
+            for (int dx = -AutomapSeenRadius - 1; dx <= AutomapSeenRadius + 1; dx++)
+            {
+                int x = cx + dx, y = cy + dy;
+                if (x < 0 || x >= 200 || y < 0 || y >= 200)
+                    continue;
+                int t = y * 200 + x;
+                if (Formats.Hex.HexGrid.Distance(tile, t) <= AutomapSeenRadius)
+                    _seenTiles.Add(t);
+            }
     }
 
     private static Color? AutomapColor(MapObject obj) => Fid.Type(obj.Fid) switch
@@ -540,7 +550,7 @@ public sealed partial class ViewerGame
         }
 
         foreach (MapObject obj in _flatObjects[_elevation].Concat(_solidObjects[_elevation]))
-            if (_seenObjects.Contains(obj) && AutomapColor(obj) is { } col) // OBJECT_SEEN fog (P20-M2)
+            if (_seenTiles.Contains(obj.HexTile) && AutomapColor(obj) is { } col) // OBJECT_SEEN fog (P71)
                 Plot(obj.HexTile, col, 2);
         if (_dude is not null)
             Plot(_dude.Dude.HexTile, new Color(255, 255, 255), 3);
@@ -552,8 +562,8 @@ public sealed partial class ViewerGame
     /// centred, with every object on the current elevation plotted as a colored dot
     /// (automap.cc automapRenderInMapWindow projection: ax = 449 − 2·col, ay = 2·row + 8,
     /// col = tile%200, row = tile/200). Colors by FID type; the dude is a bright marker.
-    /// Fog-of-war is faked all-visible (we don't track OBJECT_SEEN) — a documented PoC
-    /// simplification; the embedded Pip-Boy mini-map (needs automap.db RLE) stays out.</summary>
+    /// Fog-of-war = the walked-tile <see cref="_seenTiles"/> (P71): only objects on explored
+    /// tiles plot; the embedded Pip-Boy mini-map (needs automap.db RLE) stays out.</summary>
     private void DrawAutomap()
     {
         if (!_automapOpen || _fontRenderer is null)
@@ -581,7 +591,7 @@ public sealed partial class ViewerGame
         }
 
         foreach (MapObject obj in _flatObjects[_elevation].Concat(_solidObjects[_elevation]))
-            if (_seenObjects.Contains(obj) && AutomapColor(obj) is { } col) // OBJECT_SEEN fog (P20-M2)
+            if (_seenTiles.Contains(obj.HexTile) && AutomapColor(obj) is { } col) // OBJECT_SEEN fog (P71)
                 Plot(obj.HexTile, col, 2);
         if (_dude is not null)
             Plot(_dude.Dude.HexTile, new Color(255, 255, 255), 3); // the dude marker
