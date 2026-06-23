@@ -44,7 +44,12 @@ public sealed class CritterState(MapObject critter, CritterProtoStats proto, int
     public int Stat(int stat) =>
         proto.BaseStats[stat] + proto.BonusStats[stat]
         + TraitModifiers.GetStatModifier(stat, traits, proto.BaseStats)
-        + Perks.PerkRules.StatModifier(stat, perkRanks);
+        + Perks.PerkRules.StatModifier(stat, perkRanks)
+        // P70: Adrenaline Rush — +1 ST while current HP < max/2 (stat.cc:256, a CONDITIONAL stat perk the
+        // flat StatModifier fold can't express). Inert without the perk -> byte-identical.
+        + (stat == CritterStat.Strength && perkRanks is not null
+           && Perks.PerkRules.Rank(perkRanks, Perks.PerkId.AdrenalineRush) > 0
+           && critter.CurrentHp < Stat(CritterStat.MaximumHitPoints) / 2 ? 1 : 0);
 
     /// <summary>True if this critter is blinded by a crit (CombatResults DAM_BLIND).</summary>
     public bool Blind => (critter.CombatResults & CriticalTables.DamBlind) != 0;
@@ -68,7 +73,8 @@ public sealed class CritterState(MapObject critter, CritterProtoStats proto, int
     /// Gifted −10 all, Good Natured ±combat/social; P28-M1). The dude's tags feed the base bonus.</summary>
     public int SkillValue(int skill) =>
         SkillSet.Value(proto.BaseStats, proto.BonusStats, proto.Skills, taggedSkills, skill)
-        + TraitModifiers.GetSkillModifier(skill, traits);
+        + TraitModifiers.GetSkillModifier(skill, traits)
+        + Perks.PerkRules.SkillModifier(skill, perkRanks); // P70: Medic/Mr.Fixit/Thief/… (perkGetSkillModifier)
 
     public int MaxHp => Stat(CritterStat.MaximumHitPoints);
 

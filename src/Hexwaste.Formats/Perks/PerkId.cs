@@ -27,4 +27,26 @@ public static class PerkId
     public const int LivingAnatomy = 97;    // +5 damage vs a living (non-robot/alien) target (combat.cc:4619)
     public const int Pyromaniac = 101;      // +5 damage with a fire weapon (combat.cc:4626)
     public const int WeaponHandling = 106;  // +3 effective Strength vs the weapon min-ST to-hit penalty (combat.cc:4414)
+
+    // P70 batch: combat/stat/heal perks (hardcoded engine effects, Stat=-1 so not auto-folded).
+    public const int Healer = 19;           // First Aid/Doctor heal +4*rank min / +10*rank max (skill.cc:561)
+    public const int AdrenalineRush = 79;   // +1 ST while current HP < max/2 (stat.cc:256)
+    public const int QuickRecovery = 102;   // stand up from prone in 1 AP instead of 3 (combat.cc:5396)
+    public const int Stonewall = 104;       // 50% chance to resist a knockdown (combat.cc:4641)
+
+    // P70 batch: the skill-modifier perk family (perk.cc perkGetSkillModifier:628).
+    public const int MrFixit = 31;          // +10 Science & Repair
+    public const int Medic = 32;            // +10 First Aid & Doctor
+    public const int MasterThief = 33;      // +15 Lockpick & Steal
+    public const int Speaker = 34;          // +20 Speech
+    public const int Ghost = 38;            // +20 Sneak in darkness (light term CUT — no CritterState light model)
+    public const int Survivalist = 16;      // +25 Outdoorsman
+    public const int Ranger = 47;           // +15 Outdoorsman
+    public const int Harmless = 91;         // +20 Steal
+    public const int Negotiator = 99;       // +10 Speech & Barter
+    public const int Salesman = 103;        // +20 Barter
+    public const int Thief = 105;           // +10 Sneak/Lockpick/Steal/Traps
+    public const int VaultCityTraining = 107; // +5 First Aid & Doctor
+    public const int ExpertExcrementExpeditor = 116; // +5 Speech
+    public const int Gambler = 83;          // +20 Gambling
 }

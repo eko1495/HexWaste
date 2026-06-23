@@ -41,6 +41,34 @@ public static class PerkRules
         return m;
     }
 
+    /// <summary>The flat % a skill perk adds to <paramref name="skill"/> (the engine skill index).
+    /// Ported verbatim from fallout2-ce src/perk.cc perkGetSkillModifier() — Medic/Mr.Fixit/Thief/
+    /// Master Thief/Harmless/Speaker/Negotiator/Salesman/Gambler/Ranger/Survivalist/Vault City Training/
+    /// Living Anatomy(Doctor). 0 for a null rank set (NPCs / no perks) -> byte-identical by default.
+    /// DOCUMENTED CUT: Ghost's Sneak bonus is light-gated (objectGetLightIntensity) — no light model in
+    /// CritterState — so it's omitted.</summary>
+    public static int SkillModifier(int skill, int[]? ranks)
+    {
+        if (ranks is null)
+            return 0;
+        int Has(int perk) => Rank(ranks, perk) > 0 ? 1 : 0;
+        return skill switch
+        {
+            6 => 10 * Has(PerkId.Medic) + 5 * Has(PerkId.VaultCityTraining),                 // First Aid
+            7 => 10 * Has(PerkId.Medic) + 10 * Has(PerkId.LivingAnatomy) + 5 * Has(PerkId.VaultCityTraining), // Doctor
+            8 => 10 * Has(PerkId.Thief),                                                       // Sneak (Ghost light-term cut)
+            9 or 10 => 10 * Has(PerkId.Thief) + 15 * Has(PerkId.MasterThief)                   // Lockpick / Steal
+                       + (skill == 10 ? 20 * Has(PerkId.Harmless) : 0),
+            11 => 10 * Has(PerkId.Thief),                                                      // Traps
+            12 or 13 => 10 * Has(PerkId.MrFixit),                                              // Science / Repair
+            14 => 20 * Has(PerkId.Speaker) + 5 * Has(PerkId.ExpertExcrementExpeditor) + 10 * Has(PerkId.Negotiator), // Speech (+Negotiator via fallthrough)
+            15 => 10 * Has(PerkId.Negotiator) + 20 * Has(PerkId.Salesman),                     // Barter
+            16 => 20 * Has(PerkId.Gambler),                                                    // Gambling
+            17 => 15 * Has(PerkId.Ranger) + 25 * Has(PerkId.Survivalist),                      // Outdoorsman
+            _ => 0,
+        };
+    }
+
     /// <summary>The one-shot stat effect of a maxRank==-1 perk — the perkAddEffect maxRank==-1 path
     /// (perk.cc): the (Stat, StatModifier) pair when Stat != -1, PLUS the StatReqs[0..6] SPECIAL array
     /// (which for a granted/maxRank==-1 perk is the EFFECT, not a requirement). Returns the per-stat

@@ -23,6 +23,30 @@ public class CombatStatusTests
         Assert.Equal(cost, CritterState.MovePointCost(results));
 
     [Fact]
+    public void AdrenalineRushAddsStrengthBelowHalfHp()
+    {
+        // P70: Adrenaline Rush — +1 ST while current HP < max/2 (stat.cc:256), gated on the perk.
+        int[] b = new int[35];
+        b[CritterStat.Strength] = 5;
+        b[CritterStat.MaximumHitPoints] = 30;
+        var proto = new CritterProtoStats(0, 0, 0, b, new int[35], new int[18], 0, 0, 0, 0);
+        var ranks = new int[Hexwaste.Formats.Perks.PerkTable.Count];
+        ranks[Hexwaste.Formats.Perks.PerkId.AdrenalineRush] = 1;
+
+        MapObject Hurt(int hp) => new()
+        {
+            Id = 1, HexTile = 100, X = 0, Y = 0, Frame = 0, Rotation = 0,
+            Fid = 0x01000000, Flags = 0, Pid = 0x01000001, Sid = -1, CurrentHp = hp,
+        };
+
+        // hurt (HP < 15) → +1 ST; at/above half → no bonus.
+        Assert.Equal(6, new CritterState(Hurt(14), proto, perkRanks: ranks).Stat(CritterStat.Strength));
+        Assert.Equal(5, new CritterState(Hurt(15), proto, perkRanks: ranks).Stat(CritterStat.Strength));
+        // No perk → never any bonus, even when hurt (inert by default).
+        Assert.Equal(5, new CritterState(Hurt(14), proto).Stat(CritterStat.Strength));
+    }
+
+    [Fact]
     public void BlindLowersPerceptionByFive()
     {
         int[] b = new int[35]; b[CritterStat.Perception] = 7;

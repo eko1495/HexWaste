@@ -82,6 +82,48 @@ public class PerkTests
         Assert.Equal(0, PerkRules.StatModifier(8, ranks)); // unrelated stat unaffected
     }
 
+    // --- perkGetSkillModifier (P70 skill-perk family) --------------------
+
+    [Fact]
+    public void SkillModifierIsInertWithoutRanks()
+    {
+        Assert.Equal(0, PerkRules.SkillModifier(0, null));
+        Assert.Equal(0, PerkRules.SkillModifier(13, new int[PerkTable.Count]));
+    }
+
+    [Theory]
+    [InlineData(PerkId.Medic, 6, 10)]                 // Medic → +10 First Aid
+    [InlineData(PerkId.Medic, 7, 10)]                 // Medic → +10 Doctor
+    [InlineData(PerkId.MrFixit, 12, 10)]              // Mr.Fixit → +10 Science
+    [InlineData(PerkId.MrFixit, 13, 10)]              // Mr.Fixit → +10 Repair
+    [InlineData(PerkId.MasterThief, 9, 15)]           // Master Thief → +15 Lockpick
+    [InlineData(PerkId.MasterThief, 10, 15)]          // Master Thief → +15 Steal
+    [InlineData(PerkId.Harmless, 10, 20)]             // Harmless → +20 Steal
+    [InlineData(PerkId.Speaker, 14, 20)]              // Speaker → +20 Speech
+    [InlineData(PerkId.Salesman, 15, 20)]             // Salesman → +20 Barter
+    [InlineData(PerkId.Gambler, 16, 20)]              // Gambler → +20 Gambling
+    [InlineData(PerkId.Survivalist, 17, 25)]          // Survivalist → +25 Outdoorsman
+    [InlineData(PerkId.Ranger, 17, 15)]               // Ranger → +15 Outdoorsman
+    [InlineData(PerkId.Thief, 8, 10)]                 // Thief → +10 Sneak
+    [InlineData(PerkId.VaultCityTraining, 6, 5)]      // VC Training → +5 First Aid
+    public void SkillModifierMatchesEngineTable(int perk, int skill, int expected)
+    {
+        var ranks = new int[PerkTable.Count];
+        ranks[perk] = 1;
+        Assert.Equal(expected, PerkRules.SkillModifier(skill, ranks));
+        Assert.Equal(0, PerkRules.SkillModifier(0, ranks)); // unrelated skill (Small Guns) unaffected
+    }
+
+    [Fact]
+    public void SkillModifierStacksOverlappingPerks()
+    {
+        var ranks = new int[PerkTable.Count];
+        ranks[PerkId.Medic] = 1;             // +10 Doctor
+        ranks[PerkId.LivingAnatomy] = 1;     // +10 Doctor
+        ranks[PerkId.VaultCityTraining] = 1; // +5 Doctor
+        Assert.Equal(25, PerkRules.SkillModifier(7, ranks));
+    }
+
     // --- perkCanAdd gates ------------------------------------------------
 
     private static int[] Stats(int s = 6, int p = 6, int e = 6, int c = 6, int i = 6, int a = 6, int l = 6) =>

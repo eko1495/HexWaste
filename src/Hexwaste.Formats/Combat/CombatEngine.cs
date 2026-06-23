@@ -1242,6 +1242,12 @@ public sealed class CombatEngine
         if (!eligible)
             return;
 
+        // P70: Stonewall — the dude has a 50% chance to resist a knockback/knockdown entirely
+        // (combat.cc:4641, randomBetween(0,100) < 50). DUDE-only; rank 0 short-circuits BEFORE the roll
+        // so no RNG is drawn -> byte-identical (no golden dude carries the perk).
+        if (target == _host.Dude && _host.DudePerkRank(Perks.PerkId.Stonewall) > 0 && _rng.Next(0, 101) < 50)
+            return;
+
         Shove(attack.Attacker.HexTile, target, attack.Damage / 10);
 
         // Persisting prone only from a crit (a pure shove bounces back up).
@@ -1426,9 +1432,12 @@ public sealed class CombatEngine
     {
         if (!_knockedDown.Remove(critter))
             return -1;
-        _host.Transcript($"getup: {_host.ObjectName(critter)} (-{StandUpApCost} AP)");
+        // P70: Quick Recovery — the dude stands in 1 AP instead of 3 (combat.cc:5396 _combat_standup,
+        // a1 == gDude). Rank 0 -> StandUpApCost (3), the transcript prints the same -> byte-identical.
+        int cost = critter == _host.Dude && _host.DudePerkRank(Perks.PerkId.QuickRecovery) > 0 ? 1 : StandUpApCost;
+        _host.Transcript($"getup: {_host.ObjectName(critter)} (-{cost} AP)");
         _host.OnGetUp(critter); // P34-M6: the visible stand-up sprite (the prone flag is already cleared)
-        return Math.Max(ap - StandUpApCost, 0);
+        return Math.Max(ap - cost, 0);
     }
 
     private void KillCritter(MapObject critter, MapObject? killer = null,

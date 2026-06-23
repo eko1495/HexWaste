@@ -3830,7 +3830,10 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
         {
             if (_skillRng.Next(1, 101) <= DudeSkillValue(skill))
             {
-                int heal = Math.Min(_skillRng.Next(1, 6), cs.MaxHp - target.CurrentHp);
+                // P70: Healer — First Aid/Doctor heal +4*rank min / +10*rank max (skill.cc:561; the base is
+                // 1-5, so rank 0 -> Next(1,6) unchanged -> byte-identical). The dude is always the healer.
+                int healerRank = DudePerkRank(Formats.Perks.PerkId.Healer);
+                int heal = Math.Min(_skillRng.Next(1 + 4 * healerRank, 6 + 10 * healerRank), cs.MaxHp - target.CurrentHp);
                 target.CurrentHp += heal;
                 Log(self ? $"You heal {heal} hit points." : $"You heal the {ObjectName(target)} for {heal} hit points.");
             }
