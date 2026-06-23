@@ -788,10 +788,10 @@ public sealed partial class ViewerGame
                 Formats.Sound.SfxName.CharacterSoundEffect.Unused, Fid.WeaponCode(target.Fid)) is { } grunt)
             _audio?.PlaySfx(grunt);
 
-        // The dude's reaction sprite is deferred (the engine reacts him too, but Hexwaste's
-        // camera-anchor dude historically doesn't — documented divergence, P34-M6 spillover).
-        if (target == _dude?.Dude)
-            return;
+        // P69-M2: the dude reacts too (the engine reacts him — actions.cc _show_damage_to_object). The
+        // render path already supports it: ResolveSprite uses the animator state when the walker isn't
+        // moving (Rendering.cs:130), and the dude already falls on death via PlayFall. The brief in-place
+        // reaction doesn't move the dude, so the camera anchor is unaffected. (Closes the P34-M6 spillover.)
         // Already mid-fall (Once-mode = a held FALL)? Don't override it with a hit-react
         // (actions.cc:438 early-returns for a prone defender). P34-M6.
         if (_animator.TryGetState(target, out AnimationState falling) && falling.Mode == AnimationMode.Once)
@@ -818,22 +818,19 @@ public sealed partial class ViewerGame
             _animator.PlayActionOnce(target, hitFid);
     }
 
-    /// <summary>Dodge reaction on a miss (P34-M6) — non-dude only (the dude reaction is deferred).</summary>
+    /// <summary>Dodge reaction on a miss (P34-M6; the dude reacts too as of P69-M2).</summary>
     public void OnTargetDodge(MapObject target)
     {
-        if (target == _dude?.Dude)
-            return;
         int fid = Fid.Build(ObjectType.Critter, Fid.Index(target.Fid),
             Formats.Combat.ReactionAnims.Dodge, Fid.WeaponCode(target.Fid));
         if (_vfs.Exists(_artIndex.GetFrmPath(fid)))
             _animator.PlayActionOnce(target, fid);
     }
 
-    /// <summary>Stand-up sprite when a prone critter gets up (P34-M6) — the prone flag is already cleared.</summary>
+    /// <summary>Stand-up sprite when a prone critter gets up (P34-M6; the dude too as of P69-M2) — the
+    /// prone flag is already cleared.</summary>
     public void OnGetUp(MapObject critter)
     {
-        if (critter == _dude?.Dude)
-            return;
         int anim = Formats.Combat.ReactionAnims.StandUp(Fid.AnimType(critter.Fid));
         int fid = Fid.Build(ObjectType.Critter, Fid.Index(critter.Fid), anim, Fid.WeaponCode(critter.Fid));
         if (_vfs.Exists(_artIndex.GetFrmPath(fid)))
