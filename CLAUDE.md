@@ -2182,6 +2182,27 @@ packet sets distance=stay/snipe diverges, and none is in a golden. 11 new tests 
 holds / absent-distance approaches [the control] / Snipe kites-when-adjacent; an 8-case AiDistanceMode.Parse
 theory). 705 Formats tests.
 
+Phase 69 (DONE — the "S-tier trio" from a gap-reaudit workflow; it turned out a DUO + one verified non-issue,
+the audit synthesizer having hallucinated 3 facts the inline verification caught). M1 Awareness perk: Hexwaste
+showed a critter's HP UNCONDITIONALLY on examine (over-generous vs the engine, which gates it behind PERK_
+AWARENESS, proto_instance.cc:294). Now examine reveals "HP: N/M, AC" + the wielded weapon (with ammo for guns)
+ONLY with the perk; without it, just name + description like the engine — so the perk is a real choice.
+PERK_AWARENESS = index 0 (the synth's "27" was a HALLUCINATION; verified against perk_defs.h/PerkId). Gated via
+the existing DudePerkRank seam, inert at rank 0. No golden examines a critter via the player Examine() path (the
+--examine harness is a separate diagnostic dump), so BYTE-IDENTICAL; new --awareness-probe (state-only: hex +
+perk rank + hpLine/weaponLine booleans, never the copyrighted name) + the awareness-perk golden (Metzger denbus2
+@15278: 0/0 without the perk, 1/1 after --perk-probe 0 6 grants it). M2 dude reaction sprites: removed the three
+OnTargetHit/OnTargetDodge/OnGetUp early-returns that skipped the dude (the P34-M6 spillover) — the dude now
+flinches/dodges/falls/stands like every NPC. No blocker: ResolveSprite already uses the animator state when the
+walker isn't moving (the dude is stationary on an attack resolve) and the dude already falls on death via
+PlayFall. Anim-only (no transcript/RNG) -> BYTE-IDENTICAL. M3 run-vs-walk speed: VERIFIED NON-ISSUE (the synth's
+3rd hallucination) — running ALREADY moves faster. The DudeController is FRM-driven (msPerFrame=1000/fps); the
+dude runs by default (run-probe default=19, artExists=1) and CurrentFid resolves to the run FRM, and FrmDump
+confirms HMJMPSAT [run] = 20 fps vs HMJMPSAB [walk] = 10 fps (2x). No code change. LESSON RE-CONFIRMED: a
+single-agent audit (the 4 reader agents got rate-limited, so the synthesizer fell back to solo inspection)
+hallucinates — VERIFY every load-bearing claim inline (3 of its facts were wrong here). 705 Formats tests, 16
+combat + 158 encounter goldens green.
+
 Phase 10 (DONE, per docs/phase10-research-report.md — "The Wasteland
 Bites Back"): M0 persistence pre-stage (the net: MapList saved=No /
 random_start_point parse + IsTransient; the 3-clause transient guards as
