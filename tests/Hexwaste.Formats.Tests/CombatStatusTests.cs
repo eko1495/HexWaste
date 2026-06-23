@@ -46,6 +46,51 @@ public class CombatStatusTests
         Assert.Equal(5, new CritterState(Hurt(14), proto).Stat(CritterStat.Strength));
     }
 
+    private static MapObject Critter(int hp = 30) => new()
+    {
+        Id = 1, HexTile = 100, X = 0, Y = 0, Frame = 0, Rotation = 0,
+        Fid = 0x01000000, Flags = 0, Pid = 0x01000001, Sid = -1, CurrentHp = hp,
+    };
+
+    [Fact]
+    public void GainSpecialPerksAddOneToTheRightPrimary()
+    {
+        // P74-M1: Gain STR/PER/.../LCK (perks 84..90) add +1 to that primary (stat.cc:252-309).
+        int[] b = new int[35];
+        for (int s = CritterStat.Strength; s <= CritterStat.Luck; s++) b[s] = 5;
+        var proto = new CritterProtoStats(0, 0, 0, b, new int[35], new int[18], 0, 0, 0, 0);
+        var ranks = new int[Hexwaste.Formats.Perks.PerkTable.Count];
+        ranks[Hexwaste.Formats.Perks.PerkId.GainPerception] = 1;
+
+        var cs = new CritterState(Critter(), proto, perkRanks: ranks);
+        Assert.Equal(6, cs.Stat(CritterStat.Perception));   // +1
+        Assert.Equal(5, cs.Stat(CritterStat.Strength));     // a different primary is unaffected
+        Assert.Equal(5, new CritterState(Critter(), proto).Stat(CritterStat.Perception)); // no perk → no bonus
+    }
+
+    [Fact]
+    public void EffectiveStatClampsToTheEngineBounds()
+    {
+        // P74-M1: critterGetStat clamps to gStatDescriptions (stat.cc:369). A maxed primary + Gain-X
+        // can't exceed 10, and a 0 primary clamps UP to the min 1.
+        int[] b = new int[35]; b[CritterStat.Strength] = 10; // already at max
+        var maxed = new CritterProtoStats(0, 0, 0, b, new int[35], new int[18], 0, 0, 0, 0);
+        var ranks = new int[Hexwaste.Formats.Perks.PerkTable.Count];
+        ranks[Hexwaste.Formats.Perks.PerkId.GainStrength] = 1;       // would push ST to 11
+        Assert.Equal(10, new CritterState(Critter(), maxed, perkRanks: ranks).Stat(CritterStat.Strength));
+
+        var zero = new CritterProtoStats(0, 0, 0, new int[35], new int[35], new int[18], 0, 0, 0, 0);
+        Assert.Equal(1, new CritterState(Critter(), zero).Stat(CritterStat.Perception)); // 0 → min 1
+    }
+
+    [Theory]
+    [InlineData(CritterStat.Strength, 1, 10)]
+    [InlineData(CritterStat.MaximumActionPoints, 1, 99)]
+    [InlineData(CritterStat.DamageResistance, 0, 90)]
+    [InlineData(CritterStat.BetterCriticals, -60, 100)]
+    public void StatBoundsMatchTheEngineTable(int stat, int min, int max) =>
+        Assert.Equal((min, max), StatBounds.For(stat));
+
     [Fact]
     public void BlindLowersPerceptionByFive()
     {

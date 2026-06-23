@@ -49,4 +49,17 @@ public static class PerkId
     public const int VaultCityTraining = 107; // +5 First Aid & Doctor
     public const int ExpertExcrementExpeditor = 116; // +5 Speech
     public const int Gambler = 83;          // +20 Gambling
+
+    // P74 batch: the 7 Gain-X SPECIAL perks (+1 to the primary stat, stat.cc:252-309). CONTIGUOUS in
+    // perk_defs.h (84..90 == SPECIAL 0..6), so GainStrength + statIndex addresses each. Hardcoded in the
+    // engine's critterGetStat switch (NOT data-driven, so the Stat=-1 table doesn't cover them).
+    public const int GainStrength = 84;     // +1 ST
+    public const int GainPerception = 85;   // +1 PE
+    public const int GainEndurance = 86;    // +1 EN
+    public const int GainCharisma = 87;     // +1 CH
+    public const int GainIntelligence = 88; // +1 IN
+    public const int GainAgility = 89;      // +1 AG
+    public const int GainLuck = 90;         // +1 LK
+    public const int BonusMove = 3;         // 2 free movement AP/rank, drained before combat AP (combat.cc:3237)
+    public const int Lifegiver = 28;        // +4 max HP per rank, per level-up (stat.cc:771)
 }

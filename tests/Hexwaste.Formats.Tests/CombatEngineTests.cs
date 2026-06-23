@@ -1605,9 +1605,26 @@ public class CombatEngineTests
             host.SetDude(NewCritter(20100, hp: 30, ap: 10, skill: 75)); // Small Guns = 5 + 4*5 + 75 = 100
             return AttackChance(host);
         }
-        // PE 0 → the distance term is −20: 100−20−60 = 20 without; 100−20 = 80 with (penalty cancelled).
-        Assert.Equal(20, Chance(0));
-        Assert.Equal(80, Chance(1));
+        // P74-M1: the dude's PE (NewCritter leaves it 0) clamps to the engine min 1, so the distance
+        // term is −12 not −20: 100−12−60 = 28 without; 100−12 = 88 with (the −60 penalty still cancelled,
+        // delta = 60).
+        Assert.Equal(28, Chance(0));
+        Assert.Equal(88, Chance(1));
+    }
+
+    [Fact]
+    public void AccurateWeaponPerkAddsTwentyToHit()
+    {
+        // P74-M2 (combat.cc:4423): an Accurate-perk weapon is +20 to hit, any attacker.
+        int Chance(int perk)
+        {
+            var w = new WeaponProtoStats(0, 5, 12, 0, 40, 0, 0, 1, 5, 0, 0, 0, -1, 12, 0, WeaponPerk: perk); // min-ST 1
+            var item = new MapObject { Id = 8, HexTile = 0, X = 0, Y = 0, Frame = 0, Rotation = 0, Fid = 0x06000000, Flags = 0, Pid = 8, Sid = -1, AmmoQuantity = -1 };
+            var host = new FakeCombatHost { CriticalsEnabled = false, LoadedAmmoCount = 10, Equipped = (new ProtoInfo(8, 0, 0x06000000, 0, 0x06, 3, Weapon: w), item) };
+            host.SetDude(NewCritter(20100, hp: 30, ap: 10, skill: 50));
+            return AttackChance(host);
+        }
+        Assert.Equal(Chance(-1) + 20, Chance(WeaponProtoStats.PerkAccurate)); // no-perk baseline + 20
     }
 
     [Fact]

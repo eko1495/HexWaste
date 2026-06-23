@@ -10,8 +10,9 @@
 game-data/
 *.exe
 *.bin
-# Save files (the default --save-now target lands in the CWD).
+# Save files (the default --save-now target lands in the CWD; --save-slot writes hexwaste-slotN.json).
 hexwaste-save*.json
+hexwaste-slot*.json
 # Rendered game art (FrmDump/screenshot output) — never commit (legal guardrail);
 # screenshots were scrubbed from history, keep them out for good.
 *.png

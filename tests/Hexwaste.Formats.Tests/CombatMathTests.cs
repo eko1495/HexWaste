@@ -66,6 +66,21 @@ public class CombatMathTests
     }
 
     [Fact]
+    public void PenetrateWeaponPerkCutsOnlyDamageThreshold()
+    {
+        // P74-M2: Penetrate reduces DT to 20%, leaving DR (combat.cc:4535) — distinct from BYPASS (both).
+        var rng = new SystemCombatRng(1);
+        CritterState target = NewState(dt: 10, dr: 50);
+        // raw 30 (min=max=30), critMult 2 / ÷2 = 30 before armor.
+        //   normal:    30−10=20, 20−20·50/100 = 10
+        //   penetrate: DT 10→2, 30−2=28, 28−28·50/100 = 14  (DR still 50)
+        //   bypass:    DT→2, DR→10, 30−2=28, 28−28·10/100 = 26  (DR also cut → more damage than penetrate)
+        Assert.Equal(10, RangedMath.RollDamage(rng, 30, 30, target, 0, 1, 1));
+        Assert.Equal(14, RangedMath.RollDamage(rng, 30, 30, target, 0, 1, 1, penetrate: true));
+        Assert.Equal(26, RangedMath.RollDamage(rng, 30, 30, target, 0, 1, 1, bypassArmor: true));
+    }
+
+    [Fact]
     public void SeededRollsAreDeterministic()
     {
         int[] RollSeries()

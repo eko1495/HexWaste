@@ -32,6 +32,8 @@ public sealed class CombatEngine
     /// <summary>The rolled-but-not-applied attack: damage lands when the punch
     /// animation completes (engine: _apply_damage in _combat_anim_finished).</summary>
     private sealed record PendingAttack(MapObject Attacker, MapObject Target, int Chance, bool Hit, int Damage, int CritFlags, bool CanKnockback,
+        // P74-M2: a Knockback-perk weapon halves the shove divisor (10→5 = double distance).
+        bool KnockbackPerk = false,
         // P26 gore: the killing blow's damage type + attacker animation feed DeathAnims.Pick.
         int DamageType = 0, int AttackerAnim = DeathAnims.FallBack);
     private PendingAttack? _pendingAttack;
@@ -305,6 +307,7 @@ public sealed class CombatEngine
         if (isGun)
             weaponItem!.AmmoQuantity = _host.WeaponAmmo(weaponProto!, weaponItem) - 1;
         _pendingAttack = new PendingAttack(dude, target, chance, hit, damage, critFlags, CanKnockback: !isGun,
+            KnockbackPerk: weaponProto?.Weapon is { WeaponPerk: WeaponProtoStats.PerkKnockback }, // P74-M2
             DamageType: weaponProto?.Weapon?.DamageType ?? 0, // P26 gore context
             AttackerAnim: DeathAnims.AttackAnimFor(isGun, weaponProto?.Weapon is not null));
         _host.Transcript($"attack {_host.ObjectName(target)}@{target.HexTile}"
@@ -901,6 +904,8 @@ public sealed class CombatEngine
             // only on the non-bypass path (the engine skips it under DAM_BYPASS). Inert for NPC
             // attackers and a trait-less dude, so the combat goldens stay byte-identical.
             int extraDr = !bypass && attackerIsDude && _host.DudeHasTrait(TraitModifiers.Finesse) ? 30 : 0;
+            // P74-M2: the Penetrate weapon perk cuts the defender's DT to 20% (DT only). Any attacker.
+            bool penetrate = weaponProto?.Weapon is { WeaponPerk: WeaponProtoStats.PerkPenetrate };
             if (isGun)
             {
                 AmmoProtoStats? ammo = weaponItem is null ? null : _host.LoadedAmmo(weaponProto!, weaponItem);
@@ -909,12 +914,12 @@ public sealed class CombatEngine
                 damage = RangedMath.RollDamage(_rng,
                     weaponProto!.Weapon!.MinDamage, weaponProto.Weapon.MaxDamage, defender,
                     ammo?.DrModifier ?? 0, ammo?.DamageMultiplier ?? 1, ammo?.DamageDivisor ?? 1,
-                    critMultiplier, bypass, extraDr, rangedBonus);
+                    critMultiplier, bypass, extraDr, rangedBonus, penetrate);
             }
             else
             {
                 damage = weaponProto?.Weapon is { } weapon
-                    ? CombatMath.RollWeaponDamage(_rng, attacker, defender, weapon.MinDamage, weapon.MaxDamage, critMultiplier, bypass, extraDr)
+                    ? CombatMath.RollWeaponDamage(_rng, attacker, defender, weapon.MinDamage, weapon.MaxDamage, critMultiplier, bypass, extraDr, penetrate)
                     : CombatMath.RollDamage(_rng, attacker, defender, critMultiplier, bypass, extraDr);
             }
 
@@ -1133,6 +1138,11 @@ public sealed class CombatEngine
         // (combat.cc:4443). Requires BuildSpawn to propagate the proto's OBJECT_MULTIHEX onto the spawn.
         if ((defender.Critter.Flags & OBJECT_MULTIHEX) != 0)
             toHit += 15;
+
+        // P74-M2: the Accurate weapon perk adds +20 to hit, for ANY attacker (combat.cc:4423 — no dude
+        // gate, it's a weapon property). Inert for a perk-less weapon (WeaponPerk -1) → byte-identical.
+        if (weaponProto?.Weapon is { WeaponPerk: WeaponProtoStats.PerkAccurate })
+            toHit += 20;
         return toHit; // callers clamp to [0,95]
     }
 
@@ -1253,7 +1263,8 @@ public sealed class CombatEngine
         if (target == _host.Dude && _host.DudePerkRank(Perks.PerkId.Stonewall) > 0 && _rng.Next(0, 101) < 50)
             return;
 
-        Shove(attack.Attacker.HexTile, target, attack.Damage / 10);
+        // P74-M2: the Knockback weapon perk halves the divisor (5 vs 10) → double the shove (combat.cc:4651).
+        Shove(attack.Attacker.HexTile, target, attack.Damage / (attack.KnockbackPerk ? 5 : 10));
 
         // Persisting prone only from a crit (a pure shove bounces back up).
         if ((attack.CritFlags & CriticalTables.DamKnockedDown) != 0 && _knockedDown.Add(target))
@@ -2397,6 +2408,7 @@ public sealed class CombatEngine
             if (isGun && weaponItem is not null)
                 weaponItem.AmmoQuantity = _host.WeaponAmmo(weaponProto!, weaponItem) - 1;
             _pendingAttack = new PendingAttack(ally, target, chance, hit, damage, critFlags, CanKnockback: !isGun,
+                KnockbackPerk: weaponProto?.Weapon is { WeaponPerk: WeaponProtoStats.PerkKnockback }, // P74-M2
                 DamageType: weaponProto?.Weapon?.DamageType ?? 0,
                 AttackerAnim: DeathAnims.AttackAnimFor(isGun, weaponProto?.Weapon is not null));
             _host.Transcript($"ally-attack {_host.ObjectName(ally)} -> {_host.ObjectName(target)}@{target.HexTile}"
@@ -2493,6 +2505,7 @@ public sealed class CombatEngine
         if (isGun && weaponItem is not null)
             weaponItem.AmmoQuantity = _host.WeaponAmmo(weaponProto!, weaponItem) - 1;
         _pendingAttack = new PendingAttack(enemy, defenderObj, chance, hit, damage, critFlags, CanKnockback: !isGun,
+            KnockbackPerk: weaponProto?.Weapon is { WeaponPerk: WeaponProtoStats.PerkKnockback }, // P74-M2
             DamageType: weaponProto?.Weapon?.DamageType ?? 0,
             AttackerAnim: DeathAnims.AttackAnimFor(isGun, weaponProto?.Weapon is not null));
         _host.Transcript($"enemy-attack {_host.ObjectName(enemy)}@{enemy.HexTile}"

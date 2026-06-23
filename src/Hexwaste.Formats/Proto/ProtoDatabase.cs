@@ -54,8 +54,14 @@ public sealed record WeaponProtoStats(
     int AmmoTypePid,
     int AmmoCapacity,
     byte SoundCode,
-    int CriticalFailureType = 0)
+    int CriticalFailureType = 0,
+    int WeaponPerk = -1)
 {
+    // PERK_WEAPON_* enum values (perk_defs.h), stored in the weapon proto's perk field (P74-M2):
+    public const int PerkAccurate = 59;   // +20 to hit (combat.cc:4423)
+    public const int PerkPenetrate = 60;  // DT reduced to 20% — DT ONLY, NOT DR (combat.cc:4535)
+    public const int PerkKnockback = 61;  // knockback distance divisor 5 instead of 10 (combat.cc:4651)
+
     /// <summary>Guns have a fire attack anim (item.cc _attack_anim index ≥ 6).
     /// Throwers (index 5) stay on the melee path until rung (a) lands —
     /// their reach is capped to melee range by the host.</summary>
@@ -243,7 +249,7 @@ public sealed class ProtoDatabase(GameFileSystem vfs)
                             int apCost = reader.ReadInt32();
                             int apCost2 = reader.ReadInt32();
                             int criticalFailureType = reader.ReadInt32(); // _cf_table row (P41)
-                            reader.Skip(4); // perk
+                            int weaponPerk = reader.ReadInt32(); // PERK_WEAPON_* (P74-M2; was Skip(4))
                             int rounds = reader.ReadInt32();
                             int caliber = reader.ReadInt32();
                             int ammoTypePid = reader.ReadInt32();
@@ -252,7 +258,7 @@ public sealed class ProtoDatabase(GameFileSystem vfs)
                             weapon = new WeaponProtoStats(animationCode, minDamage, maxDamage,
                                 damageType, maxRange1, maxRange2, projectilePid, minStrength,
                                 apCost, apCost2, rounds, caliber, ammoTypePid, ammoCapacity, weaponSound,
-                                criticalFailureType);
+                                criticalFailureType, weaponPerk);
                             break;
                         }
                         case 4: // ITEM_TYPE_AMMO (proto.cc:1604-1611)

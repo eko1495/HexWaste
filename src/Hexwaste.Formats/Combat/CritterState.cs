@@ -26,6 +26,35 @@ public static class CritterStat
     public const int DamageResistance = 24;
 }
 
+/// <summary>Per-stat (min,max) bounds, ported from fallout2-ce src/stat.cc gStatDescriptions — the
+/// std::clamp critterGetStat applies as its LAST step (stat.cc:369). Indices CritterState doesn't read
+/// are unbounded (P74-M1). PRIMARY_STAT_MIN/MAX = 1/10.</summary>
+public static class StatBounds
+{
+    public static (int Min, int Max) For(int stat) => stat switch
+    {
+        >= CritterStat.Strength and <= CritterStat.Luck => (1, 10), // SPECIAL
+        CritterStat.MaximumHitPoints => (0, 999),
+        CritterStat.MaximumActionPoints => (1, 99),
+        CritterStat.ArmorClass => (0, 999),
+        CritterStat.UnarmedDamage => (0, int.MaxValue),
+        CritterStat.MeleeDamage => (0, 500),
+        CritterStat.CarryWeight => (0, 999),
+        CritterStat.Sequence => (0, 60),
+        CritterStat.CriticalChance => (0, 100),
+        CritterStat.BetterCriticals => (-60, 100),
+        CritterStat.DamageThreshold => (0, 100),
+        CritterStat.DamageResistance => (0, 90),
+        _ => (int.MinValue, int.MaxValue),
+    };
+
+    public static int Clamp(int stat, int value)
+    {
+        (int min, int max) = For(stat);
+        return Math.Clamp(value, min, max);
+    }
+}
+
 /// <summary>
 /// A critter's effective combat numbers: proto stat block (base + bonus, the
 /// non-dude path of fallout2-ce src/stat.cc critterGetStat()) over the MAP
@@ -41,15 +70,24 @@ public sealed class CritterState(MapObject critter, CritterProtoStats proto, int
     /// critterGetStat() applies traitGetStatModifier + the perk stat bonuses live; P28-M1/M2).
     /// <paramref name="traits"/>/<paramref name="perkRanks"/> are the dude's — null for NPCs / none,
     /// so the modifiers are 0 (inert by default).</summary>
-    public int Stat(int stat) =>
-        proto.BaseStats[stat] + proto.BonusStats[stat]
-        + TraitModifiers.GetStatModifier(stat, traits, proto.BaseStats)
-        + Perks.PerkRules.StatModifier(stat, perkRanks)
-        // P70: Adrenaline Rush — +1 ST while current HP < max/2 (stat.cc:256, a CONDITIONAL stat perk the
-        // flat StatModifier fold can't express). Inert without the perk -> byte-identical.
-        + (stat == CritterStat.Strength && perkRanks is not null
-           && Perks.PerkRules.Rank(perkRanks, Perks.PerkId.AdrenalineRush) > 0
-           && critter.CurrentHp < Stat(CritterStat.MaximumHitPoints) / 2 ? 1 : 0);
+    public int Stat(int stat)
+    {
+        int value = proto.BaseStats[stat] + proto.BonusStats[stat]
+            + TraitModifiers.GetStatModifier(stat, traits, proto.BaseStats)
+            + Perks.PerkRules.StatModifier(stat, perkRanks)
+            // P70: Adrenaline Rush — +1 ST while current HP < max/2 (stat.cc:256, a CONDITIONAL stat perk the
+            // flat StatModifier fold can't express). Inert without the perk -> byte-identical.
+            + (stat == CritterStat.Strength && perkRanks is not null
+               && Perks.PerkRules.Rank(perkRanks, Perks.PerkId.AdrenalineRush) > 0
+               && critter.CurrentHp < Stat(CritterStat.MaximumHitPoints) / 2 ? 1 : 0)
+            // P74-M1: Gain STR/PER/.../LCK — +1 to the primary stat (stat.cc:252-309, hardcoded per-case,
+            // NOT data-driven). Perks 84..90 are contiguous over SPECIAL 0..6. Inert without the perk.
+            + (stat >= CritterStat.Strength && stat <= CritterStat.Luck && perkRanks is not null
+               && Perks.PerkRules.Rank(perkRanks, Perks.PerkId.GainStrength + stat) > 0 ? 1 : 0);
+        // P74-M1: the engine clamps the effective stat to gStatDescriptions bounds as its last step
+        // (stat.cc:369) — so a Gain-X/Gifted stack can't push a primary past 10. Inert when in-bounds.
+        return StatBounds.Clamp(stat, value);
+    }
 
     /// <summary>True if this critter is blinded by a crit (CombatResults DAM_BLIND).</summary>
     public bool Blind => (critter.CombatResults & CriticalTables.DamBlind) != 0;
