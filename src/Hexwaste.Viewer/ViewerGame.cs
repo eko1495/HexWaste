@@ -722,6 +722,9 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
         /// teams on a transient map; SpawnEncounter starts the brawl. Reports the team
         /// census + that combat opened.</summary>
         public sealed record EncounterFight(string Map, string GroupA, int CountA, string GroupB, int CountB) : StartupAction;
+        /// <summary>P73: spawn an X-FIGHTING-Y encounter as a dude-ABSENT brawl and run it to
+        /// completion (state-only — the winning team + rounds + survivors).</summary>
+        public sealed record BrawlWatch(string Map, string GroupA, int CountA, string GroupB, int CountB) : StartupAction;
         public sealed record TravelFrom(int X, int Y, int AreaIndex) : StartupAction;
         /// <summary>Pre-answer a detected encounter's avoid prompt (phase-16 M1):
         /// Engage=true engages, false avoids+continues. Must precede the travel action.</summary>
@@ -3648,10 +3651,16 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
         // Phase-16 M3: an X-FIGHTING-Y encounter spawned its groups on distinct teams —
         // start the brawl so the player arrives to two factions already at each other's
         // throats (and can watch or join). Only when ≥2 teams actually landed.
+        // P73: --brawl-watch sets _pendingBrawlSpectator so the dude stays a non-combatant and the
+        // factions fight it out on their own (the dude-absent NPC-vs-NPC loop).
         if (encounter.Entry.Situation == "FIGHTING"
             && spawnedCritters.Select(c => c.Team).Distinct().Count() >= 2)
-            _combat.StartBrawl(spawnedCritters);
+            _combat.StartBrawl(spawnedCritters, dudeSpectator: _pendingBrawlSpectator);
+        _pendingBrawlSpectator = false;
     }
+
+    /// <summary>P73: the next FIGHTING encounter starts a dude-ABSENT brawl (--brawl-watch).</summary>
+    private bool _pendingBrawlSpectator;
 
     /// <summary>Build one spawned encounter critter (or scenery): proto art, an
     /// allocated script sid, full HP, a hostile team, and its carried gear with the

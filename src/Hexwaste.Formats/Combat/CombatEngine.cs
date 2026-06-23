@@ -99,6 +99,11 @@ public sealed class CombatEngine
     private int _round;
     private int _dudeAp;
     private bool _gameOver;
+    /// <summary>P73: a dude-ABSENT NPC-vs-NPC brawl — the dude isn't in the turn order or a target,
+    /// every combatant fights cross-team, and the fight ends when one team remains. Default false
+    /// (the dude-involved combat/brawl path is untouched → byte-identical).</summary>
+    private bool _dudeSpectator;
+    private const int MaxSpectatorBrawlRounds = 100; // P73: stalemate/slow-fight bound for a dude-absent brawl
 
     /// <summary>Kill XP accrued this combat, paid at combat end like the engine's
     /// _combat_exps → _combat_give_exps (combat.cc:2816).</summary>
@@ -1504,14 +1509,19 @@ public sealed class CombatEngine
     /// non-dude critter joins as a hostile, and cross-team targeting makes the opposing
     /// groups fight each other as well as the dude. Opens on the dude's turn so the
     /// player can watch the factions thin each other out, or wade in. A NEW entry point
-    /// — it does not touch BeginCombat/AddJoiners, so single-team combat is untouched.</summary>
-    public void StartBrawl(IEnumerable<MapObject> combatants)
+    /// — it does not touch BeginCombat/AddJoiners, so single-team combat is untouched.
+    /// <para>P73: with <paramref name="dudeSpectator"/>, the dude is NOT a combatant — he's left
+    /// out of the turn order and is never targeted, the brawl auto-runs every NPC slot, and it ends
+    /// when one team remains. Default false → the dude-involved path is byte-identical.</para></summary>
+    public void StartBrawl(IEnumerable<MapObject> combatants, bool dudeSpectator = false)
     {
         MapObject? dude = _host.Dude;
         if (dude is null || _gameOver || _phase != CombatPhase.Idle)
             return;
         _host.StopDude();
-        _phase = CombatPhase.PlayerTurn;
+        _dudeSpectator = dudeSpectator;
+        // Spectator: open in EnemyTurn so UpdateCombat auto-steps the NPC order (no dude slot to pause on).
+        _phase = dudeSpectator ? CombatPhase.EnemyTurn : CombatPhase.PlayerTurn;
         _round = 1;
         _combatTick = 0;
         _events.ClearAll();
@@ -1522,12 +1532,14 @@ public sealed class CombatEngine
                 _hostiles.Add(c);
                 c.WhoHitMeCid = -1;
             }
-        if (_host.GetCritterState(dude) is { } stats)
+        if (!dudeSpectator && _host.GetCritterState(dude) is { } stats)
             ResetDudeAp(stats);
-        BuildTurnOrder(firstRound: true, dude, null); // opens on the dude's turn (he can watch or wade in)
+        BuildTurnOrder(firstRound: true, dudeSpectator ? null : dude, null);
         var teams = _hostiles.Select(h => h.Team).Distinct().OrderBy(t => t).ToList();
-        _host.Log($"You stumble into a battle! ({_hostiles.Count} combatants).");
-        _host.Transcript($"brawl: combatants={_hostiles.Count} teams=[{string.Join(",", teams)}]");
+        if (!dudeSpectator)
+            _host.Log($"You stumble into a battle! ({_hostiles.Count} combatants).");
+        _host.Transcript($"brawl: combatants={_hostiles.Count} teams=[{string.Join(",", teams)}]"
+            + (dudeSpectator ? " spectator" : ""));
     }
 
     // CRITTER_MANEUVER_* flags (obj_types.h:120-123) — MapObject.Maneuver carries them.
@@ -1607,7 +1619,7 @@ public sealed class CombatEngine
         MapObject? dude = _host.Dude;
 
         var combatants = new List<MapObject>();
-        if (dude is not null && !dude.IsDead)
+        if (!_dudeSpectator && dude is not null && !dude.IsDead) // P73: a spectator dude isn't in the order
             combatants.Add(dude);
         foreach (MapObject h in _hostiles)
             if (!h.IsDead && !combatants.Contains(h))
@@ -1679,7 +1691,10 @@ public sealed class CombatEngine
 
     /// <summary>ported from fallout2-ce src/combat.cc _combat_should_end():
     /// combat is over when nothing hostile is left standing.</summary>
-    private bool CombatShouldEnd() => !_hostiles.Any(h => !h.IsDead);
+    private bool CombatShouldEnd() => _dudeSpectator
+        // P73: a dude-absent brawl ends when one team (or none) is left standing.
+        ? _hostiles.Where(h => !h.IsDead).Select(h => h.Team).Distinct().Count() <= 1
+        : !_hostiles.Any(h => !h.IsDead);
 
     private bool _terminateRequested;
 
@@ -1712,9 +1727,13 @@ public sealed class CombatEngine
             ResetDudeAp(stats);
         _host.Log("Combat ends.");
 
+        // P73: the dude earns no XP from a brawl he wasn't part of (faithful — he didn't fight).
+        bool spectator = _dudeSpectator;
+        _dudeSpectator = false;
         if (_xpPending > 0)
         {
-            _host.AwardXp(_xpPending);
+            if (!spectator)
+                _host.AwardXp(_xpPending);
             _xpPending = 0;
         }
     }
@@ -1793,6 +1812,8 @@ public sealed class CombatEngine
     /// (AddJoiners), so this only drops critters that actually fled away.</summary>
     private void PruneEscapedHostiles()
     {
+        if (_dudeSpectator) // P73: dude-centric sight doesn't apply to a brawl he's not in
+            return;
         MapObject? dude = _host.Dude;
         if (dude is null)
             return;
@@ -1840,6 +1861,16 @@ public sealed class CombatEngine
         {
             if (_orderIndex >= _order.Count)
             {
+                // P73: a dude-absent brawl has no dude slot to pause this loop, so a STALEMATE
+                // (two factions that can't reach each other → every actor passes) would spin
+                // StartNewRound forever. Cap it: end the brawl once it runs this long (a draw if
+                // both teams still stand). Also bounds a pathologically slow fight. Dude-involved
+                // combat is unaffected (the dude slot always returns) → byte-identical.
+                if (_dudeSpectator && _round >= MaxSpectatorBrawlRounds)
+                {
+                    EndCombat();
+                    return;
+                }
                 StartNewRound();
                 if (_order.Count == 0)
                     return; // nothing left (CombatShouldEnd guards the real end)
@@ -2046,20 +2077,22 @@ public sealed class CombatEngine
                 return false; // standing used the whole turn
         }
 
-        // Enemies pick the nearest of the dude and his living companions.
-        MapObject defenderObj = dude;
-        int bestDistance = HexGrid.Distance(enemy.HexTile, dude.HexTile);
-        foreach (MapObject ally in _host.PartyMembers)
-        {
-            if (ally.IsDead)
-                continue;
-            int d = HexGrid.Distance(enemy.HexTile, ally.HexTile);
-            if (d < bestDistance)
+        // Enemies pick the nearest of the dude and his living companions. P73: in a dude-absent
+        // brawl the dude+party are NOT targets — only the cross-team loop below seeds the defender.
+        MapObject? defenderObj = _dudeSpectator ? null : dude;
+        int bestDistance = _dudeSpectator ? int.MaxValue : HexGrid.Distance(enemy.HexTile, dude.HexTile);
+        if (!_dudeSpectator)
+            foreach (MapObject ally in _host.PartyMembers)
             {
-                bestDistance = d;
-                defenderObj = ally;
+                if (ally.IsDead)
+                    continue;
+                int d = HexGrid.Distance(enemy.HexTile, ally.HexTile);
+                if (d < bestDistance)
+                {
+                    bestDistance = d;
+                    defenderObj = ally;
+                }
             }
-        }
 
         // Cross-team targeting (phase-16 M3, X-FIGHTING-Y): a critter also targets the
         // nearest HOSTILE on a DIFFERENT team — so two spawned enemy groups brawl each
@@ -2078,6 +2111,8 @@ public sealed class CombatEngine
             }
         }
 
+        if (defenderObj is null) // P73: a spectator-brawl critter with no cross-team target left → pass
+            return false;
         int dudeTile = defenderObj.HexTile;
         AiPacket? ai = _host.GetAiPacket(enemy);
 
@@ -2515,6 +2550,7 @@ public sealed class CombatEngine
     {
         _phase = CombatPhase.Idle;
         _terminateRequested = false; // P35-M5
+        _dudeSpectator = false; // P73
         _hostiles.Clear();
         _order.Clear();
         _actingEnemy = null;

@@ -1,0 +1,3 @@
+encounter-spawn: ARRO_War_Party planned=5 placed=5 on desert1.map
+brawl: combatants=4 teams=[1,2] spectator
+brawl-watch: openPhase=EnemyTurn teamsAtStart=2 rounds=100 ended=True survivors=2 winTeam=[1,2] dudeHp=30

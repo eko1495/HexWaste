@@ -2281,6 +2281,30 @@ NEVER the text); goldens taunt-scorpion (pkt8 chance=0 → all -1, the silent go
 (pkt33 → runMsg=2009, the firing taunt — verified combatai.msg GetText(2009) returns a real string so the live
 float displays). 728 Formats tests, 16 combat + 167 encounter goldens green.
 
+Phase 73 (DONE — "Let Them Fight", the dude-absent NPC-vs-NPC brawl loop; the user's Tier-1 pick #3 — the
+last + most golden-sensitive). The X-FIGHTING-Y brawl (P16-M3) ran only WITH the dude involved (in the turn
+order + a target, opening on his PlayerTurn); P73 adds a fully independent faction fight the dude only watches.
+M0 grounding: StepTurnOrder's while-loop only RETURNS at the dude's slot (PlayerTurn) or when an NPC acts — so a
+dude-absent brawl with NO dude slot would spin StartNewRound forever on a stalemate (the headline risk). M1 the
+engine core: StartBrawl gained a dudeSpectator param + a _dudeSpectator flag gating 6 branches — the dude is
+EXCLUDED from BuildTurnOrder, never TARGETED (TryEnemyAction's defender selection skips the dude+party so only
+the cross-team loop seeds the target, with a null-guard pass when no cross-team target remains), the brawl opens
+AUTO-RUNNING (EnemyTurn, no PlayerTurn pause), CombatShouldEnd ends it when ≤1 living TEAM remains,
+PruneEscapedHostiles (dude-centric sight) is skipped, and EndCombat awards the dude NO XP (he didn't fight) +
+clears the flag. A MaxSpectatorBrawlRounds=100 cap breaks the no-dude-slot stalemate spin (and bounds a slow
+fight). All 6 branches are INERT by default → the dude-involved combat/brawl path is byte-identical. M2 harness
++ golden: --brawl-watch <map> <gA> <cA> <gB> <cB> spawns two FIGHTING factions (like --encounter-fight) in
+spectator mode, RINGS them adjacent (the encounter formations spawn far apart so they'd never engage), and
+drives _combat.Step() with a LARGE pump-dt (collapsing animation time → the full 100-round brawl runs in ~2.5s)
+to completion, reporting the winner + rounds + dudeHp (state-only). KEY GOLDEN-SAFETY: _dudeSpectator defaults
+false + only the new StartBrawl(dudeSpectator:true) entry sets it → all 16 combat goldens + the dude-involved
+encounter-fight brawl BYTE-IDENTICAL (verified by a clean combat check). DOCUMENTED FINDING: a real brawl is a
+faithful flee-DRAW — hurt critters flee (min_hp/hurt_too_much) and scatter rather than fight to the death, so it
+hits the round cap with survivors on both teams rather than a clean wipe; the fake-host test (hp:1 critters that
+die before they can flee) is the deterministic clean-WIN proof. Proven by DudeAbsentBrawlAutoResolvesToOneTeam
+WithoutTheDude (the dude untouched, exactly one team survives) + the brawl-watch golden (the dude untouched
+through a real flee-draw). 729 Formats tests, 16 combat + 168 encounter goldens green.
+
 Phase 10 (DONE, per docs/phase10-research-report.md — "The Wasteland
 Bites Back"): M0 persistence pre-stage (the net: MapList saved=No /
 random_start_point parse + IsTransient; the 3-clause transient guards as

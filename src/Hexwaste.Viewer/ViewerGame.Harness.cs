@@ -168,6 +168,55 @@ public sealed partial class ViewerGame
                         + $" teamA={teamA} teamB={teamB} hostiles={_combat.Hostiles.Count} phase={_combat.Phase}");
                     break;
                 }
+                case StartupAction.BrawlWatch(var bmap, var bga, var bca, var bgb, var bcb):
+                {
+                    // P73: a dude-ABSENT brawl — spawn two FIGHTING groups (like --encounter-fight) but
+                    // with the spectator flag, then drive Step() to completion and report the winner.
+                    var entry = new Formats.Map.EncounterEntry(100, null,
+                        [new Formats.Map.EncounterSpawn(bca, bca, bga), new Formats.Map.EncounterSpawn(bcb, bcb, bgb)],
+                        "FIGHTING", []);
+                    _pendingEncounter = new Formats.Map.EncounterResult(
+                        new Formats.Map.EncounterTable("demo", [], [entry]), entry);
+                    _pendingBrawlSpectator = true; // SpawnEncounter → StartBrawl(dudeSpectator: true)
+                    LoadMap(bmap, null, transient: true);
+
+                    // The encounter formations spawn the two factions far apart, so they'd spend the
+                    // whole fight approaching. Ring the brawlers tightly around a fixed tile (away from
+                    // the dude) so cross-team enemies are adjacent and the fight resolves fast +
+                    // deterministically — the same teleport-adjacent setup --fight uses for the dude.
+                    var ring = _combat.Hostiles.Where(h => !h.IsDead).ToList();
+                    const int brawlCenter = 20100;
+                    for (int n = 0; n < ring.Count; n++)
+                        ring[n].HexTile = Formats.Hex.HexGrid.TileInDirection(brawlCenter, n % 6, 1 + n / 6);
+                    if (_dude is not null)
+                    {
+                        _dude.Dude.HexTile = Formats.Hex.HexGrid.TileInDirection(brawlCenter, 0, 20); // well clear
+                        RebuildBlockedTiles(_dude.Dude);
+                    }
+
+                    int teamsAtStart = _combat.Hostiles.Where(h => !h.IsDead).Select(h => h.Team).Distinct().Count();
+                    Formats.Combat.CombatPhase openPhase = _combat.Phase;
+                    // Pump with a large dt so each animation/walk completes in one step — the full brawl
+                    // resolves in wall-time fast (the outcome is dt-independent; animation is cosmetic).
+                    for (int g = 0; g < 40000 && _combat.Phase != Formats.Combat.CombatPhase.Idle; g++)
+                    {
+                        _animator.Update(100000);
+                        _combat.Step();
+                        foreach (DudeController walker in _npcWalkers.Values)
+                            walker.Update(100000);
+                    }
+                    // The brawl is over: surviving critters are the winning team (Hostiles is cleared on
+                    // EndCombat, so census the live map critters by team).
+                    var survivors = _solidObjects[_elevation]
+                        .Where(o => Fid.Type(o.Fid) is ObjectType.Critter && !o.IsDead && o != _dude?.Dude
+                            && o.Team != (_dude?.Dude.Team ?? -99)).ToList();
+                    var winTeams = survivors.Select(s => s.Team).Distinct().OrderBy(t => t).ToList();
+                    Console.WriteLine($"brawl-watch: openPhase={openPhase} teamsAtStart={teamsAtStart}"
+                        + $" rounds={_combat.Round} ended={_combat.Phase == Formats.Combat.CombatPhase.Idle}"
+                        + $" survivors={survivors.Count} winTeam=[{string.Join(",", winTeams)}]"
+                        + $" dudeHp={_dude?.Dude.CurrentHp ?? -1}");
+                    break;
+                }
                 case StartupAction.EncounterAnswer(var engage):
                     _autoEncounterAnswer = engage; // phase-16 M1: pre-answer the avoid prompt
                     break;

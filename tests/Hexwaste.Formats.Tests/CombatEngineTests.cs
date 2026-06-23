@@ -1323,6 +1323,35 @@ public class CombatEngineTests
     }
 
     [Fact]
+    public void DudeAbsentBrawlAutoResolvesToOneTeamWithoutTheDude()
+    {
+        // P73: StartBrawl(dudeSpectator: true) — the dude is NOT a combatant. The brawl opens
+        // auto-running (EnemyTurn, no PlayerTurn pause), the factions fight cross-team, and it ends
+        // when one team remains — all without the dude in the order or as a target.
+        var host = new FakeCombatHost();
+        MapObject dude = host.SetDude(NewCritter(tile: 20100, hp: 30, ap: 10));
+        int aTile = HexGrid.TileInDirection(20100, 0, 8);
+        MapObject teamA = host.AddCritter(NewCritter(aTile, hp: 1, ap: 10, skill: 80));
+        MapObject teamB = host.AddCritter(NewCritter(HexGrid.TileInDirection(aTile, 0), hp: 1, ap: 10, skill: 80));
+        teamA.Team = 1;
+        teamB.Team = 2;
+        var engine = new CombatEngine(host, new MinRng());
+
+        engine.StartBrawl([teamA, teamB], dudeSpectator: true);
+        Assert.Equal(CombatPhase.EnemyTurn, engine.Phase); // auto-runs — no dude slot to pause on
+
+        for (int i = 0; i < 500 && engine.Phase != CombatPhase.Idle; i++)
+        {
+            host.Animating.Clear();
+            engine.Step();
+        }
+
+        Assert.Equal(CombatPhase.Idle, engine.Phase);  // the brawl ended (one team left standing)
+        Assert.True(teamA.IsDead ^ teamB.IsDead);       // exactly one faction survives
+        Assert.Equal(30, dude.CurrentHp);               // the spectator dude never took damage / acted
+    }
+
+    [Fact]
     public void CrippledArmsGateWeaponAttacks()
     {
         // Phase-18 M2 (combat.cc:5655): both arms crippled blocks ANY weapon attack; one
