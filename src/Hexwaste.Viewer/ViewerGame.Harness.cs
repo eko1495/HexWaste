@@ -1129,6 +1129,25 @@ public sealed partial class ViewerGame
                     RevealAround(reveal.Hex); // P71: simulate the dude exploring this tile
                     Console.WriteLine($"reveal: hex={reveal.Hex} tiles={_seenTiles.Count}");
                     break;
+                case StartupAction.TauntProbe tp:
+                {
+                    // P72-M3: state-only — the critter's taunt config (chance/color/ranges) + the
+                    // deterministic attack/run message-id picks (combatai.msg ids, NOT the text).
+                    MapObject? c = CritterAt(tp.Hex);
+                    Formats.Combat.AiPacket? pkt = c is not null ? GetAiPacket(c) : null;
+                    if (pkt is null)
+                    {
+                        Console.WriteLine($"taunt: hex={tp.Hex} packet=none");
+                        break;
+                    }
+                    var rng = new Formats.Combat.SystemCombatRng(tp.Seed);
+                    int atk = Formats.Combat.CombatTaunt.Pick(pkt, Formats.Combat.CombatTaunt.Type.Attack, rng);
+                    int run = Formats.Combat.CombatTaunt.Pick(pkt, Formats.Combat.CombatTaunt.Type.Run, rng);
+                    Console.WriteLine($"taunt: hex={tp.Hex} packet={pkt.PacketNum} chance={pkt.Chance}"
+                        + $" color={pkt.TauntColor} attack=[{pkt.AttackStart},{pkt.AttackEnd}]"
+                        + $" run=[{pkt.RunStart},{pkt.RunEnd}] atkMsg={atk} runMsg={run}");
+                    break;
+                }
                 case StartupAction.OpenAutomap:
                 {
                     _automapOpen = true;

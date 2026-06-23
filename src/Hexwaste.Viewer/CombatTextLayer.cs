@@ -131,4 +131,10 @@ public static class CombatFloatColors
 
     /// <summary>WHITE, _colorTable[32767] — a miss / dodge.</summary>
     public static readonly Color Miss = new(255, 255, 255);
+
+    /// <summary>WHITE, _colorTable[0x7FFF] — a level-up float (party_member.cc:1554, P72-M1).</summary>
+    public static readonly Color LevelUp = new(255, 255, 255);
+
+    /// <summary>YELLOW, _colorTable[32747] — a skill-use response float (actions.cc:1461, P72-M2).</summary>
+    public static readonly Color SkillResponse = new(255, 255, 90);
 }

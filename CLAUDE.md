@@ -2259,6 +2259,28 @@ identical bar the 2 automap fixtures (1 re-record + 1 new). PersistenceTests Mul
 (SeenTiles round-trips + the additive-empty default). The P20 "proximity not LoS, not save-persisted" simplification
 is now CLOSED. 724 Formats tests, 16 combat + 165 encounter goldens green.
 
+Phase 72 (DONE — "Speak Up", float messages: wiring the engine's OTHER float_msg uses onto the P45
+CombatTextLayer; the user's Tier-1 pick #2). M0 grounding — the 3 sites + colours: level-up (party_member.cc:
+1554, _colorTable[0x7FFF]=white, font 101), skill-use response (actions.cc:1461, _colorTable[32747]=yellow),
+AI taunt (_combatai_msg, combat_ai.cc:3302 — per-packet chance/color + message ranges into combatai.msg, with
+TWO randomBetween draws [the chance gate + the message pick]). M1 level-up float: AwardXp crossing a level floats
+"Level Up" (white) over the dude. M2 skill-response float: a successful First Aid/Doctor heal floats "+N" (yellow)
+over the target. Both Draw-only (mutate the in-memory float list, never the console/RNG) → byte-identical. M3 AI
+combat taunt (the meaty one): AiPacket extended with chance/color + the attack/run message ranges (parsed from
+ai.txt — present on every packet); pure Formats.Combat.CombatTaunt.Pick ports _combatai_msg's chance gate +
+inclusive range pick; the viewer's TryTaunt resolves the combatai.msg string + the packet's palette colour and
+floats it over the critter. Wired the ATTACK taunt (OnAttackStarted, the attacker) + the RUN taunt (a new
+ICombatHost.OnCritterFlee hook from CombatEngine.TryFlee). KEY GOLDEN-SAFETY: a dedicated ISOLATED _tauntRng (the
+_skillRng/_sneakRng pattern) keeps the chance/message rolls OFF the combat stream, and the float is Draw-only →
+ALL 16 combat goldens BYTE-IDENTICAL even though the Den humans (pkt33 chance=25) taunt on flee in denbus2-fight-
+flee; the golden-fight scorpion (pkt8 chance=0) never taunts (short-circuits before any draw). DOCUMENTED
+RESIDUALS: MISS/HIT taunts (attacker-vs-defender perspective + per-hit-location ranges) + MOVE + the per-location
+hit granularity are deferred — only the two clean self-perspective single-range taunts are wired. M4 probe +
+golden: --taunt-probe <hex> <seed> (state-only — chance/color/ranges + the deterministic attack/run msgId picks,
+NEVER the text); goldens taunt-scorpion (pkt8 chance=0 → all -1, the silent golden-fight critter) + taunt-slave
+(pkt33 → runMsg=2009, the firing taunt — verified combatai.msg GetText(2009) returns a real string so the live
+float displays). 728 Formats tests, 16 combat + 167 encounter goldens green.
+
 Phase 10 (DONE, per docs/phase10-research-report.md — "The Wasteland
 Bites Back"): M0 persistence pre-stage (the net: MapList saved=No /
 random_start_point parse + IsTransient; the 3-clause transient guards as

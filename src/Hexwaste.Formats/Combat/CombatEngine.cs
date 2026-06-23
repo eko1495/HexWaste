@@ -2243,6 +2243,7 @@ public sealed class CombatEngine
         actorAp = 0; // the run uses the whole turn (animationRegisterRunToTile, full ap)
         _host.Log($"The {_host.ObjectName(critter)} flees!");
         _host.Transcript($"flee: {_host.ObjectName(critter)}@{fromTile} -> {target}");
+        _host.OnCritterFlee(critter); // P72-M3: flee taunt (Draw-only, isolated rng → byte-identical)
         return _host.StartWalk(critter, target);
     }
 

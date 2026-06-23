@@ -173,6 +173,11 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
     /// <summary>Seeded skill-roll RNG (deterministic under --rng-seed for goldens),
     /// separate from the combat/party/worldmap streams.</summary>
     private Formats.Combat.ICombatRng? _skillRng;
+    /// <summary>Seeded AI-taunt RNG (P72-M3) — ISOLATED from the combat stream so the chance/
+    /// message rolls never perturb to-hit/damage; the taunt float is Draw-only, so combat goldens
+    /// stay byte-identical regardless of whether a critter taunts.</summary>
+    private Formats.Combat.ICombatRng? _tauntRng;
+    private Formats.Text.MessageFile? _combatAiMsg; private bool _combatAiMsgTried;
     /// <summary>Per-skill uses counted against <see cref="_skillUsesDay"/> — the engine's
     /// skillGetFreeUsageSlot "wait a while" cap (3/day), reset on a new game-day.</summary>
     private readonly Dictionary<int, int> _skillUsesByDay = [];
@@ -559,6 +564,9 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
         /// <summary>P71: reveal the automap fog around a hex (as if the dude walked there) —
         /// drives RevealAround so a --save-now/--load-now round-trip can prove the fog persists.</summary>
         public sealed record RevealAt(int Hex) : StartupAction;
+        /// <summary>P72-M3: report a critter's ai.txt taunt config + the deterministic attack/run
+        /// message-id picks under <paramref name="Seed"/> (state-only — IDs/ranges, never the text).</summary>
+        public sealed record TauntProbe(int Hex, int Seed) : StartupAction;
         /// <summary>Phase-22: travel a worldmap leg from (X,Y) toward AreaIndex (avoiding the
         /// prompt) and report the fog-of-war reveal — proves subtiles get marked VISITED/KNOWN
         /// as the party walks, and that the destination subtile becomes clear.</summary>
@@ -3222,6 +3230,10 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
             }
             Log($"You have reached level {_dudeLevel}! ({_unspentSkillPoints} skill points — press K)");
             Console.WriteLine($"level-up: now level {_dudeLevel}, skillPoints={_unspentSkillPoints}");
+            // P72-M1: a white "Level Up" float over the dude (party_member.cc:1554 textObjectAdd font 101,
+            // _colorTable[0x7FFF]). Draw-only — mutates the float list, never the console → goldens unchanged.
+            if (_dude is not null)
+                _floatText.Add(_dude.Dude.HexTile, _elevation, "Level Up", CombatFloatColors.LevelUp);
 
             // The engine runs _partyMemberIncLevels once per PC level-up (stat.cc:789):
             // a party.txt companion may swap to its next stage proto (#10 M2 / #13).
@@ -3844,6 +3856,9 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
                 int heal = Math.Min(_skillRng.Next(1 + 4 * healerRank, 6 + 10 * healerRank), cs.MaxHp - target.CurrentHp);
                 target.CurrentHp += heal;
                 Log(self ? $"You heal {heal} hit points." : $"You heal the {ObjectName(target)} for {heal} hit points.");
+                // P72-M2: a yellow skill-response float over the target (actions.cc:1461 textObjectAdd font
+                // 101, _colorTable[32747]). Draw-only — never the console → goldens unchanged.
+                _floatText.Add(target.HexTile, _elevation, $"+{heal}", CombatFloatColors.SkillResponse);
             }
             else
             {

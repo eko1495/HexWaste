@@ -309,6 +309,12 @@ SCENARIOS=(
   # — count/lifetime/cap/anchor + the engine float_msg colours. Draw-only (the layer is never ticked
   # or drawn headless), so every other golden stays byte-identical; this proves the spawn + constants.
   "float-text-probe|--map arcaves.map --float-text-probe 20529 --rng-seed 1"
+  # P72-M3 AI combat taunts (_combatai_msg): the taunt config (chance/color/ranges) + deterministic
+  # message-id picks under a seed (state-only — combatai.msg ids, never the text). The golden-fight
+  # scorpion (pkt8 chance=0) NEVER taunts → byte-identical combat; the Den slave (pkt33 chance=25)
+  # taunts on the seeded roll (runMsg=2009) — proving the parse + chance gate + range pick.
+  "taunt-scorpion|--map arcaves.map --taunt-probe 20529 7 --rng-seed 1"
+  "taunt-slave|--map denbus2.map --taunt-probe 11670 11 --rng-seed 1"
   # P53 dialogue voiceover: the speech-name compose + play-gate (scripts.cc _scr_get_msg_str_speech).
   # A forced audio composes sound\speech\<id>.acm (wouldPlay=1); a REAL Metzger line (list 46 = script
   # 45+1, msg 100) confirms the slice's empty audio field through the parser (wouldPlay=0 = faithful
@@ -557,7 +563,7 @@ SCENARIOS=(
 
 # Keep only the deterministic transcript lines (drop map-load / animate / stub /
 # dialog-text noise — NEVER capture REPLY/OPTION game-asset strings).
-FILTER='^(encounter|travel-from|companion|dismiss-persist|trade:|party:|party-count:|set-global:|hud-click:|use-skill:|hurt:|rest:|automap:|reveal:|weapon-mode:|panel-click:|menu-click:|travel-resume:|travel-step:|travel-save-mid:|worldmap-fog:|weight:|iq-probe:|death-probe:|trait-probe:|perk-probe:|perk-pick:|combat-walk:|light:|map-update:|drag-equip:|save-slot:|load-slot:|slots:|aim-click:|tactics:|reg-anim:|encounter-fight:|brawl:|sneak-probe:|sneak-roll:|backstab-probe:|detect-probe:|karma-probe:|set-karma:|rep-title:|town-rep:|karma-titles:|get-global:|place-probe:|reg-anim-move:|critter-state:|hurt-too-much:|run-probe:|outline:|sfx-probe:|reaction-probe:|combat-proc:|combat-proc-hit:|poison-tick:|multihex-probe:|drug-probe:|addict-probe:|kills-probe:|book:|ammo-select:|unload:|ai-heal-probe:|ai-weapon-probe:|float-text:|speech-probe:|smoke:|scenery-use@|party-probe:|awareness-probe:|  spawn|  flat|  wait:|  follow:|  dismiss:|  rejoin:)'
+FILTER='^(encounter|travel-from|companion|dismiss-persist|trade:|party:|party-count:|set-global:|hud-click:|use-skill:|hurt:|rest:|automap:|reveal:|taunt:|weapon-mode:|panel-click:|menu-click:|travel-resume:|travel-step:|travel-save-mid:|worldmap-fog:|weight:|iq-probe:|death-probe:|trait-probe:|perk-probe:|perk-pick:|combat-walk:|light:|map-update:|drag-equip:|save-slot:|load-slot:|slots:|aim-click:|tactics:|reg-anim:|encounter-fight:|brawl:|sneak-probe:|sneak-roll:|backstab-probe:|detect-probe:|karma-probe:|set-karma:|rep-title:|town-rep:|karma-titles:|get-global:|place-probe:|reg-anim-move:|critter-state:|hurt-too-much:|run-probe:|outline:|sfx-probe:|reaction-probe:|combat-proc:|combat-proc-hit:|poison-tick:|multihex-probe:|drug-probe:|addict-probe:|kills-probe:|book:|ammo-select:|unload:|ai-heal-probe:|ai-weapon-probe:|float-text:|speech-probe:|smoke:|scenery-use@|party-probe:|awareness-probe:|  spawn|  flat|  wait:|  follow:|  dismiss:|  rejoin:)'
 
 echo "Building viewer..."
 dotnet build src/Hexwaste.Viewer -c Debug >/dev/null || { echo "build failed"; exit 2; }

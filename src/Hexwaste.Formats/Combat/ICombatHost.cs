@@ -128,6 +128,10 @@ public interface ICombatHost
     /// sfx. Default no-op so the fake test host needs no override (P34-M5).</summary>
     void OnWeaponOutOfAmmo(ProtoInfo weaponProto) { }
 
+    /// <summary>A critter is fleeing this turn (combat_ai.cc _ai_run_away → AI_MESSAGE_TYPE_RUN taunt,
+    /// combat_ai.cc:1209). Default no-op; the viewer floats a flee taunt (P72-M3). Draw-only.</summary>
+    void OnCritterFlee(MapObject critter) { }
+
     // --- Death + corpse ---------------------------------------------------
     /// <summary>Resolve the gory death anim the combat picked (P26 DeathAnims.Pick) against the
     /// critter's available art (actions.cc _check_death): the desired gore anim if it ships, else

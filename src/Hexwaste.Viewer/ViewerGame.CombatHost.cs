@@ -517,6 +517,29 @@ public sealed partial class ViewerGame
         }
         return _aiPackets.Get(packet);
     }
+
+    /// <summary>P72-M3: roll the critter's combat taunt (combat_ai.cc _combatai_msg) and, on a hit,
+    /// float the resolved combatai.msg line over it in the packet's palette colour. The chance +
+    /// message rolls draw from the ISOLATED <see cref="_tauntRng"/>, and the float is Draw-only, so
+    /// combat goldens stay byte-identical (a taunting critter perturbs nothing the transcript sees).
+    /// Skips a dead/knocked-out critter (the engine's DAM_DEAD|DAM_KNOCKED_OUT guard, :3316).</summary>
+    private void TryTaunt(MapObject critter, Formats.Combat.CombatTaunt.Type type)
+    {
+        if (critter.IsDead || (critter.CombatResults & Formats.Combat.CriticalTables.DamKnockedOut) != 0)
+            return;
+        if (GetAiPacket(critter) is not { } pkt)
+            return;
+        _tauntRng ??= new Formats.Combat.SystemCombatRng(RngSeed ?? Environment.TickCount);
+        int msgId = Formats.Combat.CombatTaunt.Pick(pkt, type, _tauntRng);
+        if (msgId < 0)
+            return;
+        if (LazyMsg(@"text\english\game\combatai.msg", ref _combatAiMsgTried, ref _combatAiMsg)?.GetText(msgId)
+            is not { Length: > 0 } text)
+            return;
+        (byte r, byte g, byte b) = _palette.GetRgb(pkt.TauntColor & 0xFF);
+        _floatText.Add(critter.HexTile, _elevation, text, new Color(r, g, b));
+    }
+
     public bool IsBlocked(int tile) => _blockedTiles.Contains(tile);
     public bool IsAnimating(MapObject critter) => _animator.TryGetState(critter, out _);
     public bool IsFallInProgress(MapObject critter) =>
@@ -680,6 +703,10 @@ public sealed partial class ViewerGame
         // AS defender, which OnTargetHit/OnTargetDodge deliberately skip (the camera-anchor dude
         // doesn't visibly react — P34-M6) and which the "different shade for the dude" needs.
         _floatDefender = target;
+        // P72-M3: the attacker taunts on its swing (AI_MESSAGE_TYPE_ATTACK, actions.cc:630). The dude
+        // never taunts (combat_ai.cc:3314 critter == gDude → -1).
+        if (attacker != _dude?.Dude)
+            TryTaunt(attacker, Formats.Combat.CombatTaunt.Type.Attack);
         if (weaponProto?.Weapon is not null)
             PlayWeaponSfx(weaponProto);
         // Unarmed/melee swing grunt (actions.cc:625 sfxBuildCharName(attacker, ANIM_THROW_PUNCH, CONTACT)) —
@@ -826,6 +853,10 @@ public sealed partial class ViewerGame
         if (_vfs.Exists(_artIndex.GetFrmPath(fid)))
             _animator.PlayActionOnce(target, fid);
     }
+
+    /// <summary>P72-M3: a fleeing critter floats its RUN taunt (AI_MESSAGE_TYPE_RUN).</summary>
+    public void OnCritterFlee(MapObject critter) =>
+        TryTaunt(critter, Formats.Combat.CombatTaunt.Type.Run);
 
     /// <summary>Stand-up sprite when a prone critter gets up (P34-M6; the dude too as of P69-M2) — the
     /// prone flag is already cleared.</summary>

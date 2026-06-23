@@ -1,0 +1,1 @@
+taunt: hex=11670 packet=33 chance=25 color=58 attack=[2040,2059] run=[2000,2019] atkMsg=-1 runMsg=2009

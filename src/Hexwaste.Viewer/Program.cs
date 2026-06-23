@@ -189,6 +189,9 @@ for (int i = 0; i < args.Length; i++)
         case "--reveal" when i + 1 < args.Length: // P71: reveal the automap fog around a hex
             actions.Add(new ViewerGame.StartupAction.RevealAt(int.Parse(args[++i])));
             break;
+        case "--taunt-probe" when i + 2 < args.Length: // P72-M3: a critter's taunt config + picks
+            actions.Add(new ViewerGame.StartupAction.TauntProbe(int.Parse(args[++i]), int.Parse(args[++i])));
+            break;
         case "--light-probe":
             // --light-probe: report the ambient after the map's scripted set_light_level (P21).
             actions.Add(new ViewerGame.StartupAction.LightProbe());

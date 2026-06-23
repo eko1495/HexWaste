@@ -30,7 +30,19 @@ public sealed record AiPacket(
     /// 6 unarmed_over_thrown, 7 random. -1 = absent (the engine's pre-parse default, which uses the
     /// same RANGED,THROW,MELEE,UNARMED ordering as no_pref). Drives the AI inventory weapon switch
     /// (<see cref="AiBestWeapon"/>) when the wielded weapon becomes unusable.</summary>
-    int BestWeapon = -1);
+    int BestWeapon = -1,
+    /// <summary>ai.txt <c>chance</c>: the % chance to emit a combat taunt (_combatai_msg, combat_ai.cc:3322 —
+    /// randomBetween(1,100) &gt; chance skips). 0 = never taunts (e.g. the Scorpion packet). P72-M3.</summary>
+    int Chance = 0,
+    /// <summary>ai.txt <c>color</c>: the palette index for the taunt float text (combat_ai.cc:3401
+    /// textObjectAdd colour). P72-M3.</summary>
+    int TauntColor = 0,
+    /// <summary>ai.txt <c>attack_start</c>/<c>attack_end</c>: the combatai.msg id range the attacker
+    /// picks from when it attacks (AI_MESSAGE_TYPE_ATTACK, actions.cc:630). P72-M3.</summary>
+    int AttackStart = 0, int AttackEnd = -1,
+    /// <summary>ai.txt <c>run_start</c>/<c>run_end</c>: the combatai.msg id range a critter picks from
+    /// when it flees (AI_MESSAGE_TYPE_RUN, combat_ai.cc:1209). P72-M3.</summary>
+    int RunStart = 0, int RunEnd = -1);
 
 /// <summary>
 /// The parsed <c>data\ai.txt</c> table, keyed by <c>packet_num</c>. Built once and
@@ -65,7 +77,10 @@ public sealed class AiPacketTable
             if (fields.TryGetValue("packet_num", out string? pn) && int.TryParse(pn, out int num))
                 packets.Add(new AiPacket(num, name, I("min_to_hit"), I("min_hp"), I("max_dist"),
                     S("distance"), S("disposition"), ParseHurt(S("hurt_too_much")), ParseChemUse(S("chem_use")),
-                    ParseBestWeapon(S("best_weapon"))));
+                    ParseBestWeapon(S("best_weapon")),
+                    Chance: I("chance"), TauntColor: I("color"),         // P72-M3 taunt fields
+                    AttackStart: I("attack_start"), AttackEnd: I("attack_end"),
+                    RunStart: I("run_start"), RunEnd: I("run_end")));
             fields.Clear();
         }
 

@@ -163,4 +163,54 @@ public class AiPacketTests
         AiPacketTable t = AiPacketTable.Parse("[P]\npacket_num=1\nmin_hp=5\n");
         Assert.Equal(-1, t.Get(1)!.BestWeapon);
     }
+
+    // --- P72-M3 taunt fields + CombatTaunt.Pick ---------------------------
+
+    [Fact]
+    public void TauntFieldsParseFromAiTxt()
+    {
+        AiPacketTable t = AiPacketTable.Parse(
+            "[Addict]\npacket_num=179\nchance=15\ncolor=58\nattack_start=2040\nattack_end=2059\n"
+            + "run_start=2000\nrun_end=2019\n");
+        AiPacket p = t.Get(179)!;
+        Assert.Equal(15, p.Chance);
+        Assert.Equal(58, p.TauntColor);
+        Assert.Equal((2040, 2059), (p.AttackStart, p.AttackEnd));
+        Assert.Equal((2000, 2019), (p.RunStart, p.RunEnd));
+    }
+
+    private sealed class SeqRng(params int[] v) : ICombatRng
+    {
+        private int _i;
+        public int Next(int lo, int hi) => Math.Clamp(v[Math.Min(_i++, v.Length - 1)], lo, hi - 1);
+    }
+
+    [Fact]
+    public void TauntPickSkipsWhenChanceIsZero()
+    {
+        var p = new AiPacket(8, "Scorpion", 0, 0, 0, "", "", Chance: 0,
+            AttackStart: 50140, AttackEnd: 50159);
+        // chance 0 short-circuits with no roll → no taunt (the Scorpion packet).
+        Assert.Equal(-1, CombatTaunt.Pick(p, CombatTaunt.Type.Attack, new SeqRng(1, 50150)));
+    }
+
+    [Fact]
+    public void TauntPickRollsTheChanceThenPicksAMessageInRange()
+    {
+        var p = new AiPacket(179, "Addict", 0, 0, 0, "", "", Chance: 15,
+            AttackStart: 2040, AttackEnd: 2059, RunStart: 2000, RunEnd: 2019);
+        // roll 10 ≤ 15 → taunt; next draw 2045 → the message id (inclusive range).
+        Assert.Equal(2045, CombatTaunt.Pick(p, CombatTaunt.Type.Attack, new SeqRng(10, 2045)));
+        // roll 16 > 15 → skip (only the chance draw consumed).
+        Assert.Equal(-1, CombatTaunt.Pick(p, CombatTaunt.Type.Attack, new SeqRng(16)));
+        // run range picks from its own bounds.
+        Assert.Equal(2005, CombatTaunt.Pick(p, CombatTaunt.Type.Run, new SeqRng(1, 2005)));
+    }
+
+    [Fact]
+    public void TauntPickReturnsMinusOneWhenRangeIsEmpty()
+    {
+        var p = new AiPacket(1, "P", 0, 0, 0, "", "", Chance: 100, AttackStart: 100, AttackEnd: 50);
+        Assert.Equal(-1, CombatTaunt.Pick(p, CombatTaunt.Type.Attack, new SeqRng(1)));
+    }
 }
