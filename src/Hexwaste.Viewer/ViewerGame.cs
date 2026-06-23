@@ -2095,10 +2095,11 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
             else if (_dude is not null)
             {
                 int target = _camera.ScreenToHex(mouse.X, mouse.Y);
-                // Phase-18 M0: in combat a move needs AP for at least the first hex.
+                // Phase-18 M0: in combat a move needs AP for at least the first hex (P74-M4: the Bonus
+                // Move free-move pool counts toward affording the hex).
                 if (_combat.Phase != Formats.Combat.CombatPhase.Idle
                     && GetCritterState(_dude.Dude) is { } walkStats
-                    && _combat.DudeAp < Formats.Combat.CritterState.MovePointCost(_dude.Dude.CombatResults))
+                    && _combat.DudeAp + _combat.DudeFreeMove < Formats.Combat.CritterState.MovePointCost(_dude.Dude.CombatResults))
                     Log("Not enough action points to move.");
                 else if (target >= 0 && !_dude.WalkTo(target))
                     Log("You cannot get there from here. (Try clicking closer.)");
@@ -2233,7 +2234,8 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
             if (_combat.Phase != Formats.Combat.CombatPhase.Idle && GetCritterState(dude) is { } st)
             {
                 _combat.SpendDudeAp(Formats.Combat.CritterState.MovePointCost(dude.CombatResults));
-                if (_combat.DudeAp < Formats.Combat.CritterState.MovePointCost(dude.CombatResults))
+                // P74-M4: the free-move pool + AP together must cover the next hex.
+                if (_combat.DudeAp + _combat.DudeFreeMove < Formats.Combat.CritterState.MovePointCost(dude.CombatResults))
                     _dude?.Stop();
             }
         };

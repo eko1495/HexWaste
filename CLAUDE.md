@@ -2305,6 +2305,36 @@ die before they can flee) is the deterministic clean-WIN proof. Proven by DudeAb
 WithoutTheDude (the dude untouched, exactly one team survives) + the brawl-watch golden (the dude untouched
 through a real flee-draw). 729 Formats tests, 16 combat + 168 encounter goldens green.
 
+Phase 74 (DONE — "Perk/Stat Fidelity", the Tier-1 batch from a grounded gap-reaudit workflow [25 agents,
+adversarially verified — the survey/verify/rank pattern]). Four small faithful perk/stat wins, every load-
+bearing fact verified against fo2ce source (indices cross-checked vs the enum AND the existing PerkId constants
+— the recurring don't-trust-the-note guard; the workflow's adversarial verify earned its keep, catching the
+Penetrate≠bypassArmor distinction). M1 Gain-X SPECIAL perks + stat clamp: the 7 Gain STR/PER/.../LCK perks
+(84..90, CONTIGUOUS over SPECIAL 0..6, stat.cc:252-309) add +1 to the primary — hardcoded per-case in
+critterGetStat (NOT data-driven), wired into CritterState.Stat; + the gStatDescriptions effective-stat CLAMP
+(stat.cc:369) as the safety net (a Gain-X/Gifted stack can't push a primary past 10; a 0 primary clamps up to
+the engine min 1). GOTCHA: the clamp exposed a fake-host test relying on the IMPOSSIBLE PE=0 — fixed to the
+faithful PE=1 (the delta unchanged). Inert by default → byte-identical. M2 weapon perks (the proto perk field
+was Skip(4)'d — byte-safe un-skip): Accurate +20 to-hit any attacker (combat.cc:4423); Penetrate cuts the
+defender's DT to 20% — DT ONLY, via a NEW `penetrate` param NOT bypassArmor (which cuts DT+DR, combat.cc:4535 —
+the workflow's key warning); Knockback halves the shove divisor 10→5 (combat.cc:4651). LIVE: the Combat Shotgun
+(pid 242) carries Accurate, so arcaves-burst-shotgun's chance is now correctly 65% not 45% (a FAITHFUL re-record
+— the previous golden was wrong; same outcome). M3 has_skill (0x80AA): was an arity stub (every skill-gated
+dialogue branch failed) — the ONLY script path to a skill value (get_critter_stat covers stats 0-34 only).
+Ported opHasSkill (interpreter_extra.cc:560 → skillGetValue: returns the effective skill VALUE, NOT a bool);
+ScriptHost.CritterSkillValue + a SkillResolver the viewer wires to the full CritterState.SkillValue (gcd skills
++ tags + perk/trait mods). LIVE (dcMetzge/dcVic fire it) but the vic-recruit/iq-gate goldens are BYTE-IDENTICAL
+— the navigated --talk-seq options resolve the same with real skills as at stub-0; proven live by
+--has-skill-probe (Narg's Small Guns 43 / First Aid 8 vs the old 0). M4 Bonus Move free-move AP pool:
+_dudeFreeMove = 2*rank (combat.cc:3237) seeded in ResetDudeAp, drained by movement BEFORE real AP in SpendDudeAp
+(animation.cc:2610), the viewer walk-halt checks use DudeAp+DudeFreeMove, the HUD shows lighter-green free-move
+pips. Inert by default (rank 0 → pool 0 → byte-identical). GOTCHA: SpendDudeAp is movement-ONLY (sole caller the
+TileChanged closure), so attacks correctly don't drain the pool. KEY OUTCOME: every milestone byte-identical bar
+1 faithful re-record (the shotgun's now-correct Accurate +20). 739 Formats tests, 16 combat + 169 encounter
+goldens green. Remaining Tier-2 from the reaudit: AI called shots, Lifegiver +HP/level (+ a doc-truth fix), AC+
+remaining-AP dodge, enemy burst selection, itemGetCost pricing, difficulty spawn skew, the time_of_day & ammo-
+consolidation bugs.
+
 Phase 10 (DONE, per docs/phase10-research-report.md — "The Wasteland
 Bites Back"): M0 persistence pre-stage (the net: MapList saved=No /
 random_start_point parse + IsTransient; the 3-clause transient guards as

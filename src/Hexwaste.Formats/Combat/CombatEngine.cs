@@ -121,6 +121,8 @@ public sealed class CombatEngine
     public CombatPhase Phase => _phase;
     public int Round => _round;
     public int DudeAp => _dudeAp;
+    /// <summary>P74-M4: the dude's free-move pool (Bonus Move) — drained by movement BEFORE AP.</summary>
+    public int DudeFreeMove => _dudeFreeMove;
     public bool IsGameOver => _gameOver;
     public bool HasPendingAttack => _pendingAttack is not null;
     /// <summary>An attack or death-fall is resolving (independent of walkers).</summary>
@@ -135,12 +137,30 @@ public sealed class CombatEngine
     /// <summary>Set the dude's turn budget to max AP minus the over-encumbrance penalty (P24;
     /// stat.cc:198 — the engine bakes it into STAT_MAXIMUM_ACTION_POINTS). 0 penalty when within
     /// capacity, so an un-overloaded dude (every combat golden) is unchanged.</summary>
-    private void ResetDudeAp(CritterState dude) =>
+    private void ResetDudeAp(CritterState dude)
+    {
         _dudeAp = Math.Max(0, dude.MaxActionPoints - _host.DudeEncumbranceApPenalty());
+        // P74-M4: refresh the Bonus Move free-move pool (2 AP/rank, combat.cc:3237). Rank 0 → 0, so a
+        // perk-less dude has no free move → SpendDudeAp behaves exactly as before → byte-identical.
+        _dudeFreeMove = 2 * _host.DudePerkRank(Perks.PerkId.BonusMove);
+    }
 
-    /// <summary>Charge the dude's turn AP for movement (or any non-attack action), clamped
-    /// at 0 (phase-18 M0: combat movement costs MovePointCost per hex).</summary>
-    public void SpendDudeAp(int amount) => _dudeAp = Math.Max(0, _dudeAp - amount);
+    private int _dudeFreeMove;
+
+    /// <summary>Charge the dude's turn AP for movement (or any non-attack action), clamped at 0
+    /// (phase-18 M0: combat movement costs MovePointCost per hex). P74-M4: the Bonus Move free-move
+    /// pool is spent FIRST, then real AP (animation.cc:2610 — the engine drains free move before ap).</summary>
+    public void SpendDudeAp(int amount)
+    {
+        if (amount <= _dudeFreeMove)
+        {
+            _dudeFreeMove -= amount;
+            return;
+        }
+        amount -= _dudeFreeMove;
+        _dudeFreeMove = 0;
+        _dudeAp = Math.Max(0, _dudeAp - amount);
+    }
 
     /// <summary>combat.cc:5655 crippled-arm gate: with a WEAPON equipped, both arms crippled
     /// blocks any weapon attack and one crippled arm blocks a TWO-HANDED weapon. Unarmed
@@ -2564,6 +2584,7 @@ public sealed class CombatEngine
         _phase = CombatPhase.Idle;
         _terminateRequested = false; // P35-M5
         _dudeSpectator = false; // P73
+        _dudeFreeMove = 0; // P74-M4
         _hostiles.Clear();
         _order.Clear();
         _actingEnemy = null;

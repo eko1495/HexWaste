@@ -102,6 +102,46 @@ public class CombatEngineTests
     }
 
     [Fact]
+    public void BonusMoveFreeMovePoolIsSpentBeforeAp()
+    {
+        // P74-M4: Bonus Move grants 2 free-move AP/rank (combat.cc:3237), drained by movement BEFORE
+        // real AP (animation.cc:2610). Rank 2 → a 4-AP free-move pool.
+        var host = new FakeCombatHost();
+        host.PerkRanks[Hexwaste.Formats.Perks.PerkId.BonusMove] = 2;
+        host.SetDude(NewCritter(tile: 20100, hp: 30, ap: 10));
+        MapObject enemy = host.AddCritter(NewCritter(tile: HexGrid.TileInDirection(20100, 0), hp: 1));
+        var engine = new CombatEngine(host, new MinRng());
+
+        engine.TryAttack(enemy);                 // opens combat on the dude's turn → ResetDudeAp seeds free move
+        Assert.Equal(4, engine.DudeFreeMove);
+        int apAfterAttack = engine.DudeAp;
+
+        engine.SpendDudeAp(3);                    // ≤ pool → only the pool shrinks, AP untouched
+        Assert.Equal(1, engine.DudeFreeMove);
+        Assert.Equal(apAfterAttack, engine.DudeAp);
+
+        engine.SpendDudeAp(3);                    // > pool (1) → pool to 0, AP pays the excess (2)
+        Assert.Equal(0, engine.DudeFreeMove);
+        Assert.Equal(apAfterAttack - 2, engine.DudeAp);
+    }
+
+    [Fact]
+    public void WithoutBonusMoveThePoolIsZeroAndSpendHitsApDirectly()
+    {
+        // Control: a perk-less dude has no free move → SpendDudeAp behaves exactly as pre-P74 (byte-identical).
+        var host = new FakeCombatHost();
+        host.SetDude(NewCritter(tile: 20100, hp: 30, ap: 10));
+        MapObject enemy = host.AddCritter(NewCritter(tile: HexGrid.TileInDirection(20100, 0), hp: 1));
+        var engine = new CombatEngine(host, new MinRng());
+
+        engine.TryAttack(enemy);
+        Assert.Equal(0, engine.DudeFreeMove);
+        int ap = engine.DudeAp;
+        engine.SpendDudeAp(2);
+        Assert.Equal(ap - 2, engine.DudeAp);
+    }
+
+    [Fact]
     public void SlayerPerkMakesEveryMeleeHitCritical()
     {
         // P28-M3: Slayer turns a melee/unarmed SUCCESS into a critical (combat.cc:3866). RNG:

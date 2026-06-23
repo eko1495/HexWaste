@@ -121,6 +121,11 @@ public sealed partial class ViewerGame
         int ap = Math.Clamp(_combat.DudeAp, 0, 10);
         for (int i = 0; i < ap; i++)
             _spriteBatch.Draw(_panelPixel, new Rectangle(o.X + 316 + i * 9, o.Y + 13, 6, 6), new Color(0, 252, 0));
+        // P74-M4: the Bonus Move free-move pool shows as extra (lighter-green) pips after the AP dots
+        // (interface.cc interfaceRenderActionPoints renders ap + free move). Inert when the pool is 0.
+        int free = Math.Clamp(_combat.DudeFreeMove, 0, 10 - ap);
+        for (int i = 0; i < free; i++)
+            _spriteBatch.Draw(_panelPixel, new Rectangle(o.X + 316 + (ap + i) * 9, o.Y + 13, 6, 6), new Color(132, 252, 132));
 
         // --- M3: the green message monitor (the left screen; bar-local 24,26 ~160x55,
         // display_monitor.cc). Reuse font1.aaf (the engine's interface font) tinted
