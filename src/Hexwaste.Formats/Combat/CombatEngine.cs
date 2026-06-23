@@ -2081,6 +2081,15 @@ public sealed class CombatEngine
         int dudeTile = defenderObj.HexTile;
         AiPacket? ai = _host.GetAiPacket(enemy);
 
+        // P70: script-set flee — a critter whose script flagged the FLEEING maneuver
+        // (critter_set_flee_state, 0x8152, wired P58) runs on its own turn. This is the FIRST
+        // OR-clause of _combat_ai's flee gate (combat_ai.cc:3074, before min_hp/hurt_too_much —
+        // order immaterial, all three OR into _ai_run_away). INERT by default: only a quest script
+        // sets the bit and no slice golden critter does.
+        // ported from fallout2-ce src/combat_ai.cc _combat_ai()
+        if ((enemy.Maneuver & ManeuverFleeing) != 0)
+            return TryFlee(enemy, dudeTile, ref _actingEnemyAp);
+
         // min_hp flee (RAW current HP, combat_ai.cc:3077): too wounded to fight.
         if (ai is { MinHp: > 0 } && (_host.GetCritterState(enemy)?.CurrentHp ?? int.MaxValue) < ai.MinHp)
             return TryFlee(enemy, dudeTile, ref _actingEnemyAp);
@@ -2267,6 +2276,15 @@ public sealed class CombatEngine
             return false;
 
         CritterState? selfState = _host.GetCritterState(ally);
+
+        // P70: script-set flee — the FLEEING maneuver bit (critter_set_flee_state) makes the ally run
+        // too (combat_ai.cc:3074, _combat_ai runs for EVERY combatant). Checked before the disposition
+        // run-away so a script override wins. Inert by default — no slice ally sets the bit.
+        if ((ally.Maneuver & ManeuverFleeing) != 0 && _actingAllyAp >= 1)
+        {
+            int fleeTile = hostiles.OrderBy(h => HexGrid.Distance(ally.HexTile, h.HexTile)).First().HexTile;
+            return TryFlee(ally, fleeTile, ref _actingAllyAp);
+        }
 
         // P50 run-away: too wounded for this disposition → flee (combat_ai.cc:3077, the ally path).
         if (selfState is not null && _actingAllyAp >= 1

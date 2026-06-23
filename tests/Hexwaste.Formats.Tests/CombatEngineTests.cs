@@ -347,6 +347,46 @@ public class CombatEngineTests
     }
 
     [Fact]
+    public void ScriptSetFleeManeuverMakesAHealthyEnemyRunInsteadOfAttacking()
+    {
+        // P70: critter_set_flee_state(critter, 1) sets CRITTER_MANEUVER_FLEEING (0x04); _combat_ai's
+        // first flee clause (combat_ai.cc:3074) runs the critter away even at full HP with no min_hp gate.
+        const int ManeuverFleeing = 0x04;
+        var host = new FakeCombatHost();
+        MapObject dude = host.SetDude(NewCritter(tile: 20100, hp: 30, ap: 10));
+        int eTile = HexGrid.TileInDirection(20100, 0);
+        MapObject enemy = host.AddCritter(NewCritter(tile: eTile, hp: 30, ap: 10)); // healthy, would normally attack
+        host.AiPackets[enemy] = new AiPacket(13, "Coward", MinToHit: 0, MinHp: 0, 0, "", "");
+        enemy.Maneuver |= ManeuverFleeing; // a script flagged it to flee
+        var engine = new CombatEngine(host, new MinRng());
+
+        engine.BeginScriptAggro(enemy, dude);
+        engine.Step();
+
+        Assert.Contains(host.Transcripts, t => t.StartsWith("flee:"));
+        Assert.DoesNotContain(host.Transcripts, t => t.StartsWith("enemy-attack"));
+        Assert.True(HexGrid.Distance(enemy.HexTile, dude.HexTile) > 1); // backed away
+        Assert.Equal(30, dude.CurrentHp);                               // did not attack
+    }
+
+    [Fact]
+    public void WithoutTheFleeManeuverTheSameHealthyEnemyAttacks()
+    {
+        // Control for the maneuver-flee gate: identical setup minus the bit → the enemy closes + attacks
+        // (the byte-identical default — the FLEEING clause is inert unless a script sets it).
+        var host = new FakeCombatHost();
+        MapObject dude = host.SetDude(NewCritter(tile: 20100, hp: 30, ap: 10));
+        MapObject enemy = host.AddCritter(NewCritter(tile: HexGrid.TileInDirection(20100, 0), hp: 30, ap: 10));
+        host.AiPackets[enemy] = new AiPacket(13, "Coward", MinToHit: 0, MinHp: 0, 0, "", "");
+        var engine = new CombatEngine(host, new MinRng());
+
+        engine.BeginScriptAggro(enemy, dude);
+        engine.Step();
+
+        Assert.DoesNotContain(host.Transcripts, t => t.StartsWith("flee:"));
+    }
+
+    [Fact]
     public void EnemyThatCanNeverClearMinToHitFlees()
     {
         var host = new FakeCombatHost();
