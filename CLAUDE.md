@@ -2203,6 +2203,37 @@ single-agent audit (the 4 reader agents got rate-limited, so the synthesizer fel
 hallucinates — VERIFY every load-bearing claim inline (3 of its facts were wrong here). 705 Formats tests, 16
 combat + 158 encounter goldens green.
 
+Phase 70 (DONE — "Finish the Perk Sheet + Script-Set Flee", the curated-perk-batch + AI-flee residuals
+the user asked for). M1 curated perk-effects batch: wired the feasible combat/stat/skill perks whose effects
+are HARDCODED in the engine (Stat=-1, so the data-driven PerkRules.StatModifier auto-fold can't express them),
+each dude-gated + rank-0 short-circuited so a perk-less dude is BYTE-IDENTICAL. PerkRules.SkillModifier = the
+perk.cc perkGetSkillModifier verbatim port (the ~14-perk skill family: Medic/Mr.Fixit/Thief/Master Thief/
+Harmless/Speaker/Negotiator/Salesman/Gambler/Ranger/Survivalist/Vault City Training/Expert Excrement Expeditor/
+Living-Anatomy-Doctor), folded into CritterState.SkillValue alongside the trait modifier; DOCUMENTED CUT:
+Ghost's Sneak bonus is light-gated (objectGetLightIntensity) — no light model in CritterState — so omitted.
+Adrenaline Rush (stat.cc:256, +1 ST while current HP < max/2) is a CONDITIONAL stat perk the flat fold can't do
+-> wired into CritterState.Stat. Quick Recovery (combat.cc:5396, stand from prone in 1 AP not 3) in
+StandUpIfProne + Stonewall (combat.cc:4641, 50% knockdown resist) in ApplyKnockback — both DUDE-ONLY, the
+Stonewall RNG draw GATED on rank>0 so the default stream is unchanged. Healer (skill.cc:561, First Aid/Doctor
+heal +4*rank min / +10*rank max) in ViewerGame.TryHeal. KEY: every PerkId index verified against the checksum-
+guarded PerkTable (Healer=19, AdrenalineRush=79, QuickRecovery=102, Stonewall=104, the skill family) — the
+recurring don't-trust-the-enum-line lesson. INERT by default -> all 16 combat + 164 encounter goldens
+BYTE-IDENTICAL. 19 new tests (PerkTests SkillModifier theory [14 engine-table cases + inert + overlap-stacking]
++ CombatStatusTests Adrenaline Rush). DOCUMENTED RESIDUALS: Quick Recovery/Stonewall are dude-gated private-path
+effects (no clean unit seam without a full knockdown scenario) — golden-verified inert, not unit-tested; ~80
+perks stay data-present (the table is complete; the stat perks + this curated set + the P28/P29 batches are
+wired). M2 script-set AI flee finish: a critter whose script flagged the CRITTER_MANEUVER_FLEEING bit (via
+critter_set_flee_state 0x8152, wired P58 — read by WantToJoin since P35-M4 but never DRIVING a turn) now RUNS on
+its own turn. Wired the maneuver-flee clause into BOTH TryEnemyAction (the FIRST OR-clause of _combat_ai's flee
+gate, combat_ai.cc:3074, before min_hp/hurt_too_much — order immaterial, all three OR into _ai_run_away) and
+TryAllyAction (the engine runs _combat_ai for EVERY combatant; checked before the P50 disposition run-away so a
+script override wins). INERT by default — only a quest script sets the bit and NO slice golden critter does ->
+all 16 combat + 164 encounter goldens BYTE-IDENTICAL (verified by a clean check). Proven by 2 fake-host tests (a
+healthy FLEEING-bit enemy runs instead of attacking + the no-bit control attacks). Closes the P35 residual "the
+FLEEING maneuver SOURCE is still arity-stubbed" — set via critter_set_flee_state now drives TryFlee end-to-end
+(only ENGAGING-via-attack + DISENGAGING-via-terminate were connected before). 724 Formats tests, 16 combat + 164
+encounter goldens green.
+
 Phase 10 (DONE, per docs/phase10-research-report.md — "The Wasteland
 Bites Back"): M0 persistence pre-stage (the net: MapList saved=No /
 random_start_point parse + IsTransient; the 3-clause transient guards as
