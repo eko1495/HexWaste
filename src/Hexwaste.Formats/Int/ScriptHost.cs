@@ -179,6 +179,11 @@ public sealed class ScriptHost(GameFileSystem vfs, ScriptList scripts, Hexwaste.
     /// the critter's prototype.</summary>
     public Func<MapObject, Proto.CritterProtoStats?>? StatsResolver { get; set; }
 
+    /// <summary>Effective skill % for has_skill (skill.cc skillGetValue) — the viewer wires it to the
+    /// full CritterState.SkillValue (gcd skills + tags + perk/trait mods). Null falls back to the
+    /// simplified proto skill set (no tags), like CritterStatValue. P74-M3.</summary>
+    public Func<MapObject, int, int>? SkillResolver { get; set; }
+
     /// <summary>A script attacked: (attacker = the script's self, target).
     /// The host starts/joins combat (opAttackComplex → scriptsRequestCombat).</summary>
     public Action<MapObject, MapObject>? AttackRequested { get; set; }
@@ -342,6 +347,16 @@ public sealed class ScriptHost(GameFileSystem vfs, ScriptList scripts, Hexwaste.
 
         Proto.CritterProtoStats? stats = StatsOf(obj);
         return stats is null ? -1 : stats.BaseStats[stat] + stats.BonusStats[stat];
+    }
+
+    /// <summary>Effective skill % (skill.cc skillGetValue) for has_skill — the viewer's resolver
+    /// (full CritterState.SkillValue) when wired, else the simplified proto skill set. P74-M3.</summary>
+    public int CritterSkillValue(MapObject obj, int skill)
+    {
+        if (SkillResolver?.Invoke(obj, skill) is { } resolved)
+            return resolved;
+        Proto.CritterProtoStats? stats = StatsOf(obj);
+        return stats is null ? 0 : Combat.SkillSet.Value(stats.BaseStats, stats.BonusStats, stats.Skills, null, skill);
     }
 
     internal Proto.CritterProtoStats? StatsOf(MapObject obj)
@@ -1234,6 +1249,11 @@ public sealed class ScriptHost(GameFileSystem vfs, ScriptList scripts, Hexwaste.
 
         public int GetCritterStat(int objectHandle, int stat) =>
             _host.ObjectOf(objectHandle) is { } obj ? _host.CritterStatValue(obj, stat) : -1;
+
+        // has_skill (opHasSkill 0x80AA): the critter's effective skill value; 0 for null/non-critter
+        // (the engine's result default). P74-M3.
+        public int HasSkill(int objectHandle, int skill) =>
+            _host.ObjectOf(objectHandle) is { } obj ? _host.CritterSkillValue(obj, skill) : 0;
 
         // ported from fallout2-ce interpreter_extra.cc opSetCritterStat():
         // ADJUSTS the base stat; only the dude is modifiable.

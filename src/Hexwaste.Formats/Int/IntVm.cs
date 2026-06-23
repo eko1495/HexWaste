@@ -59,6 +59,11 @@ public interface IVmExternals
     /// effective stat (base+bonus; 35=current HP, 36=poison, 37=rad); -1 unknown.</summary>
     int GetCritterStat(int objectHandle, int stat) => 0;
 
+    /// <summary>has_skill (opHasSkill 0x80AA, interpreter_extra.cc:560 → skill.cc skillGetValue):
+    /// despite the name returns the critter's EFFECTIVE skill VALUE (not a bool); 0 for null/non-critter.
+    /// The only script path to a skill — get_critter_stat covers stats 0-34 only (P74-M3).</summary>
+    int HasSkill(int objectHandle, int skill) => 0;
+
     /// <summary>set_critter_stat (opSetCritterStat): despite the name it
     /// ADJUSTS the dude's base stat by amount; 0 ok, -1 non-dude.</summary>
     int AdjustCritterBaseStat(int objectHandle, int stat, int amount) => -1;
@@ -1116,6 +1121,12 @@ public sealed class IntVm
             {
                 int stat = PopInt();
                 PushInt(_externals.GetCritterStat(PopInt(), stat));
+                break;
+            }
+            case 0x80AA: // has_skill (pops skill, obj) — opHasSkill returns skillGetValue (P74-M3)
+            {
+                int skill = PopInt();
+                PushInt(_externals.HasSkill(PopInt(), skill));
                 break;
             }
             case 0x80CB: // set_critter_stat — ADJUSTS base stat (pops amount, stat, obj)

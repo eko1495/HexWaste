@@ -1178,6 +1178,15 @@ public sealed partial class ViewerGame
                     RevealAround(reveal.Hex); // P71: simulate the dude exploring this tile
                     Console.WriteLine($"reveal: hex={reveal.Hex} tiles={_seenTiles.Count}");
                     break;
+                case StartupAction.HasSkillProbe hsp:
+                {
+                    // P74-M3: the value has_skill (0x80AA) returns — the critter's effective skill via the
+                    // wired SkillResolver (dude when hex<0). State-only (a skill % int).
+                    MapObject? c = hsp.Hex < 0 ? _dude?.Dude : CritterAt(hsp.Hex);
+                    int v = c is not null && _scriptHost is not null ? _scriptHost.CritterSkillValue(c, hsp.Skill) : -1;
+                    Console.WriteLine($"has-skill: hex={hsp.Hex} skill={hsp.Skill} value={v}");
+                    break;
+                }
                 case StartupAction.TauntProbe tp:
                 {
                     // P72-M3: state-only — the critter's taunt config (chance/color/ranges) + the

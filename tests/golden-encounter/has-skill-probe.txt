@@ -1,0 +1,2 @@
+has-skill: hex=-1 skill=0 value=43
+has-skill: hex=-1 skill=6 value=8

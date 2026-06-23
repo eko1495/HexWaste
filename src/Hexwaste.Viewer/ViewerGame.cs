@@ -564,6 +564,9 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
         /// <summary>P71: reveal the automap fog around a hex (as if the dude walked there) —
         /// drives RevealAround so a --save-now/--load-now round-trip can prove the fog persists.</summary>
         public sealed record RevealAt(int Hex) : StartupAction;
+        /// <summary>P74-M3: report the value has_skill (0x80AA) returns for a critter (hex&lt;0 = the dude) —
+        /// the critter's effective skill % via the wired SkillResolver. State-only.</summary>
+        public sealed record HasSkillProbe(int Hex, int Skill) : StartupAction;
         /// <summary>P72-M3: report a critter's ai.txt taunt config + the deterministic attack/run
         /// message-id picks under <paramref name="Seed"/> (state-only — IDs/ranges, never the text).</summary>
         public sealed record TauntProbe(int Hex, int Seed) : StartupAction;
@@ -1053,6 +1056,8 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
                         Console.Error.WriteLine(name);
                 },
                 StatsResolver = obj => obj == _dude?.Dude ? _dudeGcd?.Stats : null,
+                // P74-M3: has_skill reads the full effective skill (gcd skills + tags + perk/trait mods).
+                SkillResolver = (obj, skill) => GetCritterState(obj)?.SkillValue(skill) ?? 0,
                 PlaceObjectRequested = (obj, tile, elevation) => PlaceObject(obj, tile, elevation),
                 RegAnimRequested = ExecuteRegAnim,
                 RegAnimClearRequested = ClearAnimation,
