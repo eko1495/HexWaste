@@ -2338,6 +2338,34 @@ goldens green. Remaining Tier-2 from the reaudit: AI called shots, Lifegiver +HP
 remaining-AP dodge, enemy burst selection, itemGetCost pricing, difficulty spawn skew, the time_of_day & ammo-
 consolidation bugs.
 
+Phase 75 (DONE — "Correct the Defects", the Tier-2 batch from the P74 gap-reaudit: 2 verified bugs + 2 perk/AI
+items, all matching the adversarial-verify descriptions). M1 time_of_day encounter bug: worldmap.cc:4135
+compares the HOUR (gameTimeGetHour() HHMM / 100); Hexwaste passed RAW HHMM, so If(time_of_day > 19) was 1930>19
+= always true → Den_D's night-only rave encounters (enc_23/24) fired at ANY hour. One-line fix (hhmm/100) in
+EncounterConditions.Evaluate. Byte-identical (no golden rolls a time_of_day-gated table at a flipping hour). M2
+ammo-clip consolidation bug: a Hexwaste ammo stack is (StackCount-1) FULL boxes + 1 PARTIAL top (AmmoQuantity
+rounds); the inventory merge bumped StackCount but IGNORED the incoming partial → two 12-round 24-cap boxes read
+as "1 full + 1 partial = 36" not 24 (phantom rounds). New pure AmmoStack (item.cc:371 itemAdd port: TotalRounds
+= (StackCount-1)*cap + AmmoQuantity / FromTotal re-box / Merge) + MergeStackInto in AddToDudeInventory (the loot
+take-all/single path) + the CompanionHub give. Full-box --give merges unchanged → byte-identical; the fix bites
+only on partial-ammo looting. RESIDUAL: the static TransferOne (barter-sell dude→merchant) keeps the box-bump.
+M3 Lifegiver +4 HP/rank/level (stat.cc:771) — was INERT (PerkTable Stat=-1; the [0,0,4,...] is the EN>=4 take
+REQUIREMENT, NOT an effect), so the P28 CLAUDE.md notes claiming "Lifegiver->HP folded into CritterState.Stat"
+were WRONG (DOC-TRUTH FIX applied above). Progression.HpPerLevel(en, rank) at the AwardXp level-up + the SaveLoad
+recompute (the recompute IS the level-up-HP persistence path, so it MUST include Lifegiver or a reload drops it
+— the perk-rank restore reordered BEFORE it; DOCUMENTED uniform-since-level-1 simplification). M4 AI called
+shots (_ai_called_shot combat_ai.cc:2634): an NPC with an aim-capable weapon has a 1/called_freq chance, gated
+on INT>=5 (Normal), to aim at a RANDOM body part (reverting if the to-hit there < the packet's min_to_hit),
+feeding the existing RollAttack penalty + location-crit path (so an enemy can cripple/blind the dude).
+AiPacket.CalledFreq + pure AiCalledShot.Pick on an ISOLATED _calledShotRng (3rd CombatEngine ctor param, null=off)
+so the 1/called_freq decision roll stays OFF the combat to-hit/damage stream → no perturbation. KEY OUTCOME: LIVE
+— Arroyo/Den human packets have low called_freq (3/5/10/20/30...), so denbus2-fight-flee re-recorded for ONE
+faithful Villager head called shot (62%->42% = the -40/2 melee head penalty; the dude still dies in 5 rounds, no
+cascade); the scorpion goldens (pkt8 called_freq=10000) NEVER fire → unchanged. Every milestone byte-identical bar
+the M2/M4 faithful re-records (the P74-M2 shotgun-style live proof). 694 Formats tests, 16 combat + 169 encounter
+goldens green. Remaining Tier-2 (P76+): enemy burst selection, itemGetCost pricing, difficulty spawn skew; then AC
++ remaining-AP dodge (the meaty AP-model phase).
+
 Phase 10 (DONE, per docs/phase10-research-report.md — "The Wasteland
 Bites Back"): M0 persistence pre-stage (the net: MapList saved=No /
 random_start_point parse + IsTransient; the 3-clause transient guards as
