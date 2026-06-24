@@ -189,7 +189,9 @@ public sealed partial class ViewerGame
             else if (pressed)
                 _spriteBatch.Draw(_panelPixel, rect, new Color(0, 0, 0, 90));
             else if (over)
-                _spriteBatch.Draw(_panelPixel, rect, new Color(255, 255, 255, 45));
+                // PREMULTIPLIED-alpha white (the SpriteBatch is AlphaBlend): a raw Color(255,255,255,45)
+                // has RGB > alpha and over-brightens to a SOLID white box; Color.White * 0.18 is correct.
+                _spriteBatch.Draw(_panelPixel, rect, Color.White * 0.18f);
         }
 
         // HEXWASTE_HUD_DEBUG=1: translucent overlay of the clickable button rects to
@@ -212,19 +214,42 @@ public sealed partial class ViewerGame
 
     /// <summary>Toggle the weapon-slot attack mode (single↔burst) for a burst-capable
     /// gun; a non-burst weapon stays single (P15 M1 — the slot click + N).</summary>
-    /// <summary>P82: the HUD weapon-slot click. With a second weapon ready in the OTHER hand (the P81
-    /// dual-wield), it SWITCHES the active weapon (what the player expects when clicking the slot); with
-    /// just one weapon it falls back to cycling the attack mode (single↔burst). N still cycles the mode,
-    /// '.' still swaps, so both actions stay reachable.</summary>
+    /// <summary>P82: the HUD weapon-slot click SWITCHES the active weapon — it readies the next weapon the
+    /// dude carries, cycling through them and unarmed (so there's always something to switch to). The one
+    /// exception is a lone BURST gun, where the click cycles its single↔burst mode (the engine's
+    /// right-click-the-slot behaviour). N still cycles the mode, '.' still swaps the two ready hands.</summary>
     private void WeaponSlotClicked()
     {
-        int otherHand = _activeHand == MapObject.FlagInRightHand ? MapObject.FlagInLeftHand : MapObject.FlagInRightHand;
-        bool hasOtherWeapon = _dude is not null
-            && _dudeInventory.Any(i => (i.Flags & otherHand) != 0 && SafeProto(i.Pid)?.Weapon is not null);
-        if (hasOtherWeapon)
-            SwapActiveHand();
-        else
+        if (_dude is null)
+            return;
+        var weapons = _dudeInventory.Where(i => SafeProto(i.Pid)?.Weapon is not null).ToList();
+        (Formats.Proto.ProtoInfo? activeProto, _) = EquippedWeapon(_dude.Dude);
+        // A single burst-capable gun: the slot click toggles its single↔burst mode (nothing else to switch to).
+        if (weapons.Count < 2 && Formats.Combat.CombatEngine.IsBurstWeapon(activeProto))
+        {
             CycleWeaponMode();
+            return;
+        }
+        // Otherwise ready the NEXT carried weapon into the active hand, cycling: weapon0 … weaponN, unarmed.
+        int cur = weapons.FindIndex(i => (i.Flags & _activeHand) != 0); // -1 = currently unarmed
+        foreach (MapObject w in _dudeInventory)
+            w.Flags &= ~_activeHand; // vacate the active hand
+        int nextIdx = cur + 1;
+        if (nextIdx < weapons.Count)
+        {
+            MapObject next = weapons[nextIdx];
+            next.Flags &= ~(MapObject.FlagInLeftHand | MapObject.FlagInRightHand);
+            next.Flags |= _activeHand;
+            _weaponMode = WeaponMode.Single;
+            Log($"You ready the {ObjectName(next)}.");
+            Console.WriteLine($"weapon-switch: ready 0x{next.Pid:X}");
+        }
+        else
+        {
+            _weaponMode = WeaponMode.Single;
+            Log("You ready your fists.");
+            Console.WriteLine("weapon-switch: unarmed");
+        }
     }
 
     private void CycleWeaponMode()

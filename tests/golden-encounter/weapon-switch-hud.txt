@@ -1,4 +1,4 @@
 drag-equip: row=0 slot=0 pid=0x8 equipped=1 AC=8 DT=0 DR=0
 drag-equip: row=1 slot=3 pid=0x12B equipped=1 AC=8 DT=0 DR=0
-swap-hand: active=left weapon=0x12B
+weapon-switch: ready 0x12B
 hud-click: WEAPON -> inv=False skills=False worldmap=False skilldex=False pipboy=False options=False
