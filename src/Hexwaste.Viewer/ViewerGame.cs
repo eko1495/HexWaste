@@ -111,6 +111,9 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
     /// null/empty = the blank player.gcd. Test plumbing for builds + gender.</summary>
     public string? CharacterName { get; set; }
     private Formats.Combat.ICombatRng _combatRng = new Formats.Combat.SystemCombatRng();
+    /// <summary>Isolated AI called-shot RNG (P75-M4) — off the combat to-hit/damage stream so the
+    /// 1/called_freq aim roll (≈never for the golden packets) keeps the combat goldens byte-identical.</summary>
+    private Formats.Combat.ICombatRng? _calledShotRng;
 
     /// <summary>The turn machine (phase-9 M0). Owns combat state + orchestration;
     /// this ViewerGame is its ICombatHost. Created in LoadContent once the seeded
@@ -879,7 +882,8 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
         _palette = Palette.Load(_vfs.ReadAllBytes("color.pal"));
         if (RngSeed is { } seed)
             _combatRng = new Formats.Combat.SystemCombatRng(seed);
-        _combat = new Formats.Combat.CombatEngine(this, _combatRng);
+        _calledShotRng = new Formats.Combat.SystemCombatRng(RngSeed ?? Environment.TickCount); // P75-M4 isolated
+        _combat = new Formats.Combat.CombatEngine(this, _combatRng, _calledShotRng);
 
         _protos = new ProtoDatabase(_vfs);
         _cycler = new PaletteCycler(_palette);

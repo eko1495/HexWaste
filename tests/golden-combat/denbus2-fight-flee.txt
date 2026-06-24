@@ -52,7 +52,7 @@ enemy-attack Healthy Slave@11872: chance=44% hit=False damage=0
 enemy-attack Healthy Slave@12071: chance=42% hit=False damage=0
 enemy-attack Healthy Slave@12071: chance=42% hit=False damage=0
 flee: Handsome Slave@13462 -> 14254
-enemy-attack Villager@11672: chance=62% hit=True damage=3
+enemy-attack Villager@11672: chance=42% hit=True damage=3
 enemy-attack Villager@11672: chance=62% hit=True damage=2
 enemy-attack Villager@11672: chance=62% hit=True damage=1
 enemy-attack Clever Slave@11671: chance=40% hit=False damage=0

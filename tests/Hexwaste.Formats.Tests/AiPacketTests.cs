@@ -213,4 +213,37 @@ public class AiPacketTests
         var p = new AiPacket(1, "P", 0, 0, 0, "", "", Chance: 100, AttackStart: 100, AttackEnd: 50);
         Assert.Equal(-1, CombatTaunt.Pick(p, CombatTaunt.Type.Attack, new SeqRng(1)));
     }
+
+    // --- P75-M4 called_freq parse + AiCalledShot.Pick ---------------------
+
+    [Fact]
+    public void CalledFreqParsesFromAiTxt()
+    {
+        AiPacketTable t = AiPacketTable.Parse("[Khan]\npacket_num=5\ncalled_freq=10\n");
+        Assert.Equal(10, t.Get(5)!.CalledFreq);
+        Assert.Equal(0, AiPacketTable.Parse("[P]\npacket_num=1\n").Get(1)!.CalledFreq); // absent → 0
+    }
+
+    [Fact]
+    public void CalledShotPicksALocationWhenTheRollFires()
+    {
+        // freq 1 → always fires; INT 7 >= 5; location draw 6 (eyes); to-hit there clears min_to_hit.
+        Assert.Equal(6, AiCalledShot.Pick(1, 7, canAim: true, minToHit: 0, new SeqRng(1, 6), _ => 95));
+    }
+
+    [Fact]
+    public void CalledShotSkipsWhenItCannotFire()
+    {
+        Assert.Equal(CriticalTables.LocationUncalled, AiCalledShot.Pick(0, 7, true, 0, new SeqRng(1), _ => 95)); // freq 0
+        Assert.Equal(CriticalTables.LocationUncalled, AiCalledShot.Pick(5, 7, canAim: false, 0, new SeqRng(1), _ => 95)); // can't aim
+        Assert.Equal(CriticalTables.LocationUncalled, AiCalledShot.Pick(10, 7, true, 0, new SeqRng(5), _ => 95)); // roll≠1
+        Assert.Equal(CriticalTables.LocationUncalled, AiCalledShot.Pick(10, 3, true, 0, new SeqRng(1), _ => 95)); // INT 3 < 5
+    }
+
+    [Fact]
+    public void CalledShotRevertsWhenToHitBelowMinToHit()
+    {
+        // fires + picks eyes, but the to-hit there (10) < min_to_hit (40) → revert to uncalled.
+        Assert.Equal(CriticalTables.LocationUncalled, AiCalledShot.Pick(1, 7, true, minToHit: 40, new SeqRng(1, 6), _ => 10));
+    }
 }

@@ -42,7 +42,11 @@ public sealed record AiPacket(
     int AttackStart = 0, int AttackEnd = -1,
     /// <summary>ai.txt <c>run_start</c>/<c>run_end</c>: the combatai.msg id range a critter picks from
     /// when it flees (AI_MESSAGE_TYPE_RUN, combat_ai.cc:1209). P72-M3.</summary>
-    int RunStart = 0, int RunEnd = -1);
+    int RunStart = 0, int RunEnd = -1,
+    /// <summary>ai.txt <c>called_freq</c>: a 1/called_freq chance to make an AIMED (called) shot at a
+    /// random body part (_ai_called_shot, combat_ai.cc:2634). 10000 ≈ never (the golden packets); 0/absent
+    /// = never. P75-M4.</summary>
+    int CalledFreq = 0);
 
 /// <summary>
 /// The parsed <c>data\ai.txt</c> table, keyed by <c>packet_num</c>. Built once and
@@ -80,7 +84,8 @@ public sealed class AiPacketTable
                     ParseBestWeapon(S("best_weapon")),
                     Chance: I("chance"), TauntColor: I("color"),         // P72-M3 taunt fields
                     AttackStart: I("attack_start"), AttackEnd: I("attack_end"),
-                    RunStart: I("run_start"), RunEnd: I("run_end")));
+                    RunStart: I("run_start"), RunEnd: I("run_end"),
+                    CalledFreq: I("called_freq")));                      // P75-M4
             fields.Clear();
         }
 

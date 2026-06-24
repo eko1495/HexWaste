@@ -111,10 +111,39 @@ public sealed class CombatEngine
     /// _combat_exps → _combat_give_exps (combat.cc:2816).</summary>
     private int _xpPending;
 
-    public CombatEngine(ICombatHost host, ICombatRng rng)
+    public CombatEngine(ICombatHost host, ICombatRng rng, ICombatRng? calledShotRng = null)
     {
         _host = host;
         _rng = rng;
+        _calledShotRng = calledShotRng; // P75-M4: isolated AI called-shot stream; null = no called shots
+    }
+
+    /// <summary>P75-M4: the isolated RNG for the AI called-shot decision. Kept OFF the combat to-hit/
+    /// damage stream so an NPC rolling its 1/called_freq aim chance (which fires ≈never for the golden
+    /// packets, called_freq=10000) doesn't perturb the combat goldens. Null → no AI called shots.</summary>
+    private readonly ICombatRng? _calledShotRng;
+
+    /// <summary>Pick an NPC attacker's hit location (AI called shot, AiCalledShot.Pick). Uncalled unless
+    /// the isolated roll fires + the at-location to-hit clears the packet's min_to_hit. P75-M4.</summary>
+    private int AiHitLocation(MapObject attacker, CritterState attackerState, CritterState defenderState,
+        ProtoInfo? weaponProto, MapObject? weaponItem, int distance, int crittersInPath)
+    {
+        AiPacket? ai = _host.GetAiPacket(attacker);
+        if (_calledShotRng is null || ai is null || ai.CalledFreq < 1)
+            return CriticalTables.LocationUncalled;
+        // A single-shot attack can aim (the engine's critterCanAim is false for burst; this path is
+        // never burst). To-hit at a location = base to-hit + the (halved-for-melee) location penalty.
+        bool isGun = weaponProto?.Weapon is { } w && w.IsGun(weaponProto.ExtendedFlags);
+        int baseToHit = ComputeToHit(attackerState, defenderState, weaponProto, weaponItem, distance, crittersInPath, attackerIsDude: false);
+        int ToHitAt(int loc)
+        {
+            int pen = CriticalTables.LocationPenalty[Math.Clamp(loc, 0, CriticalTables.LocationCount - 1)];
+            if (!isGun)
+                pen /= 2;
+            return Math.Clamp(baseToHit + pen, 0, 95);
+        }
+        return AiCalledShot.Pick(ai.CalledFreq, attackerState.Stat(CritterStat.Intelligence), canAim: true,
+            ai.MinToHit, _calledShotRng, ToHitAt);
     }
 
     // --- Public surface the viewer/harness drive --------------------------
@@ -2422,7 +2451,8 @@ public sealed class CombatEngine
             _actingAllyAp -= apCost;
             ally.Rotation = HexGrid.RotationTo(ally.HexTile, target.HexTile);
             (int chance, bool hit, int damage, int critFlags, int delta) = RollAttack(attacker, defender, weaponProto, weaponItem,
-                distance, crittersInPath, attackerIsDude: false, defenderIsDude: false, CriticalTables.LocationUncalled);
+                distance, crittersInPath, attackerIsDude: false, defenderIsDude: false,
+                AiHitLocation(ally, attacker, defender, weaponProto, weaponItem, distance, crittersInPath)); // P75-M4
             if (!hit && TriggerCritFailure(attacker, attackerIsDude: false, weaponProto, weaponItem, delta))
                 _actingAllyAp = 0; // P41: a fumble can cost the ally its turn
             if (isGun && weaponItem is not null)
@@ -2519,7 +2549,7 @@ public sealed class CombatEngine
         bool isGun = weaponProto?.Weapon is { } w && w.IsGun(weaponProto.ExtendedFlags);
         (int chance, bool hit, int damage, int critFlags, int delta) = RollAttack(attacker, defender, weaponProto, weaponItem,
             distance, crittersInPath, attackerIsDude: false, defenderIsDude: defenderObj == _host.Dude,
-            CriticalTables.LocationUncalled);
+            AiHitLocation(enemy, attacker, defender, weaponProto, weaponItem, distance, crittersInPath)); // P75-M4
         if (!hit && TriggerCritFailure(attacker, attackerIsDude: false, weaponProto, weaponItem, delta))
             _actingEnemyAp = 0; // P41: a fumble can cost the enemy the rest of its turn
         if (isGun && weaponItem is not null)
