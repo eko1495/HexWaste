@@ -4081,6 +4081,14 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
 
     protected override void Draw(GameTime gameTime)
     {
+        // P80: a slot save deferred its thumbnail to here (the render thread); capture it world-only before
+        // the normal frame draws, so the picker (still up) isn't in the shot. Restores the backbuffer target.
+        if (_pendingThumbnailPath is { } thumbPath)
+        {
+            _pendingThumbnailPath = null;
+            CaptureThumbnail(thumbPath);
+        }
+
         // Screenshots render via an offscreen target: reading the backbuffer
         // races the GPU on this driver and loses late sprites in the upper
         // screen region (observed: panels above y~250 vanish from readback
@@ -4984,6 +4992,65 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
         Log($"Welcome to the wasteland{(_dudeGcd is { Name.Length: > 0 } g && g.Name != "None" ? $", {g.Name}" : "")}.");
     }
 
+
+    // P80: a small save-slot thumbnail. The capture is deferred to Draw (set by a slot save) so it runs in
+    // the render thread like the screenshot path; it renders the WORLD ONLY (no menu panels) to the offscreen
+    // target, then downscales into the thumbnail target and writes a sidecar PNG — race-free GetData.
+    private RenderTarget2D? _thumbnailTarget;
+    private string? _pendingThumbnailPath;
+    private const int ThumbW = 224, ThumbH = 133; // the LSGAME preview slot (loadsave.cc)
+
+    private void CaptureThumbnail(string path)
+    {
+        int bw = GraphicsDevice.PresentationParameters.BackBufferWidth;
+        int bh = GraphicsDevice.PresentationParameters.BackBufferHeight;
+        _screenshotTarget ??= new RenderTarget2D(GraphicsDevice, bw, bh);
+        _thumbnailTarget ??= new RenderTarget2D(GraphicsDevice, ThumbW, ThumbH);
+
+        // 1) the world only (floors → objects → roofs → HUD bar), no menu panels, into the full-size target.
+        GraphicsDevice.SetRenderTarget(_screenshotTarget);
+        GraphicsDevice.Clear(Color.Black);
+        if (!_worldmapOpen && _map is not null)
+        {
+            _dudeUnderRoof = DudeIsUnderRoof();
+            DrawFloors();
+        }
+        _spriteBatch.Begin(samplerState: SamplerState.PointClamp);
+        if (_worldmapOpen)
+            _worldmapScreen?.Draw(_spriteBatch, GraphicsDevice.Viewport.Bounds, _hoveredArea, WorldFog);
+        else if (_map is not null)
+        {
+            DrawObjects(_flatObjects[_elevation]);
+            DrawObjects(_solidObjects[_elevation]);
+            DrawProjectiles();
+            if (_roofsVisible)
+                DrawRoofs();
+            DrawInterfaceBar();
+        }
+        _spriteBatch.End();
+
+        // 2) downscale into the thumbnail target.
+        GraphicsDevice.SetRenderTarget(_thumbnailTarget);
+        GraphicsDevice.Clear(Color.Black);
+        _spriteBatch.Begin(samplerState: SamplerState.LinearClamp);
+        _spriteBatch.Draw(_screenshotTarget, new Rectangle(0, 0, ThumbW, ThumbH), Color.White);
+        _spriteBatch.End();
+        GraphicsDevice.SetRenderTarget(null);
+
+        // 3) readback + write the sidecar PNG.
+        var pixels = new Color[ThumbW * ThumbH];
+        _thumbnailTarget.GetData(pixels);
+        for (int i = 0; i < pixels.Length; i++)
+            pixels[i].A = 255;
+        using var tex = new Texture2D(GraphicsDevice, ThumbW, ThumbH);
+        tex.SetData(pixels);
+        try
+        {
+            using FileStream fs = File.Create(path);
+            tex.SaveAsPng(fs, ThumbW, ThumbH);
+        }
+        catch (IOException) { /* a thumbnail is cosmetic — never fail a save over it */ }
+    }
 
     private void SaveScreenshot(string path)
     {

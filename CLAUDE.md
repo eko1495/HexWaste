@@ -2470,6 +2470,24 @@ IDENTICAL. DOCUMENTED RESIDUAL: Tag! (4th tag skill at level 12, needs a tag-pic
 remaining perk — deferred. NEXT: Tier 3 (presentation: CONTROL.frm widgets, INVBOX dual-wield, save
 thumbnails, worldmap special-encounter pins).
 
+Phase 80 (DONE — "Tier 3: save-slot thumbnails"). The 10-slot save UI (P48) showed only text metadata; now
+each occupied slot carries a screenshot. CaptureThumbnail renders the WORLD ONLY (floors → objects → roofs →
+HUD bar, NO menu panels) to the offscreen _screenshotTarget, downscales into a 224×133 _thumbnailTarget (the
+LSGAME preview-slot size), and writes a sidecar PNG next to the slot's JSON (hexwaste-slotN.png) — race-free
+GetData, the P4 readback-gotcha pattern. The capture is DEFERRED to the next Draw (set by SaveGameToSlot) so
+it runs on the render thread and the still-open picker isn't in the shot; DrawSaveLoad loads the selected
+slot's PNG lazily (a per-slot Texture2D cache dropped on re-save) and blits it into the LSGAME preview recess
+(window-local 340,39). Draw-only + a sidecar file separate from the JSON save → the save goldens (JSON/probe
+state) + all combat + encounter goldens BYTE-IDENTICAL; *.png is gitignored so no thumbnail commits.
+SCREENSHOT-VERIFIED (the denbus2/arcaves world renders into the slot preview; like the other art-window
+features, no headless golden — the capture needs a live Draw). KEY FINDINGS that reshaped Tier 3: "worldmap
+special-encounter pins" was a MISREAD — FO2 special encounters are a blinking travel ICON (ENCOUNTER_ENTRY_
+SPECIAL → wmBlinkRndEncounterIcon), not fixed map pins; and save thumbnails (the one real-value Tier-3 item)
+is inherently Draw-only/visual, not golden-friendly. The remaining Tier-3 items (CONTROL.frm radio/checkbox
+widget-binding — already functional via the P52 overlay; INVBOX left-hand/dual-wield slot — needs the item2
+model, no slice content dual-wields) are low-value Draw-only polish, documented as deferred. 750 Formats
+tests, 16 combat + 174 encounter goldens green.
+
 Phase 10 (DONE, per docs/phase10-research-report.md — "The Wasteland
 Bites Back"): M0 persistence pre-stage (the net: MapList saved=No /
 random_start_point parse + IsTransient; the 3-clause transient guards as

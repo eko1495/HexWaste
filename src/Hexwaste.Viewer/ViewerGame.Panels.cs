@@ -735,7 +735,30 @@ public sealed partial class ViewerGame
         string prev = SavePath;
         try { SavePath = SlotPath(slot); SaveGame(); }
         finally { SavePath = prev; }
+        // P80: capture a world-only thumbnail (deferred to the next Draw) + drop the stale cached texture.
+        _pendingThumbnailPath = SlotThumbPath(slot);
+        if (_slotThumbs.Remove(slot, out Texture2D? old))
+            old?.Dispose();
         RefreshSlotInfos();
+    }
+
+    // P80: per-slot thumbnail (a sidecar PNG next to the slot's JSON) + a lazily-loaded texture cache.
+    private string SlotThumbPath(int slot) => Path.ChangeExtension(SlotPath(slot), ".png");
+    private readonly Dictionary<int, Texture2D?> _slotThumbs = [];
+
+    private Texture2D? SlotThumbnail(int slot)
+    {
+        if (_slotThumbs.TryGetValue(slot, out Texture2D? cached))
+            return cached;
+        Texture2D? tex = null;
+        string path = SlotThumbPath(slot);
+        if (File.Exists(path))
+        {
+            try { using FileStream fs = File.OpenRead(path); tex = Texture2D.FromStream(GraphicsDevice, fs); }
+            catch (Exception ex) when (ex is IOException or InvalidOperationException) { tex = null; }
+        }
+        _slotThumbs[slot] = tex;
+        return tex;
     }
 
     private void LoadGameFromSlot(int slot)
@@ -834,7 +857,8 @@ public sealed partial class ViewerGame
         // the hovered (else cursor) slot's fuller metadata.
         if (_saveLoadArt)
         {
-            Formats.SlotInfo sel = _slotInfos[hovered >= 0 ? hovered : 0];
+            int selSlot = hovered >= 0 ? hovered : 0;
+            Formats.SlotInfo sel = _slotInfos[selSlot];
             int bx = p.X + 396, by = p.Y + 258;
             if (sel.Occupied && !sel.VersionMismatch)
             {
@@ -842,6 +866,19 @@ public sealed partial class ViewerGame
                 _fontRenderer.Draw(_spriteBatch, $"Level {sel.Level}", new Vector2(bx, by + _fontRenderer.LineHeight), green);
                 _fontRenderer.Draw(_spriteBatch, sel.Map, new Vector2(bx, by + 2 * _fontRenderer.LineHeight), green);
                 _fontRenderer.Draw(_spriteBatch, sel.Date, new Vector2(bx, by + 3 * _fontRenderer.LineHeight), green);
+            }
+
+            // P80: the selected slot's screenshot thumbnail in the LSGAME preview area (window-local 340,39).
+            var preview = new Rectangle(p.X + 340, p.Y + 39, ThumbW, ThumbH);
+            if (sel.Occupied && !sel.VersionMismatch && SlotThumbnail(selSlot) is { } thumb)
+            {
+                _spriteBatch.Draw(thumb, preview, Color.White);
+            }
+            else
+            {
+                _spriteBatch.Draw(_panelPixel, preview, new Color(0, 0, 0, 220)); // empty preview recess
+                string none = sel.Occupied ? "(no preview)" : "";
+                _fontRenderer.Draw(_spriteBatch, none, new Vector2(preview.X + 70, preview.Y + 60), gray);
             }
         }
     }
