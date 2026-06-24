@@ -28,7 +28,10 @@ public sealed record ProtoInfo(
     AmmoProtoStats? Ammo = null,
     /// <summary>Item base weight in pounds (proto.cc protoItemDataRead, the int after
     /// material/size); 0 for non-items and weightless items like caps (P24).</summary>
-    int Weight = 0)
+    int Weight = 0,
+    /// <summary>Item size class (proto.item.size, the int after material); the steal penalty is
+    /// −4%/size without Pickpocket (skill.cc:1042, P78). 0 for non-items.</summary>
+    int Size = 0)
 {
     /// <summary>The object's translucency class from its flag bits 0xFC000 (P23) — the engine
     /// sets one OBJECT_TRANS_* from the proto at instantiation (object.cc:943).</summary>
@@ -178,6 +181,7 @@ public sealed class ProtoDatabase(GameFileSystem vfs)
         int inventoryFid = -1;
         int cost = 0;
         int weight = 0;
+        int size = 0;
         CritterProtoStats? critter = null;
         WeaponProtoStats? weapon = null;
         ArmorProtoStats? armor = null;
@@ -215,7 +219,8 @@ public sealed class ProtoDatabase(GameFileSystem vfs)
                 }
                 else if ((ObjectType)type is ObjectType.Item)
                 {
-                    reader.Skip(2 * 4);          // material, size
+                    reader.Skip(4);              // material
+                    size = reader.ReadInt32();   // proto.item.size — the steal-penalty size (P78); was skipped
                     weight = reader.ReadInt32(); // ported from fallout2-ce proto.cc protoItemDataRead — proto.item.weight (P24)
                     cost = reader.ReadInt32();
                     inventoryFid = reader.ReadInt32();
@@ -307,7 +312,7 @@ public sealed class ProtoDatabase(GameFileSystem vfs)
                 throw new InvalidDataException($"PID 0x{pid:X8}: unexpected type {type}.");
         }
 
-        return new ProtoInfo(filePid, messageId, fid, flags, extendedFlags, subType, soundId, inventoryFid, critter, cost, weapon, armor, drug, ammo, weight);
+        return new ProtoInfo(filePid, messageId, fid, flags, extendedFlags, subType, soundId, inventoryFid, critter, cost, weapon, armor, drug, ammo, weight, size);
     }
 
     private string[] GetList(int type)

@@ -989,6 +989,24 @@ public sealed partial class ViewerGame
                         + $"enemyMaxAp={enemyMax} enemyDodge={_combat.RemainingApDodge(enemy)}");
                     break;
                 }
+                case StartupAction.Steal(var targetHex, var row) when _dude is not null:
+                {
+                    // P78: position the dude adjacent (like --fight), open the Steal screen on the mark, and
+                    // attempt to lift row N — deterministic under --rng-seed (_stealRng). State-only: counts
+                    // + the aggro phase (a caught lift turns the mark hostile); never an item NAME.
+                    MapObject? mark = CritterAt(targetHex);
+                    if (mark is null) { Console.Error.WriteLine($"steal: no critter at {targetHex}"); break; }
+                    _dude.Dude.HexTile = Formats.Hex.HexGrid.TileInDirection(targetHex, 3);
+                    RebuildBlockedTiles(_dude.Dude);
+                    int markBefore = mark.Inventory.Count, dudeBefore = _dudeInventory.Count;
+                    TryUseSkillOn(10, mark);
+                    bool opened = _stealTarget is not null && ReferenceEquals(_lootContainer, mark);
+                    if (opened && row >= 0 && row < mark.Inventory.Count)
+                        TakeFromContainer(row);
+                    Console.WriteLine($"steal: target={targetHex} opened={opened} markItems={markBefore}->{mark.Inventory.Count} "
+                        + $"dudeItems={dudeBefore}->{_dudeInventory.Count} aggro={_combat.Phase != Formats.Combat.CombatPhase.Idle}");
+                    break;
+                }
                 case StartupAction.RepTitle(var repValue):
                 {
                     // P31 B-M1: the generic-reputation title MESSAGE ID for a value (never the copyrighted

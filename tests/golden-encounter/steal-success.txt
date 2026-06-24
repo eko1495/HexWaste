@@ -1,0 +1,2 @@
+steal: stole item=28 from 15278
+steal: target=15278 opened=True markItems=3->2 dudeItems=0->1 aggro=False

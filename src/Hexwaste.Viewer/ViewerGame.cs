@@ -176,6 +176,13 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
     /// <summary>Seeded skill-roll RNG (deterministic under --rng-seed for goldens),
     /// separate from the combat/party/worldmap streams.</summary>
     private Formats.Combat.ICombatRng? _skillRng;
+    /// <summary>Seeded Steal-check RNG (P78) — ISOLATED from the skill/combat streams so a theft never
+    /// perturbs them; plus the mark + per-session count/XP for the open steal panel.</summary>
+    private Formats.Combat.ICombatRng? _stealRng;
+    private MapObject? _stealTarget;
+    private int _stealCount;        // _gStealCount — resets per panel open, +1 per item lifted (skill.cc)
+    private int _stealSessionXp;    // capped at 300 − Steal skill (inventory.cc:4471)
+    private int _stealXpBonus = 10; // grows +10 per stolen item (inventory.cc:4368)
     /// <summary>Seeded AI-taunt RNG (P72-M3) — ISOLATED from the combat stream so the chance/
     /// message rolls never perturb to-hit/damage; the taunt float is Draw-only, so combat goldens
     /// stay byte-identical regardless of whether a critter taunts.</summary>
@@ -628,6 +635,7 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
         /// living critter would get (P34-M4; zero-RNG, no combat entry).</summary>
         public sealed record OutlineProbe(int FightHex) : StartupAction;
         public sealed record AcDodgeProbe(int EnemyHex) : StartupAction;
+        public sealed record Steal(int TargetHex, int Row) : StartupAction;
         /// <summary>Report the gore death-anim a burst/explosion/laser kill would give the critter
         /// at Hex — the picked anim + the art-resolved anim (P26), proving gore art availability.</summary>
         public sealed record DeathProbe(int Hex) : StartupAction;
@@ -1768,6 +1776,7 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
                 _lootContainer = null;
                 _inventoryOpen = false;
                 _tradePartner = null;
+                _stealTarget = null;
             }
 
             _previousMouse = mouse;
@@ -2726,9 +2735,74 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
             Log("You can't carry that much weight.");
             return;
         }
+        // P78: stealing — each lift is a Steal check; a caught lift takes nothing, closes the panel,
+        // and turns the mark hostile (ResolveSteal handles all that and returns false).
+        if (_stealTarget is { } mark && ReferenceEquals(mark, _lootContainer) && !ResolveSteal(mark, item))
+            return;
         _lootContainer.Inventory.RemoveAt(index);
         AddToDudeInventory(item);
         Log($"You take: {ObjectName(item)}{(item.StackCount > 1 ? $" x{item.StackCount}" : "")}.");
+    }
+
+    /// <summary>Open the Steal screen on a live critter (P78): reuse the loot panel, reset the per-session
+    /// counter, and arm steal mode so each lift runs the check.</summary>
+    private void OpenSteal(MapObject mark)
+    {
+        if (mark.Inventory.Count == 0)
+        {
+            Log($"The {ObjectName(mark)} has nothing to steal.");
+            return;
+        }
+        _stealRng ??= new Formats.Combat.SystemCombatRng(RngSeed ?? Environment.TickCount);
+        _stealTarget = mark;
+        _stealCount = 0;
+        _stealSessionXp = 0;
+        _stealXpBonus = 10;
+        _lootContainer = mark;
+        _inventoryOpen = true;
+        _panelPage = 0;
+        Log($"You try to steal from the {ObjectName(mark)}.");
+    }
+
+    /// <summary>One Steal attempt on <paramref name="item"/> (skill.cc skillsPerformStealing). Returns true
+    /// if the lift succeeds (the caller transfers it); false if caught — the mark turns hostile and the
+    /// panel closes. Uses the isolated <see cref="_stealRng"/>.</summary>
+    private bool ResolveSteal(MapObject mark, MapObject item)
+    {
+        if (_dude is null || GetCritterState(_dude.Dude) is not { } thief)
+            return false;
+        int thiefSteal = thief.SkillValue(10);                 // SKILL_STEAL
+        int? targetSteal = GetCritterState(mark)?.SkillValue(10);
+        int size = SafeProto(item.Pid)?.Size ?? 0;
+        bool pickpocket = DudePerkRank(Formats.Perks.PerkId.Pickpocket) > 0;
+        bool front = Formats.Combat.SneakAttack.IsHitFromFront(_dude.Dude.Rotation, mark.Rotation);
+        bool incap = (mark.CombatResults
+            & (Formats.Combat.CriticalTables.DamKnockedOut | Formats.Combat.CriticalTables.DamKnockedDown)) != 0;
+        Formats.Combat.StealResult r = Formats.Combat.StealCheck.Resolve(thiefSteal, targetSteal, size,
+            pickpocket, front, incap, thief.Stat(Formats.Combat.CritterStat.CriticalChance),
+            _stealCount, CriticalsEnabled, _stealRng!);
+        _stealCount++;
+        if (r.Caught)
+        {
+            Log($"You're caught stealing the {ObjectName(item)}!");
+            Transcript($"steal: caught item={item.Pid:X} from {mark.HexTile}");
+            _stealTarget = null;
+            _lootContainer = null;
+            _inventoryOpen = false;
+            _combat.BeginScriptAggro(mark, _dude.Dude); // the mark reacts (combat.cc steal_p_proc → aggro)
+            return false;
+        }
+        // Steal XP accrues 10/20/30… per item, the session total capped at 300 − Steal skill
+        // (inventory.cc:4368/4471); party members give none — moot, the dude can't steal from allies here.
+        int grant = Math.Min(_stealXpBonus, Math.Max(0, 300 - thiefSteal - _stealSessionXp));
+        if (grant > 0)
+        {
+            _stealSessionXp += grant;
+            AwardXp(grant);
+        }
+        _stealXpBonus += 10;
+        Transcript($"steal: stole item={item.Pid:X} from {mark.HexTile}");
+        return true;
     }
 
     /// <summary>Loot every item from the open container (P24): all-or-nothing on weight, like
@@ -2744,9 +2818,11 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
             Log("You can't carry that much weight.");
             return;
         }
-        while (_lootContainer.Inventory.Count > 0)
+        // P78: in steal mode a caught lift nulls _lootContainer mid-loop, so guard on it.
+        while (_lootContainer is { } lc && lc.Inventory.Count > 0)
             TakeFromContainer(0);
         _lootContainer = null;
+        _stealTarget = null;
     }
 
     private void DropFromInventory(int index)
@@ -3818,6 +3894,11 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
                         target.IsLockedState = false;
                         Log($"You pick the lock on the {ObjectName(target)}.");
                     }
+                    return;
+                }
+                if (skill == 10 && Fid.Type(target.Fid) is ObjectType.Critter && !target.IsDead)
+                {
+                    OpenSteal(target); // P78: the Steal screen — each lift runs the skill check
                     return;
                 }
                 Log($"You use {SkillName(skill)} on the {ObjectName(target)}. Nothing happens.");
