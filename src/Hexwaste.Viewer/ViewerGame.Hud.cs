@@ -212,6 +212,21 @@ public sealed partial class ViewerGame
 
     /// <summary>Toggle the weapon-slot attack mode (single↔burst) for a burst-capable
     /// gun; a non-burst weapon stays single (P15 M1 — the slot click + N).</summary>
+    /// <summary>P82: the HUD weapon-slot click. With a second weapon ready in the OTHER hand (the P81
+    /// dual-wield), it SWITCHES the active weapon (what the player expects when clicking the slot); with
+    /// just one weapon it falls back to cycling the attack mode (single↔burst). N still cycles the mode,
+    /// '.' still swaps, so both actions stay reachable.</summary>
+    private void WeaponSlotClicked()
+    {
+        int otherHand = _activeHand == MapObject.FlagInRightHand ? MapObject.FlagInLeftHand : MapObject.FlagInRightHand;
+        bool hasOtherWeapon = _dude is not null
+            && _dudeInventory.Any(i => (i.Flags & otherHand) != 0 && SafeProto(i.Pid)?.Weapon is not null);
+        if (hasOtherWeapon)
+            SwapActiveHand();
+        else
+            CycleWeaponMode();
+    }
+
     private void CycleWeaponMode()
     {
         (Formats.Proto.ProtoInfo? weaponProto, _) = _dude is null ? (null, null) : EquippedWeapon(_dude.Dude);
@@ -243,9 +258,9 @@ public sealed partial class ViewerGame
         new("CHA", new Rectangle(526, 58, 41, 19), () => { if (_dudeGcd is not null) _skillAllocOpen = true; }),          // :475
         new("PIP", new Rectangle(526, 77, 41, 19), () => { _pipboyOpen = true; }),                                        // :454
         new("SKILLDEX", new Rectangle(523, 6, 22, 21), () => { _skilldexOpen = true; }),                                  // :406
-        // The weapon slot (interface.cc:505 gSingleAttackButton): click cycles the
-        // attack mode (single↔burst); F fires with the selected mode (P15 M1).
-        new("WEAPON", new Rectangle(267, 26, 188, 67), CycleWeaponMode),                                                 // :505
+        // The weapon slot (interface.cc:505 gSingleAttackButton): click SWITCHES the active weapon when a
+        // second is ready (P82 dual-wield), else cycles the attack mode (single↔burst). F fires (P15 M1).
+        new("WEAPON", new Rectangle(267, 26, 188, 67), WeaponSlotClicked),                                               // :505
         // Combat-mode buttons (shown + clickable only during a fight; M5).
         new("ENDTURN", new Rectangle(590, 43, 38, 22), () => _combat.EndPlayerTurn(), CombatOnly: true),                  // :1903
         new("ENDCOMBAT", new Rectangle(590, 65, 38, 22),                                                                  // :1955

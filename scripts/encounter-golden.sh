@@ -167,6 +167,9 @@ SCENARIOS=(
   # SWAP flips which ready weapon fires — two weapons (right 0x8, left 0x12B), '.' swaps the active hand.
   "drag-equip-leftweapon|--character combat --map arcaves.map --give 8 --drag-equip 0 3 --rng-seed 1"
   "swap-hand|--character combat --map arcaves.map --give 8 --give 299 --drag-equip 0 0 --drag-equip 1 3 --swap-hand --swap-hand --rng-seed 1"
+  # P82 fix: clicking the HUD weapon slot SWITCHES the active weapon when a second is ready (else cycles
+  # mode). Two weapons (right 0x8 / left 0x12B) -> --hud-click WEAPON swaps to the left (0x12B).
+  "weapon-switch-hud|--character combat --map arcaves.map --give 8 --give 299 --drag-equip 0 0 --drag-equip 1 3 --hud-click WEAPON --rng-seed 1"
   # P48 multi-slot save UI (loadsave.cc 10-slot LSGAME): one JSON file per slot under --save-dir.
   # --save-slot/--load-slot/--slots-probe drive the real save-to/load-from-slot path; --reset-slots
   # clears the dir for a deterministic probe. Round-trip: save slot 3 then load it (party-count
