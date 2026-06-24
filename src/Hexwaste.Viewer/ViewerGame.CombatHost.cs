@@ -20,8 +20,13 @@ public sealed partial class ViewerGame
     /// the separate _dudeInventory list.</summary>
     public (ProtoInfo? Proto, MapObject? Item) EquippedWeapon(MapObject critter)
     {
-        List<MapObject> bag = critter == _dude?.Dude ? _dudeInventory : critter.Inventory;
-        foreach (MapObject item in bag.Where(i => i.IsInHand))
+        bool isDude = critter == _dude?.Dude;
+        List<MapObject> bag = isDude ? _dudeInventory : critter.Inventory;
+        // P81: the dude fires the ACTIVE hand only (_activeHand bit); NPCs keep the first-in-hand scan
+        // (the engine forces HAND_RIGHT for NPCs). _activeHand defaults to FlagInRightHand and no slice
+        // golden sets a left-hand dude weapon, so the active-hand item == the sole in-hand weapon → the
+        // dude's resolution is byte-identical to the old first-in-hand scan.
+        foreach (MapObject item in bag.Where(i => isDude ? (i.Flags & _activeHand) != 0 : i.IsInHand))
         {
             try
             {

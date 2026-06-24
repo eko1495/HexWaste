@@ -1061,7 +1061,7 @@ public sealed partial class ViewerGame
     // text list, not the authentic INVBOX.frm paperdoll window (a documented art residual, the
     // Skilldex text-then-art pattern); and there is no LEFT-hand slot (single-weapon model).
 
-    private enum DragSource { None, Row, WeaponSlot, ArmorSlot }
+    private enum DragSource { None, Row, WeaponSlot, ArmorSlot, LeftWeaponSlot }
     private MapObject? _dragItem;       // the item currently being dragged, or null
     private DragSource _dragSource;     // where the drag started
     private Point _dragStart;           // the press position (to tell a tap from a drag)
@@ -1099,9 +1099,19 @@ public sealed partial class ViewerGame
     private Rectangle ArmorSlotRect() => InvBoxOrigin() is { } o
         ? InvBoxArmorLocal with { X = o.X + InvBoxArmorLocal.X, Y = o.Y + InvBoxArmorLocal.Y }
         : new Rectangle(420, 176, 90, 60);
+    // P81: the LEFT-hand (item1) slot — the engine's second ready weapon slot. Off-window fallback sits
+    // below the right-hand box so it never overlaps the weapon@96 / armor@176 boxes the goldens fall back to.
+    private Rectangle LeftWeaponSlotRect() => InvBoxOrigin() is { } o
+        ? InvBoxLeftLocal with { X = o.X + InvBoxLeftLocal.X, Y = o.Y + InvBoxLeftLocal.Y }
+        : new Rectangle(420, 256, 90, 60);
+
+    // The object-flag bit a weapon slot wields into: WeaponLeft → left hand, else the right hand.
+    private static int SlotHandBit(Formats.Combat.EquipSlot slot) =>
+        slot == Formats.Combat.EquipSlot.WeaponLeft ? MapObject.FlagInLeftHand : MapObject.FlagInRightHand;
 
     private Formats.Combat.EquipSlot? EquipSlotAt(int mx, int my) =>
-        WeaponSlotRect().Contains(mx, my) ? Formats.Combat.EquipSlot.Weapon
+        WeaponSlotRect().Contains(mx, my) ? Formats.Combat.EquipSlot.Weapon          // right hand first (unchanged)
+        : LeftWeaponSlotRect().Contains(mx, my) ? Formats.Combat.EquipSlot.WeaponLeft
         : ArmorSlotRect().Contains(mx, my) ? Formats.Combat.EquipSlot.Armor
         : null;
 
@@ -1115,11 +1125,12 @@ public sealed partial class ViewerGame
         return -1;
     }
 
-    /// <summary>The dude's item currently in a slot — the wielded weapon, or the worn armor.</summary>
-    private MapObject? EquippedInSlot(Formats.Combat.EquipSlot slot) =>
-        slot == Formats.Combat.EquipSlot.Weapon
-            ? _dudeInventory.FirstOrDefault(i => i.IsInHand && SafeProto(i.Pid)?.Weapon is not null)
-            : _dudeInventory.FirstOrDefault(i => i.IsWorn);
+    /// <summary>The dude's item currently in a slot — the wielded weapon in that HAND, or the worn armor.</summary>
+    private MapObject? EquippedInSlot(Formats.Combat.EquipSlot slot) => slot switch
+    {
+        Formats.Combat.EquipSlot.Armor => _dudeInventory.FirstOrDefault(i => i.IsWorn),
+        _ => _dudeInventory.FirstOrDefault(i => (i.Flags & SlotHandBit(slot)) != 0 && SafeProto(i.Pid)?.Weapon is not null),
+    };
 
     /// <summary>The live press/drag/release handler for the inventory panel (P47). Only the pure-
     /// inventory case reaches here; loot/barter/trade keep click-on-press in the caller.</summary>
@@ -1136,7 +1147,12 @@ public sealed partial class ViewerGame
             if (EquipSlotAt(mouse.X, mouse.Y) is { } slot && EquippedInSlot(slot) is { } equipped)
             {
                 _dragItem = equipped;
-                _dragSource = slot == Formats.Combat.EquipSlot.Weapon ? DragSource.WeaponSlot : DragSource.ArmorSlot;
+                _dragSource = slot switch
+                {
+                    Formats.Combat.EquipSlot.Armor => DragSource.ArmorSlot,
+                    Formats.Combat.EquipSlot.WeaponLeft => DragSource.LeftWeaponSlot,
+                    _ => DragSource.WeaponSlot,
+                };
             }
             else if (InventoryRowAt(mouse.X, mouse.Y) is int row && row >= 0)
             {
@@ -1157,6 +1173,8 @@ public sealed partial class ViewerGame
                 EquipFromDrag(dragged, dropSlot); // list -> slot: equip
             else if (_dragSource is DragSource.WeaponSlot && overSlot != Formats.Combat.EquipSlot.Weapon)
                 UnequipSlot(Formats.Combat.EquipSlot.Weapon); // dragged the weapon off its slot: unequip
+            else if (_dragSource is DragSource.LeftWeaponSlot && overSlot != Formats.Combat.EquipSlot.WeaponLeft)
+                UnequipSlot(Formats.Combat.EquipSlot.WeaponLeft);
             else if (_dragSource is DragSource.ArmorSlot && overSlot != Formats.Combat.EquipSlot.Armor)
                 UnequipSlot(Formats.Combat.EquipSlot.Armor);
             else if (_dragSource == DragSource.Row
@@ -1178,12 +1196,17 @@ public sealed partial class ViewerGame
         if (!Formats.Combat.EquipRules.CanEquip(proto?.Weapon is not null, proto?.Armor is not null, slot))
             return;
 
-        if (slot == Formats.Combat.EquipSlot.Weapon)
+        if (slot is Formats.Combat.EquipSlot.Weapon or Formats.Combat.EquipSlot.WeaponLeft)
         {
+            // P81: wield into THIS hand only — vacate just this hand's bit across the bag, clear both bits
+            // on the item (it leaves any hand), set this hand's bit. For the right hand with no left-hand
+            // weapon ever present, this reduces to the old clear-both/set-right → byte-identical.
+            int bit = SlotHandBit(slot);
             foreach (MapObject other in _dudeInventory)
-                other.Flags &= ~(MapObject.FlagInLeftHand | MapObject.FlagInRightHand);
-            item.Flags |= MapObject.FlagInRightHand;
-            Log($"You ready the {ObjectName(item)}.");
+                other.Flags &= ~bit;
+            item.Flags &= ~(MapObject.FlagInLeftHand | MapObject.FlagInRightHand);
+            item.Flags |= bit;
+            Log($"You ready the {ObjectName(item)} ({(slot == Formats.Combat.EquipSlot.WeaponLeft ? "left" : "right")} hand).");
         }
         else // Armor
         {
@@ -1206,11 +1229,12 @@ public sealed partial class ViewerGame
     /// the armor bonus, mirroring UnequipForTransfer without removing the item from the bag.</summary>
     private void UnequipSlot(Formats.Combat.EquipSlot slot)
     {
-        if (slot == Formats.Combat.EquipSlot.Weapon)
+        if (slot is Formats.Combat.EquipSlot.Weapon or Formats.Combat.EquipSlot.WeaponLeft)
         {
-            foreach (MapObject it in _dudeInventory.Where(i => i.IsInHand).ToList())
+            int bit = SlotHandBit(slot); // P81: clear only this hand's bit
+            foreach (MapObject it in _dudeInventory.Where(i => (i.Flags & bit) != 0).ToList())
             {
-                it.Flags &= ~(MapObject.FlagInLeftHand | MapObject.FlagInRightHand);
+                it.Flags &= ~bit;
                 Log($"You put away the {ObjectName(it)}.");
             }
         }
@@ -1236,8 +1260,13 @@ public sealed partial class ViewerGame
             return;
         _panelPixel ??= CreatePixel();
         bool onWindow = InvBoxOrigin() is not null;
-        DrawEquipSlot(WeaponSlotRect(), "WEAPON", EquippedInSlot(Formats.Combat.EquipSlot.Weapon), onWindow);
+        bool rightActive = _activeHand == MapObject.FlagInRightHand;
+        // P81: two ready weapon hands; the ACTIVE one (which fires) is marked '*'. Armor below them.
+        DrawEquipSlot(WeaponSlotRect(), rightActive ? "R-HAND*" : "R-HAND", EquippedInSlot(Formats.Combat.EquipSlot.Weapon), onWindow);
+        DrawEquipSlot(LeftWeaponSlotRect(), rightActive ? "L-HAND" : "L-HAND*", EquippedInSlot(Formats.Combat.EquipSlot.WeaponLeft), onWindow);
         DrawEquipSlot(ArmorSlotRect(), "ARMOR", EquippedInSlot(Formats.Combat.EquipSlot.Armor), onWindow);
+        // A bright border round the active hand so it's clear which weapon fires.
+        DrawRectOutline(rightActive ? WeaponSlotRect() : LeftWeaponSlotRect(), new Color(252, 252, 84));
         if (_dragItem is { } dragged) // the ghost icon follows the cursor (from the last Update mouse)
             DrawItemIcon(dragged, new Rectangle(_previousMouse.X - 14, _previousMouse.Y - 11, 28, 22));
     }
@@ -1272,6 +1301,16 @@ public sealed partial class ViewerGame
             {
             }
         }
+    }
+
+    // A 1px rectangle border (P81 active-hand marker).
+    private void DrawRectOutline(Rectangle r, Color c)
+    {
+        _panelPixel ??= CreatePixel();
+        _spriteBatch.Draw(_panelPixel, new Rectangle(r.X, r.Y, r.Width, 1), c);
+        _spriteBatch.Draw(_panelPixel, new Rectangle(r.X, r.Bottom - 1, r.Width, 1), c);
+        _spriteBatch.Draw(_panelPixel, new Rectangle(r.X, r.Y, 1, r.Height), c);
+        _spriteBatch.Draw(_panelPixel, new Rectangle(r.Right - 1, r.Y, 1, r.Height), c);
     }
 
     private void DrawEquipSlot(Rectangle rect, string label, MapObject? item, bool onWindow = false)

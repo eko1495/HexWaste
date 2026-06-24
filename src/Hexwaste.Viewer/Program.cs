@@ -337,6 +337,9 @@ for (int i = 0; i < args.Length; i++)
         case "--ai-drug-probe" when i + 2 < args.Length:
             actions.Add(new ViewerGame.StartupAction.AiDrugProbe(int.Parse(args[++i]), int.Parse(args[++i])));
             break;
+        case "--swap-hand":
+            actions.Add(new ViewerGame.StartupAction.SwapHand());
+            break;
         case "--set-karma" when i + 2 < args.Length:
             actions.Add(new ViewerGame.StartupAction.SetKarma(int.Parse(args[i + 1]), int.Parse(args[i + 2])));
             i += 2;

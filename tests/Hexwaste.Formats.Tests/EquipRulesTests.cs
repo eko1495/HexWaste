@@ -13,6 +13,9 @@ public class EquipRulesTests
     [InlineData(false, true, EquipSlot.Weapon, false)]  // armor  -> weapon slot: no
     [InlineData(false, false, EquipSlot.Weapon, false)] // misc/ammo -> weapon slot: no
     [InlineData(false, false, EquipSlot.Armor, false)]  // misc      -> armor slot: no
+    [InlineData(true, false, EquipSlot.WeaponLeft, true)]  // P81: weapon -> the LEFT hand slot: ok
+    [InlineData(false, true, EquipSlot.WeaponLeft, false)] // P81: armor  -> the left hand: no
+    [InlineData(false, false, EquipSlot.WeaponLeft, false)]// P81: misc   -> the left hand: no
     public void CanEquipHonoursTheItemTypePerSlot(bool isWeapon, bool isArmor, EquipSlot slot, bool expected) =>
         Assert.Equal(expected, EquipRules.CanEquip(isWeapon, isArmor, slot));
 

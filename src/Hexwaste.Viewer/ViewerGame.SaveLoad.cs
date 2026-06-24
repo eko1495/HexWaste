@@ -303,6 +303,7 @@ public sealed partial class ViewerGame
             // P31 B-M3: karma/reputation PC-stats, sparse (null at 0 → old-save compatible).
             DudeKarma = _dudeKarma != 0 ? _dudeKarma : null,
             DudeReputation = _dudeReputation != 0 ? _dudeReputation : null,
+            DudeActiveHand = _activeHand != MapObject.FlagInRightHand ? _activeHand : null, // P81 (sparse: null = right)
             DudeBaseStats = _dudeGcd is not null ? [.. _dudeGcd.Stats.BaseStats] : null,
             DudeTaggedSkills = _dudeGcd is not null ? [.. _dudeGcd.TaggedSkills] : null,
             Elevation = _elevation,
@@ -496,6 +497,7 @@ public sealed partial class ViewerGame
         // Restore karma/reputation (P31 B-M3); null on a pre-P31 save → 0.
         _dudeKarma = state.DudeKarma ?? 0;
         _dudeReputation = state.DudeReputation ?? 0;
+        _activeHand = state.DudeActiveHand ?? MapObject.FlagInRightHand; // P81: null/old save → right hand
         if (_dude is not null)
         {
             _dude.Dude.CurrentHp = state.DudeHp > 0

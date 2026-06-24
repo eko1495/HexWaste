@@ -60,6 +60,10 @@ public sealed class SaveState
     /// next-tick schedule is re-derived on load from the restored counter.</summary>
     public int? DudePoison { get; set; }
 
+    /// <summary>P81: the dude's ACTIVE weapon-hand flag bit (FlagInLeftHand 0x01000000); null = the
+    /// default right hand (additive within V2, sparse). The hand BITS on items ride DudeInventory.Flags.</summary>
+    public int? DudeActiveHand { get; set; }
+
     /// <summary>The active drug contribution to the dude's BonusStats[0..34] (P37; null = no drug
     /// in effect). The sheet is rebuilt from base+armor on load (drug bonuses are NOT in the base
     /// block), so this is re-applied after the rebuild — otherwise the pending wear-off reversals

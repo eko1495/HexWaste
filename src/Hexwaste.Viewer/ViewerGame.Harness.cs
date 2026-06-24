@@ -521,7 +521,12 @@ public sealed partial class ViewerGame
                     if (deSlot == -1)
                         DropFromInventory(deRow);
                     else
-                        EquipFromDrag(deItem, deSlot == 2 ? Formats.Combat.EquipSlot.Armor : Formats.Combat.EquipSlot.Weapon);
+                        EquipFromDrag(deItem, deSlot switch
+                        {
+                            2 => Formats.Combat.EquipSlot.Armor,
+                            3 => Formats.Combat.EquipSlot.WeaponLeft, // P81: the left hand
+                            _ => Formats.Combat.EquipSlot.Weapon,
+                        });
                     bool deEquipped = deSlot == -1 ? !_dudeInventory.Contains(deItem)
                         : deSlot == 2 ? deItem.IsWorn
                         : deItem.IsInHand;
@@ -676,6 +681,12 @@ public sealed partial class ViewerGame
                     Console.WriteLine($"ai-heal-probe: hex={healHex} healed={healed} hp=1->{hc.CurrentHp} max={hmax}");
                     break;
                 }
+                case StartupAction.SwapHand:
+                    // P81: swap the active weapon hand + report the now-firing weapon (the Console line is in
+                    // SwapActiveHand). Chain after two --drag-equip (slot 0 right, slot 3 left) to prove the
+                    // fired weapon follows the active hand.
+                    SwapActiveHand();
+                    break;
                 case StartupAction.AiDrugProbe(var drugHex, var drugPid):
                 {
                     // P78-M2: give the critter a combat drug (e.g. Buffout pid 87), run the real

@@ -2488,6 +2488,37 @@ widget-binding — already functional via the P52 overlay; INVBOX left-hand/dual
 model, no slice content dual-wields) are low-value Draw-only polish, documented as deferred. 750 Formats
 tests, 16 combat + 174 encounter goldens green.
 
+Phase 81 (DONE — "INVBOX dual-wield slot", the deferred Tier-3 item, the user's pick). M0 grounding via the
+invbox-dualwield-ground WORKFLOW (3 parallel readers — engine two-hand model / Hexwaste equip model / INVBOX+
+persistence — + a design synthesizer). KEY ENGINE FINDINGS (corrected my assumptions): FO2 has TWO independent
+READY weapon slots (left=item1, right=item2) + an ACTIVE hand (gInterfaceCurrentHand), NOT simultaneous dual-
+fire — only the active hand's weapon fires per attack; you SWITCH hands (interfaceBarSwapHands = 1-currentHand).
+Equip state is OBJECT-instance flags (OBJECT_IN_LEFT_HAND 0x1000000 / RIGHT 0x2000000 / WORN 0x4000000 — Hexwaste
+already had all three on MapObject); critterGetItem1 = LEFT, item2 = RIGHT (counter-intuitive). A TWO-HANDED
+weapon is NOT special-cased at wield (neither _invenWieldFunc nor _switch_hand clears/occupies the other hand) —
+weaponIsTwoHanded only affects combat (crippled-arm gate + One Hander to-hit), both already reading the resolved
+weapon. So Hexwaste's prior single-weapon model was a SIMPLIFICATION, and adding the left hand REMOVES a
+divergence (no off-hand exclusivity to enforce). IMPL: a new _activeHand field (the FlagInRightHand/FlagInLeftHand
+bit, default RIGHT) is the lynchpin — EquippedWeapon's DUDE branch now returns the item carrying _activeHand's
+bit (NPC branch unchanged: first-in-hand, the engine forces HAND_RIGHT for NPCs); the equip paths (UseInventory
+Item / EquipFromDrag / UnequipSlot) clear ONLY the target hand's bit (vacate that hand) which, with the default
+right hand + no left-hand dude weapon in any golden, reduces EXACTLY to the old clear-both/set-right → BYTE-
+IDENTICAL. EquipSlot gained WeaponLeft (Weapon stays the right-hand alias so all prior callers/goldens are
+unchanged); the already-declared-but-decorative INVBOX left-hand slot (154,286) is promoted to a real slot
+(EquipSlotAt/EquippedInSlot/HandleInventoryDrag/EquipFromDrag/UnequipSlot + DragSource.LeftWeaponSlot); the '.'
+key (engine swap-hands) + SwapActiveHand flips the active hand, resets the attack mode, logs the now-firing
+weapon; DrawEquipSlots draws both hands with the active one marked '*' + a bright border. Persisted: SaveState.
+DudeActiveHand (additive-V2 sparse null = right; the hand BITS already ride DudeInventory.Flags). The HUD weapon
+slot / mode label follow the active hand for free (they read EquippedWeapon). NO fake-host test (the active-hand
+EquippedWeapon is viewer-only; the fake host uses a single Equipped field) — proven by the harness instead. GOLDEN-
+SAFE: all 16 combat goldens BYTE-IDENTICAL (the EquippedWeapon dude-branch change is inert: default active=right,
+at most one in-hand weapon in goldens, so active-hand-weapon == old first-in-hand-weapon); the 4 prior drag-equip
+goldens BYTE-IDENTICAL (slot 0/2/-1 + EquipRules Weapon/Armor routing preserved). New goldens drag-equip-leftweapon
+(slot 3 → FlagInLeftHand, equipped=1) + swap-hand (two weapons 0x8 right / 0x12B left; '.' swaps the fired weapon).
+DOCUMENTED CUTS: no simultaneous dual-fire (faithful — FO2 switches hands); no two-handed off-hand exclusivity
+(faithful — the engine doesn't enforce it); NPC dual-hand not modeled (NPCs force right hand, no slice driver).
+3 new EquipRules WeaponLeft cases. 753 Formats tests, 16 combat + 176 encounter goldens green.
+
 Phase 10 (DONE, per docs/phase10-research-report.md — "The Wasteland
 Bites Back"): M0 persistence pre-stage (the net: MapList saved=No /
 random_start_point parse + IsTransient; the 3-clause transient guards as

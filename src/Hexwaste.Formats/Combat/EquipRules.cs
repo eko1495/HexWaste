@@ -1,13 +1,15 @@
 namespace Hexwaste.Formats.Combat;
 
-/// <summary>The two equip slots Hexwaste models — the right-hand WEAPON and the worn ARMOR.
-/// The engine also has a LEFT-hand item slot (dual-wield / item2); Hexwaste equips a single
-/// weapon (FlagInRightHand) so the left-hand slot is out (a documented simplification — it
-/// needs the two-handed / item2 proto model, and no shippable content dual-wields).</summary>
+/// <summary>The equip slots Hexwaste models — the engine's two READY weapon hands (Weapon = the RIGHT
+/// hand / item2; WeaponLeft = the LEFT hand / item1) plus the worn ARMOR. The two hands are independent
+/// slots you SWITCH between (the active hand fires), NOT simultaneous dual-wield (inventory.cc — neither
+/// _invenWieldFunc nor _switch_hand enforces two-handed off-hand exclusivity); P81. <c>Weapon</c> stays
+/// the right-hand alias so every prior caller/golden is unchanged.</summary>
 public enum EquipSlot
 {
-    Weapon,
+    Weapon,     // the RIGHT hand (item2) — the default/legacy single-weapon slot
     Armor,
+    WeaponLeft, // the LEFT hand (item1) — the P81 second ready slot
 }
 
 /// <summary>
@@ -22,7 +24,7 @@ public static class EquipRules
     /// <summary>Whether an item with these type flags may be equipped into <paramref name="slot"/>.</summary>
     public static bool CanEquip(bool isWeapon, bool isArmor, EquipSlot slot) => slot switch
     {
-        EquipSlot.Weapon => isWeapon,
+        EquipSlot.Weapon or EquipSlot.WeaponLeft => isWeapon,
         EquipSlot.Armor => isArmor,
         _ => false,
     };

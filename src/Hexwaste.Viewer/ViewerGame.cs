@@ -103,6 +103,23 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
     private enum WeaponMode { Single, Burst }
     private WeaponMode _weaponMode = WeaponMode.Single;
 
+    /// <summary>P81: the dude's ACTIVE weapon hand — always FlagInRightHand or FlagInLeftHand
+    /// (the engine's gInterfaceCurrentHand). The active hand's weapon is what EquippedWeapon resolves +
+    /// combat fires. Defaults to the right hand (the legacy single-weapon slot) → inert-by-default.</summary>
+    private int _activeHand = MapObject.FlagInRightHand;
+
+    /// <summary>Swap which hand is active (the engine's interfaceBarSwapHands, period key). Resets the
+    /// attack mode (the new hand's gun may not be burst-capable) and reports the now-active weapon.</summary>
+    private void SwapActiveHand()
+    {
+        _activeHand = _activeHand == MapObject.FlagInRightHand ? MapObject.FlagInLeftHand : MapObject.FlagInRightHand;
+        _weaponMode = WeaponMode.Single;
+        (_, MapObject? item) = _dude is null ? (null, null) : EquippedWeapon(_dude.Dude);
+        string hand = _activeHand == MapObject.FlagInRightHand ? "right" : "left";
+        Log($"Active hand: {hand}{(item is null ? " (empty)" : $" — {ObjectName(item)}")}.");
+        Console.WriteLine($"swap-hand: active={hand} weapon={(item is null ? "none" : $"0x{item.Pid:X}")}");
+    }
+
     private static readonly string[] AimNames =
         ["head", "left arm", "right arm", "torso", "right leg", "left leg", "eyes", "groin", "uncalled"];
     private static string AimName(int loc) => AimNames[Math.Clamp(loc, 0, AimNames.Length - 1)];
@@ -640,6 +657,7 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
         public sealed record AcDodgeProbe(int EnemyHex) : StartupAction;
         public sealed record Steal(int TargetHex, int Row) : StartupAction;
         public sealed record AiDrugProbe(int Hex, int DrugPid) : StartupAction;
+        public sealed record SwapHand : StartupAction;
         /// <summary>Report the gore death-anim a burst/explosion/laser kill would give the critter
         /// at Hex — the picked anim + the art-resolved anim (P26), proving gore art availability.</summary>
         public sealed record DeathProbe(int Hex) : StartupAction;
@@ -1996,6 +2014,10 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
         if (IsKeyPressed(keyboard, Keys.N))
             CycleWeaponMode();
 
+        // '.' : swap the active weapon hand (P81 — the engine's swap-hands), firing the other ready slot.
+        if (IsKeyPressed(keyboard, Keys.OemPeriod))
+            SwapActiveHand();
+
         // B: spray a burst at the hovered critter (only fires if a burst-capable gun
         // is equipped — the SMG/Tommy Gun/Combat Shotgun; #9).
         if (IsKeyPressed(keyboard, Keys.B) && _hoveredObject is { } burstTarget)
@@ -2885,11 +2907,16 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
 
         if (proto.Weapon is not null)
         {
-            bool equip = !item.IsInHand;
+            // P81: toggle the weapon in the ACTIVE hand. Clear only the active-hand bit on the bag (vacate
+            // that hand) + both bits on this item (it leaves any hand), then set the active hand if equipping.
+            // With the default right hand + no left-hand weapon ever set, this reduces to the old clear-both/
+            // set-right exactly → byte-identical.
+            bool equip = (item.Flags & _activeHand) == 0;
             foreach (MapObject other in _dudeInventory)
-                other.Flags &= ~(MapObject.FlagInLeftHand | MapObject.FlagInRightHand);
+                other.Flags &= ~_activeHand;
+            item.Flags &= ~(MapObject.FlagInLeftHand | MapObject.FlagInRightHand);
             if (equip)
-                item.Flags |= MapObject.FlagInRightHand;
+                item.Flags |= _activeHand;
             Log(equip ? $"You ready the {ObjectName(item)}." : $"You put away the {ObjectName(item)}.");
             Console.WriteLine($"equip: {ObjectName(item)} {(equip ? "readied" : "stowed")}");
             return;
@@ -4965,6 +4992,7 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
         _automapOpen = false;
         _optionsOpen = false;
         _weaponMode = WeaponMode.Single;
+        _activeHand = MapObject.FlagInRightHand; // P81: back to the right hand on a new game
         _dudeInventory = [];
         _visitedMaps.Clear();
         _combat.Reset();
