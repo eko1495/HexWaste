@@ -437,7 +437,10 @@ public static class EncounterConditions
         {
             "global" => getGlobal(c.Param),
             "player" => playerLevel,         // Player(Level)
-            "time_of_day" => hhmm,
+            // P75-M1 FIX: the engine compares the HOUR — gameTimeGetHour() (HHMM) / 100 (worldmap.cc:4135).
+            // Passing raw HHMM made If(time_of_day > 19) always true (1930 > 19), so Den_D's night-only
+            // rave encounters fired at any hour.
+            "time_of_day" => hhmm / 100,
             "days_played" => daysPlayed,
             "enctr" => critterCount,         // enctr(num_critters)
             _ => 0,

@@ -259,6 +259,20 @@ public class WorldEncountersTests
         Assert.Equal(a, b);             // deterministic under the seed
     }
 
+    [Fact]
+    public void TimeOfDayConditionComparesTheHourNotRawHhmm()
+    {
+        // P75-M1: the engine divides gameTimeGetHour() (HHMM) by 100 (worldmap.cc:4135). If(time_of_day > 19)
+        // means "after 19:00" — at 19:30 (1930) the hour is 19, NOT > 19. The pre-fix raw-HHMM compare made
+        // 1930 > 19 always true (Den_D night encounters fired at any hour).
+        var rng = new MinRng();
+        var night = new[] { new EncCondition("time_of_day", 0, ">", 19) };
+        Assert.False(EncounterConditions.All(night, rng, _ => 0, 0, 1200, 0, 0)); // noon → hour 12
+        Assert.False(EncounterConditions.All(night, rng, _ => 0, 0, 1930, 0, 0)); // 7:30 PM → hour 19, not > 19
+        Assert.True(EncounterConditions.All(night, rng, _ => 0, 0, 2000, 0, 0));  // 8 PM → hour 20 > 19
+        Assert.True(EncounterConditions.All(night, rng, _ => 0, 0, 2330, 0, 0));  // 11:30 PM → hour 23
+    }
+
     private sealed class MinRng : ICombatRng
     {
         public int Next(int minInclusive, int maxExclusive) => minInclusive;
