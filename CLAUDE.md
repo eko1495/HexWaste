@@ -2419,6 +2419,34 @@ dude dodges at his full maxAp 7, the acting scorpion maxAp 5 at 0 — and that s
 combat-golden drop). One CombatEngineTests expected-chance update (prone follow-up 90→80, the target's full-AP
 dodge). 720 Formats tests, 16 combat + 171 encounter goldens green. The user's "AC+remaining-AP dodge" is in.
 
+Phase 78 (DONE — "Tier 1: Combat AI & player skills", the user's pick after the AP-dodge phase). M1 Steal /
+pickpocket (a NEW player capability): the Steal skill ran only the target's use_skill_on_p_proc with no item
+transfer; now it opens the mark's inventory as a Steal screen where each lift runs the real check. Pure layer:
+ProtoInfo.Size (the proto.item.size int, byte-safe un-skip — skip 8 → skip 4 + read 4); RandomRoll (random.cc
+randomRoll + randomTranslateRoll, the 4-state day-gated roll); StealCheck (skill.cc skillsPerformStealing —
+stealModifier from the session count, −4%/item-size and −25 face-to-face [both waived by Pickpocket=37], +20
+vs a KO'd/knocked-down mark, cap 95; a steal roll then a separate CATCH roll, a crit on the steal forcing the
+catch). Viewer: TryUseSkillOn(Steal) on a live critter → OpenSteal (reuses the loot UI); TakeFromContainer
+runs ResolveSteal per lift — success transfers + accrues steal XP (10/20/30… capped at 300−skill), caught
+takes nothing, closes the panel, and turns the mark hostile via BeginScriptAggro. Dedicated isolated _stealRng.
+Inert on every existing golden (gated on _stealTarget; Size un-skip byte-safe). New goldens steal-success
+(Metzger denbus2 @15278 seed 2: markItems 3→2, no aggro) + steal-caught (seed 1: nothing taken, aggro=True).
+8 StealCheck tests. M2 enemy combat-drug use (completes P42's chem_use): after the heal pass, a BIPED enemy
+whose chem_use is sometimes/anytime/always rolls a per-mode chance (combat_ai.cc:1028) + quaffs a chem_primary
+_desire buff drug (Jet/Psycho/Buffout), 2 AP each. Pure AiCombatDrug (UseChance/ShouldUse/Pick/MaxPerTurn) +
+AiPacket.ChemPrimaryDesire; the buff applies via a per-NPC _npcDrugBonus folded into GetCritterState's
+BonusStats (the companion-override anti-aliasing pattern), cleared on combat end (no timed wear-off for NPCs —
+documented). ShouldUse short-circuits without drawing for a clean enemy → byte-identical goldens. New golden
+ai-drug (Buffout on Metzger → ST+2/EN+3/AG+2); 2 fake-host + 12 AiCombatDrug tests. M3 smarter AI positioning:
+SNIPE is now a MULTI-step retreat toward SnipeRange=5, AP-limited (was a one-step kite, P68); _combat_safety
+(combat.cc:2249) — a gun enemy holds a shot whose hex line passes through a living teammate (new HexGrid.
+IsOnSegment collinear test) and approaches instead. Both inert on the slice (no enemy snipes / shoots past an
+ally). 3 tests. M4 NPC crippled-arm gate (symmetric counterpart of the P18 dude gate): an enemy with both arms
+crippled (or one arm + a two-handed weapon) drops to fists instead of stalling — reuses WeaponBlockedBy
+CrippledArms. Inert (no golden cripples an enemy's arm). 1 test. M2/M3/M4 committed together (shared
+CombatEngine.cs); each byte-identical bar M1+M2's own probe fixtures. 745 Formats tests, 16 combat + 176
+encounter goldens green. NEXT: Tier 2 (Educated + Jinxed-in-full + curated perks), then Tier 3 (presentation).
+
 Phase 10 (DONE, per docs/phase10-research-report.md — "The Wasteland
 Bites Back"): M0 persistence pre-stage (the net: MapList saved=No /
 random_start_point parse + IsTransient; the 3-clause transient guards as
