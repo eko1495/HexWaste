@@ -65,7 +65,11 @@ Prebuilt self-contained builds (Linux x64 / Windows x64) are produced by
   fumbles only bite once you're a seasoned wastelander — day 6, like the engine).
   Moving in combat costs action points per hex (you can't free-walk the map mid-
   fight), a crippled leg costs 4× so it crawls, and a crippled arm blocks a
-  two-handed weapon (both arms block any weapon). Big melee blows knock the
+  two-handed weapon (both arms block any weapon). Action points you don't spend
+  aren't wasted: leftover AP harden you into a temporary dodge — every unspent
+  point adds to your Armor Class until your next turn, so a fighter who blows
+  everything attacking is easy to hit, while one who holds back is slippery (an
+  unarmed brawler with Hand-to-Hand Evade dodges twice as hard). Big melee blows knock the
   target sprawling back along the hex line; a crit leaves it prone (+40 to hit,
   3 AP to stand). Throw a spear or rock (Throwing skill, range scaled by
   Strength) — it lands recoverable on the ground — or lob a grenade for an
