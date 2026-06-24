@@ -31,6 +31,14 @@ public class ProgressionTests
     [InlineData(10, 7)]
     public void HpPerLevelIsHalfEndurancePlusTwo(int endurance, int gain) =>
         Assert.Equal(gain, Progression.HpPerLevel(endurance));
+
+    [Theory]
+    [InlineData(8, 0, 6)]    // P75-M3: EN 8 → 6/level; Lifegiver rank 0 → unchanged
+    [InlineData(8, 1, 10)]   // +4/rank
+    [InlineData(8, 2, 14)]   // rank 2 → +8
+    [InlineData(10, 1, 11)]  // EN 10 (7) + 4
+    public void LifegiverAddsFourHpPerLevelPerRank(int endurance, int rank, int gain) =>
+        Assert.Equal(gain, Progression.HpPerLevel(endurance, rank));
 }
 
 public class RestMathTests

@@ -472,17 +472,22 @@ public sealed partial class ViewerGame
                 Array.Copy(savedSkills, _dudeGcd.Stats.Skills, 18);
         }
 
-        if (_dudeGcd is not null)
-        {
-            int endurance = _dudeGcd.Stats.BaseStats[Formats.Combat.CritterStat.Endurance];
-            _dudeGcd.Stats.BonusStats[Formats.Combat.CritterStat.MaximumHitPoints] +=
-                (_dudeLevel - 1) * Formats.Combat.Progression.HpPerLevel(endurance);
-        }
-
-        // Restore perk ranks (P28-M2); null/short save → no perks (inert).
+        // Restore perk ranks (P28-M2); null/short save → no perks (inert). BEFORE the HP recompute so
+        // the per-level Lifegiver bonus (P75-M3) can read the restored rank.
         _dudePerkRanks = new int[Formats.Perks.PerkTable.Count];
         if (state.DudePerkRanks is { } savedPerks)
             Array.Copy(savedPerks, _dudePerkRanks, Math.Min(savedPerks.Length, _dudePerkRanks.Length));
+
+        if (_dudeGcd is not null)
+        {
+            int endurance = _dudeGcd.Stats.BaseStats[Formats.Combat.CritterStat.Endurance];
+            // P75-M3: Lifegiver adds 4 HP/rank per level-up (stat.cc:771). The recompute reconstructs the
+            // level-up HP from level, so it must include Lifegiver or a reload would lose it. DOCUMENTED
+            // SIMPLIFICATION: it assumes the perk was held since level 1 (like the existing uniform-EN
+            // assumption) — a mid-game pick over-applies a few HP on reload.
+            int perLevel = Formats.Combat.Progression.HpPerLevel(endurance, DudePerkRank(Formats.Perks.PerkId.Lifegiver));
+            _dudeGcd.Stats.BonusStats[Formats.Combat.CritterStat.MaximumHitPoints] += (_dudeLevel - 1) * perLevel;
+        }
 
         // Restore the sneak state (P30 A-M2); null on a pre-P30 save → not sneaking.
         _sneak.FlagSet = state.SneakFlag ?? false;

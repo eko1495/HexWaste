@@ -567,6 +567,8 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
         /// <summary>P74-M3: report the value has_skill (0x80AA) returns for a critter (hex&lt;0 = the dude) —
         /// the critter's effective skill % via the wired SkillResolver. State-only.</summary>
         public sealed record HasSkillProbe(int Hex, int Skill) : StartupAction;
+        /// <summary>P75-M3: report the dude's effective MaximumHitPoints (for the Lifegiver level-up proof).</summary>
+        public sealed record MaxHpProbe : StartupAction;
         /// <summary>P72-M3: report a critter's ai.txt taunt config + the deterministic attack/run
         /// message-id picks under <paramref name="Seed"/> (state-only — IDs/ranges, never the text).</summary>
         public sealed record TauntProbe(int Hex, int Seed) : StartupAction;
@@ -3232,7 +3234,8 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
             if (_dudeGcd is not null && _dude is not null)
             {
                 int endurance = _dudeGcd.Stats.BaseStats[Formats.Combat.CritterStat.Endurance];
-                int gain = Formats.Combat.Progression.HpPerLevel(endurance);
+                // P75-M3: Lifegiver adds +4 max HP per rank at each level-up (stat.cc:771). Inert at rank 0.
+                int gain = Formats.Combat.Progression.HpPerLevel(endurance, DudePerkRank(Formats.Perks.PerkId.Lifegiver));
                 _dudeGcd.Stats.BonusStats[Formats.Combat.CritterStat.MaximumHitPoints] += gain;
                 _dude.Dude.CurrentHp += gain; // the engine heals the delta
 

@@ -26,9 +26,11 @@ public static class Progression
         return level;
     }
 
-    /// <summary>Bonus max HP gained per level (stat.cc:771): EN/2 + 2
-    /// (Lifegiver perks are out of PoC scope).</summary>
+    /// <summary>Base bonus max HP gained per level (stat.cc:771): EN/2 + 2.</summary>
     public static int HpPerLevel(int endurance) => endurance / 2 + 2;
+
+    /// <summary>Per-level bonus HP including Lifegiver (+4/rank, stat.cc:771; P75-M3). Inert at rank 0.</summary>
+    public static int HpPerLevel(int endurance, int lifegiverRank) => HpPerLevel(endurance) + 4 * lifegiverRank;
 
     /// <summary>Healing rate = max(EN/3, 1) (stat.cc:573).</summary>
     public static int HealingRate(int endurance) => Math.Max(endurance / 3, 1);

@@ -830,7 +830,7 @@ gen_critical_tables.py pattern; PerkData record). PerkRules ports perkCanAdd (ma
 the skill/gvar param gates with FIRST_ONLY/OR/AND modes + negative-value "at most", the per-SPECIAL
 reqs positive=min/negative=max) + the cadence (3 levels/perk, 4 with Skilled, cap 37 — character_
 editor.cc:5713) + the DATA-DRIVEN stat perks via StatModifier (each perk's stat/statModifier × rank:
-Toughness->DR, Action Boy->AP, More Criticals->crit, Lifegiver->HP, ...) folded into CritterState.Stat
+Toughness->DR, Action Boy->AP, More Criticals->crit, ...) folded into CritterState.Stat
 alongside traits (so M3's stat perks are FREE — only combat/skill-path perks need wiring). DudePerkRanks
 (int[119]) on the viewer, passed as CritterState's 5th param, persisted (SaveState.DudePerkRanks,
 additive-V2 sparse — null when no perk taken); has_trait(type 0) now returns the dude's perkGetRank via
@@ -838,8 +838,11 @@ ScriptHost.PerkRankProvider. INERT-BY-DEFAULT holds (zero ranks -> 0 modifier ->
 goldens BYTE-IDENTICAL). VERIFIED: traits + perks STACK (Narg's HeavyHanded +4 melee, then Bonus HtH
 Damage perk +2/rank -> 8->10->12); --perk-probe <index> <level> exercises the gates + effect (golden
 perk-gates: level-gate at lvl2, eligible+stack at lvl3, stat-gate on More Criticals via Narg's LK4).
-16 PerkTests. M3 high-impact (combat/skill-path) perk effects (DONE): the data-driven STAT perks
-(Toughness/Action Boy/Lifegiver/More+Better Crits/Faster Healing/Bonus HtH Damage/Strong Back/Dodger/
+16 PerkTests. [P75-M3 DOC-TRUTH CORRECTION: Lifegiver was listed here + above as a folded stat perk, but
+its PerkTable Stat=-1 (the [0,0,4,...] is the EN>=4 REQUIREMENT, not an effect) — it was INERT until P75-M3
+wired its +4-HP/level at the AwardXp level-up site, NOT a CritterState.Stat fold.] M3 high-impact (combat/
+skill-path) perk effects (DONE): the data-driven STAT perks
+(Toughness/Action Boy/More+Better Crits/Faster Healing/Bonus HtH Damage/Strong Back/Dodger/
 +SPECIAL/rad+poison) already work from M2's StatModifier fold; M3 adds the NON-stat combat/skill perks
 via a new ICombatHost.DudePerkRank(int) (default 0): Swift Learner (+5%/rank XP, viewer AwardXp,
 stat.cc:737), Bonus Rate of Fire / Bonus HtH Attacks (−1 AP ranged/melee, item.cc:1693), Sharpshooter

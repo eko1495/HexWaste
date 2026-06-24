@@ -1178,6 +1178,9 @@ public sealed partial class ViewerGame
                     RevealAround(reveal.Hex); // P71: simulate the dude exploring this tile
                     Console.WriteLine($"reveal: hex={reveal.Hex} tiles={_seenTiles.Count}");
                     break;
+                case StartupAction.MaxHpProbe:
+                    Console.WriteLine($"maxhp: level={_dudeLevel} maxHp={(_dude is not null ? GetCritterState(_dude.Dude)?.MaxHp ?? -1 : -1)}");
+                    break;
                 case StartupAction.HasSkillProbe hsp:
                 {
                     // P74-M3: the value has_skill (0x80AA) returns — the critter's effective skill via the
