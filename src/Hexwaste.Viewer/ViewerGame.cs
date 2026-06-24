@@ -822,6 +822,7 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
         public sealed record CreateCharacter(int[] Special, int[] Tags, int Gender, int[] Traits) : StartupAction;
         public sealed record ShowCreate(string Step = "") : StartupAction;
         public sealed record ShowInventory : StartupAction; // P67: open the inventory for a screenshot
+        public sealed record ShowCharacter : StartupAction; // P82: open the character sheet for a screenshot
         public sealed record AdvanceDays(int Days) : StartupAction;
     }
 

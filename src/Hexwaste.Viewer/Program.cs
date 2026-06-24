@@ -609,6 +609,9 @@ for (int i = 0; i < args.Length; i++)
         case "--show-inventory": // P67: open the inventory (INVBOX paperdoll) for a screenshot
             actions.Add(new ViewerGame.StartupAction.ShowInventory());
             break;
+        case "--show-character": // P82: open the character sheet (FID-177 backdrop) for a screenshot
+            actions.Add(new ViewerGame.StartupAction.ShowCharacter());
+            break;
         case "--advance-days" when i + 1 < args.Length:
             actions.Add(new ViewerGame.StartupAction.AdvanceDays(int.Parse(args[++i])));
             break;

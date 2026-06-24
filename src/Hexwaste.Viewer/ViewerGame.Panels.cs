@@ -16,12 +16,140 @@ namespace Hexwaste.Viewer;
 // ViewerGame.cs (Draw() dispatches into these; fields/state stay central).
 public sealed partial class ViewerGame
 {
-    /// <summary>The character sheet (C / K): SPECIAL + derived stats + level
-    /// on the left, the 18 skills on the right. Read-only, but a skill can be
-    /// raised in place while banked points remain (Right/Enter).</summary>
+    private Texture2D? _charBg;
+    private Texture2D? _bigNum;
+    private bool _charBgTried;
+
+    /// <summary>The character sheet (C / K): the authentic FO2 character-editor backdrop
+    /// (interface FID 177) with SPECIAL + derived stats + level on the left/middle and the
+    /// 18 skills on the right, positioned at the engine's character_editor.cc coordinates;
+    /// falls back to a plain text panel when the art is absent (the Skilldex/INVBOX
+    /// text-then-art pattern). Read-only, but a banked skill point raises the selected
+    /// skill in place (Right/Enter).</summary>
     private void DrawSkillAllocator()
     {
         if (!_skillAllocOpen || _fontRenderer is null || _dudeGcd is null)
+            return;
+
+        if (!_charBgTried)
+        {
+            _charBgTried = true;
+            // EDTREDT.FRM (interface FID 177 = the in-game character-editor backdrop) + BIGNUM.FRM
+            // (FID 170, the SPECIAL big-digit strip). Loaded into dedicated fields — NOT the LRU
+            // FrmCache, which evicts + disposes its textures during play — the PERKWIN/OPBASE
+            // text-then-art pattern. ported from fallout2-ce src/character_editor.cc:1282/307.
+            _charBg = InterfaceBar.LoadFrm(GraphicsDevice, _vfs, _palette, @"art\intrface\EDTREDT.FRM");
+            _bigNum = InterfaceBar.LoadFrm(GraphicsDevice, _vfs, _palette, @"art\intrface\BIGNUM.FRM");
+        }
+        if (_charBg is null) { DrawSkillAllocatorFallback(); return; }
+
+        var green = new Color(0, 252, 0);
+        var gold = new Color(252, 252, 84);
+        var tan = new Color(180, 156, 96);
+
+        Rectangle vp = GraphicsDevice.Viewport.Bounds;
+        int ox = (vp.Width - 640) / 2, oy = (vp.Height - 480) / 2;
+        _spriteBatch.Draw(_charBg, new Rectangle(ox, oy, 640, 480), Color.White);
+
+        int rh = _fontRenderer.LineHeight + 1; // engine: fontGetLineHeight() + 1
+        void T(int px, int py, string s, Color c) =>
+            _fontRenderer!.Draw(_spriteBatch, s, new Vector2(ox + px, oy + py), c);
+
+        int[] bb = _dudeGcd.Stats.BaseStats, bbo = _dudeGcd.Stats.BonusStats, ssk = _dudeGcd.Stats.Skills;
+        int[] tg = _dudeGcd.TaggedSkills;
+        Formats.Combat.CritterState? cs = _dude is not null ? GetCritterState(_dude.Dude) : null;
+        int Sp(int i) => cs?.Stat(i) ?? (bb[i] + bbo[i]);
+
+        // Name banner (the name button, NAME_BUTTON_X/Y 9,0).
+        string nm = _dudeGcd is { Name.Length: > 0 } g && g.Name != "None" ? g.Name : "Wanderer";
+        T(22, 5, nm, gold);
+
+        // SPECIAL values as the engine's bignum.frm digit pairs (the stat NAMES are baked into
+        // the backdrop): blitted at x=58, the gCharacterEditorPrimaryStatY rows.
+        // ported from fallout2-ce src/character_editor.cc characterEditorDrawBigNumber: 14x24
+        // cells, white digits 0-9 in [0..167], red in [168..]; tens then ones, no leading-zero
+        // suppression (so a value < 10 reads "0N"). Red signals a value > 10 (RED_NUMBERS).
+        int[] statY = [37, 70, 103, 136, 169, 202, 235];
+        void BigNumber(int bx, int by, int value)
+        {
+            if (_bigNum is null) { T(bx + 6, by + 8, value.ToString(), green); return; }
+            int v = Math.Clamp(value, 0, 99), off = value > 10 ? 168 : 0;
+            _spriteBatch.Draw(_bigNum, new Vector2(ox + bx, oy + by),
+                new Rectangle(off + v / 10 * 14, 0, 14, 24), Color.White);
+            _spriteBatch.Draw(_bigNum, new Vector2(ox + bx + 14, oy + by),
+                new Rectangle(off + v % 10 * 14, 0, 14, 24), Color.White);
+        }
+        for (int i = 0; i < 7; i++)
+            BigNumber(58, statY[i], Sp(i));
+
+        // Level / Experience / next-level (x=32, y=280; character_editor.cc:2378-2429).
+        T(33, 281, $"Level {_dudeLevel}", green);
+        T(33, 281 + rh, $"Exp {_dudeXp}", green);
+        int nextXp = Formats.Combat.Progression.XpForLevel(_dudeLevel + 1);
+        T(33, 281 + 2 * rh, nextXp > 0 ? $"Next {nextXp}" : "Next (max)", green);
+
+        // Condition + derived stats (middle column): label x=194, value x=288
+        // (character_editor.cc:2632/2653/2656).
+        int my = 46;
+        void D(string label, string val) { T(194, my, label, green); T(288, my, val, green); my += rh + 2; }
+        if (cs is not null)
+        {
+            D("Hit Points", $"{_dude!.Dude.CurrentHp}/{cs.MaxHp}");
+            my += 4;
+            D("Armor Class", cs.ArmorClass.ToString());
+            D("Action Pts", cs.MaxActionPoints.ToString());
+            D("Carry Wt", cs.CarryWeight.ToString());
+            D("Melee Dmg", cs.MeleeDamage.ToString());
+            D("Dmg Resist", $"{cs.DamageResistance}%");
+            D("Sequence", cs.Sequence.ToString());
+            D("Heal Rate", Math.Max(Sp(Formats.Combat.CritterStat.Endurance) / 3, 1).ToString());
+            D("Critical %", $"{cs.Stat(Formats.Combat.CritterStat.CriticalChance)}%");
+        }
+
+        // Skills (right): name x=380, value x=573, y=27 + i*(lineHeight+1) (character_editor.cc:2974).
+        for (int i = 0; i < Formats.Combat.SkillSet.SkillCount; i++)
+        {
+            int value = Formats.Combat.SkillSet.Value(bb, bbo, ssk, tg, i);
+            bool tagged = Array.IndexOf(tg, i) >= 0;
+            bool selected = i == _skillAllocIndex && _unspentSkillPoints > 0;
+            Color c = selected || tagged ? gold : green;
+            int sy = 27 + i * rh;
+            T(380, sy, (selected ? "> " : "  ") + Formats.Combat.SkillSet.Names[i], c);
+            T(selected ? 540 : 573, sy,
+                selected ? $"{value}% +{Formats.Combat.SkillSet.Cost(value)}" : $"{value}%", c);
+        }
+
+        // Tag-skill counter (always drawn at 522,228 — character_editor.cc:1421/2961): the number
+        // of unused tag slots (NUM_TAGGED_SKILLS 4 − tagged), faithful even in the read-only view.
+        BigNumber(522, 228, Math.Max(0, 4 - tg.Count(t => t >= 0)));
+
+        // Bottom folder band (the engine's PERKS/KARMA/KILLS folder, y~330): a compact
+        // traits/perks/karma/kills summary + the progression hints in its place.
+        int fy = 332;
+        void F(string s, Color c) { T(34, fy, s, c); fy += rh; }
+        string traitStr = string.Join(", ", _dudeGcd.Traits.Where(t => t >= 0).Select(TraitName));
+        F($"Traits: {(traitStr.Length > 0 ? traitStr : "none")}", tan);
+        var takenPerks = Enumerable.Range(0, _dudePerkRanks.Length).Where(i => _dudePerkRanks[i] > 0)
+            .Select(i => _dudePerkRanks[i] > 1 ? $"{PerkName(i)} ({_dudePerkRanks[i]})" : PerkName(i)).ToList();
+        F($"Perks: {(takenPerks.Count > 0 ? string.Join(", ", takenPerks) : "none")}", tan);
+        foreach (string kl in KarmaDisplayLines())
+            F(kl, tan);
+        List<string> kills = KillDisplayLines();
+        if (kills.Count > 0)
+            F($"Kills: {string.Join(", ", kills)}", tan);
+        if (AvailablePerkPicks() > 0)
+            F($"{AvailablePerkPicks()} perk(s) available - press G", green);
+        if (_unspentSkillPoints > 0)
+            F($"{_unspentSkillPoints} skill points - select a skill, Enter to raise", green);
+
+        T(34, 462, "C/K close   G perk   Up/Down select   Enter raise", tan);
+    }
+
+    /// <summary>The pre-P82 plain dark-panel character sheet, used when the FID-177 backdrop
+    /// art is absent (the text-then-art fallback).</summary>
+    private void DrawSkillAllocatorFallback()
+    {
+        if (_fontRenderer is null || _dudeGcd is null)
             return;
 
         _panelPixel ??= CreatePixel();
