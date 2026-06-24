@@ -967,10 +967,11 @@ public class CombatEngineTests
         engine.ProcessAnimations();
         Assert.Contains(host.Transcripts, t => t.StartsWith("knockdown:"));
 
-        // +40 vs a prone target: an uncalled follow-up reads chance 90 (50 + 40).
+        // +40 vs a prone target, −10 for the enemy's remaining-AP dodge (P77: it hasn't acted, so its
+        // full maxAp 10 boosts its AC): an uncalled follow-up reads chance 80 (50 + 40 − 10).
         host.Transcripts.Clear();
         Assert.True(engine.TryAttack(enemy));
-        Assert.Contains(host.Transcripts, t => t.Contains("chance=90%"));
+        Assert.Contains(host.Transcripts, t => t.Contains("chance=80%"));
 
         // The enemy stands up at its turn (costs AP).
         host.Animating.Clear();

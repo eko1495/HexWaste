@@ -15,7 +15,12 @@ public static class CombatMath
         ToHitChance(attacker.UnarmedSkill, target);
 
     public static int ToHitChance(int attackSkill, CritterState target) =>
-        Math.Clamp(attackSkill - target.ArmorClass, 0, 95);
+        ToHitChance(attackSkill, target, 0);
+
+    /// <summary><paramref name="extraAc"/> (P77) is the defender's remaining-AP dodge bonus, folded into
+    /// the AC before the clamp (stat.cc:239 adds it into STAT_ARMOR_CLASS); 0 = no change.</summary>
+    public static int ToHitChance(int attackSkill, CritterState target, int extraAc) =>
+        Math.Clamp(attackSkill - (target.ArmorClass + extraAc), 0, 95);
 
     public static bool RollHit(ICombatRng rng, int chance) => rng.Next(1, 101) <= chance;
 

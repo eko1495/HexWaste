@@ -1147,9 +1147,47 @@ public sealed class CombatEngine
     /// <summary>The to-hit % only (no roll) — for AI min_to_hit decisions and the
     /// RollAttack chance. Guns fall off with distance + crowd; melee is
     /// position-independent (skill − AC).</summary>
+    /// <summary>The combatant whose turn it currently is (the engine's _combat_whose_turn()): the acting
+    /// enemy/ally mid-turn, the dude during PlayerTurn, else the order's current slot; null out of combat.</summary>
+    private MapObject? CurrentActor()
+    {
+        if (_phase == CombatPhase.Idle)
+            return null;
+        if (_actingEnemy is { } e) return e;
+        if (_actingAlly is { } a) return a;
+        if (_phase == CombatPhase.PlayerTurn) return _host.Dude;
+        return _orderIndex >= 0 && _orderIndex < _order.Count ? _order[_orderIndex] : null;
+    }
+
+    /// <summary>The remaining-AP dodge AC bonus (stat.cc:215-242): during combat, a critter whose turn it
+    /// is NOT gains its current combat AP as temporary AC. ×1 here; M3 folds in the dude's HtH-Evade ×2 +
+    /// Unarmed/12. 0 out of combat, on the actor's own turn, or for a critter with no stored AP.</summary>
+    private int ApDodgeAc(MapObject? defender)
+    {
+        if (defender is null || _phase == CombatPhase.Idle || ReferenceEquals(CurrentActor(), defender))
+            return 0;
+        int ap = _currentAp.GetValueOrDefault(defender, 0);
+        int multiplier = 1;
+        int hthEvadeBonus = 0;
+        if (ReferenceEquals(defender, _host.Dude) && _host.DudePerkRank(Perks.PerkId.HthEvade) > 0 && DudeUnarmed())
+        {
+            // stat.cc:233 — an unarmed dude with HtH Evade doubles the AP→AC and adds Unarmed/12.
+            multiplier = 2;
+            hthEvadeBonus = (_host.GetCritterState(defender)?.UnarmedSkill ?? 0) / 12;
+        }
+        return ap * multiplier + hthEvadeBonus;
+    }
+
+    /// <summary>The dude wields no weapon (stat.cc:208 critterGetItem2/1 == no WEAPON). Hexwaste equips
+    /// ONE weapon, so "unarmed" = no equipped weapon proto.</summary>
+    private bool DudeUnarmed() => _host.Dude is { } d && _host.EquippedWeapon(d).Proto is null;
+
     private int ComputeToHit(CritterState attacker, CritterState defender,
         ProtoInfo? weaponProto, MapObject? weaponItem, int distance, int crittersInPath, bool attackerIsDude)
     {
+        // P77: the defender's remaining-AP dodge folds into its AC (before the ammo modifier + 0-clamp,
+        // exactly like statGetValue adds it into STAT_ARMOR_CLASS that combat.cc:4428 then reads).
+        int apDodge = ApDodgeAc(defender.Critter);
         int toHit;
         if (weaponProto?.Weapon is { } w && w.IsGun(weaponProto.ExtendedFlags))
         {
@@ -1165,14 +1203,14 @@ public sealed class CombatEngine
             toHit = RangedMath.ToHitChance(
                 attacker.SmallGunsSkill, distance,
                 perception, attackerIsDude,                          // PE-5 when blind (stat.cc:191)
-                defender.ArmorClass, ammo?.AcModifier ?? 0,
+                defender.ArmorClass + apDodge, ammo?.AcModifier ?? 0,
                 w.MinStrength, effectiveStrength, crittersInPath,
                 attackerBlind: attacker.Blind);                      // ×12 distance penalty (combat.cc:4383)
         }
         else
         {
             int skill = weaponProto is null ? attacker.UnarmedSkill : attacker.MeleeWeaponsSkill;
-            toHit = CombatMath.ToHitChance(skill, defender);
+            toHit = CombatMath.ToHitChance(skill, defender, apDodge);
         }
 
         // P29-M1: One Hander (dude, any wielded weapon) — a two-handed weapon costs −40 to hit,
