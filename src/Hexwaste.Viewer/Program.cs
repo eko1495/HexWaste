@@ -328,6 +328,9 @@ for (int i = 0; i < args.Length; i++)
         case "--outline-probe" when i + 1 < args.Length:
             actions.Add(new ViewerGame.StartupAction.OutlineProbe(int.Parse(args[++i])));
             break;
+        case "--ac-dodge-probe" when i + 1 < args.Length:
+            actions.Add(new ViewerGame.StartupAction.AcDodgeProbe(int.Parse(args[++i])));
+            break;
         case "--set-karma" when i + 2 < args.Length:
             actions.Add(new ViewerGame.StartupAction.SetKarma(int.Parse(args[i + 1]), int.Parse(args[i + 2])));
             i += 2;

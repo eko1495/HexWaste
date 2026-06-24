@@ -972,6 +972,23 @@ public sealed partial class ViewerGame
                     }
                     break;
                 }
+                case StartupAction.AcDodgeProbe(var enemyHex) when _dude is not null:
+                {
+                    // P77: the remaining-AP dodge on real data (zero RNG — BeginScriptAggro opens combat
+                    // on the ENEMY's turn without rolling). The dude is the not-yet-acted defender, so his
+                    // FULL maxAp boosts his AC; the acting enemy gets no dodge (it IS its turn). State-only.
+                    MapObject? enemy = CritterAt(enemyHex);
+                    if (enemy is null) { Console.Error.WriteLine($"ac-dodge: no critter at {enemyHex}"); break; }
+                    _dude.Dude.HexTile = Formats.Hex.HexGrid.TileInDirection(enemyHex, 3); // adjacent, like --fight
+                    RebuildBlockedTiles(_dude.Dude);
+                    _combat.BeginScriptAggro(enemy, _dude.Dude);
+                    int dudeMax = GetCritterState(_dude.Dude)?.MaxActionPoints ?? 0;
+                    int enemyMax = GetCritterState(enemy)?.MaxActionPoints ?? 0;
+                    Console.WriteLine($"ac-dodge: phase={_combat.Phase} enemyHex={enemyHex} "
+                        + $"dudeMaxAp={dudeMax} dudeDodge={_combat.RemainingApDodge(_dude.Dude)} "
+                        + $"enemyMaxAp={enemyMax} enemyDodge={_combat.RemainingApDodge(enemy)}");
+                    break;
+                }
                 case StartupAction.RepTitle(var repValue):
                 {
                     // P31 B-M1: the generic-reputation title MESSAGE ID for a value (never the copyrighted

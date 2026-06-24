@@ -2390,6 +2390,35 @@ encounter-rats-hard (ARRO_Rats seed 1: planned 5 → 6 at HARD, encounter-arro-r
 EncounterSpawner skew tests. 716 Formats tests, 16 combat + 170 encounter goldens green. NEXT (P77): AC +
 remaining-AP dodge — the meaty AP-model phase (the user's "then AC+remaining-AP dodge", its own phase, LAST).
 
+Phase 77 (DONE — "Dodge the Difference", the remaining-AP dodge; the meaty AP-model phase). M0 grounding:
+ported stat.cc:215-242 — STAT_ARMOR_CLASS gains a combat term: a critter whose turn it is NOT adds its CURRENT
+combat AP as temporary AC (×1; ×2 + Unarmed/12 for an unarmed dude with HtH Evade). The engine keeps each
+critter's AP in obj.data.critter.combat.ap: 0 at combat begin (combat.cc:2592/2779), reset to maxAp for EVERY
+combatant at the TOP of each round (_combat_set_move_all, :3206/:3425), spent down as it acts. So a NOT-YET-
+acted defender dodges at FULL maxAp, an already-acted one at its leftover, and spending all your AP attacking
+leaves you easy to hit. M1 per-critter store (write-only, BYTE-IDENTICAL de-risk): a _currentAp dict, reset to
+maxAp at the end of BuildTurnOrder (the round-top reset), with the leftover captured at each turn end (the 4
+StepTurnOrder sites + the dude at EndPlayerTurn); nothing reads it yet → all 16 combat goldens byte-identical.
+M2 the fold (the golden-shifting change): ApDodgeAc(defender.Critter) folds into the AC INSIDE ComputeToHit
+BEFORE the ammo modifier + 0-clamp (exactly where statGetValue adds it into the STAT_ARMOR_CLASS that combat.cc:
+4428 reads) — ranged passes ArmorClass+dodge, melee gets a CombatMath.ToHitChance extraAc overload; the dude
+reads _currentAp uniformly too (maxAp at round start if not-yet-acted — faithful for the denbus2 case where Den
+humans out-sequence Narg, leftover after EndPlayerTurn). FAITHFUL re-records: the opening PRE-combat swing keeps
+no dodge (like the engine's pre-_combat_begin attack), then the dude's attacks on the maxAp-5 scorpions drop
+47→42% and enemy attacks on the dude drop 70→69% (his 1 leftover AP); EVERY fixture's outcome is preserved
+(wins/losses/day-2 CRITICALs/fumble intact). brawl-watch's NPC-vs-NPC fight now RESOLVES in 10 rounds (team 1
+wins) instead of the 100-round stalemate cap — an RNG-cascade from the shifted to-hit, deterministic+sane. 8
+combat + brawl-watch re-recorded; the single-action throw/burst/attack fixtures (opening swings, no stored AP)
+byte-identical. PerkId.HthEvade=93 (verified by enum-enumeration, anchored on Awareness=0 + SilentDeath=25). M3
+HtH Evade + display + probe: the ×2 + Unarmed/12 branch (stat.cc:233, gated on an unarmed dude with the perk)
+proven by 4 fake-host CombatEngineTests (a not-yet-acted enemy dodges at full maxAp / the dude's off-turn ×2 +
+Unarmed/12 / the no-perk ×1 control / the armed-gate inert); the HUD AC readout now shows the dude's boosted AC
+during combat (interfaceRenderArmorClass — Draw-only, AC never in a transcript → goldens unchanged); --ac-dodge
+-probe is the zero-RNG real-data proof (BeginScriptAggro opens combat on the enemy's turn → the not-yet-acted
+dude dodges at his full maxAp 7, the acting scorpion maxAp 5 at 0 — and that scorpion-5 is exactly the 47→42%
+combat-golden drop). One CombatEngineTests expected-chance update (prone follow-up 90→80, the target's full-AP
+dodge). 720 Formats tests, 16 combat + 171 encounter goldens green. The user's "AC+remaining-AP dodge" is in.
+
 Phase 10 (DONE, per docs/phase10-research-report.md — "The Wasteland
 Bites Back"): M0 persistence pre-stage (the net: MapList saved=No /
 random_start_point parse + IsTransient; the 3-clause transient guards as

@@ -1,0 +1,1 @@
+ac-dodge: phase=EnemyTurn enemyHex=20529 dudeMaxAp=7 dudeDodge=7 enemyMaxAp=5 enemyDodge=0

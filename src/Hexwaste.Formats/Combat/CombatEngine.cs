@@ -1182,6 +1182,10 @@ public sealed class CombatEngine
     /// ONE weapon, so "unarmed" = no equipped weapon proto.</summary>
     private bool DudeUnarmed() => _host.Dude is { } d && _host.EquippedWeapon(d).Proto is null;
 
+    /// <summary>P77: the critter's current remaining-AP dodge AC bonus (the value M2 folds into to-hit),
+    /// for the HUD/Pip-Boy combat-AC display + the --ac-dodge-probe. 0 out of combat / on its own turn.</summary>
+    public int RemainingApDodge(MapObject critter) => ApDodgeAc(critter);
+
     private int ComputeToHit(CritterState attacker, CritterState defender,
         ProtoInfo? weaponProto, MapObject? weaponItem, int distance, int crittersInPath, bool attackerIsDude)
     {

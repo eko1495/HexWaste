@@ -230,6 +230,10 @@ SCENARIOS=(
   # probe positions the dude adjacent to 20529 and classifies each arcaves critter: clear-LoS scorpions
   # (team 4 != dude team 0) = hostile; blocked-LoS + beyond PE*5 = none. Draw-only -> goldens unchanged.
   "outline-typed|--character combat --map arcaves.map --outline-probe 20529 --rng-seed 1"
+  # P77: the remaining-AP dodge (stat.cc:215) on real data — the enemy opens combat (zero RNG), so the
+  # not-yet-acted dude dodges at his FULL maxAp 7 (an enemy attacking him faces +7 AC) while the acting
+  # scorpion (maxAp 5) gets 0; that scorpion-maxAp-5 is exactly the 47->42% drop in the combat goldens.
+  "ac-dodge|--map arcaves.map --ac-dodge-probe 20529 --rng-seed 7"
   # P34-M5 combat sfx: the faithful sfxBuildCharName/sfxBuildWeaponName composers + per-map ambient.
   # A scorpion (base mascp2) resolves to MASCP2* names whose .acm SHIP (audible, like the original game);
   # the per-map ambient_sfx list parses (arcaves=water, denbus2=dogbark). Audio is off in goldens (--no-
@@ -574,7 +578,7 @@ SCENARIOS=(
 
 # Keep only the deterministic transcript lines (drop map-load / animate / stub /
 # dialog-text noise — NEVER capture REPLY/OPTION game-asset strings).
-FILTER='^(encounter|travel-from|companion|dismiss-persist|trade:|party:|party-count:|set-global:|hud-click:|use-skill:|has-skill:|maxhp:|hurt:|rest:|automap:|reveal:|taunt:|weapon-mode:|panel-click:|menu-click:|travel-resume:|travel-step:|travel-save-mid:|worldmap-fog:|weight:|iq-probe:|death-probe:|trait-probe:|perk-probe:|perk-pick:|combat-walk:|light:|map-update:|drag-equip:|save-slot:|load-slot:|slots:|aim-click:|tactics:|reg-anim:|encounter-fight:|brawl:|brawl-watch:|sneak-probe:|sneak-roll:|backstab-probe:|detect-probe:|karma-probe:|set-karma:|rep-title:|town-rep:|karma-titles:|get-global:|place-probe:|reg-anim-move:|critter-state:|hurt-too-much:|run-probe:|outline:|sfx-probe:|reaction-probe:|combat-proc:|combat-proc-hit:|poison-tick:|multihex-probe:|drug-probe:|addict-probe:|kills-probe:|book:|ammo-select:|unload:|ai-heal-probe:|ai-weapon-probe:|float-text:|speech-probe:|smoke:|scenery-use@|party-probe:|awareness-probe:|  spawn|  flat|  wait:|  follow:|  dismiss:|  rejoin:)'
+FILTER='^(encounter|travel-from|companion|dismiss-persist|trade:|party:|party-count:|set-global:|hud-click:|use-skill:|has-skill:|maxhp:|hurt:|rest:|automap:|reveal:|taunt:|weapon-mode:|panel-click:|menu-click:|travel-resume:|travel-step:|travel-save-mid:|worldmap-fog:|weight:|iq-probe:|death-probe:|trait-probe:|perk-probe:|perk-pick:|combat-walk:|light:|map-update:|drag-equip:|save-slot:|load-slot:|slots:|aim-click:|tactics:|reg-anim:|encounter-fight:|brawl:|brawl-watch:|sneak-probe:|sneak-roll:|backstab-probe:|detect-probe:|karma-probe:|set-karma:|rep-title:|town-rep:|karma-titles:|get-global:|place-probe:|reg-anim-move:|critter-state:|hurt-too-much:|run-probe:|outline:|ac-dodge:|sfx-probe:|reaction-probe:|combat-proc:|combat-proc-hit:|poison-tick:|multihex-probe:|drug-probe:|addict-probe:|kills-probe:|book:|ammo-select:|unload:|ai-heal-probe:|ai-weapon-probe:|float-text:|speech-probe:|smoke:|scenery-use@|party-probe:|awareness-probe:|  spawn|  flat|  wait:|  follow:|  dismiss:|  rejoin:)'
 
 echo "Building viewer..."
 dotnet build src/Hexwaste.Viewer -c Debug >/dev/null || { echo "build failed"; exit 2; }

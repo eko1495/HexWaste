@@ -986,6 +986,63 @@ public class CombatEngineTests
         Assert.Contains(host.Transcripts, t => t.StartsWith("getup:"));
     }
 
+    // ---- P77 remaining-AP dodge (stat.cc:215-242) -----------------------
+
+    [Fact]
+    public void NotYetActedEnemyDodgesAtItsFullMaxApAndTheDudeIsZeroOnHisTurn()
+    {
+        var host = new FakeCombatHost();
+        host.SetDude(NewCritter(20100, hp: 30, ap: 10));
+        MapObject enemy = host.AddCritter(NewCritter(HexGrid.TileInDirection(20100, 0), hp: 30, ap: 7));
+        var engine = new CombatEngine(host, new MinRng());
+
+        Assert.True(engine.TryAttack(enemy));                  // opens combat — the dude's turn
+        Assert.Equal(7, engine.RemainingApDodge(enemy));       // the enemy hasn't acted → full maxAp dodge
+        Assert.Equal(0, engine.RemainingApDodge(host.Dude!));  // it IS the dude's turn → no dodge for him
+    }
+
+    // SetDudeAp pins a known leftover so the off-turn dodge is exact (independent of the swing's AP cost).
+    private static CombatEngine OffTurnDudeWithApFive(FakeCombatHost host, out MapObject dude)
+    {
+        dude = host.SetDude(NewCritter(20100, hp: 30, ap: 10, skill: 72)); // unarmed; Unarmed/12 = 6
+        MapObject enemy = host.AddCritter(NewCritter(HexGrid.TileInDirection(20100, 0), hp: 30, ap: 7));
+        var engine = new CombatEngine(host, new MinRng());
+        Assert.True(engine.TryAttack(enemy));
+        host.Animating.Clear();
+        engine.ProcessAnimations();
+        engine.SetDudeAp(5);          // pin the leftover
+        engine.EndPlayerTurn();       // captures _currentAp[dude] = 5, off-turn (the enemy's slot)
+        return engine;
+    }
+
+    [Fact]
+    public void HtHEvadeDoublesTheUnarmedDudeOffTurnDodgeAndAddsUnarmedOver12()
+    {
+        var host = new FakeCombatHost();
+        host.PerkRanks[Perks.PerkId.HthEvade] = 1;
+        CombatEngine engine = OffTurnDudeWithApFive(host, out MapObject dude);
+        int unarmed = host.GetCritterState(dude)!.UnarmedSkill;
+        Assert.Equal(5 * 2 + unarmed / 12, engine.RemainingApDodge(dude)); // leftover ×2 + Unarmed/12
+    }
+
+    [Fact]
+    public void WithoutHtHEvadeTheDudeOffTurnDodgeIsHisRawLeftoverAp()
+    {
+        var host = new FakeCombatHost(); // no perk
+        CombatEngine engine = OffTurnDudeWithApFive(host, out MapObject dude);
+        Assert.Equal(5, engine.RemainingApDodge(dude)); // ×1, no Unarmed/12 bonus
+    }
+
+    [Fact]
+    public void HtHEvadeIsInertWhenTheDudeIsArmed()
+    {
+        var host = new FakeCombatHost();
+        host.PerkRanks[Perks.PerkId.HthEvade] = 1;
+        CombatEngine engine = OffTurnDudeWithApFive(host, out MapObject dude);
+        host.Equipped = (new Proto.ProtoInfo(1, 0, 0, 0, 0, -1), null); // now wielding a weapon
+        Assert.Equal(5, engine.RemainingApDodge(dude)); // the unarmed gate fails → ×1, no bonus
+    }
+
     [Fact]
     public void ExplosionDamagesCrittersInRadiusButNotBeyond()
     {

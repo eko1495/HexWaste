@@ -627,6 +627,7 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
         /// <summary>Position the dude adjacent to FightHex, then report the combat-outline type each
         /// living critter would get (P34-M4; zero-RNG, no combat entry).</summary>
         public sealed record OutlineProbe(int FightHex) : StartupAction;
+        public sealed record AcDodgeProbe(int EnemyHex) : StartupAction;
         /// <summary>Report the gore death-anim a burst/explosion/laser kill would give the critter
         /// at Hex — the picked anim + the art-resolved anim (P26), proving gore art availability.</summary>
         public sealed record DeathProbe(int Hex) : StartupAction;

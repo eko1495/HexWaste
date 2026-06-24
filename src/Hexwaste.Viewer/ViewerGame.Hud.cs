@@ -26,7 +26,7 @@ public sealed partial class ViewerGame
         if (_hudDisplayedHp < 0 || _hudDisplayedAc < 0)
         {
             _hudDisplayedHp = stats.CurrentHp;
-            _hudDisplayedAc = stats.ArmorClass;
+            _hudDisplayedAc = DudeHudAc(stats);
             _hudRollAccumulatorMs = 0;
             return;
         }
@@ -37,9 +37,16 @@ public sealed partial class ViewerGame
         {
             _hudRollAccumulatorMs -= StepMs;
             _hudDisplayedHp += Math.Sign(stats.CurrentHp - _hudDisplayedHp);
-            _hudDisplayedAc += Math.Sign(stats.ArmorClass - _hudDisplayedAc);
+            _hudDisplayedAc += Math.Sign(DudeHudAc(stats) - _hudDisplayedAc);
         }
     }
+
+    /// <summary>The dude's AC as the engine's interfaceRenderArmorClass shows it (P77): the static AC plus
+    /// his remaining-AP dodge during combat — nonzero only when it's NOT his turn, so the readout visibly
+    /// rises while enemies act and he's dodging. Out of combat = the static AC (HUD goldens are Idle).</summary>
+    private int DudeHudAc(Formats.Combat.CritterState stats) =>
+        stats.ArmorClass + (_dude is { } d && _combat.Phase != Formats.Combat.CombatPhase.Idle
+            ? _combat.RemainingApDodge(d.Dude) : 0);
 
     /// <summary>The authentic bottom HUD bar (P11): the iface.frm panel pinned
     /// bottom-centre at native scale, with live readouts composed on top. Sets
@@ -107,7 +114,7 @@ public sealed partial class ViewerGame
             // The counters roll toward the live stat (M5); fall back to the real value
             // until the first roll step initialises them.
             int shownHp = _hudDisplayedHp >= 0 ? _hudDisplayedHp : stats.CurrentHp;
-            int shownAc = _hudDisplayedAc >= 0 ? _hudDisplayedAc : stats.ArmorClass;
+            int shownAc = _hudDisplayedAc >= 0 ? _hudDisplayedAc : DudeHudAc(stats);
             // HP: white band normal, yellow <50%, red <25% (interface.cc:889-894) — from
             // the shown value so the colour tracks the rolling digits.
             int hpBand = shownHp * 4 <= stats.MaxHp ? 2 : shownHp * 2 <= stats.MaxHp ? 1 : 0;
