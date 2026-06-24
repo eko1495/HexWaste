@@ -31,10 +31,11 @@ public class EncounterSpawnerTests
 
     private static IReadOnlyList<SpawnInstruction> Plan(Scenario s, int partyCount = 1,
         IReadOnlyList<int>? startTiles = null, Func<int, bool>? isBlocked = null,
-        Func<int, int, bool>? reachable = null, Func<int, int>? getGlobal = null) =>
+        Func<int, int, bool>? reachable = null, Func<int, int>? getGlobal = null,
+        GameDifficulty difficulty = GameDifficulty.Normal) =>
         EncounterSpawner.Plan(s.Result, s.World, s.Rng, DudeTile, dudePerception: 5, partyCount,
             startTiles ?? [DudeTile], isBlocked ?? (_ => false), reachable ?? ((_, _) => true),
-            getGlobal);
+            getGlobal, difficulty: difficulty);
 
     [Fact]
     public void RatioAndSingleMembersScaleWithGroupSize()
@@ -113,6 +114,49 @@ public class EncounterSpawnerTests
             """;
         Assert.Equal(3, Plan(Setup(g, "Enc:(1-1) GRP AMBUSH Player"), partyCount: 4).Count);
         Assert.Single(Plan(Setup(g, "Enc:(1-1) GRP AMBUSH Player"), partyCount: 2)); // ≤2 → no bonus
+    }
+
+    [Fact]
+    public void HardDifficultyAddsTwoToTheGroup()
+    {
+        // worldmap.cc:3702 HARD: critterCount += 2. Enc:(2-2) → 2, +2 = 4 (vs 2 at Normal).
+        const string g = """
+            [Encounter: GRP]
+            type_00=ratio:100%, pid:100
+            position=Surrounding
+            """;
+        const string enc = "Enc:(2-2) GRP AMBUSH Player";
+        Assert.Equal(2, Plan(Setup(g, enc)).Count);                                   // Normal control
+        Assert.Equal(4, Plan(Setup(g, enc), difficulty: GameDifficulty.Hard).Count);  // +2
+    }
+
+    [Fact]
+    public void EasyDifficultySubtractsTwoAboveTheMinimum()
+    {
+        // worldmap.cc:3696 EASY: critterCount -= 2 (the roll 6 exceeds min+2, so it actually
+        // drops). Enc:(4-8), SeqRng→6 → Normal 6, Easy 4.
+        const string g = """
+            [Encounter: GRP]
+            type_00=ratio:100%, pid:50
+            position=Surrounding
+            """;
+        const string enc = "Enc:(4-8) GRP AMBUSH Player";
+        Assert.Equal(6, Plan(Setup(g, enc, 6)).Count);                                   // Normal control
+        Assert.Equal(4, Plan(Setup(g, enc, 6), difficulty: GameDifficulty.Easy).Count);  // −2
+    }
+
+    [Fact]
+    public void EasyDifficultyFloorsAtTheEntryMinimum()
+    {
+        // worldmap.cc:3697 — a fixed Enc:(N-N) entry can't drop below N (count−2 < min → min),
+        // so Easy is a no-op on the common fixed-size entry. Enc:(4-4): Easy still 4.
+        const string g = """
+            [Encounter: GRP]
+            type_00=ratio:100%, pid:50
+            position=Surrounding
+            """;
+        const string enc = "Enc:(4-4) GRP AMBUSH Player";
+        Assert.Equal(4, Plan(Setup(g, enc), difficulty: GameDifficulty.Easy).Count); // floored, == Normal
     }
 
     [Fact]

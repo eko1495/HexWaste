@@ -30,6 +30,10 @@ SCENARIOS=(
   # made it spawn 100%); at seed 13 the roll passes so the corpse appears (the flat line),
   # while its Distance-pinned plant-item siblings stay gated out.
   "encounter-spore-plants|--encounter desert1.map ARRO_Spore_Plants 4 --rng-seed 13"
+  # P76-M3: difficulty skews the spawn group size (worldmap.cc:3692). HARD adds +2 to each
+  # sub-entry's critterCount, so the same seed plans a bigger group (ARRO_Rats 5 -> 6) than
+  # Normal. Inert at Normal (the encounter-arro-rats fixture above is the Normal control).
+  "encounter-rats-hard|--difficulty hard --encounter desert1.map ARRO_Rats 5 --rng-seed 1"
   # P16-M1: travelling the Arroyo->Den leg now DETECTS the ARRO_Rats encounter ahead
   # (Outdoorsman), grants the avoid XP, and (headless default) engages it. The avoid
   # variant declines -> travels on -> walks into the next (undetected) ambush.

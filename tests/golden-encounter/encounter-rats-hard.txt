@@ -1,0 +1,8 @@
+encounter-spawn: ARRO_Rats planned=6 placed=6 on desert1.map
+  spawn pid=0x0100000B tile=17105 rot=1 hp=6 team=1 sid=bound items=0
+  spawn pid=0x0100000B tile=17302 rot=1 hp=6 team=1 sid=bound items=0
+  spawn pid=0x0100000B tile=17308 rot=1 hp=6 team=1 sid=bound items=0
+  spawn pid=0x0100000B tile=17902 rot=1 hp=6 team=1 sid=bound items=0
+  spawn pid=0x0100000B tile=17908 rot=1 hp=6 team=1 sid=bound items=0
+  spawn pid=0x0100000B tile=18305 rot=1 hp=6 team=1 sid=bound items=0
+encounter: map=desert1.map group=ARRO_Rats requested=5 critters=6 items=0 corpses=0

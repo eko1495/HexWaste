@@ -28,8 +28,8 @@ public sealed record SpawnItem(int Pid, int Count, bool Wielded, bool Worn);
 /// v1 divergences (documented): the X FIGHTING Y combat-lock between sub-groups is
 /// skipped (treated as neutrals — AMBUSH hostility is script-side via the critter_p_proc
 /// heartbeat; phase-16 M3 wires the team-vs-team fight); the placement gate reuses the
-/// movement-blocking predicate for the engine's shoot-blocking LoF check; the difficulty
-/// −2/+2 skew and Cautious-Nature perk are skipped (Normal only).
+/// movement-blocking predicate for the engine's shoot-blocking LoF check; the Cautious-Nature
+/// perk is skipped. The difficulty −2/+2 spawn-count skew (worldmap.cc:3692) is honored (P76-M3).
 /// </summary>
 public static class EncounterSpawner
 {
@@ -41,7 +41,8 @@ public static class EncounterSpawner
     public static IReadOnlyList<SpawnInstruction> Plan(EncounterResult encounter, WorldmapFile world,
         ICombatRng rng, int dudeTile, int dudePerception, int partyCount,
         IReadOnlyList<int> startTiles, Func<int, bool> isBlocked, Func<int, int, bool> reachable,
-        Func<int, int>? getGlobal = null, int playerLevel = 1, int hhmm = 1200, int daysPlayed = 0)
+        Func<int, int>? getGlobal = null, int playerLevel = 1, int hhmm = 1200, int daysPlayed = 0,
+        GameDifficulty difficulty = GameDifficulty.Normal)
     {
         getGlobal ??= _ => 0;
         var result = new List<SpawnInstruction>();
@@ -67,6 +68,15 @@ public static class EncounterSpawner
             int team = fighting ? 1 + subIndex : 1;
             subIndex++;
             int critterCount = Between(rng, sub.Min, sub.Max);
+            // worldmap.cc:3695 — difficulty skews the group size: EASY −2 (floored at the
+            // sub-entry minimum), HARD +2. Applied AFTER the roll, BEFORE the party bonus.
+            // Normal leaves critterCount untouched, so every Normal-difficulty spawn is unchanged.
+            critterCount = difficulty switch
+            {
+                GameDifficulty.Easy => Math.Max(critterCount - 2, sub.Min),
+                GameDifficulty.Hard => critterCount + 2,
+                _ => critterCount,
+            };
             if (partyCount > 2)
                 critterCount += 2;
             if (critterCount == 0)
