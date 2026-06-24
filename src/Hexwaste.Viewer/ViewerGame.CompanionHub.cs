@@ -37,9 +37,10 @@ public sealed partial class ViewerGame
         MapObject item = _dudeInventory[index];
         _dudeInventory.RemoveAt(index);
         UnequipForTransfer(item); // don't leave the worn-armor bonus on the dude
-        // Merge same-Pid stacks like every other inbound add (AddToDudeInventory/itemAdd).
+        // Merge same-Pid stacks like every other inbound add (AddToDudeInventory/itemAdd) —
+        // ammo boxes consolidate their rounds (P75-M2).
         if (_tradePartner.Inventory.FirstOrDefault(i => i.Pid == item.Pid) is { } existing)
-            existing.StackCount += Math.Max(item.StackCount, 1);
+            MergeStackInto(existing, item);
         else
             _tradePartner.Inventory.Add(item);
         Log($"You give {ObjectName(item)}{(item.StackCount > 1 ? $" x{item.StackCount}" : "")} to {ObjectName(_tradePartner)}.");

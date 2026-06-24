@@ -2607,9 +2607,21 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
     private void AddToDudeInventory(MapObject item)
     {
         if (_dudeInventory.FirstOrDefault(i => i.Pid == item.Pid) is { } existing)
-            existing.StackCount += Math.Max(item.StackCount, 1);
+            MergeStackInto(existing, item);
         else
             _dudeInventory.Add(item);
+    }
+
+    /// <summary>Fold an incoming item into an existing same-pid stack. AMMO boxes CONSOLIDATE their
+    /// rounds (P75-M2; itemAdd item.cc:371) so two partial boxes don't read as a full + a partial;
+    /// everything else just bumps the box count.</summary>
+    private void MergeStackInto(MapObject existing, MapObject item)
+    {
+        if (SafeProto(item.Pid)?.Ammo is { Quantity: > 0 } ammo)
+            (existing.StackCount, existing.AmmoQuantity) = Formats.Map.AmmoStack.Merge(
+                existing.StackCount, existing.AmmoQuantity, Math.Max(item.StackCount, 1), item.AmmoQuantity, ammo.Quantity);
+        else
+            existing.StackCount += Math.Max(item.StackCount, 1);
     }
 
     // --- Encumbrance (P24) -------------------------------------------------
