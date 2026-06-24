@@ -246,4 +246,42 @@ public class AiPacketTests
         // fires + picks eyes, but the to-hit there (10) < min_to_hit (40) → revert to uncalled.
         Assert.Equal(CriticalTables.LocationUncalled, AiCalledShot.Pick(1, 7, true, minToHit: 40, new SeqRng(1, 6), _ => 10));
     }
+
+    // --- P76-M1 area_attack_mode parse + AiBurstMode.ShouldBurst ----------
+
+    [Theory]
+    [InlineData("always", AreaAttack.Always)]
+    [InlineData("sometimes", AreaAttack.Sometimes)]
+    [InlineData("be_careful", AreaAttack.BeCareful)]
+    [InlineData("be_sure", AreaAttack.BeSure)]
+    [InlineData("be_absolutely_sure", AreaAttack.BeAbsolutelySure)]
+    [InlineData("no_pref", AreaAttack.Never)]   // unrecognised mode → no burst
+    public void AreaAttackModeParses(string s, AreaAttack expected) =>
+        Assert.Equal(expected, AiBurstMode.Parse(s));
+
+    [Fact]
+    public void AreaAttackModeAbsentIsTheDefaultBranch() => Assert.Null(AiBurstMode.Parse(""));
+
+    private static AiPacket Burst(string mode, int freq) =>
+        new(1, "x", 0, 0, 0, "", "", AreaAttackMode: mode, SecondaryFreq: freq);
+
+    [Fact]
+    public void ShouldBurstHonorsTheModeAndFreq()
+    {
+        Assert.True(AiBurstMode.ShouldBurst(Burst("always", 0), 5, 5, 50, new SeqRng(1)));      // always
+        Assert.False(AiBurstMode.ShouldBurst(Burst("no_pref", 0), 5, 5, 99, new SeqRng(1)));    // never
+        Assert.True(AiBurstMode.ShouldBurst(Burst("be_careful", 0), 5, 5, 60, new SeqRng(1)));  // to-hit 60 ≥ 50
+        Assert.False(AiBurstMode.ShouldBurst(Burst("be_careful", 0), 5, 5, 40, new SeqRng(1))); // 40 < 50
+        Assert.True(AiBurstMode.ShouldBurst(Burst("sometimes", 5), 5, 5, 50, new SeqRng(1)));   // freq roll == 1
+        Assert.False(AiBurstMode.ShouldBurst(Burst("sometimes", 5), 5, 5, 50, new SeqRng(2)));  // roll 2 ≠ 1
+    }
+
+    [Fact]
+    public void ShouldBurstDefaultBranchGatesOnIntAndDistance()
+    {
+        // area_attack_mode absent → int<6 OR dist<10 then the 1/freq roll.
+        Assert.True(AiBurstMode.ShouldBurst(Burst("", 1), 5, 20, 50, new SeqRng(1)));  // int 5 < 6 → freq 1 fires
+        Assert.True(AiBurstMode.ShouldBurst(Burst("", 1), 9, 5, 50, new SeqRng(1)));   // dist 5 < 10 → fires
+        Assert.False(AiBurstMode.ShouldBurst(Burst("", 1), 9, 20, 50, new SeqRng(1))); // int 9, dist 20 → no
+    }
 }

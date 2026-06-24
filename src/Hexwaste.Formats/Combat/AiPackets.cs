@@ -46,7 +46,14 @@ public sealed record AiPacket(
     /// <summary>ai.txt <c>called_freq</c>: a 1/called_freq chance to make an AIMED (called) shot at a
     /// random body part (_ai_called_shot, combat_ai.cc:2634). 10000 ≈ never (the golden packets); 0/absent
     /// = never. P75-M4.</summary>
-    int CalledFreq = 0);
+    int CalledFreq = 0,
+    /// <summary>ai.txt <c>area_attack_mode</c> (raw string): drives the single-vs-BURST choice
+    /// (_ai_pick_hit_mode, combat_ai.cc:2285) — always/sometimes/be_careful/be_sure/be_absolutely_sure,
+    /// no_pref (never), or "" absent (the INT&lt;6/dist&lt;10 default branch). P76-M1.</summary>
+    string AreaAttackMode = "",
+    /// <summary>ai.txt <c>secondary_freq</c>: the 1/N burst probability for SOMETIMES and the default
+    /// branch (combat_ai.cc:2290/2314). P76-M1.</summary>
+    int SecondaryFreq = 0);
 
 /// <summary>
 /// The parsed <c>data\ai.txt</c> table, keyed by <c>packet_num</c>. Built once and
@@ -85,7 +92,8 @@ public sealed class AiPacketTable
                     Chance: I("chance"), TauntColor: I("color"),         // P72-M3 taunt fields
                     AttackStart: I("attack_start"), AttackEnd: I("attack_end"),
                     RunStart: I("run_start"), RunEnd: I("run_end"),
-                    CalledFreq: I("called_freq")));                      // P75-M4
+                    CalledFreq: I("called_freq"),                        // P75-M4
+                    AreaAttackMode: S("area_attack_mode"), SecondaryFreq: I("secondary_freq"))); // P76-M1
             fields.Clear();
         }
 

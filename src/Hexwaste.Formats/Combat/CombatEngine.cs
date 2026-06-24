@@ -2266,6 +2266,12 @@ public sealed class CombatEngine
                 : 0;
             if (toHit >= minToHit)
             {
+                // P76-M1: try a BURST first (ai.txt area_attack_mode/secondary_freq, _ai_pick_hit_mode) —
+                // it manages its own ApCost2; else a single shot. IsBurstWeapon short-circuits a single-mode
+                // enemy BEFORE the decision roll, so the golden enemies (no burst weapon) are byte-identical.
+                if (IsBurstWeapon(enemyWeapon) && ai is not null && self is not null && def is not null
+                    && TryEnemyBurst(enemy, defenderObj, self, def, enemyWeapon!, enemyWeaponItem!, enemyDistance, enemyCritters, ai))
+                    return true;
                 if (_actingEnemyAp < attackCost)
                     return false;
                 _actingEnemyAp -= attackCost;
@@ -2534,6 +2540,35 @@ public sealed class CombatEngine
         foreach (BurstExtra ex in extras)
             _host.Transcript($"burst-extra: {_host.ObjectName(ex.Victim)}@{ex.Victim.HexTile} hit={ex.RoundsHit} damage={ex.Damage}");
         _host.OnAttackStarted(ally, target, weaponProto);
+        return true;
+    }
+
+    /// <summary>P76-M1: an enemy fires a burst (mirrors TryAllyBurst but ai.txt-driven via AiBurstMode +
+    /// the enemy AP). Returns false → the caller falls through to the single shot. The decision rng draw
+    /// only happens for a burst-capable weapon (the EnemyAttack short-circuit), so it never touches a
+    /// no-burst golden enemy.</summary>
+    private bool TryEnemyBurst(MapObject enemy, MapObject target, CritterState attacker, CritterState defender,
+        ProtoInfo weaponProto, MapObject weaponItem, int distance, int crittersInPath, AiPacket ai)
+    {
+        int apCost = weaponProto.Weapon!.ApCost2 > 0 ? weaponProto.Weapon.ApCost2 : weaponProto.Weapon.ApCost;
+        if (_actingEnemyAp < apCost || _host.WeaponAmmo(weaponProto, weaponItem) <= 0)
+            return false;
+        int toHit = Math.Clamp(
+            ComputeToHit(attacker, defender, weaponProto, weaponItem, distance, crittersInPath, attackerIsDude: false), 0, 95);
+        if (!AiBurstMode.ShouldBurst(ai, attacker.Stat(CritterStat.Intelligence), distance, toHit, _rng))
+            return false;
+
+        _actingEnemyAp -= apCost;
+        enemy.Rotation = HexGrid.RotationTo(enemy.HexTile, target.HexTile);
+        int ammoBefore = _host.WeaponAmmo(weaponProto, weaponItem);
+        (int acc, int fired, int hits, int total, List<BurstExtra> extras) = RollBurst(
+            enemy, target, attacker, defender, weaponProto, weaponItem, distance, crittersInPath, ammoBefore, attackerIsDude: false);
+        _pendingBurst = new PendingBurst(enemy, target, weaponProto, weaponItem, ammoBefore, fired, hits, total, extras);
+        _host.Transcript($"enemy-burst {_host.ObjectName(enemy)} -> {_host.ObjectName(target)}@{target.HexTile}"
+            + $" [{_host.ObjectNameByPid(weaponProto.Pid)} {ammoBefore}rnd d{distance}]: chance={acc}% rounds={fired} hit={hits} damage={total}");
+        foreach (BurstExtra ex in extras)
+            _host.Transcript($"burst-extra: {_host.ObjectName(ex.Victim)}@{ex.Victim.HexTile} hit={ex.RoundsHit} damage={ex.Damage}");
+        _host.OnAttackStarted(enemy, target, weaponProto);
         return true;
     }
 

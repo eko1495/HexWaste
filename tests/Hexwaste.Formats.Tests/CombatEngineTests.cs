@@ -1144,6 +1144,42 @@ public class CombatEngineTests
     }
 
     [Fact]
+    public void EnemyWithABurstWeaponAndAlwaysModeFiresABurst()
+    {
+        // P76-M1: an enemy whose weapon has a burst secondary + area_attack_mode=always sprays.
+        var host = new FakeCombatHost { CriticalsEnabled = false, LoadedAmmoCount = 10 };
+        MapObject dude = host.SetDude(NewCritter(20100, hp: 30, ap: 10));
+        MapObject enemy = host.AddCritter(NewCritter(HexGrid.TileInDirection(20100, 0), hp: 30, ap: 10, skill: 80));
+        host.Equipped = MakeBurstWeapon(rounds: 6, apCost2: 6);
+        host.AiPackets[enemy] = new AiPacket(13, "Thug", MinToHit: 0, MinHp: 0, 0, "", "", AreaAttackMode: "always");
+        var engine = new CombatEngine(host, new MinRng());
+
+        engine.BeginScriptAggro(enemy, dude);
+        engine.Step();
+
+        Assert.Contains(host.Transcripts, t => t.StartsWith("enemy-burst"));
+    }
+
+    [Fact]
+    public void EnemyWithoutABurstWeaponShootsSingleEvenWithAnAreaMode()
+    {
+        // Control: IsBurstWeapon false (a single-mode gun) → the short-circuit skips the burst path → single
+        // shot, no decision rng draw (the source of the slice goldens' byte-identical-ness).
+        var host = new FakeCombatHost { CriticalsEnabled = false, LoadedAmmoCount = 10 };
+        MapObject dude = host.SetDude(NewCritter(20100, hp: 30, ap: 10));
+        MapObject enemy = host.AddCritter(NewCritter(HexGrid.TileInDirection(20100, 0), hp: 30, ap: 10, skill: 80));
+        host.Equipped = (TestWeapon(0x100, 0x06, 5, 12), TestItem(0x100)); // ext 0x06 = single only
+        host.AiPackets[enemy] = new AiPacket(13, "Thug", MinToHit: 0, MinHp: 0, 0, "", "", AreaAttackMode: "always");
+        var engine = new CombatEngine(host, new MinRng());
+
+        engine.BeginScriptAggro(enemy, dude);
+        engine.Step();
+
+        Assert.DoesNotContain(host.Transcripts, t => t.StartsWith("enemy-burst"));
+        Assert.Contains(host.Transcripts, t => t.StartsWith("enemy-attack"));
+    }
+
+    [Fact]
     public void BurstFiresAtMostTheLoadedAmmoOrWeaponRounds()
     {
         var host = new FakeCombatHost { CriticalsEnabled = false, LoadedAmmoCount = 6 };
