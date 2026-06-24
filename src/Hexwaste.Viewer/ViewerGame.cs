@@ -3725,7 +3725,9 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
         int getGlobal(int g) => _scriptHost?.GlobalVars.GetValueOrDefault(g, 0) ?? 0;
         IReadOnlyList<Formats.Map.SpawnInstruction> plan = Formats.Map.EncounterSpawner.Plan(
             encounter, Worldmap, _wmRng, _dude.Dude.HexTile, perception, partyCount, startTiles,
-            IsBlocked, Reachable, getGlobal, _dudeLevel, _clock.Hour, _clock.Day, Difficulty);
+            IsBlocked, Reachable, getGlobal, _dudeLevel, _clock.Hour, _clock.Day, Difficulty,
+            fortuneFinder: DudePerkRank(Formats.Perks.PerkId.FortuneFinder) > 0,   // P79: 2× caps
+            cautiousNature: DudePerkRank(Formats.Perks.PerkId.CautiousNature) > 0); // P79: +3 spawn distance
 
         int placed = 0;
         var spawnedCritters = new List<MapObject>();

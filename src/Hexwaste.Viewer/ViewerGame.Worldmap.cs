@@ -110,7 +110,8 @@ public sealed partial class ViewerGame
                 Worldmap, _cities.Areas, _mapList, _worldPosX, _worldPosY, area.WorldX, area.WorldY,
                 _clock.Ticks, _wmRng, getGlobal, _dudeLevel, luck, outdoorsman, Difficulty, WorldFog);
 
-            _clock.Ticks += leg.ClockTicksAdded; // the per-step travel time across the leg
+            _clock.Ticks += Formats.Map.WorldmapTravel.PathfinderTicks(leg.ClockTicksAdded,
+                DudePerkRank(Formats.Perks.PerkId.Pathfinder)); // P79: Pathfinder shaves rank×25% off travel time
             _worldPosX = leg.FinalWorldX;
             _worldPosY = leg.FinalWorldY;
             if (leg.Encounter is { } r)
@@ -141,7 +142,8 @@ public sealed partial class ViewerGame
                 continue; // slow terrain: the dot lingers this tick
 
             Formats.Map.TravelStep s = active.Leg.Step();
-            _clock.Ticks += Formats.Map.WorldmapTravel.TicksPerStep; // mirror the per-pixel travel time
+            _clock.Ticks += Formats.Map.WorldmapTravel.PathfinderTicks( // P79 Pathfinder
+                Formats.Map.WorldmapTravel.TicksPerStep, DudePerkRank(Formats.Perks.PerkId.Pathfinder));
             _worldPosX = s.X;
             _worldPosY = s.Y;
             if (s.Encounter is { } r)

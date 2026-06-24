@@ -19,6 +19,13 @@ public static class WorldmapTravel
     /// <summary>30 game-minutes per worldmap pixel-step (worldmap.cc travel cost).</summary>
     public const int TicksPerStep = 18000;
 
+    /// <summary>worldmap.cc:4179 wmGameTimeIncrement: the Pathfinder perk shaves rank×25% off travel time.
+    /// Integer form (the engine keeps a sub-tick fractional remainder; we round per call — documented, and
+    /// TicksPerStep 18000 is large enough that the rounding loss is negligible). Rank 0 = unchanged → the
+    /// travel goldens stay byte-identical. P79.</summary>
+    public static long PathfinderTicks(long ticks, int rank) =>
+        rank <= 0 ? ticks : Math.Max(0, ticks - ticks * rank / 4);
+
     /// <summary>The squared radius (in worldmap pixels) of a city's "you're basically
     /// there" circle — the engine never rolls an encounter inside it (worldmap.cc:3340).</summary>
     private const int KnownAreaRadiusSq = 12 * 12;

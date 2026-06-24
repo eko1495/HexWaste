@@ -2447,6 +2447,29 @@ CrippledArms. Inert (no golden cripples an enemy's arm). 1 test. M2/M3/M4 commit
 CombatEngine.cs); each byte-identical bar M1+M2's own probe fixtures. 745 Formats tests, 16 combat + 176
 encounter goldens green. NEXT: Tier 2 (Educated + Jinxed-in-full + curated perks), then Tier 3 (presentation).
 
+Phase 79 (DONE — "Tier 2: curated perk batch"). KEY FINDING (the recurring verify-don't-trust-the-notes
+lesson): the two MARQUEE Tier-2 items were ALREADY SHIPPED — Educated (+2 skill pts/level) is fully wired
+(SkillSet.PointsPerLevel + DudePerkRank(Educated) at the AwardXp level-up, P29-M2) and Jinxed-in-full landed
+in P41 (the complete _cf_table drop/destroy/explode/cripple/hurt-self/random-hit/lose-turn, replacing the P29
+lose-turn-only stub). My Tier-2 proposal rested on STALE P28 spillover notes. So Tier 2 reduced to the curated
+perk batch — three genuinely-unwired worldmap/encounter "survival" perks that touch already-wired systems, all
+INERT by default (perk-less dude → rank 0 → no change → byte-identical). Fortune Finder (PerkId 20, worldmap.cc
+:3880) — 2× a MONEY item (pid 41 caps) in an encounter spawn; threaded a fortuneFinder bool through
+EncounterSpawner.Plan→SpawnGroup, ×2 the caps qty. Cautious Nature (80, :3985) — +3 to the SURROUNDING ring
+radius (enemies spawn 3 hexes farther = more reaction time); a cautiousNature bool through to the Formation's
+distance (added before the max-0 clamp). Pathfinder (43, :4179 wmGameTimeIncrement) — shaves rank×25% off
+travel time; pure WorldmapTravel.PathfinderTicks(ticks, rank) = ticks − ticks·rank/4 (integer form; the
+engine's sub-tick fractional remainder dropped — documented, TicksPerStep 18000 makes the rounding loss
+negligible), applied at BOTH the synchronous leg-total + the animated per-pixel clock sites. Scrounger (40)
+is data-present only — NO engine impl (no PERK_SCROUNGER ref in the .cc), so left unwired (documented).
+Verified by unit tests (FortuneFinderDoublesCapsButNotOtherItems / CautiousNatureRingsThreeHexesFarther / a
+3-case PathfinderShavesTravelTime theory); NO end-to-end golden — these perks gate on Luck/level reqs the slice
+dudes don't meet, so the gate-respecting --perk-probe can't grant them (like other gate-locked perks), and the
+wiring is a trivial DudePerkRank pass-through. 750 Formats tests, 16 combat + 174 encounter goldens BYTE-
+IDENTICAL. DOCUMENTED RESIDUAL: Tag! (4th tag skill at level 12, needs a tag-picker UI) is the meatiest
+remaining perk — deferred. NEXT: Tier 3 (presentation: CONTROL.frm widgets, INVBOX dual-wield, save
+thumbnails, worldmap special-encounter pins).
+
 Phase 10 (DONE, per docs/phase10-research-report.md — "The Wasteland
 Bites Back"): M0 persistence pre-stage (the net: MapList saved=No /
 random_start_point parse + IsTransient; the 3-clause transient guards as

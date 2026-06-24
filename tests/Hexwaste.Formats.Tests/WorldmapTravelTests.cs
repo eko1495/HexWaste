@@ -157,4 +157,11 @@ public class WorldmapTravelTests
 
         Assert.True(mapList.IsTransient(map), $"{map} should be a transient encounter map");
     }
+
+    [Theory]
+    [InlineData(0, 18000)]  // no Pathfinder → full travel time
+    [InlineData(1, 13500)]  // rank 1 → −25%
+    [InlineData(2, 9000)]   // rank 2 → −50%
+    public void PathfinderShavesTravelTime(int rank, long expected) =>
+        Assert.Equal(expected, WorldmapTravel.PathfinderTicks(WorldmapTravel.TicksPerStep, rank));
 }

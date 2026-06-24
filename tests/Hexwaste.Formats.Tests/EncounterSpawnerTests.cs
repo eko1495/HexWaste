@@ -32,10 +32,10 @@ public class EncounterSpawnerTests
     private static IReadOnlyList<SpawnInstruction> Plan(Scenario s, int partyCount = 1,
         IReadOnlyList<int>? startTiles = null, Func<int, bool>? isBlocked = null,
         Func<int, int, bool>? reachable = null, Func<int, int>? getGlobal = null,
-        GameDifficulty difficulty = GameDifficulty.Normal) =>
+        GameDifficulty difficulty = GameDifficulty.Normal, bool fortuneFinder = false, bool cautiousNature = false) =>
         EncounterSpawner.Plan(s.Result, s.World, s.Rng, DudeTile, dudePerception: 5, partyCount,
             startTiles ?? [DudeTile], isBlocked ?? (_ => false), reachable ?? ((_, _) => true),
-            getGlobal, difficulty: difficulty);
+            getGlobal, difficulty: difficulty, fortuneFinder: fortuneFinder, cautiousNature: cautiousNature);
 
     [Fact]
     public void RatioAndSingleMembersScaleWithGroupSize()
@@ -157,6 +157,39 @@ public class EncounterSpawnerTests
             """;
         const string enc = "Enc:(4-4) GRP AMBUSH Player";
         Assert.Equal(4, Plan(Setup(g, enc), difficulty: GameDifficulty.Easy).Count); // floored, == Normal
+    }
+
+    [Fact]
+    public void FortuneFinderDoublesCapsButNotOtherItems()
+    {
+        // P79 (worldmap.cc:3880): the Fortune Finder perk doubles a MONEY (pid 41) item stack in an
+        // encounter; a non-caps item (pid 200) is untouched.
+        const string g = """
+            [Encounter: GRP]
+            type_00=ratio:100%, pid:100, Item:(3-3)41, Item:(3-3)200
+            position=huddle
+            """;
+        const string enc = "Enc:(1-1) GRP AMBUSH Player";
+        SpawnInstruction plain = Assert.Single(Plan(Setup(g, enc)));
+        Assert.Equal(3, plain.Items.First(i => i.Pid == 41).Count);   // no perk → 3 caps
+        SpawnInstruction lucky = Assert.Single(Plan(Setup(g, enc), fortuneFinder: true));
+        Assert.Equal(6, lucky.Items.First(i => i.Pid == 41).Count);   // Fortune Finder → 6 caps
+        Assert.Equal(3, lucky.Items.First(i => i.Pid == 200).Count);  // the non-caps item is unchanged
+    }
+
+    [Fact]
+    public void CautiousNatureRingsTheEncounterThreeHexesFarther()
+    {
+        // P79 (worldmap.cc:3985): Cautious Nature adds +3 to the surrounding-ring radius. MinRng draws the
+        // −2 end → distance = max(0, −2 + PE 5) = 3 normally, 6 (+3) with the perk.
+        const string g = """
+            [Encounter: RING]
+            type_00=ratio:100%, pid:50
+            position=Surrounding
+            """;
+        const string enc = "Enc:(1-1) RING AMBUSH Player";
+        Assert.Equal(3, HexGrid.Distance(DudeTile, Assert.Single(Plan(Setup(g, enc))).Tile));
+        Assert.Equal(6, HexGrid.Distance(DudeTile, Assert.Single(Plan(Setup(g, enc), cautiousNature: true)).Tile));
     }
 
     [Fact]

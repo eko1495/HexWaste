@@ -42,7 +42,7 @@ public static class EncounterSpawner
         ICombatRng rng, int dudeTile, int dudePerception, int partyCount,
         IReadOnlyList<int> startTiles, Func<int, bool> isBlocked, Func<int, int, bool> reachable,
         Func<int, int>? getGlobal = null, int playerLevel = 1, int hhmm = 1200, int daysPlayed = 0,
-        GameDifficulty difficulty = GameDifficulty.Normal)
+        GameDifficulty difficulty = GameDifficulty.Normal, bool fortuneFinder = false, bool cautiousNature = false)
     {
         getGlobal ??= _ => 0;
         var result = new List<SpawnInstruction>();
@@ -84,7 +84,8 @@ public static class EncounterSpawner
 
             if (world.Group(sub.Group) is { } group)
                 SpawnGroup(group, critterCount, team, rng, dudeTile, dudePerception, startTiles,
-                    isBlocked, reachable, result, sharedIndex, getGlobal, playerLevel, hhmm, daysPlayed);
+                    isBlocked, reachable, result, sharedIndex, getGlobal, playerLevel, hhmm, daysPlayed,
+                    fortuneFinder, cautiousNature);
         }
 
         return result;
@@ -94,9 +95,10 @@ public static class EncounterSpawner
     private static void SpawnGroup(EncounterGroup group, int critterCount, int team, ICombatRng rng,
         int dudeTile, int dudePerception, IReadOnlyList<int> startTiles,
         Func<int, bool> isBlocked, Func<int, int, bool> reachable, List<SpawnInstruction> output,
-        int[] sharedIndex, Func<int, int> getGlobal, int playerLevel, int hhmm, int daysPlayed)
+        int[] sharedIndex, Func<int, int> getGlobal, int playerLevel, int hhmm, int daysPlayed,
+        bool fortuneFinder, bool cautiousNature)
     {
-        var f = new Formation(group.Formation, rng, dudeTile, startTiles, sharedIndex);
+        var f = new Formation(group.Formation, rng, dudeTile, startTiles, sharedIndex, cautiousNature);
 
         // The engine places critters one at a time, so each later placement sees the
         // earlier ones as blocking (wmEvalTileNumForPlacement → _obj_blocking_at). The
@@ -132,6 +134,8 @@ public static class EncounterSpawner
                     int qty = Between(rng, it.Min, it.Max);
                     if (qty == 0)
                         continue;
+                    if (fortuneFinder && it.Pid == 41) // PROTO_ID_MONEY: Fortune Finder doubles caps (worldmap.cc:3880)
+                        qty *= 2;
                     items.Add(new SpawnItem(it.Pid, qty, it.Wielded, it.Worn));
                 }
                 output.Add(new SpawnInstruction(member.Pid, member.ScriptIndex, tile, rotation,
@@ -155,13 +159,16 @@ public static class EncounterSpawner
         private readonly int _originalCenter;
         private readonly int[] _index;  // wmRndIndex holder — SHARED across an encounter's groups
         private int _callCount;         // wmRndCallCount (reset per group; first call returns the anchor)
+        private readonly bool _cautiousNature; // P79: +3 to the surrounding ring radius (worldmap.cc:3985)
 
-        public Formation(string type, ICombatRng rng, int dudeTile, IReadOnlyList<int> startTiles, int[] index)
+        public Formation(string type, ICombatRng rng, int dudeTile, IReadOnlyList<int> startTiles, int[] index,
+            bool cautiousNature = false)
         {
             _type = type;
             _rng = rng;
             _dudeTile = dudeTile;
             _index = index;
+            _cautiousNature = cautiousNature;
 
             if (type == "surrounding")
             {
@@ -208,7 +215,7 @@ public static class EncounterSpawner
                     // (worldmap.cc:3978-3987). A member Tile overrides the ring origin.
                     int distance = member.Distance != 0
                         ? member.Distance
-                        : Math.Max(0, Between(_rng, -2, 2) + dudePerception);
+                        : Math.Max(0, Between(_rng, -2, 2) + dudePerception + (_cautiousNature ? 3 : 0));
                     int origin = member.Tile != -1
                         ? member.Tile
                         : HexGrid.TileInDirection(_dudeTile, _tileDirs[0], distance);

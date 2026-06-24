@@ -23,6 +23,10 @@ public static class PerkId
     public const int SilentDeath = 25;      // melee/unarmed backstab while sneaking: 4x dmg / x2 on a crit (combat.cc:3870)
     public const int HthEvade = 93;         // unarmed dude: AP→AC dodge ×2 + Unarmed/12 when off-turn (stat.cc:233)
     public const int Pickpocket = 37;       // Steal waives the item-size + face-to-face penalties (skill.cc:1039)
+    public const int FortuneFinder = 20;    // 2× caps (pid 41) found in random encounters (worldmap.cc:3880)
+    public const int Scrounger = 40;        // (no engine impl) — data-present only, not wired
+    public const int Pathfinder = 43;       // worldmap travel time −25%/rank (worldmap.cc:4179)
+    public const int CautiousNature = 80;   // +3 to the surrounding-encounter spawn distance (worldmap.cc:3985)
     public const int HeaveHo = 35;          // +2 effective Strength per rank for throw range (item.cc:1613)
     public const int QuickPockets = 48;     // −2 inventory-access AP/rank (inventory.cc:572) — NOT modeled (no in-combat inventory AP)
     public const int SwiftLearner = 50;     // +5% experience per rank (stat.cc:737)
