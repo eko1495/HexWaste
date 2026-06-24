@@ -417,6 +417,25 @@ public sealed partial class ViewerGame
         return -1;
     }
 
+    // P82: the PIP.frm left-column tab buttons (x=53, y=341 step 27, the alarm at index 1 skipped;
+    // inventory labels STATUS/AUTOMAPS/ARCHIVES/CLOSE). Returns the action for a click in the tab column,
+    // or null. Hexwaste only models Status + the automap, so Archives is a no-op.
+    private Action? PipboyTabAt(int mx, int my)
+    {
+        PipboyContentOrigin(out Point po, out _);
+        if (mx < po.X + 35 || mx > po.X + 210)
+            return null;
+        int ry = my - po.Y;
+        return ry switch
+        {
+            >= 336 and < 366 => () => _pipboyRestMenu = false,                       // STATUS (stay on it)
+            >= 390 and < 419 => () => { _pipboyOpen = false; _automapOpen = true; }, // AUTOMAPS
+            >= 419 and < 446 => () => Log("No archives."),                           // ARCHIVES
+            >= 446 and < 478 => () => _pipboyOpen = false,                           // CLOSE
+            _ => null,
+        };
+    }
+
     private void DrawPipboy()
     {
         if (!_pipboyOpen || _fontRenderer is null)
@@ -447,9 +466,10 @@ public sealed partial class ViewerGame
         int cx = po.X + 254, ty = po.Y + 46;
         void Line(string text, Color c) { _fontRenderer!.Draw(_spriteBatch, text, new Vector2(cx, ty), c); ty += lh; }
 
-        // The embedded mini-map fills the empty left column on the status page (P20-M1).
-        if (!_pipboyRestMenu)
-            DrawPipboyMiniMap(po.X + 18, po.Y + 46, 210, ph - 92);
+        // P82 fix: the P20-M1 embedded mini-map is REMOVED from the Pip-Boy — PIP.frm's left column is
+        // baked art (the date decoration + the STATUS/AUTOMAPS/ARCHIVES/CLOSE tab buttons), so the mini-map
+        // overlaid them ("looks strange" + covered the tabs). The full automap (the Automap row / left tab)
+        // is the map; DrawPipboyMiniMap stays for any future authentic-recess use.
 
         if (!_pipboyRestMenu)
         {
@@ -564,6 +584,18 @@ public sealed partial class ViewerGame
     /// col = tile%200, row = tile/200). Colors by FID type; the dude is a bright marker.
     /// Fog-of-war = the walked-tile <see cref="_seenTiles"/> (P71): only objects on explored
     /// tiles plot; the embedded Pip-Boy mini-map (needs automap.db RLE) stays out.</summary>
+    // The AUTOMAP.frm baked-in button screen rects (automap.cc): the SCANNER (111,454), CANCEL (277,454)
+    // and the hi/lo-detail SWITCH (457,340) — shared by DrawAutomap (label hint) + the input hit-test.
+    private (Rectangle Scanner, Rectangle Cancel, Rectangle Detail) AutomapButtons()
+    {
+        Rectangle vp = GraphicsDevice.Viewport.Bounds;
+        int w = _automapBg?.Width ?? 519, h = _automapBg?.Height ?? 480;
+        var o = new Point(Math.Max(0, (vp.Width - w) / 2), Math.Max(0, (vp.Height - h) / 2));
+        return (new Rectangle(o.X + 105, o.Y + 450, 24, 22),
+                new Rectangle(o.X + 271, o.Y + 450, 24, 22),
+                new Rectangle(o.X + 457, o.Y + 340, 42, 74));
+    }
+
     private void DrawAutomap()
     {
         if (!_automapOpen || _fontRenderer is null)
@@ -591,14 +623,22 @@ public sealed partial class ViewerGame
         }
 
         foreach (MapObject obj in _flatObjects[_elevation].Concat(_solidObjects[_elevation]))
-            if (_seenTiles.Contains(obj.HexTile) && AutomapColor(obj) is { } col) // OBJECT_SEEN fog (P71)
-                Plot(obj.HexTile, col, 2);
+        {
+            if (!_seenTiles.Contains(obj.HexTile) || AutomapColor(obj) is not { } col) // OBJECT_SEEN fog (P71)
+                continue;
+            // P82: LOW detail shows only walls (the engine's AUTOMAP_WITH_HIGH_DETAILS gate); HIGH = all.
+            if (!_automapHighDetail && Fid.Type(obj.Fid) is not ObjectType.Wall)
+                continue;
+            Plot(obj.HexTile, col, 2);
+        }
         if (_dude is not null)
             Plot(_dude.Dude.HexTile, new Color(255, 255, 255), 3); // the dude marker
 
         var labelGreen = new Color(0, 252, 0);
-        _fontRenderer.Draw(_spriteBatch, $"AUTOMAP — {_currentMapName} (elev {_elevation})", new Vector2(o.X + 20, o.Y + 12), labelGreen);
-        _fontRenderer.Draw(_spriteBatch, "Esc / A  close", new Vector2(o.X + 20, o.Y + h - 24), new Color(0, 168, 0));
+        _fontRenderer.Draw(_spriteBatch, $"AUTOMAP — {_currentMapName} (elev {_elevation}, {(_automapHighDetail ? "hi" : "lo")} detail)",
+            new Vector2(o.X + 20, o.Y + 12), labelGreen);
+        _fontRenderer.Draw(_spriteBatch, "SCANNER / CANCEL / hi-lo switch — or Esc/A close, H/L detail, PgUp/Dn elev",
+            new Vector2(o.X + 20, o.Y + h - 24), new Color(0, 168, 0));
     }
 
     /// <summary>The options / pause menu (P12 M2): the authentic OPBASE.FRM (164x217)
@@ -1104,6 +1144,10 @@ public sealed partial class ViewerGame
     private Rectangle LeftWeaponSlotRect() => InvBoxOrigin() is { } o
         ? InvBoxLeftLocal with { X = o.X + InvBoxLeftLocal.X, Y = o.Y + InvBoxLeftLocal.Y }
         : new Rectangle(420, 256, 90, 60);
+
+    // The INVBOX DONE button (inventory.cc: window-local 437,329 15x16; padded for an easier click).
+    // Only meaningful when the INVBOX art is up — the fallback boxes layout has no DONE button.
+    private Rectangle? InvBoxDoneRect() => InvBoxOrigin() is { } o ? new Rectangle(o.X + 432, o.Y + 324, 26, 24) : null;
 
     // The object-flag bit a weapon slot wields into: WeaponLeft → left hand, else the right hand.
     private static int SlotHandBit(Formats.Combat.EquipSlot slot) =>

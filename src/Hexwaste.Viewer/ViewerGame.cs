@@ -236,6 +236,7 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
     /// the Pip-Boy (A), plotting the current elevation's objects as colored dots
     /// (automap.cc automapRenderInMapWindow).</summary>
     private bool _automapOpen;
+    private bool _automapHighDetail = true; // the hi/lo-detail switch (automap.cc AUTOMAP_WITH_HIGH_DETAILS) — P82 fix
     private Texture2D? _automapBg;
 
     /// <summary>The TILES the dude has explored — the automap's OBJECT_SEEN fog-of-war,
@@ -1591,9 +1592,14 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
         // a rest duration. Esc backs out of the rest menu, then closes the panel.
         if (_pipboyOpen)
         {
-            // A row click fires the same action its keyboard shortcut does (P15 M3).
-            if (mouse.LeftButton == ButtonState.Pressed && _previousMouse.LeftButton == ButtonState.Released
-                && PipboyRowAt(mouse.X, mouse.Y) is var prow && prow >= 0)
+            // A click fires the same action its keyboard shortcut does (P15 M3): the right-side content rows
+            // (PipboyRowAt) OR the PIP.frm left-column tabs (PipboyTabAt — Automaps/Close, P82 fix).
+            bool pipPress = mouse.LeftButton == ButtonState.Pressed && _previousMouse.LeftButton == ButtonState.Released;
+            if (pipPress && PipboyTabAt(mouse.X, mouse.Y) is { } tabAction)
+            {
+                tabAction();
+            }
+            else if (pipPress && PipboyRowAt(mouse.X, mouse.Y) is var prow && prow >= 0)
             {
                 PipboyRows()[prow].OnClick();
             }
@@ -1624,11 +1630,28 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
             return;
         }
 
-        // Automap (Pip-Boy → A): a full-window object plot; Esc/A closes.
+        // Automap (Pip-Boy → A): a full-window object plot. The baked-in AUTOMAP.frm buttons are now wired
+        // (P82): CANCEL (or Esc/A) closes; the hi/lo SWITCH (or H/L) toggles detail; SCANNER (or S) is a no-op
+        // (no motion scanner modelled); PgUp/PgDn switch elevation on a multi-level map.
         if (_automapOpen)
         {
-            if (IsKeyPressed(keyboard, Keys.Escape) || IsKeyPressed(keyboard, Keys.A))
+            (Rectangle scanner, Rectangle cancel, Rectangle detail) = AutomapButtons();
+            bool apress = mouse.LeftButton == ButtonState.Pressed && _previousMouse.LeftButton == ButtonState.Released;
+            if (IsKeyPressed(keyboard, Keys.Escape) || IsKeyPressed(keyboard, Keys.A)
+                || (apress && cancel.Contains(mouse.X, mouse.Y)))
                 _automapOpen = false;
+            else if (IsKeyPressed(keyboard, Keys.H) || IsKeyPressed(keyboard, Keys.L)
+                || (apress && detail.Contains(mouse.X, mouse.Y)))
+            {
+                _automapHighDetail = !_automapHighDetail;
+                Log($"Automap detail: {(_automapHighDetail ? "high" : "low")}.");
+            }
+            else if (IsKeyPressed(keyboard, Keys.S) || (apress && scanner.Contains(mouse.X, mouse.Y)))
+                Log("No motion scanner.");
+            if (IsKeyPressed(keyboard, Keys.PageUp))
+                SwitchElevation(+1);
+            if (IsKeyPressed(keyboard, Keys.PageDown))
+                SwitchElevation(-1);
             _previousMouse = mouse;
             _previousKeyboard = keyboard;
             base.Update(gameTime);
@@ -1783,9 +1806,17 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
             // The pure-inventory panel uses drag-and-drop equip (P47); loot/trade keep click-on-
             // press (they transfer, not equip). A row TAP still falls back to click-to-use inside
             // the drag handler, so click-to-equip is preserved.
-            if (_inventoryOpen && _lootContainer is null && _tradePartner is null)
+            bool clickPress = mouse.LeftButton == ButtonState.Pressed && _previousMouse.LeftButton == ButtonState.Released;
+            // The INVBOX DONE button closes the pure inventory (the baked-in art button, inventory.cc).
+            if (clickPress && _inventoryOpen && _lootContainer is null && _tradePartner is null
+                && InvBoxDoneRect() is { } done && done.Contains(mouse.X, mouse.Y))
+            {
+                _inventoryOpen = false;
+                _stealTarget = null;
+            }
+            else if (_inventoryOpen && _lootContainer is null && _tradePartner is null)
                 HandleInventoryDrag(mouse, shiftHeld);
-            else if (mouse.LeftButton == ButtonState.Pressed && _previousMouse.LeftButton == ButtonState.Released)
+            else if (clickPress)
                 TryClickItemPanel(mouse.X, mouse.Y, shiftHeld);
 
             HandlePanelPaging(keyboard);
