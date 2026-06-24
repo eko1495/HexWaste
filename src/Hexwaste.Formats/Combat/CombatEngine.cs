@@ -112,6 +112,7 @@ public sealed class CombatEngine
     /// (the dude-involved combat/brawl path is untouched → byte-identical).</summary>
     private bool _dudeSpectator;
     private const int MaxSpectatorBrawlRounds = 100; // P73: stalemate/slow-fight bound for a dude-absent brawl
+    private const int SnipeRange = 5; // P78-M3: the distance a DISTANCE_SNIPE enemy backs away to reopen
 
     /// <summary>Kill XP accrued this combat, paid at combat end like the engine's
     /// _combat_exps → _combat_give_exps (combat.cc:2816).</summary>
@@ -2072,13 +2073,41 @@ public sealed class CombatEngine
     /// so the arcaves combat goldens are unaffected. Enemies only (the dude/allies heal via the UI).</summary>
     private void TryAiHeal(MapObject enemy, AiPacket ai, CritterState st)
     {
-        int ratio = AiHealing.HealHpRatio(ai.ChemUse);
-        if (ratio == 0 || st.Proto.BodyType != 0) // 0 = BODY_TYPE_BIPED
+        if (st.Proto.BodyType != 0) // 0 = BODY_TYPE_BIPED — only bipeds chem up
             return;
-        int minHp = st.MaxHp * ratio / 100;
-        while (enemy.CurrentHp < minHp && _actingEnemyAp >= 2 && _host.TryNpcHeal(enemy))
-            _actingEnemyAp -= 2;
+        // Healing branch (P42): below the chem_use HP ratio, quaff healing items while AP lasts.
+        bool healed = false;
+        int ratio = AiHealing.HealHpRatio(ai.ChemUse);
+        if (ratio > 0)
+        {
+            int minHp = st.MaxHp * ratio / 100;
+            while (enemy.CurrentHp < minHp && _actingEnemyAp >= 2 && _host.TryNpcHeal(enemy))
+            {
+                _actingEnemyAp -= 2;
+                healed = true;
+            }
+        }
+        // Non-healing combat-drug branch (P78-M2, combat_ai.cc:1028): only when it didn't just heal, roll
+        // the per-mode chem_use chance and quaff chem_primary_desire buff drugs (2 AP each), capped per mode.
+        // ShouldUse short-circuits without drawing for a clean enemy → the golden fights are byte-identical.
+        if (!healed && AiCombatDrug.ShouldUse(ai.ChemUse, _round, _rng))
+        {
+            int used = 0, max = AiCombatDrug.MaxPerTurn(ai.ChemUse);
+            while (_actingEnemyAp >= 2 && used < max && _host.TryNpcUseCombatDrug(enemy, ai.ChemPrimaryDesire))
+            {
+                _actingEnemyAp -= 2;
+                used++;
+            }
+        }
     }
+
+    /// <summary>P78-M3: is a LIVING same-team critter exactly on the hex line between the shooter and the
+    /// target (so a ranged shot would pass through it)? An exact-collinear approximation of the engine's
+    /// _combat_safety_invalidate_weapon LoF-tile scan (combat.cc:2249). Only consulted for gun shots, so
+    /// melee golden enemies never reach it → byte-identical.</summary>
+    private bool FriendlyOnFireLine(MapObject shooter, int targetTile) =>
+        _hostiles.Any(h => h != shooter && !h.IsDead && h.Team == shooter.Team
+            && HexGrid.IsOnSegment(shooter.HexTile, h.HexTile, targetTile));
 
     /// <summary>
     /// _ai_switch_weapons → _ai_search_inven_weap (combat_ai.cc:2596/2002): the wielded weapon is
@@ -2286,6 +2315,16 @@ public sealed class CombatEngine
             enemyGun = enemyWeapon?.Weapon is { } ew2 && ew2.IsGun(enemyWeapon.ExtendedFlags);
         }
 
+        // P78-M4: an NPC with crippled arms can't wield its weapon (both arms → any weapon, one arm →
+        // a two-handed weapon, combat.cc:5655) — drop to fists, the symmetric counterpart of the dude
+        // gate (P18-M2). Inert unless the dude has crippled an enemy's arm with an aimed shot.
+        if (enemyWeapon is not null && WeaponBlockedByCrippledArms(enemy, enemyWeapon) is not null)
+        {
+            enemyWeapon = null;
+            enemyWeaponItem = null;
+            enemyGun = false;
+        }
+
         int attackRange = enemyGun ? enemyWeapon!.Weapon!.MaxRange1
             : Math.Min(enemyWeapon?.Weapon?.MaxRange1 ?? 1, 2);
         int attackCost = enemyWeapon?.Weapon?.ApCost ?? CombatMath.PunchApCost;
@@ -2305,22 +2344,37 @@ public sealed class CombatEngine
         {
             (MapObject? blocker, enemyCritters) = LineOfFire.Trace(
                 enemy.HexTile, dudeTile, tile => _host.ShootBlockerAt(tile, enemy, defenderObj));
-            shotBlocked = blocker is not null;
+            // P78-M3: friendly-fire safety (_combat_safety_invalidate_weapon, combat.cc:2249) — don't take a
+            // RANGED shot that passes through a living teammate. SIMPLIFICATION: an exact-collinear hex test
+            // (the friend lies between us and the target) rather than the engine's full LoF-tile scan +
+            // retarget; the enemy holds (approaches) instead. Inert on the slice (no enemy shoots past an ally).
+            if (!shotBlocked && FriendlyOnFireLine(enemy, dudeTile))
+                shotBlocked = true;
+            shotBlocked = shotBlocked || blocker is not null;
         }
 
-        // P68: the enemy honours its ai.txt distance preference (was parsed but never consumed for enemies).
-        // SNIPE — a ranged sniper closed to melee range backs away to reopen its preferred distance instead
-        // of shooting point-blank (combat_ai.cc:3001, simplified to a one-step kite when the target is
-        // adjacent, without the combat-rating gate). No golden enemy is a sniper -> byte-identical.
-        // ported from fallout2-ce src/combat_ai.cc _cai_perform_distance_prefs()
+        // P68/P78-M3: the enemy honours its ai.txt distance preference (was parsed but never consumed for
+        // enemies). SNIPE — a ranged sniper closed inside its preferred range backs away to reopen distance
+        // instead of shooting point-blank (combat_ai.cc:3001 _cai_perform_distance_prefs). P78-M3 makes it a
+        // MULTI-step retreat toward SnipeRange (was a one-step kite), AP-limited, stopping at a blocked hex.
+        // No golden enemy is a sniper -> byte-identical.
         Distance distMode = AiDistanceMode.Parse(ai?.Distance);
-        if (distMode == Distance.Snipe && enemyGun && enemyDistance <= 2 && _actingEnemyAp >= 1)
+        if (distMode == Distance.Snipe && enemyGun && enemyDistance < SnipeRange && _actingEnemyAp >= 1)
         {
-            int back = HexGrid.TileInDirection(enemy.HexTile, (HexGrid.RotationTo(enemy.HexTile, dudeTile) + 3) % 6);
-            if (back != enemy.HexTile && !_host.IsBlocked(back))
+            int awayRot = (HexGrid.RotationTo(enemy.HexTile, dudeTile) + 3) % 6;
+            int dest = enemy.HexTile, taken = 0, budget = Math.Min(_actingEnemyAp, SnipeRange - enemyDistance);
+            for (int s = 0; s < budget; s++)
             {
-                _actingEnemyAp -= 1;
-                return _host.StartWalk(enemy, back);
+                int next = HexGrid.TileInDirection(dest, awayRot);
+                if (next == dest || _host.IsBlocked(next))
+                    break;
+                dest = next;
+                taken++;
+            }
+            if (taken > 0)
+            {
+                _actingEnemyAp -= taken;
+                return _host.StartWalk(enemy, dest);
             }
         }
 

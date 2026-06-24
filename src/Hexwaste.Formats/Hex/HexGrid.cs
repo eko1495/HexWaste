@@ -285,6 +285,18 @@ public static class HexGrid
         return 9999;
     }
 
+    /// <summary>Is <paramref name="mid"/> a strict in-between point on the shortest hex path from
+    /// <paramref name="a"/> to <paramref name="b"/> (collinear, neither endpoint)? Uses the triangle
+    /// equality d(a,mid)+d(mid,b)==d(a,b). P78-M3 friendly-fire collinear test.</summary>
+    public static bool IsOnSegment(int a, int mid, int b)
+    {
+        int da = Distance(a, mid);
+        if (da <= 0 || mid == b)
+            return false;
+        int span = Distance(a, b);
+        return da < span && da + Distance(mid, b) == span;
+    }
+
     /// <summary>ported from fallout2-ce src/animation.cc _idist(): octile-ish integer distance.</summary>
     public static int ScreenDistance(int tile1, int tile2)
     {

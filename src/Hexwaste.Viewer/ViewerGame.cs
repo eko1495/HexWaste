@@ -300,6 +300,9 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
     // P29-M6: per-companion perk ranks (forward-looking infrastructure). Empty on the shippable slice —
     // no companion levels up perks today — so GetCritterState passes null (inert). Persisted in the save.
     private readonly Dictionary<MapObject, int[]> _companionPerkRanks = [];
+    /// <summary>P78-M2: per-NPC combat-drug stat bonus (int[35]) applied when an enemy chems up mid-fight;
+    /// GetCritterState folds it into BonusStats. Cleared when combat ends (no timed wear-off for NPCs).</summary>
+    private readonly Dictionary<MapObject, int[]> _npcDrugBonus = [];
     private Formats.Combat.ICombatRng? _partyRng;
 
     private readonly Random _ambientRandom = new(20260612);
@@ -636,6 +639,7 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
         public sealed record OutlineProbe(int FightHex) : StartupAction;
         public sealed record AcDodgeProbe(int EnemyHex) : StartupAction;
         public sealed record Steal(int TargetHex, int Row) : StartupAction;
+        public sealed record AiDrugProbe(int Hex, int DrugPid) : StartupAction;
         /// <summary>Report the gore death-anim a burst/explosion/laser kill would give the critter
         /// at Hex — the picked anim + the art-resolved anim (P26), proving gore art availability.</summary>
         public sealed record DeathProbe(int Hex) : StartupAction;
@@ -2024,6 +2028,9 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
         _animator.Update(gameTime.ElapsedGameTime.TotalMilliseconds);
         AdvanceProjectiles(gameTime.ElapsedGameTime.TotalMilliseconds);
         _combat.Step();
+        // P78-M2: NPC combat-drug buffs last only the fight — drop them once combat is over.
+        if (_npcDrugBonus.Count > 0 && _combat.Phase == Formats.Combat.CombatPhase.Idle)
+            _npcDrugBonus.Clear();
         _dude?.Update(gameTime.ElapsedGameTime.TotalMilliseconds);
         UpdateAmbientLife(gameTime.ElapsedGameTime.TotalMilliseconds);
         TickAmbientSfx(gameTime.ElapsedGameTime.TotalMilliseconds); // P34-M5 ambient sfx
@@ -4361,18 +4368,21 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
         // P29-M6: a recruited companion's perk ranks (null on the slice → inert) feed the same
         // CritterState 5th arg the dude uses, so any future companion perk applies for free.
         int[]? companionPerks = _companionPerkRanks.GetValueOrDefault(obj);
+        Formats.Proto.CritterProtoStats? src;
         if (_companionStatOverride.TryGetValue(obj, out Formats.Proto.CritterProtoStats? overrideStats))
-            return new Formats.Combat.CritterState(obj, overrideStats, perkRanks: companionPerks);
-        try
+            src = overrideStats;
+        else
         {
-            return _protos.Get(obj.Pid).Critter is { } stats
-                ? new Formats.Combat.CritterState(obj, stats, perkRanks: companionPerks)
-                : null;
+            try { src = _protos.Get(obj.Pid).Critter; }
+            catch (Exception ex) when (ex is FileNotFoundException or InvalidDataException) { return null; }
         }
-        catch (Exception ex) when (ex is FileNotFoundException or InvalidDataException)
-        {
+        if (src is null)
             return null;
-        }
+        // P78-M2: an NPC that chemmed up carries a per-instance drug bonus folded into BonusStats (a copy,
+        // so the shared proto cache stays pristine — the companion-override anti-aliasing rule).
+        if (_npcDrugBonus.TryGetValue(obj, out int[]? db))
+            src = src with { BonusStats = src.BonusStats.Select((v, i) => v + (i < db.Length ? db[i] : 0)).ToArray() };
+        return new Formats.Combat.CritterState(obj, src, perkRanks: companionPerks);
     }
 
     private string DescribeObject(MapObject obj)

@@ -676,6 +676,22 @@ public sealed partial class ViewerGame
                     Console.WriteLine($"ai-heal-probe: hex={healHex} healed={healed} hp=1->{hc.CurrentHp} max={hmax}");
                     break;
                 }
+                case StartupAction.AiDrugProbe(var drugHex, var drugPid):
+                {
+                    // P78-M2: give the critter a combat drug (e.g. Buffout pid 87), run the real
+                    // TryNpcUseCombatDrug, and report the SPECIAL buff it applied — the live proof of the
+                    // non-heal chem branch (no winnable 1-on-1 vs a chem NPC on the slice). Deterministic
+                    // (the drug's amounts are fixed; no RNG). State-only stat ints.
+                    MapObject? dc = CritterAt(drugHex);
+                    if (dc is null) { Console.Error.WriteLine($"ai-drug-probe: no critter at {drugHex}"); break; }
+                    if (RebuildObject(drugPid, 1) is { } chem) dc.Inventory.Add(chem);
+                    int St(int s) => GetCritterState(dc)?.Stat(s) ?? 0;
+                    int st0 = St(0), en0 = St(2), ag0 = St(5); // Strength / Endurance / Agility
+                    bool used = TryNpcUseCombatDrug(dc, null);
+                    Console.WriteLine($"ai-drug-probe: hex={drugHex} drug={drugPid} used={used} "
+                        + $"ST={st0}->{St(0)} EN={en0}->{St(2)} AG={ag0}->{St(5)}");
+                    break;
+                }
                 case StartupAction.AiWeaponProbe(var awHex) when _dude is not null:
                 {
                     // P43: force the wielded gun dry and run the real AI weapon switch — proves the

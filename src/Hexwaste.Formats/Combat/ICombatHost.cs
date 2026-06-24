@@ -178,6 +178,12 @@ public interface ICombatHost
     /// it healed (P42). Default false (the fake host has no inventory/proto model).</summary>
     bool TryNpcHeal(MapObject critter) => false;
 
+    /// <summary>An NPC quaffs ONE non-healing combat drug (Jet/Psycho/Buffout) from its inventory to buff
+    /// itself mid-fight (_ai_check_drugs non-heal branch, combat_ai.cc:1028): pick a chem_primary_desire
+    /// drug, apply its immediate stat effect to the critter, consume it; return whether it drank one
+    /// (P78-M2). Default false (the fake host has no inventory/proto model).</summary>
+    bool TryNpcUseCombatDrug(MapObject critter, int[]? primaryDesire) => false;
+
     /// <summary>The companion's combat-control settings (P50 AI-disposition window, game_dialog.cc:3354).
     /// Default = the pre-P50 ally behaviour (Aggressive: attack the nearest hostile, never flee, no
     /// distance constraint), so an un-configured ally + the fake test host stay byte-identical.</summary>

@@ -144,4 +144,18 @@ public class PathfinderTests
         Assert.NotNull(path);
         Assert.Single(path);
     }
+
+    [Fact]
+    public void IsOnSegmentDetectsACollinearInBetweenTile()
+    {
+        // Three tiles stepped straight out in direction 0: the middle one is on the a→b segment; the
+        // endpoints and an off-line tile are not (P78-M3 friendly-fire collinear test).
+        int a = 20100;
+        int mid = HexGrid.TileInDirection(a, 0);
+        int b = HexGrid.TileInDirection(mid, 0);
+        Assert.True(HexGrid.IsOnSegment(a, mid, b));
+        Assert.False(HexGrid.IsOnSegment(a, a, b));                             // an endpoint is not "between"
+        Assert.False(HexGrid.IsOnSegment(a, b, b));                             // the other endpoint either
+        Assert.False(HexGrid.IsOnSegment(a, HexGrid.TileInDirection(a, 2), b)); // a tile off the line
+    }
 }

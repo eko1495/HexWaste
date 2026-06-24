@@ -484,6 +484,70 @@ public class CombatEngineTests
         Assert.Contains(enemy, host.CarriesStimpak);   // stimpak untouched
     }
 
+    [Fact]
+    public void AlwaysChemUseEnemyDrinksACombatDrugOnItsTurn()
+    {
+        // P78-M2 (_ai_check_drugs non-heal branch): a healthy ALWAYS-chem_use BIPED quaffs a buff drug
+        // (100% chance) before attacking — it isn't hurt, so the heal branch passes and the drug branch fires.
+        var host = new FakeCombatHost();
+        MapObject dude = host.SetDude(NewCritter(tile: 20100, hp: 30, ap: 10));
+        MapObject enemy = host.AddCritter(NewCritter(tile: HexGrid.TileInDirection(20100, 0), hp: 100, ap: 10));
+        host.AiPackets[enemy] = new AiPacket(50, "Junkie", MinToHit: 0, MinHp: 0, 0, "", "", 0, ChemUse: 5);
+        host.CombatDrugs[enemy] = 1;
+        var engine = new CombatEngine(host, new MinRng());
+
+        engine.BeginScriptAggro(enemy, dude);
+        engine.Step();
+
+        Assert.Contains(enemy, host.DrankCombatDrug);
+        Assert.Equal(0, host.CombatDrugs[enemy]); // consumed
+    }
+
+    [Fact]
+    public void CleanEnemyNeverDrinksACombatDrug()
+    {
+        // chem_use=clean → the chance is 0, so ShouldUse short-circuits WITHOUT drawing → no drink (the
+        // inert-by-default invariant that keeps the clean-packet golden fights byte-identical).
+        var host = new FakeCombatHost();
+        MapObject dude = host.SetDude(NewCritter(tile: 20100, hp: 30, ap: 10));
+        MapObject enemy = host.AddCritter(NewCritter(tile: HexGrid.TileInDirection(20100, 0), hp: 100, ap: 10));
+        host.AiPackets[enemy] = new AiPacket(8, "Animal", MinToHit: 0, MinHp: 0, 0, "", "", 0, ChemUse: 0);
+        host.CombatDrugs[enemy] = 1;
+        var engine = new CombatEngine(host, new MinRng());
+
+        engine.BeginScriptAggro(enemy, dude);
+        engine.Step();
+
+        Assert.DoesNotContain(enemy, host.DrankCombatDrug);
+        Assert.Equal(1, host.CombatDrugs[enemy]); // untouched
+    }
+
+    [Fact]
+    public void NpcWithCrippledArmsStillAttacksWithFistsInsteadOfSoftlocking()
+    {
+        // P78-M4: an enemy whose arms are both crippled can't wield its weapon — but unlike the DUDE
+        // (blocked outright), an NPC drops to fists and still attacks the adjacent dude. The pure gate
+        // (WeaponBlockedByCrippledArms) is covered by CrippledArmsGateWeaponAttacks; this proves the NPC
+        // path calls it and falls back rather than stalling the turn.
+        bool EnemyAttacks(int combatResults)
+        {
+            var wstats = new WeaponProtoStats(1, 6, 10, 0, 1, 0, 0, 1, 4, 0, 0, 0, -1, 0, 0); // a melee weapon
+            MapObject item = new() { Id = 8, HexTile = 0, X = 0, Y = 0, Frame = 0, Rotation = 0, Fid = 0, Flags = 0, Pid = 8, Sid = -1 };
+            var host = new FakeCombatHost { Equipped = (new ProtoInfo(8, 0, 0, 0, 0x001, 3, Weapon: wstats), item) };
+            MapObject dude = host.SetDude(NewCritter(20100, hp: 30, ap: 10));
+            MapObject enemy = host.AddCritter(NewCritter(HexGrid.TileInDirection(20100, 0), hp: 30, ap: 10, skill: 100));
+            enemy.CombatResults = combatResults;
+            host.AiPackets[enemy] = new AiPacket(13, "Thug", MinToHit: 0, MinHp: 0, 0, "", "");
+            var engine = new CombatEngine(host, new MinRng());
+            engine.BeginScriptAggro(enemy, dude);
+            for (int i = 0; i < 50 && engine.Phase == CombatPhase.EnemyTurn; i++) { host.Animating.Clear(); engine.Step(); }
+            return dude.CurrentHp < 30;
+        }
+
+        Assert.True(EnemyAttacks(0));                              // armed, no crip → attacks
+        Assert.True(EnemyAttacks(CriticalTables.DamCripArmAny));   // both arms crippled → fists, still attacks
+    }
+
     // --- P68: AI-packet enemy distance (stay / snipe) ---------------------------------
 
     [Fact]
@@ -524,13 +588,13 @@ public class CombatEngineTests
     }
 
     [Fact]
-    public void SnipeEnemyBacksAwayFromAnAdjacentTarget()
+    public void SnipeEnemyBacksAwayMultipleHexesTowardItsPreferredRange()
     {
-        // P68 (DISTANCE_SNIPE, combat_ai.cc:3001): a ranged sniper closed to melee range kites — it steps
-        // away to reopen range instead of firing point-blank (one-step, the documented simplification).
+        // P68/P78-M3 (DISTANCE_SNIPE, combat_ai.cc:3001): a ranged sniper inside its preferred range kites —
+        // P78-M3 makes it a MULTI-step retreat toward SnipeRange (5), AP-limited, not the old one-step.
         var host = new FakeCombatHost { LoadedAmmoCount = 10 };
         MapObject dude = host.SetDude(NewCritter(tile: 20100, hp: 30, ap: 10));
-        int eTile = HexGrid.TileInDirection(20100, 0); // adjacent
+        int eTile = HexGrid.TileInDirection(20100, 0); // adjacent (distance 1)
         MapObject enemy = host.AddCritter(NewCritter(tile: eTile, hp: 30, ap: 10));
         host.AiPackets[enemy] = new AiPacket(13, "Sniper", MinToHit: 0, MinHp: 0, 0, "snipe", "");
         host.Equipped = (TestWeapon(0x100, 0x06, 5, 12), TestItem(0x100)); // a loaded ranged gun
@@ -539,8 +603,37 @@ public class CombatEngineTests
         engine.BeginScriptAggro(enemy, dude);
         engine.Step();
 
-        Assert.True(HexGrid.Distance(enemy.HexTile, dude.HexTile) > 1); // kited away to reopen range
+        Assert.Equal(5, HexGrid.Distance(enemy.HexTile, dude.HexTile)); // backed off to SnipeRange (1 → 5)
         Assert.Equal(30, dude.CurrentHp);                              // did not shoot this turn
+    }
+
+    [Fact]
+    public void EnemyHoldsAGunShotThatWouldPassThroughATeammate()
+    {
+        // P78-M3 (_combat_safety_invalidate_weapon, combat.cc:2249): a gun enemy won't fire a shot whose hex
+        // line passes through a living teammate — it holds and APPROACHES instead of friendly-firing the ally.
+        // Observable = whether the shooter had to MOVE: in range with a clear line it shoots in place; with
+        // an ally on the line it can't shoot, so it closes the gap (moves off its tile).
+        bool ApproachedInsteadOfShooting(bool placeAllyOnLine)
+        {
+            var host = new FakeCombatHost { LoadedAmmoCount = 10 };
+            MapObject dude = host.SetDude(NewCritter(tile: 20100, hp: 30, ap: 10));
+            int eTile = Step(20100, 0, 4); // the shooter, 4 hexes out, gun range 40 → in range
+            MapObject enemy = host.AddCritter(NewCritter(tile: eTile, hp: 30, ap: 10, skill: 120));
+            enemy.Team = 3;
+            host.AiPackets[enemy] = new AiPacket(13, "Gunner", MinToHit: 0, MinHp: 0, 0, "", "");
+            host.Equipped = (TestWeapon(0x100, 0x06, 5, 12), TestItem(0x100));
+            // an ally either exactly on the shooter→dude line (distance 2 from the dude) or well off it.
+            MapObject ally = host.AddCritter(NewCritter(tile: placeAllyOnLine ? Step(20100, 0, 2) : Step(20100, 2, 6), hp: 30));
+            ally.Team = 3;
+            var engine = new CombatEngine(host, new MinRng());
+            engine.BeginScriptAggro(enemy, dude);
+            for (int i = 0; i < 50 && engine.Phase == CombatPhase.EnemyTurn; i++) { host.Animating.Clear(); engine.Step(); }
+            return enemy.HexTile != eTile; // did it have to move off its firing position?
+        }
+
+        Assert.False(ApproachedInsteadOfShooting(placeAllyOnLine: false)); // clear line → shoots in place
+        Assert.True(ApproachedInsteadOfShooting(placeAllyOnLine: true));   // ally on the line → holds, approaches
     }
 
     // --- P43: AI inventory weapon switch (best_weapon) --------------------------------
@@ -2100,6 +2193,16 @@ public class CombatEngineTests
                 return false;
             int max = GetCritterState(critter)?.MaxHp ?? critter.CurrentHp;
             critter.CurrentHp = Math.Min(critter.CurrentHp + NpcHealAmount, max);
+            return true;
+        }
+        public readonly Dictionary<MapObject, int> CombatDrugs = []; // P78-M2: count of buff drugs carried
+        public readonly List<MapObject> DrankCombatDrug = [];
+        public bool TryNpcUseCombatDrug(MapObject critter, int[]? primaryDesire)
+        {
+            if (CombatDrugs.GetValueOrDefault(critter) <= 0)
+                return false;
+            CombatDrugs[critter]--;
+            DrankCombatDrug.Add(critter);
             return true;
         }
         public void GameOver() => GameOverCalled = true;

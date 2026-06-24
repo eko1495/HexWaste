@@ -400,6 +400,40 @@ public sealed partial class ViewerGame
         return false;
     }
 
+    /// <summary>An NPC drinks ONE non-healing combat drug to buff itself (P78-M2): pick a
+    /// chem_primary_desire drug, apply its IMMEDIATE stat effect to a per-critter bonus that
+    /// <see cref="GetCritterState"/> folds in (the companion-override anti-aliasing pattern; cleared on
+    /// combat end), heal any HP component, consume one. DOCUMENTED SIMPLIFICATION: the timed wear-off
+    /// (down-then-up ramp) isn't modelled for NPCs — the buff lasts the fight, which is shorter than any
+    /// drug's onset anyway.</summary>
+    public bool TryNpcUseCombatDrug(MapObject critter, int[]? primaryDesire)
+    {
+        var carried = critter.Inventory.Where(it => SafeProto(it.Pid)?.Drug is not null).Select(it => it.Pid).ToList();
+        int pid = Formats.Combat.AiCombatDrug.Pick(carried, primaryDesire);
+        if (pid < 0 || critter.Inventory.FirstOrDefault(it => it.Pid == pid) is not { } item
+            || SafeProto(pid)?.Drug is not { } drug)
+            return false;
+
+        int[] bonus = _npcDrugBonus.TryGetValue(critter, out int[]? b) ? b : _npcDrugBonus[critter] = new int[35];
+        int hpHeal = 0;
+        for (int i = 0; i < 3; i++)
+        {
+            int stat = drug.Stats[i];
+            if (stat == 35) hpHeal += drug.Amounts[i];          // STAT_CURRENT_HIT_POINTS
+            else if (stat >= 0 && stat < 35) bonus[stat] += drug.Amounts[i]; // a SPECIAL/derived buff
+        }
+        if (hpHeal > 0)
+        {
+            int max = GetCritterState(critter)?.MaxHp ?? critter.CurrentHp;
+            critter.CurrentHp = Math.Min(critter.CurrentHp + hpHeal, max);
+        }
+        item.StackCount--;
+        if (item.StackCount <= 0)
+            critter.Inventory.Remove(item);
+        Log($"The {ObjectName(critter)} uses a chem.");
+        return true;
+    }
+
     private void PlayWeaponSfx(ProtoInfo? weaponProto)
     {
         if (weaponProto?.Weapon is { SoundCode: > 0 } weapon)

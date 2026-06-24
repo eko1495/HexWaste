@@ -53,7 +53,10 @@ public sealed record AiPacket(
     string AreaAttackMode = "",
     /// <summary>ai.txt <c>secondary_freq</c>: the 1/N burst probability for SOMETIMES and the default
     /// branch (combat_ai.cc:2290/2314). P76-M1.</summary>
-    int SecondaryFreq = 0);
+    int SecondaryFreq = 0,
+    /// <summary>ai.txt <c>chem_primary_desire</c>: up to 3 drug pids the NPC reaches for first when it
+    /// decides to chem up mid-fight (combat_ai.cc:478/1031); empty = no preference. P78-M2.</summary>
+    int[]? ChemPrimaryDesire = null);
 
 /// <summary>
 /// The parsed <c>data\ai.txt</c> table, keyed by <c>packet_num</c>. Built once and
@@ -93,7 +96,8 @@ public sealed class AiPacketTable
                     AttackStart: I("attack_start"), AttackEnd: I("attack_end"),
                     RunStart: I("run_start"), RunEnd: I("run_end"),
                     CalledFreq: I("called_freq"),                        // P75-M4
-                    AreaAttackMode: S("area_attack_mode"), SecondaryFreq: I("secondary_freq"))); // P76-M1
+                    AreaAttackMode: S("area_attack_mode"), SecondaryFreq: I("secondary_freq"), // P76-M1
+                    ChemPrimaryDesire: ParseIntList(S("chem_primary_desire")))); // P78-M2
             fields.Clear();
         }
 
@@ -143,6 +147,15 @@ public sealed class AiPacketTable
             };
         }
         return mask;
+    }
+
+    /// <summary>A comma/space-separated int list (ai.txt chem_primary_desire); empty → null. The engine
+    /// reads up to 3 (AI_PACKET_CHEM_PRIMARY_DESIRE_COUNT); we keep whatever parses.</summary>
+    internal static int[]? ParseIntList(string value)
+    {
+        int[] ids = value.Split([',', ' '], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Where(t => int.TryParse(t, out _)).Select(int.Parse).ToArray();
+        return ids.Length == 0 ? null : ids;
     }
 
     /// <summary>ai.txt <c>chem_use</c> string → the gChemUseKeys index (combat_ai.cc:192). Absent/
