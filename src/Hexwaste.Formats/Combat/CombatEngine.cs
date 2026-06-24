@@ -98,6 +98,12 @@ public sealed class CombatEngine
     private int _actingEnemyAp;
     private MapObject? _actingAlly;
     private int _actingAllyAp;
+    // P77: every combatant's CURRENT combat AP, mirroring obj->data.critter.combat.ap. Reset to maxAp
+    // at every round start (_combat_set_move_all, combat.cc:3206/3425), then captured as the leftover
+    // when each critter's turn ends. READ in M2 as a temporary AC bonus when it is NOT this critter's
+    // turn (the remaining-AP dodge, stat.cc:239). A not-yet-acted critter carries full maxAp dodge;
+    // an already-acted one its leftover. The dude is captured at EndPlayerTurn.
+    private readonly Dictionary<MapObject, int> _currentAp = [];
     private int _round;
     private int _dudeAp;
     private bool _gameOver;
@@ -1658,6 +1664,8 @@ public sealed class CombatEngine
 
         // The dude's slot in the interleaved order is done — advance to the next
         // combatant (the engine's _combat() loop moving past gDude's _combat_turn).
+        if (_host.Dude is { } d) // P77: stash the dude's leftover AP for his AC dodge until his next turn
+            _currentAp[d] = _dudeAp;
         _orderIndex++;
         _phase = CombatPhase.EnemyTurn;
     }
@@ -1711,6 +1719,16 @@ public sealed class CombatEngine
                 .ThenByDescending(c => _host.GetCritterState(c)?.Stat(CritterStat.Luck) ?? 0));
         }
         _orderIndex = 0;
+        ResetAllCombatAp();
+    }
+
+    /// <summary>_combat_set_move_all (combat.cc:3206, called at the top of every round, :3425): every
+    /// committed combatant's combat.ap → maxAp. So at round start a not-yet-acted critter carries full
+    /// maxAp dodge (M2); as each acts, the leftover is captured at turn end. P77.</summary>
+    private void ResetAllCombatAp()
+    {
+        foreach (MapObject c in _order)
+            _currentAp[c] = _host.GetCritterState(c)?.MaxActionPoints ?? 5;
     }
 
     /// <summary>A script's attack external fired (scripted aggro). The aggressor
@@ -1781,6 +1799,7 @@ public sealed class CombatEngine
         _phase = CombatPhase.Idle;
         _hostiles.Clear();
         _order.Clear();
+        _currentAp.Clear();
         _actingEnemy = null;
         _actingAlly = null;
         if (_host.Dude is { } dude && _host.GetCritterState(dude) is { } stats)
@@ -1905,6 +1924,7 @@ public sealed class CombatEngine
         {
             if (!ae.IsDead && TryEnemyAction(ae))
                 return;
+            _currentAp[ae] = _actingEnemyAp; // P77: leftover AP boosts its AC until its next turn
             _actingEnemy = null;
             _orderIndex++;
         }
@@ -1912,6 +1932,7 @@ public sealed class CombatEngine
         {
             if (!aa.IsDead && TryAllyAction(aa))
                 return;
+            _currentAp[aa] = _actingAllyAp;
             _actingAlly = null;
             _orderIndex++;
         }
@@ -1973,6 +1994,7 @@ public sealed class CombatEngine
                 _actingAllyAp = _host.GetCritterState(actor)?.MaxActionPoints ?? 5;
                 if (TryAllyAction(actor))
                     return;
+                _currentAp[actor] = _actingAllyAp; // P77
                 _actingAlly = null;
             }
             else
@@ -1981,6 +2003,7 @@ public sealed class CombatEngine
                 _actingEnemyAp = _host.GetCritterState(actor)?.MaxActionPoints ?? 5;
                 if (TryEnemyAction(actor))
                     return;
+                _currentAp[actor] = _actingEnemyAp; // P77
                 _actingEnemy = null;
             }
             _orderIndex++;
