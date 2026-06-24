@@ -374,6 +374,10 @@ public sealed partial class ViewerGame
                     line == card[0] ? new Color(252, 252, 84) : new Color(0, 252, 0));
                 cardY += _fontRenderer.LineHeight * 1.5f;
             }
+            const string hint = "click or press any key to continue";
+            _fontRenderer.Draw(_spriteBatch, hint,
+                new Vector2(GraphicsDevice.Viewport.Width / 2f - _fontRenderer.MeasureWidth(hint) / 2f, cardY + _fontRenderer.LineHeight),
+                new Color(140, 140, 140));
         }
 
         if (_menu != MenuState.None)

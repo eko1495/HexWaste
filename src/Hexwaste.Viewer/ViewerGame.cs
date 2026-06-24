@@ -1514,10 +1514,12 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
             return;
         }
 
-        // Movie caption card: any key dismisses.
+        // Movie caption card: any key OR a mouse click dismisses it (the engine skips a movie on key/click).
         if (_movieCard is not null)
         {
-            if (keyboard.GetPressedKeyCount() > 0 && _previousKeyboard.GetPressedKeyCount() == 0)
+            bool keyDown = keyboard.GetPressedKeyCount() > 0 && _previousKeyboard.GetPressedKeyCount() == 0;
+            bool clickDown = mouse.LeftButton == ButtonState.Pressed && _previousMouse.LeftButton == ButtonState.Released;
+            if (keyDown || clickDown)
                 _movieCard = null;
             _previousMouse = mouse;
             _previousKeyboard = keyboard;
