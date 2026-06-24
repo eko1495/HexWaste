@@ -2366,6 +2366,30 @@ the M2/M4 faithful re-records (the P74-M2 shotgun-style live proof). 694 Formats
 goldens green. Remaining Tier-2 (P76+): enemy burst selection, itemGetCost pricing, difficulty spawn skew; then AC
 + remaining-AP dodge (the meaty AP-model phase).
 
+Phase 76 (DONE — "Round Two of Tier-2", the remaining P75 gap-reaudit items). M1 enemy burst selection:
+TryEnemyAction now picks burst-vs-single for a burst-capable enemy weapon (combat_ai.cc:2285 _ai_pick_hit_mode)
+via the new pure AiBurstMode (ai.txt area_attack_mode → the shared AreaAttack enum + secondary_freq; absent →
+the INT<6/dist<10 default spray branch) + TryEnemyBurst (the dude's RollBurst path with attackerIsDude:false).
+GOTCHA (the AP-ordering bug, debugged via a transcript-dump assert): the burst check MUST sit in TryEnemyAction
+BEFORE the single-attack AP deduction (the old placement deducted single-AP first, leaving _actingEnemyAp <
+the burst's ApCost2 → the burst silently never fired). INERT on the slice: the golden enemies (arcaves scorpion
+pkt8 / denbus2 peasant pkt14) carry NO burst weapon → AiBurstMode never reached → all 16 combat + encounter
+goldens BYTE-IDENTICAL; proven by fake-host CombatEngine tests. M2 faithful item pricing (itemGetCost):
+barter used the raw proto Cost, mispricing looted loaded guns + partial ammo clips. New pure Formats.Map.
+ItemCost.For ports item.cc itemGetCost (:813) — a loaded weapon adds rounds×ammoCost/boxCapacity (:831), a
+partial ammo box is its fill fraction cost×rounds/capacity (:847), a container sums contents recursively (:828)
+— mirroring the InventoryWeight ammo/container pattern; wired into BarterBuyPrice + BarterSellPrice. A plain
+item still prices at its raw proto cost, and no golden prices a loaded weapon / partial ammo (the trade-roundtrip
+uses the flat companion path), so byte-identical; 8 ItemCostTests. M3 difficulty spawn-count skew (worldmap.cc:
+3692): EncounterSpawner.Plan gained a difficulty param (default Normal) that skews each sub-entry's group size
+after the count roll, before the party bonus — EASY −2 floored at the entry minimum (a fixed Enc:(N-N) is
+unchanged: count−2 < min → min), HARD +2; wired from the viewer via the existing Difficulty property (the
+encounter-RATE skew at :3406/:3604 was already live through WorldEncounters.Pick — only the COUNT skew at :3692
+was missing). Inert at Normal → all 16 combat + 154 prior encounter goldens BYTE-IDENTICAL; new golden
+encounter-rats-hard (ARRO_Rats seed 1: planned 5 → 6 at HARD, encounter-arro-rats the Normal control) + 3
+EncounterSpawner skew tests. 716 Formats tests, 16 combat + 170 encounter goldens green. NEXT (P77): AC +
+remaining-AP dodge — the meaty AP-model phase (the user's "then AC+remaining-AP dodge", its own phase, LAST).
+
 Phase 10 (DONE, per docs/phase10-research-report.md — "The Wasteland
 Bites Back"): M0 persistence pre-stage (the net: MapList saved=No /
 random_start_point parse + IsTransient; the 3-clause transient guards as
