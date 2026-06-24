@@ -3077,15 +3077,9 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
 
     private int BarterBuyPrice(MapObject item)
     {
-        int cost;
-        try
-        {
-            cost = _protos.Get(item.Pid).Cost;
-        }
-        catch (Exception ex) when (ex is FileNotFoundException or InvalidDataException)
-        {
-            return 0;
-        }
+        // P76-M2: ItemCost.For (item.cc itemGetCost) prices a loaded weapon's rounds + a partial ammo
+        // box's fill + container contents, not just the raw proto cost. SafeProto → 0 on a missing proto.
+        int cost = Formats.Map.ItemCost.For(item, SafeProto);
         return Formats.Combat.BarterMath.BuyPrice(cost, _barterModifier,
             _barterNpc is { } npc ? NpcBarterSkill(npc) : 0, DudeBarterSkill());
     }
@@ -3094,7 +3088,7 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
     {
         try
         {
-            return Formats.Combat.BarterMath.SellPrice(_protos.Get(item.Pid).Cost);
+            return Formats.Combat.BarterMath.SellPrice(Formats.Map.ItemCost.For(item, SafeProto));
         }
         catch (Exception ex) when (ex is FileNotFoundException or InvalidDataException)
         {
