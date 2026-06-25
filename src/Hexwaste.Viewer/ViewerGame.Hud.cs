@@ -86,17 +86,18 @@ public sealed partial class ViewerGame
         Rectangle vp = GraphicsDevice.Viewport.Bounds;
         bool overWorld = _debugCursorTile >= 0
             || (WorldCursorActive() && m.Y < vp.Height - _hudBarHeight && _camera.ScreenToHex(m.X, m.Y) >= 0);
+        // The red hex ring at the destination tile (UNDER the arrow) when the world is the active
+        // surface; then the arrow on top at the pointer (over UI the arrow is the only cursor).
+        Vector2 arrowAt = new(m.X, m.Y);
         if (overWorld && _hexCursor is not null)
         {
             int hex = _debugCursorTile >= 0 ? _debugCursorTile : _camera.ScreenToHex(m.X, m.Y);
             (int hx, int hy) = _camera.HexToScreen(hex);
-            // msef000 is 32x16 — centre it on the tile point (hexX+16, hexY+8).
-            _spriteBatch.Draw(_hexCursor, new Vector2(hx, hy), Color.White);
+            _spriteBatch.Draw(_hexCursor, new Vector2(hx, hy), Color.White); // msef000 32x16, centred on the tile
+            if (_debugCursorTile >= 0)
+                arrowAt = new Vector2(hx + 16, hy + 8); // screenshot: place the arrow over the ring to show the layering
         }
-        else
-        {
-            _spriteBatch.Draw(_stdArrow, new Vector2(m.X, m.Y), Color.White); // STDARROW hotspot is (0,0)
-        }
+        _spriteBatch.Draw(_stdArrow, arrowAt, Color.White); // STDARROW hotspot is (0,0), on top of the ring
     }
 
     /// <summary>The authentic bottom HUD bar (P11): the iface.frm panel pinned
