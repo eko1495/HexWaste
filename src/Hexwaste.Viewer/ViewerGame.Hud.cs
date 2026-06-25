@@ -58,7 +58,7 @@ public sealed partial class ViewerGame
     /// <summary>The world is the active click surface (no overlay up) — so the mouse shows the hex
     /// destination ring rather than the arrow.</summary>
     private bool WorldCursorActive() =>
-        _map is not null && _menu == MenuState.None && _dialog is null
+        _map is not null && _menu == MenuState.None && _dialog is null && _actionMenuObj is null
         && !_inventoryOpen && !_skillAllocOpen && !_skilldexOpen && !_pipboyOpen
         && !_automapOpen && !_optionsOpen && !_worldmapOpen && !_perkPickOpen
         && !_saveLoadOpen && !_aimDialogOpen;

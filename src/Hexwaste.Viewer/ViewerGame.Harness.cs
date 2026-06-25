@@ -353,6 +353,23 @@ public sealed partial class ViewerGame
                     _camera.SetCenter(cursorHex); // P82-M5: force the hex ring here + centre for a screenshot
                     _debugCursorTile = cursorHex;
                     break;
+                case StartupAction.ActionMenuProbe(var amHex):
+                {
+                    // P82-M6: open the action menu for the object at the hex; report the item list (enum
+                    // names only — never copyrighted object text).
+                    MapObject? amObj = _solidObjects[_elevation].FirstOrDefault(o => o.HexTile == amHex)
+                        ?? _flatObjects[_elevation].FirstOrDefault(o => o.HexTile == amHex);
+                    if (amObj is null)
+                    {
+                        Console.WriteLine($"action-menu@{amHex}: no object");
+                        break;
+                    }
+                    OpenActionMenu(amObj, 100, 100);
+                    _debugForceActionMenu = true; // hold it open for a --screenshot
+                    Console.WriteLine($"action-menu@{amHex}: type={Fid.Type(amObj.Fid)}"
+                        + $" dead={amObj.IsDead} items=[{string.Join(",", _actionMenuItems)}]");
+                    break;
+                }
                 case StartupAction.IqProbe(var iqHex, var forceIn):
                 {
                     // P25: force the dude's IN, open the NPC's dialogue, report the OPTION COUNT

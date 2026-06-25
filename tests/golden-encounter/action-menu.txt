@@ -1,0 +1,2 @@
+action-menu@15278: type=Critter dead=False items=[Talk,Look,UseSkill,Cancel]
+action-menu@17070: type=Critter dead=False items=[Talk,Look,UseSkill,Cancel]

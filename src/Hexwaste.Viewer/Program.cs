@@ -268,6 +268,9 @@ for (int i = 0; i < args.Length; i++)
         case "--cursor-at" when i + 1 < args.Length: // P82-M5: screenshot the hex-ring cursor at a tile
             actions.Add(new ViewerGame.StartupAction.CursorAt(int.Parse(args[++i])));
             break;
+        case "--action-menu" when i + 1 < args.Length: // P82-M6: the action-menu item list at a hex
+            actions.Add(new ViewerGame.StartupAction.ActionMenuProbe(int.Parse(args[++i])));
+            break;
         case "--weight-probe":
             actions.Add(new ViewerGame.StartupAction.WeightProbe());
             break;

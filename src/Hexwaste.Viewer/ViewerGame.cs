@@ -610,6 +610,7 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
         /// <summary>Center the camera on a hex (screenshot testing, e.g. P23 translucency).</summary>
         public sealed record CenterHex(int Hex) : StartupAction;
         public sealed record CursorAt(int Hex) : StartupAction; // P82-M5: force the hex ring for a screenshot
+        public sealed record ActionMenuProbe(int Hex) : StartupAction; // P82-M6: the action-menu item list at a hex
         /// <summary>Report the dude's carried weight / capacity / encumbered / AP-penalty (P24).</summary>
         public sealed record WeightProbe : StartupAction;
         /// <summary>Set the sneaking flag (P29 A-M0) and report the two-layer state + Sneak skill.</summary>
@@ -2160,18 +2161,36 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
         if (_hoveredObject != previousHover)
             Window.Title = _hoveredObject is null ? _baseTitle : $"{_baseTitle} — {DescribeObject(_hoveredObject)}";
 
-        // Right-click examines the object under the cursor.
-        if (mouse.RightButton == ButtonState.Pressed && _previousMouse.RightButton == ButtonState.Released
-            && _hoveredObject is not null && _hoveredObject != _dude?.Dude)
-            Examine(_hoveredObject);
+        // P82-M6: right-click opens the FO2 action menu on the hovered object (the old right-click-
+        // examines is now the menu's "Look" item). A second right-click / Esc closes it. (FO2 uses
+        // left-click-hold; right-click is our documented divergence.)
+        if (!_debugForceActionMenu && mouse.RightButton == ButtonState.Pressed && _previousMouse.RightButton == ButtonState.Released)
+        {
+            if (_actionMenuObj is not null)
+                CloseActionMenu();
+            else if (_hoveredObject is not null)
+                OpenActionMenu(_hoveredObject, mouse.X, mouse.Y);
+        }
+        if (!_debugForceActionMenu && _actionMenuObj is not null && IsKeyPressed(keyboard, Keys.Escape))
+            CloseActionMenu();
 
         // Click: doors toggle, stairs/ladders travel, other objects identify,
         // open ground walks.
-        if (mouse.LeftButton == ButtonState.Pressed && _previousMouse.LeftButton == ButtonState.Released)
+        if (!_debugForceActionMenu && mouse.LeftButton == ButtonState.Pressed && _previousMouse.LeftButton == ButtonState.Released)
         {
+            // P82-M6: the action menu (opened via right-click) consumes the left click first — pick
+            // an item, or close if the click misses the menu.
+            if (_actionMenuObj is not null)
+            {
+                int amRow = ActionMenuRowAt(mouse.X, mouse.Y);
+                if (amRow >= 0)
+                    DispatchActionMenu(amRow);
+                else
+                    CloseActionMenu();
+            }
             // A click on a HUD bar button (INV/OPT/MAP/CHA/PIP/SKILLDEX) is consumed
             // there and does not also walk/interact with the map underneath (#15 M4).
-            if (TryClickInterfaceBar(mouse.X, mouse.Y))
+            else if (TryClickInterfaceBar(mouse.X, mouse.Y))
             {
                 // handled by the bar
             }
@@ -3920,8 +3939,16 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
     /// (closes the picker first).</summary>
     private void ArmSkill(int skill)
     {
-        _pendingUseSkill = skill;
         _skilldexOpen = false;
+        // P82-M6: if the action menu's "Use Skill" opened the Skilldex on a target, apply the picked
+        // skill to it directly instead of arm-and-next-click.
+        if (_actionSkillTarget is { } target)
+        {
+            _actionSkillTarget = null;
+            TryUseSkillOn(skill, target);
+            return;
+        }
+        _pendingUseSkill = skill;
         Log($"Use {SkillName(skill)} on what?");
     }
 
@@ -4231,6 +4258,7 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
             DrawTactics();
         }
         DrawMapFade(gameTime); // P52-M6: the post-load fade-in, on top of everything
+        DrawActionMenu();      // P82-M6: the right-click action menu, above the world/HUD
         DrawMouseCursor();     // P82-M5: the FO2 hex-ring / arrow cursor, above everything
         _spriteBatch.End();
 
