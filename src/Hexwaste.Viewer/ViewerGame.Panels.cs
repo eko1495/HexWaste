@@ -20,6 +20,29 @@ public sealed partial class ViewerGame
     private Texture2D? _bigNum;
     private bool _charBgTried;
 
+    // P82-M2: the currently-selected character-sheet item, in the engine's EDITOR_* numbering
+    // (0-6 SPECIAL, 7/8/9 level/exp/next, 43 max-HP, 44-50 conditions, 51-60 derived, 61-78 skills).
+    // Clicking an info region sets it; the description card + the highlight read it.
+    private int _charSelId;
+
+    // stat.msg / skill.msg (the character-editor description strings). Lazy, like _editorMsg.
+    private Formats.Text.MessageFile? _statMsg; private bool _statMsgTried;
+    private Formats.Text.MessageFile? _skillMsg; private bool _skillMsgTried;
+    private string StatMsg(int id) => id < 0 ? "" : LazyMsg(@"text\english\game\stat.msg", ref _statMsgTried, ref _statMsg)?.GetText(id) ?? "";
+    private string SkillMsg(int id) => id < 0 ? "" : LazyMsg(@"text\english\game\skill.msg", ref _skillMsgTried, ref _skillMsg)?.GetText(id) ?? "";
+
+    // The middle column's two panels (character_editor.cc characterEditorDrawDerivedStats): the
+    // CONDITION block at y=46 (HP + status labels, items 43-50) and the DERIVED block at y=179
+    // (items 51-60). Each derived row = (editor.msg label id, engine STAT_* index). The STAT_*
+    // ordinals are the VERIFIED stat_defs.h values (DR=24, RadRes=31, PoisonRes=32 — the workflow
+    // synthesizer had these off by one; cross-checked vs CritterStat.DamageResistance=24).
+    private const int CharCondStartY = 46, CharDerivedStartY = 179;
+    private static readonly int[] CharStatY = [37, 70, 103, 136, 169, 202, 235];
+    // (editor.msg label id, engine STAT_* index) per render row — the label ids are the engine's
+    // verbatim getmsg ids (NON-sequential: AC=302, AP=301, Carry=311, Melee=304, ...).
+    private static readonly (int Label, int Stat)[] CharDerivedRows =
+        [(302, 9), (301, 8), (311, 12), (304, 11), (305, 24), (306, 32), (307, 31), (308, 13), (309, 14), (310, 15)];
+
     /// <summary>The character sheet (C / K): the authentic FO2 character-editor backdrop
     /// (interface FID 177) with SPECIAL + derived stats + level on the left/middle and the
     /// 18 skills on the right, positioned at the engine's character_editor.cc coordinates;
@@ -82,28 +105,48 @@ public sealed partial class ViewerGame
         for (int i = 0; i < 7; i++)
             BigNumber(58, statY[i], Sp(i));
 
-        // Level / Experience / next-level (x=32, y=280; character_editor.cc:2378-2429).
-        T(33, 281, $"Level {_dudeLevel}", green);
-        T(33, 281 + rh, $"Exp {_dudeXp}", green);
+        // Level / Experience / next-level (x=32, y=280; character_editor.cc:2378-2429) — gold when selected.
+        T(33, 281, $"Level {_dudeLevel}", _charSelId == 7 ? gold : green);
+        T(33, 281 + rh, $"Exp {_dudeXp}", _charSelId == 8 ? gold : green);
         int nextXp = Formats.Combat.Progression.XpForLevel(_dudeLevel + 1);
-        T(33, 281 + 2 * rh, nextXp > 0 ? $"Next {nextXp}" : "Next (max)", green);
+        T(33, 281 + 2 * rh, nextXp > 0 ? $"Next {nextXp}" : "Next (max)", _charSelId == 9 ? gold : green);
 
-        // Condition + derived stats (middle column): label x=194, value x=288
-        // (character_editor.cc:2632/2653/2656).
-        int my = 46;
-        void D(string label, string val) { T(194, my, label, green); T(288, my, val, green); my += rh + 2; }
+        // Middle column, two panels (character_editor.cc characterEditorDrawDerivedStats):
+        int rstep = rh + 2;
         if (cs is not null)
         {
-            D("Hit Points", $"{_dude!.Dude.CurrentHp}/{cs.MaxHp}");
-            my += 4;
-            D("Armor Class", cs.ArmorClass.ToString());
-            D("Action Pts", cs.MaxActionPoints.ToString());
-            D("Carry Wt", cs.CarryWeight.ToString());
-            D("Melee Dmg", cs.MeleeDamage.ToString());
-            D("Dmg Resist", $"{cs.DamageResistance}%");
-            D("Sequence", cs.Sequence.ToString());
-            D("Heal Rate", Math.Max(Sp(Formats.Combat.CritterStat.Endurance) / 3, 1).ToString());
-            D("Critical %", $"{cs.Stat(Formats.Combat.CritterStat.CriticalChance)}%");
+            // CONDITION panel (region 528, y=46): HP value + the 7 status labels (green ok / red afflicted).
+            bool hpSel = _charSelId == 43;
+            T(194, CharCondStartY, EditorMsg(300), hpSel ? gold : green);
+            T(263, CharCondStartY, $"{_dude!.Dude.CurrentHp}/{cs.MaxHp}", hpSel ? gold : green);
+            int res = _dude.Dude.CombatResults;
+            var red = new Color(252, 84, 84);
+            bool[] bad =
+            [
+                _dude.Dude.Poison > 0,                                              // 312 Poisoned
+                false,                                                              // 313 Radiated (not modeled)
+                (res & Formats.Combat.CriticalTables.DamBlind) != 0,                // 314 Eye Damage
+                (res & Formats.Combat.CriticalTables.DamCripArmRight) != 0,         // 315 Crippled R Arm
+                (res & Formats.Combat.CriticalTables.DamCripArmLeft) != 0,          // 316 Crippled L Arm
+                (res & Formats.Combat.CriticalTables.DamCripLegRight) != 0,         // 317 Crippled R Leg
+                (res & Formats.Combat.CriticalTables.DamCripLegLeft) != 0,          // 318 Crippled L Leg
+            ];
+            int cyy = CharCondStartY + rstep + 4;
+            for (int i = 0; i < 7; i++)
+            {
+                T(194, cyy, EditorMsg(312 + i), _charSelId == 44 + i ? gold : bad[i] ? red : green);
+                cyy += rstep;
+            }
+
+            // DERIVED panel (region 529, y=179): 10 derived stats, label x=194 / value x=288.
+            int dyy = CharDerivedStartY;
+            for (int i = 0; i < CharDerivedRows.Length; i++)
+            {
+                Color dc = _charSelId == 51 + i ? gold : green;
+                T(194, dyy, EditorMsg(CharDerivedRows[i].Label), dc);
+                T(288, dyy, DerivedValue(i, cs), dc);
+                dyy += rstep;
+            }
         }
 
         // Skills (right): name x=380, value x=573, y=27 + i*(lineHeight+1) (character_editor.cc:2974).
@@ -112,7 +155,7 @@ public sealed partial class ViewerGame
             int value = Formats.Combat.SkillSet.Value(bb, bbo, ssk, tg, i);
             bool tagged = Array.IndexOf(tg, i) >= 0;
             bool selected = i == _skillAllocIndex && _unspentSkillPoints > 0;
-            Color c = selected || tagged ? gold : green;
+            Color c = selected || tagged || _charSelId == 61 + i ? gold : green;
             int sy = 27 + i * rh;
             T(380, sy, (selected ? "> " : "  ") + Formats.Combat.SkillSet.Names[i], c);
             T(selected ? 540 : 573, sy,
@@ -122,6 +165,26 @@ public sealed partial class ViewerGame
         // Tag-skill counter (always drawn at 522,228 — character_editor.cc:1421/2961): the number
         // of unused tag slots (NUM_TAGGED_SKILLS 4 − tagged), faithful even in the read-only view.
         BigNumber(522, 228, Math.Max(0, 4 - tg.Count(t => t >= 0)));
+
+        // Selection cue: a gold outline on the selected recess/row (the engine leaves the view-mode
+        // bignum white, so the outline + the description card are the click feedback).
+        if (SheetItemRect(_charSelId) is { } sr)
+            DrawRectOutline(new Rectangle(ox + sr.X, oy + sr.Y, sr.Width, sr.Height), gold);
+
+        // Description card (the baked parchment, ~x348 y262+): the selected item's NAME + wrapped
+        // DESCRIPTION in black. ported from character_editor.cc characterEditorDrawCardWithOptions
+        // (title at 348,272; description at 348,315; _colorTable[0] = black on the parchment).
+        (string cardTitle, string cardDesc) = SheetCard(_charSelId);
+        if (cardTitle.Length > 0)
+            _fontRenderer.Draw(_spriteBatch, cardTitle, new Vector2(ox + 348, oy + 270), Color.Black, shadow: false);
+        int cardY = oy + 292;
+        foreach (string ln in _fontRenderer.WrapText(cardDesc, 236))
+        {
+            if (cardY > oy + 456)
+                break;
+            _fontRenderer.Draw(_spriteBatch, ln, new Vector2(ox + 348, cardY), Color.Black, shadow: false);
+            cardY += rh;
+        }
 
         // Bottom folder band (the engine's PERKS/KARMA/KILLS folder, y~330): a compact
         // traits/perks/karma/kills summary + the progression hints in its place.
@@ -142,7 +205,81 @@ public sealed partial class ViewerGame
         if (_unspentSkillPoints > 0)
             F($"{_unspentSkillPoints} skill points - select a skill, Enter to raise", green);
 
-        T(34, 462, "C/K close   G perk   Up/Down select   Enter raise", tan);
+        T(34, 462, "Click a stat/skill for info   C/K close   G perk   Enter raise", tan);
+    }
+
+    /// <summary>The derived-stat value string for derived row <paramref name="i"/> (the
+    /// CharDerivedRows order: AC/AP/Carry/Melee/DR/PoisonRes/RadRes/Sequence/Heal/Crit).</summary>
+    private static string DerivedValue(int i, Formats.Combat.CritterState cs) => i switch
+    {
+        0 => cs.ArmorClass.ToString(),
+        1 => cs.MaxActionPoints.ToString(),
+        2 => cs.CarryWeight.ToString(),
+        3 => cs.MeleeDamage.ToString(),
+        4 => $"{cs.DamageResistance}%",
+        5 => $"{cs.Stat(32)}%",                                                  // poison resistance
+        6 => $"{cs.Stat(31)}%",                                                  // radiation resistance
+        7 => cs.Sequence.ToString(),
+        8 => Math.Max(cs.Stat(Formats.Combat.CritterStat.Endurance) / 3, 1).ToString(),
+        _ => $"{cs.Stat(Formats.Combat.CritterStat.CriticalChance)}%",
+    };
+
+    /// <summary>The description-card (title, body) for an engine EDITOR_* item id, ported from
+    /// character_editor.cc characterEditorDrawCard: SPECIAL + derived via stat.msg (100+stat /
+    /// 200+stat), skills via skill.msg, conditions/level via editor.msg/stat.msg.</summary>
+    private (string Title, string Desc) SheetCard(int id)
+    {
+        if (id is >= 0 and < 7) return (StatMsg(100 + id), StatMsg(200 + id));   // SPECIAL
+        if (id == 7) return (StatMsg(400), StatMsg(500));                        // Level (PC_STAT_LEVEL=0)
+        if (id == 8) return (StatMsg(401), StatMsg(501));                        // Experience
+        if (id == 9) return (EditorMsg(122), EditorMsg(123));                    // Next level
+        if (id == 43) return (EditorMsg(300), StatMsg(207));                     // Max HP (STAT_MAX_HP=7)
+        if (id is >= 44 and < 51) return (EditorMsg(312 + (id - 44)), EditorMsg(400 + (id - 44))); // conditions
+        if (id is >= 51 and < 61) { int s = CharDerivedRows[id - 51].Stat; return (StatMsg(100 + s), StatMsg(200 + s)); }
+        if (id is >= 61 and < 79) { int s = id - 61; return (SkillName(s), SkillMsg(200 + s)); }
+        return ("", "");
+    }
+
+    /// <summary>The window-local rect of an EDITOR_* item (for the gold selection outline) — kept in
+    /// lock-step with the render positions + CharSheetItemAt's hit regions.</summary>
+    private Rectangle? SheetItemRect(int id)
+    {
+        if (_fontRenderer is null)
+            return null;
+        int rh = _fontRenderer.LineHeight + 1, rstep = rh + 2;
+        if (id is >= 0 and < 7) return new Rectangle(56, CharStatY[id] - 1, 30, 26);            // SPECIAL recess
+        if (id is >= 7 and <= 9) return new Rectangle(31, 280 + (id - 7) * rh, 120, rh);        // level/exp/next
+        if (id == 43) return new Rectangle(192, CharCondStartY - 1, 122, rh + 1);               // HP
+        if (id is >= 44 and < 51) return new Rectangle(192, CharCondStartY + rstep + 3 + (id - 44) * rstep, 122, rh + 1);
+        if (id is >= 51 and < 61) return new Rectangle(192, CharDerivedStartY - 1 + (id - 51) * rstep, 122, rh + 1);
+        if (id is >= 61 and < 79) return new Rectangle(378, 26 + (id - 61) * rh, 215, rh);      // skill row
+        return null;
+    }
+
+    /// <summary>Hit-test the character sheet: map a screen click to an EDITOR_* item id, or -1.
+    /// ported from character_editor.cc characterEditorRegisterInfoAreas + HandleInfoButtonPressed
+    /// (the region rects; the Y-within-region maps to the item, using OUR render steps).</summary>
+    private int CharSheetItemAt(int mx, int my)
+    {
+        if (_charBg is null || _fontRenderer is null)
+            return -1;
+        Rectangle vp = GraphicsDevice.Viewport.Bounds;
+        int ox = (vp.Width - 640) / 2, oy = (vp.Height - 480) / 2;
+        int lx = mx - ox, ly = my - oy;
+        int rh = _fontRenderer.LineHeight + 1, rstep = rh + 2;
+        if (lx is >= 19 and < 144 && ly is >= 33 and < 266)                                     // SPECIAL (525)
+            for (int i = 0; i < 7; i++)
+                if (ly >= CharStatY[i] - 5 && ly <= CharStatY[i] + 27)
+                    return i;
+        if (lx is >= 28 and < 152 && ly is >= 280 and < 313)                                    // level/exp (526)
+            return 7 + Math.Clamp((ly - 281) / rh, 0, 2);
+        if (lx is >= 191 and < 314 && ly is >= 41 and < 151)                                    // condition (528)
+            return ly < CharCondStartY + rstep + 3 ? 43 : 44 + Math.Clamp((ly - (CharCondStartY + rstep + 3)) / rstep, 0, 6);
+        if (lx is >= 191 and < 314 && ly is >= 170 and < 312)                                   // derived (529)
+            return 51 + Math.Clamp((ly - CharDerivedStartY) / rstep, 0, 9);
+        if (lx is >= 370 and < 594 && ly is >= 26 and < 222)                                    // skills (531)
+            return 61 + Math.Clamp((ly - 26) / rh, 0, 17);
+        return -1;
     }
 
     /// <summary>The pre-P82 plain dark-panel character sheet, used when the FID-177 backdrop

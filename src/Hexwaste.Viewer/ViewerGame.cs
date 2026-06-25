@@ -822,7 +822,7 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
         public sealed record CreateCharacter(int[] Special, int[] Tags, int Gender, int[] Traits) : StartupAction;
         public sealed record ShowCreate(string Step = "") : StartupAction;
         public sealed record ShowInventory : StartupAction; // P67: open the inventory for a screenshot
-        public sealed record ShowCharacter : StartupAction; // P82: open the character sheet for a screenshot
+        public sealed record ShowCharacter(int Sel = 0) : StartupAction; // P82: open the character sheet (Sel = selected EDITOR_* item) for a screenshot
         public sealed record AdvanceDays(int Days) : StartupAction;
     }
 
@@ -1563,6 +1563,16 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
                 SpendSkillPoint(_skillAllocIndex);
             if (IsKeyPressed(keyboard, Keys.Escape) || IsKeyPressed(keyboard, Keys.K) || IsKeyPressed(keyboard, Keys.C))
                 _skillAllocOpen = false;
+
+            // P82-M2: click a stat/skill/derived/condition info area -> select it (the description
+            // card updates); clicking a skill also arms it for an Enter-raise.
+            if (mouse.LeftButton == ButtonState.Pressed && _previousMouse.LeftButton == ButtonState.Released
+                && CharSheetItemAt(mouse.X, mouse.Y) is var sel && sel >= 0)
+            {
+                _charSelId = sel;
+                if (sel is >= 61 and < 79)
+                    _skillAllocIndex = sel - 61;
+            }
 
             _previousMouse = mouse;
             _previousKeyboard = keyboard;

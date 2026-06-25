@@ -1759,8 +1759,9 @@ public sealed partial class ViewerGame
                     _panelPage = 0;
                     PrewarmItemTextures(_dudeInventory);
                     break;
-                case StartupAction.ShowCharacter:
+                case StartupAction.ShowCharacter(var sel):
                     _skillAllocOpen = true;
+                    _charSelId = sel;
                     break;
                 case StartupAction.AdvanceDays(var days):
                     _clock.AdvanceHours(days * 24);

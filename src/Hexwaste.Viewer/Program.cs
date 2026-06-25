@@ -610,8 +610,11 @@ for (int i = 0; i < args.Length; i++)
             actions.Add(new ViewerGame.StartupAction.ShowInventory());
             break;
         case "--show-character": // P82: open the character sheet (FID-177 backdrop) for a screenshot
-            actions.Add(new ViewerGame.StartupAction.ShowCharacter());
+        {
+            int sel = i + 1 < args.Length && int.TryParse(args[i + 1], out int s) ? (i++, s).s : 0;
+            actions.Add(new ViewerGame.StartupAction.ShowCharacter(sel));
             break;
+        }
         case "--advance-days" when i + 1 < args.Length:
             actions.Add(new ViewerGame.StartupAction.AdvanceDays(int.Parse(args[++i])));
             break;
