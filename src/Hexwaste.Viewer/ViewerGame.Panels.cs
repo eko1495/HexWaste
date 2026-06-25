@@ -89,9 +89,18 @@ public sealed partial class ViewerGame
         Formats.Combat.CritterState? cs = _dude is not null ? GetCritterState(_dude.Dude) : null;
         int Sp(int i) => cs?.Stat(i) ?? (bb[i] + bbo[i]);
 
-        // Name banner (the name button, NAME_BUTTON_X/Y 9,0).
+        // Name / Age / Gender — the three top buttons (characterEditorDrawName/Age/Gender), centered
+        // on their baked boxes (name ~75, age ~191, gender ~270). Gender = editor.msg 107+gender
+        // (107 Male / 108 Female); age defaults to 25 (the engine's creation default).
+        void TC(int cx, int py, string s, Color col) =>
+            _fontRenderer!.Draw(_spriteBatch, s, new Vector2(ox + cx - _fontRenderer.MeasureWidth(s) / 2f, oy + py), col);
         string nm = _dudeGcd is { Name.Length: > 0 } g && g.Name != "None" ? g.Name : "Wanderer";
-        T(22, 5, nm, gold);
+        int[] bs = _dudeGcd.Stats.BaseStats;
+        int age = bs.Length > 33 && bs[33] > 0 ? bs[33] : 25;
+        int gender = bs.Length > 34 ? bs[34] : 0;
+        TC(75, 5, nm, gold);
+        TC(191, 5, age.ToString(), gold);
+        TC(270, 5, EditorMsg(107 + Math.Clamp(gender, 0, 1)), gold);
 
         // SPECIAL values as the engine's bignum.frm digit pairs (the stat NAMES are baked into
         // the backdrop): blitted at x=58, the gCharacterEditorPrimaryStatY rows.
@@ -171,6 +180,9 @@ public sealed partial class ViewerGame
         // Tag-skill counter (always drawn at 522,228 — character_editor.cc:1421/2961): the number
         // of unused tag slots (NUM_TAGGED_SKILLS 4 − tagged), faithful even in the read-only view.
         BigNumber(522, 228, Math.Max(0, 4 - tg.Count(t => t >= 0)));
+        // "Tag Skill(s)" caption left of the counter (editor.msg 138 at 422,233; the engine renders
+        // it in creation mode only — we surface it in view too so the bare counter reads clearly).
+        T(422, 233, EditorMsg(138), tan);
 
         // Selection cue: a gold outline on the selected recess/row (the engine leaves the view-mode
         // bignum white, so the outline + the description card are the click feedback).
@@ -204,7 +216,14 @@ public sealed partial class ViewerGame
         }
 
         string spHint = _unspentSkillPoints > 0 ? $"{_unspentSkillPoints} skill pts (Enter raises)   " : "";
-        T(34, 462, $"{spHint}Click for info   C/K close   G perk", tan);
+        T(34, 462, $"{spHint}Click for info   G perk", tan);
+
+        // Bottom buttons (character_editor.cc PRINT 363 / DONE 475 / CANCEL 571 at y=454; the red
+        // round buttons are baked into the backdrop). DONE + CANCEL close the sheet; Print (a
+        // character dump to a text file) is out of scope, so its label is shown but inert.
+        T(383, 455, EditorMsg(103), tan);   // Print To File (inert)
+        T(492, 455, EditorMsg(100), gold);  // Done
+        T(585, 455, EditorMsg(102), gold);  // Cancel
     }
 
     /// <summary>The bottom-left folder rows: each (display text, card id, isInfo). Trait rows carry

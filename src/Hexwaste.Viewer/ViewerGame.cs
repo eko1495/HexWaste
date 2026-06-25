@@ -1566,12 +1566,19 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
 
             // P82-M2: click a stat/skill/derived/condition info area -> select it (the description
             // card updates); clicking a skill also arms it for an Enter-raise.
-            if (mouse.LeftButton == ButtonState.Pressed && _previousMouse.LeftButton == ButtonState.Released
-                && CharSheetItemAt(mouse.X, mouse.Y) is var sel && sel >= 0)
+            if (mouse.LeftButton == ButtonState.Pressed && _previousMouse.LeftButton == ButtonState.Released)
             {
-                _charSelId = sel;
-                if (sel is >= 61 and < 79)
-                    _skillAllocIndex = sel - 61;
+                if (CharSheetItemAt(mouse.X, mouse.Y) is var sel && sel >= 0)
+                {
+                    _charSelId = sel;
+                    if (sel is >= 61 and < 79)
+                        _skillAllocIndex = sel - 61;
+                }
+                // P82-M4: the DONE / CANCEL buttons (the baked red buttons, y~454) close the sheet.
+                Rectangle cvp = GraphicsDevice.Viewport.Bounds;
+                int cbx = mouse.X - (cvp.Width - 640) / 2, cby = mouse.Y - (cvp.Height - 480) / 2;
+                if (cby is >= 448 and < 476 && cbx is >= 462 and < 640)
+                    _skillAllocOpen = false;
             }
 
             _previousMouse = mouse;
