@@ -30,6 +30,12 @@ public sealed partial class ViewerGame
     private Formats.Text.MessageFile? _skillMsg; private bool _skillMsgTried;
     private string StatMsg(int id) => id < 0 ? "" : LazyMsg(@"text\english\game\stat.msg", ref _statMsgTried, ref _statMsg)?.GetText(id) ?? "";
     private string SkillMsg(int id) => id < 0 ? "" : LazyMsg(@"text\english\game\skill.msg", ref _skillMsgTried, ref _skillMsg)?.GetText(id) ?? "";
+    // trait description (trait.cc:79 — trait.msg 200+trait; the name is 100+trait, via TraitName).
+    private string TraitDesc(int i) => i < 0 ? "" : LazyMsg(@"text\english\game\trait.msg", ref _traitMsgTried, ref _traitMsg)?.GetText(200 + i) ?? "";
+
+    // The bottom-left folder (character_editor.cc region 527 = 28,363,283,105): traits + perks as
+    // CLICKABLE rows. Card ids: 500+trait, 1000+perk (distinct from the EDITOR_* item numbering).
+    private const int FolderStartY = 363;
 
     // The middle column's two panels (character_editor.cc characterEditorDrawDerivedStats): the
     // CONDITION block at y=46 (HP + status labels, items 43-50) and the DERIVED block at y=179
@@ -186,26 +192,59 @@ public sealed partial class ViewerGame
             cardY += rh;
         }
 
-        // Bottom folder band (the engine's PERKS/KARMA/KILLS folder, y~330): a compact
-        // traits/perks/karma/kills summary + the progression hints in its place.
-        int fy = 332;
-        void F(string s, Color c) { T(34, fy, s, c); fy += rh; }
-        string traitStr = string.Join(", ", _dudeGcd.Traits.Where(t => t >= 0).Select(TraitName));
-        F($"Traits: {(traitStr.Length > 0 ? traitStr : "none")}", tan);
-        var takenPerks = Enumerable.Range(0, _dudePerkRanks.Length).Where(i => _dudePerkRanks[i] > 0)
-            .Select(i => _dudePerkRanks[i] > 1 ? $"{PerkName(i)} ({_dudePerkRanks[i]})" : PerkName(i)).ToList();
-        F($"Perks: {(takenPerks.Count > 0 ? string.Join(", ", takenPerks) : "none")}", tan);
+        // Bottom-left folder (region 527, y=363): traits + perks as CLICKABLE rows (-> the card),
+        // plus karma/rep/town/kills info lines. The row list is shared by the render + the hit-test.
+        int fy = FolderStartY;
+        foreach ((string text, int cardId, bool info) in BuildFolderRows())
+        {
+            if (fy > 452)
+                break;
+            T(34, fy, text, info ? tan : _charSelId == cardId ? gold : green);
+            fy += rh;
+        }
+
+        string spHint = _unspentSkillPoints > 0 ? $"{_unspentSkillPoints} skill pts (Enter raises)   " : "";
+        T(34, 462, $"{spHint}Click for info   C/K close   G perk", tan);
+    }
+
+    /// <summary>The bottom-left folder rows: each (display text, card id, isInfo). Trait rows carry
+    /// card id 500+trait, perk rows 1000+perk (clickable -> the description card); karma/rep/town/
+    /// kills are info-only (card id -1). Deterministic — shared by the render + CharSheetItemAt.</summary>
+    private List<(string Text, int CardId, bool Info)> BuildFolderRows()
+    {
+        var rows = new List<(string, int, bool)>();
+        if (_dudeGcd is null)
+            return rows;
+        List<int> traits = _dudeGcd.Traits.Where(t => t >= 0).ToList();
+        if (traits.Count == 0)
+            rows.Add(("Traits: none", -1, true));
+        else
+        {
+            rows.Add(("Traits:", -1, true));
+            foreach (int t in traits)
+                rows.Add(($"  {TraitName(t)}", 500 + t, false));
+        }
+        List<int> perks = Enumerable.Range(0, _dudePerkRanks.Length).Where(i => _dudePerkRanks[i] > 0).ToList();
+        if (perks.Count == 0)
+            rows.Add(("Perks: none", -1, true));
+        else
+        {
+            rows.Add(("Perks:", -1, true));
+            foreach (int p in perks)
+                rows.Add(($"  {PerkName(p)}{(_dudePerkRanks[p] > 1 ? $" ({_dudePerkRanks[p]})" : "")}", 1000 + p, false));
+        }
+        if (AvailablePerkPicks() > 0)
+            rows.Add(($"{AvailablePerkPicks()} perk(s) available - press G", -1, true));
         foreach (string kl in KarmaDisplayLines())
-            F(kl, tan);
+            rows.Add((kl, -1, true));
         List<string> kills = KillDisplayLines();
         if (kills.Count > 0)
-            F($"Kills: {string.Join(", ", kills)}", tan);
-        if (AvailablePerkPicks() > 0)
-            F($"{AvailablePerkPicks()} perk(s) available - press G", green);
-        if (_unspentSkillPoints > 0)
-            F($"{_unspentSkillPoints} skill points - select a skill, Enter to raise", green);
-
-        T(34, 462, "Click a stat/skill for info   C/K close   G perk   Enter raise", tan);
+        {
+            rows.Add(("Kills:", -1, true));
+            foreach (string kl in kills)
+                rows.Add(($"  {kl}", -1, true));
+        }
+        return rows;
     }
 
     /// <summary>The derived-stat value string for derived row <paramref name="i"/> (the
@@ -237,6 +276,8 @@ public sealed partial class ViewerGame
         if (id is >= 44 and < 51) return (EditorMsg(312 + (id - 44)), EditorMsg(400 + (id - 44))); // conditions
         if (id is >= 51 and < 61) { int s = CharDerivedRows[id - 51].Stat; return (StatMsg(100 + s), StatMsg(200 + s)); }
         if (id is >= 61 and < 79) { int s = id - 61; return (SkillName(s), SkillMsg(200 + s)); }
+        if (id is >= 500 and < 516) return (TraitName(id - 500), TraitDesc(id - 500));     // folder trait
+        if (id is >= 1000 and < 1119) return (PerkName(id - 1000), PerkDescription(id - 1000)); // folder perk
         return ("", "");
     }
 
@@ -253,6 +294,11 @@ public sealed partial class ViewerGame
         if (id is >= 44 and < 51) return new Rectangle(192, CharCondStartY + rstep + 3 + (id - 44) * rstep, 122, rh + 1);
         if (id is >= 51 and < 61) return new Rectangle(192, CharDerivedStartY - 1 + (id - 51) * rstep, 122, rh + 1);
         if (id is >= 61 and < 79) return new Rectangle(378, 26 + (id - 61) * rh, 215, rh);      // skill row
+        if (id >= 500)                                                                          // folder trait/perk row
+        {
+            int idx = BuildFolderRows().FindIndex(r => r.CardId == id);
+            return idx >= 0 ? new Rectangle(32, FolderStartY - 1 + idx * rh, 280, rh) : null;
+        }
         return null;
     }
 
@@ -279,6 +325,12 @@ public sealed partial class ViewerGame
             return 51 + Math.Clamp((ly - CharDerivedStartY) / rstep, 0, 9);
         if (lx is >= 370 and < 594 && ly is >= 26 and < 222)                                    // skills (531)
             return 61 + Math.Clamp((ly - 26) / rh, 0, 17);
+        if (lx is >= 28 and < 312 && ly is >= FolderStartY and < 460)                            // folder (527): trait/perk rows
+        {
+            List<(string Text, int CardId, bool Info)> rows = BuildFolderRows();
+            int row = (ly - FolderStartY) / rh;
+            return row >= 0 && row < rows.Count && rows[row].CardId >= 0 ? rows[row].CardId : -1;
+        }
         return -1;
     }
 
