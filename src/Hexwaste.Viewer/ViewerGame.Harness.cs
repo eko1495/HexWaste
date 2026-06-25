@@ -349,6 +349,10 @@ public sealed partial class ViewerGame
                 case StartupAction.CenterHex(var centerHex):
                     _camera.SetCenter(centerHex); // screenshot testing (P23)
                     break;
+                case StartupAction.CursorAt(var cursorHex):
+                    _camera.SetCenter(cursorHex); // P82-M5: force the hex ring here + centre for a screenshot
+                    _debugCursorTile = cursorHex;
+                    break;
                 case StartupAction.IqProbe(var iqHex, var forceIn):
                 {
                     // P25: force the dude's IN, open the NPC's dialogue, report the OPTION COUNT

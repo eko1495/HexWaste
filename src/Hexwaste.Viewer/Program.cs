@@ -265,6 +265,9 @@ for (int i = 0; i < args.Length; i++)
         case "--center" when i + 1 < args.Length:
             actions.Add(new ViewerGame.StartupAction.CenterHex(int.Parse(args[++i])));
             break;
+        case "--cursor-at" when i + 1 < args.Length: // P82-M5: screenshot the hex-ring cursor at a tile
+            actions.Add(new ViewerGame.StartupAction.CursorAt(int.Parse(args[++i])));
+            break;
         case "--weight-probe":
             actions.Add(new ViewerGame.StartupAction.WeightProbe());
             break;

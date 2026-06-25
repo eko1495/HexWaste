@@ -48,6 +48,57 @@ public sealed partial class ViewerGame
         stats.ArmorClass + (_dude is { } d && _combat.Phase != Formats.Combat.CombatPhase.Idle
             ? _combat.RemainingApDodge(d.Dude) : 0);
 
+    // P82-M5: the FO2 mouse cursors. msef000.frm = the red "hex" destination ring drawn at the
+    // hovered tile over the walkable world (game_mouse.cc gGameMouseHexCursor, interface FID 1);
+    // STDARROW.frm = the standard arrow over the UI / HUD. We hide the OS cursor and render these.
+    private Texture2D? _hexCursor, _stdArrow;
+    private bool _cursorTried;
+    internal int _debugCursorTile = -1; // harness: force the hex ring at a tile for screenshots
+
+    /// <summary>The world is the active click surface (no overlay up) — so the mouse shows the hex
+    /// destination ring rather than the arrow.</summary>
+    private bool WorldCursorActive() =>
+        _map is not null && _menu == MenuState.None && _dialog is null
+        && !_inventoryOpen && !_skillAllocOpen && !_skilldexOpen && !_pipboyOpen
+        && !_automapOpen && !_optionsOpen && !_worldmapOpen && !_perkPickOpen
+        && !_saveLoadOpen && !_aimDialogOpen;
+
+    /// <summary>Renders the FO2 mouse cursor: the red hex ring (msef000) snapped to the hovered
+    /// tile over the walkable world, else the standard arrow (STDARROW) at the pointer. Hides the
+    /// OS cursor once the art loads. ported from fallout2-ce src/game_mouse.cc.</summary>
+    private void DrawMouseCursor()
+    {
+        if (_screenshotPath is not null && _debugCursorTile < 0)
+            return; // headless screenshots stay cursor-free unless explicitly probing the ring
+
+        if (!_cursorTried)
+        {
+            _cursorTried = true;
+            _hexCursor = InterfaceBar.LoadFrm(GraphicsDevice, _vfs, _palette, @"art\intrface\msef000.frm");
+            _stdArrow = InterfaceBar.LoadFrm(GraphicsDevice, _vfs, _palette, @"art\intrface\STDARROW.frm");
+            if (_hexCursor is not null && _stdArrow is not null)
+                IsMouseVisible = false; // we draw the cursors ourselves
+        }
+        if (_stdArrow is null)
+            return; // art missing -> the OS cursor stays visible
+
+        MouseState m = Mouse.GetState();
+        Rectangle vp = GraphicsDevice.Viewport.Bounds;
+        bool overWorld = _debugCursorTile >= 0
+            || (WorldCursorActive() && m.Y < vp.Height - _hudBarHeight && _camera.ScreenToHex(m.X, m.Y) >= 0);
+        if (overWorld && _hexCursor is not null)
+        {
+            int hex = _debugCursorTile >= 0 ? _debugCursorTile : _camera.ScreenToHex(m.X, m.Y);
+            (int hx, int hy) = _camera.HexToScreen(hex);
+            // msef000 is 32x16 — centre it on the tile point (hexX+16, hexY+8).
+            _spriteBatch.Draw(_hexCursor, new Vector2(hx, hy), Color.White);
+        }
+        else
+        {
+            _spriteBatch.Draw(_stdArrow, new Vector2(m.X, m.Y), Color.White); // STDARROW hotspot is (0,0)
+        }
+    }
+
     /// <summary>The authentic bottom HUD bar (P11): the iface.frm panel pinned
     /// bottom-centre at native scale, with live readouts composed on top. Sets
     /// <see cref="_hudBarHeight"/> so the message log + HUD text lift above it.</summary>

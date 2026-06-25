@@ -609,6 +609,7 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
         public sealed record FogProbe(int X, int Y, int AreaIndex) : StartupAction;
         /// <summary>Center the camera on a hex (screenshot testing, e.g. P23 translucency).</summary>
         public sealed record CenterHex(int Hex) : StartupAction;
+        public sealed record CursorAt(int Hex) : StartupAction; // P82-M5: force the hex ring for a screenshot
         /// <summary>Report the dude's carried weight / capacity / encumbered / AP-penalty (P24).</summary>
         public sealed record WeightProbe : StartupAction;
         /// <summary>Set the sneaking flag (P29 A-M0) and report the two-layer state + Sneak skill.</summary>
@@ -4230,6 +4231,7 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
             DrawTactics();
         }
         DrawMapFade(gameTime); // P52-M6: the post-load fade-in, on top of everything
+        DrawMouseCursor();     // P82-M5: the FO2 hex-ring / arrow cursor, above everything
         _spriteBatch.End();
 
         if (_screenshotPath is not null && _screenshotTarget is not null)
