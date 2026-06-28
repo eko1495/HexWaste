@@ -94,8 +94,14 @@ Prebuilt self-contained builds (Linux x64 / Windows x64) are produced by
   saps the matching stats until it passes (Jet's is permanent without the antidote).
   Kills pay XP at combat end and are tallied by type on your character sheet; levels
   raise your HP. Lose, and F9 puts you back.
+- **Game shell**: the authentic Fallout 2 front door — the real `mainmenu.frm`
+  main menu (mouse + keyboard), the `pickchar.frm` premade selector (portrait, SPECIAL,
+  bio), the `edtrcrte.frm` character-creation editor (point-buy SPECIAL with steppers,
+  skill tagging, optional traits, a stat/skill description card), a scrolling
+  `credits.txt` roll, and the iconic `death.frm` death screen when you fall.
 - **Character**: create your own (SPECIAL, gender, optional traits, tagged skills)
-  or pick a premade; level-ups grant skill points you spend on the character sheet (C),
+  in the authentic creation editor, or pick a premade from the selector; level-ups
+  grant skill points you spend on the character sheet (C),
   and stat-gated dialog runs the right branches — including IQ-gated options, so a
   low-Intelligence character gets the dumb lines and a bright one the smart ones.
   Skill books (Guns and Bullets, Scout Handbook…) raise their skill when read, with

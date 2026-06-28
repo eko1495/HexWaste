@@ -1215,6 +1215,25 @@ public sealed partial class ViewerGame
                     Console.WriteLine($"menu-click: menu={menu} row={mrow} hit={hit} -> {state}");
                     break;
                 }
+                case StartupAction.MenuProbe:
+                {
+                    // Load the menu art + resolve labels, then report each button's window-local rect,
+                    // label, enabled flag, and a hit-test round-trip (band centre must map back to i).
+                    _menu = MenuState.Title;
+                    EnsureMenuArt();
+                    Console.WriteLine($"menu-probe: art={(_mainMenuBg is not null ? "loaded" : "absent")}"
+                        + $" buttons={MainMenuButtons.Length}");
+                    for (int i = 0; i < MainMenuButtons.Length; i++)
+                    {
+                        Rectangle band = MenuButtonBandLocal(i);
+                        int hit = MenuButtonAtLocal(band.Center.X, band.Center.Y);
+                        Console.WriteLine($"  btn{i}: local={30},{19 + i * 41},26,26"
+                            + $" label=\"{MiscMsg(MainMenuButtons[i].MsgId)}\""
+                            + $" enabled={MainMenuButtons[i].Enabled} hit={hit}");
+                    }
+                    Console.WriteLine($"  copyright=\"{MiscMsg(20)}\"");
+                    break;
+                }
                 case StartupAction.UseSkill(var useSkill, var skillHex):
                 {
                     // Arm <skill> and apply it to the object at <hex> (self when hex<0):

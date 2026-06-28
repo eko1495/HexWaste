@@ -559,6 +559,44 @@ Phase 80 (DONE — "Tier 3: save-slot thumbnails"): each occupied slot carries a
 
 Phase 81 (DONE — "INVBOX dual-wield slot"): M0 grounding (invbox-dualwield-ground workflow). **KEY ENGINE FINDINGS (corrected my assumptions): FO2 has TWO independent READY weapon slots (left=item1, right=item2) + an ACTIVE hand (gInterfaceCurrentHand), NOT simultaneous dual-fire — only the active hand's weapon fires; you SWITCH hands (interfaceBarSwapHands = 1-currentHand). Equip = OBJECT-instance flags (OBJECT_IN_LEFT_HAND 0x1000000 / RIGHT 0x2000000 / WORN 0x4000000). critterGetItem1 = LEFT, item2 = RIGHT (counter-intuitive). A TWO-HANDED weapon is NOT special-cased at wield (neither _invenWieldFunc nor _switch_hand clears/occupies the other hand) — weaponIsTwoHanded only affects combat. So Hexwaste's prior single-weapon model was a SIMPLIFICATION, and adding the left hand REMOVES a divergence (no off-hand exclusivity to enforce).** IMPL: _activeHand field (default RIGHT) is the lynchpin; equip paths clear ONLY the target hand's bit (default right + no left-hand dude weapon in any golden reduces EXACTLY to old clear-both/set-right). EquipSlot.WeaponLeft added (Weapon stays the right-hand alias for prior callers); INVBOX left-hand slot (154,286) promoted to real; '.' key = SwapActiveHand. Persisted: SaveState.DudeActiveHand (sparse null = right; hand BITS ride DudeInventory.Flags). CUTS: no simultaneous dual-fire (faithful — FO2 switches hands); no two-handed off-hand exclusivity (faithful — engine doesn't enforce); NPC dual-hand not modeled (NPCs force right hand).
 
+Phase 83 (DONE — "Game Shell": the authentic front-door lifecycle, replacing the plain-text tech-demo framing
+with the real FO2 art front-to-back). Scoped by a 23-agent survey→adversarial-verify workflow that picked the
+game shell as the highest faithful+visible+buildable payoff continuing P82's UI-authenticity push; grounded by a
+dump-the-real-FRM pass (the recurring "dump, don't trust" rule). All shell code is in the new concern partial
+**ViewerGame.Shell.cs**, gated on _menu != None (pre-game) or game-over, with the prior plain-text screens kept
+as the headless/no-art fallback (the proven INVBOX/LSGAME text-then-art pattern) → BOTH golden suites BYTE-
+IDENTICAL (16 combat + the full encounter net; the shell is Draw-only and StartInMenu defaults false for every
+game golden). The shell STATE MACHINE already existed (MenuState enum; EnterCreation/PickPremade/FinishCreation)
+— the work was swapping text-over-black-quad for FRM art + mouse hit-test.
+- **M1 main menu** — mainmenu.frm (FID 140, 640×480 Enclave-soldier backdrop) + the six menuup/menudown buttons
+  (FID 299/300, 26×26 at the engine rects x=30,y=19+i*41) with misc.msg labels {9..14} INTRO/NEW GAME/LOAD GAME/
+  OPTIONS/CREDITS/EXIT + copyright {20}, mouse hover/click + keyboard hotkeys (i/n/l/o/c/e), nmselec0 click sfx,
+  looping 07desert menu music (loose ACM, PlayMusic de-dups). Button→reality map: NEW GAME→selector, LOAD GAME→
+  the 10-slot picker, CREDITS→M4, EXIT→quit; **INTRO + OPTIONS are greyed-disabled (documented divergences — no
+  intro .mve movie, no preferences screen)**. `--menu-probe` dumps the button rects+labels+hit round-trip (window-
+  local, deterministic golden); `--menu <pick|create|credits|death>` boots a sub-screen for screenshots.
+- **M2 premade selector** — pickchar.frm (FID 174) with the highlighted premade's portrait FRM filling the
+  display panel (combat/stealth/diplomat.frm 592×260 — the face on the left, the dark right half taking the stat/
+  bio overlay) + SPECIAL/HP/tags + the .bio backstory, and the TAKE/MODIFY/CREATE/BACK buttons (lilredup/lilreddn
+  FID 8/9 over the baked labels) + ◄─► cycle arrows. **GROUNDING CORRECTION: the scope candidate's "CUSSEL.frm"
+  was WRONG — CUSSEL (FID 420) is the party-member custom UI; the selector buttons are lilredup/dn + slu/sld.**
+  **BUG FOUND+FIXED (Linux trap): Path.GetFileNameWithoutExtension won't split on '\' on Linux, so "premade\combat
+  .gcd" yielded the key "premade\combat" → the portrait/bio paths were wrong (stats showed, portrait/bio blank);
+  PremadeBase now splits on '\' by hand.** MODIFY seeds the editor from the premade's SPECIAL/tags.
+- **M3 creation editor** — edtrcrte.frm (FID 169) as a UNIFIED screen (the 3 create sub-states stats/traits/tags
+  render it; the active sub-state drives the highlight): SPECIAL bignum digits (reuses the EDTREDT sheet's BIGNUM
+  FID 170 at x=58, the value recess) + char-points counter, a live derived readout, the 18-skill tag picker, the
+  16 optional traits in two columns, a stat.msg/skill.msg/trait.msg description card, Done/Cancel. The +/- steppers
+  are BAKED into edtrcrte.frm (click-bands only, no overlay). Reuses AdjustCreateStat/ToggleCreateTag/ToggleCreate
+  Trait/FinishCreation; mouse on steppers/rows/buttons + the unchanged keyboard flow.
+- **M4 bookend** — credits scroll (credits.txt: '#' section gold / '@' role tan / name green, bottom-to-top, ESC/
+  click exits) from the CREDITS button; the death screen now renders death.frm (FID 310) behind the game-over
+  options. **KEY FINDING: death.frm + the ending slides do NOT use color.pal — rendering them with the game palette
+  GARBLES them (confirmed via FrmDump too); endgame.cc endgameEndingLoadPalette loads art\intrface\<name>.pal per
+  scene. New LoadFrmWithSiblingPalette (death.frm→death.pal) fixes it — and is the foundation the victory endgame.txt
+  slideshow will reuse (each EG_*.frm has its own EG_*.pal).** The victory slideshow itself stays content-gated
+  (no quest completes on the slice) — forward-looking, like the P53 VO infra. Adversarially reviewed.
+
 ---
 
 Phase 10 (DONE — "The Wasteland Bites Back"; trailing duplicate in this range, full text in CLAUDE.md): M0-M5 worldmap encounters + companion lifecycle. **Durable CORRECTION: the phase-10 research notes' "partymbr.msg list-14" claim was UNVERIFIED and WRONG — partymbr.msg does not exist in the game data, "partymbr" appears nowhere in fallout2-ce, and message list 14 resolves to Generic.int/generic.msg.** The engine has NO dedicated wait/follow/dismiss UI: recruit/dismiss are plain party_add/party_remove (interpreter_extra.cc:3943/3956 → party_member.cc:375/426) called from a companion's own talk_p_proc reply procedure (game_dialog.cc:2080); the hub reproduces those side effects. The only dedicated party UI is the AI-disposition combat-control window (game_dialog.cc:3354) — SUPERSEDED, shipped in P50. **GOTCHA: companions travel OUTSIDE map deltas — exclude PartyMembers from EVERY CaptureMapDelta loop or an F5 duplicates them on load.** v1 cuts now SUPERSEDED (wait/dismiss persistence #2/#3, per-member If()/Distance [P10 + P16-M4 lowercase-if fix], X-FIGHTING-Y [P16-M3], projectile tween [#11] all shipped); lone residual = Vic's radio ITEM has no in-slice source (one --give).

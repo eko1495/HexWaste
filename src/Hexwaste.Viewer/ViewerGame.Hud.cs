@@ -426,12 +426,14 @@ public sealed partial class ViewerGame
             _fontRenderer.Draw(_spriteBatch, hud, new Vector2(8, hudY), new Color(252, 252, 84));
         }
 
-        if (_combat.IsGameOver)
+        if (_combat.IsGameOver || _debugDeathScreen)
         {
             _panelPixel ??= CreatePixel();
-            _spriteBatch.Draw(_panelPixel,
-                new Rectangle(0, 0, GraphicsDevice.Viewport.Width, GraphicsDevice.Viewport.Height),
-                new Color(0, 0, 0, 170));
+            // P83-M4: the authentic death.frm scene behind the options (text-only fallback if the art absent).
+            if (!DrawDeathArt())
+                _spriteBatch.Draw(_panelPixel,
+                    new Rectangle(0, 0, GraphicsDevice.Viewport.Width, GraphicsDevice.Viewport.Height),
+                    new Color(0, 0, 0, 170));
             var center = new Vector2(GraphicsDevice.Viewport.Width / 2f, GraphicsDevice.Viewport.Height / 2f);
             string[] lines =
             [
@@ -472,7 +474,26 @@ public sealed partial class ViewerGame
                 new Color(140, 140, 140));
         }
 
-        if (_menu != MenuState.None)
+        // P83-M1/M2/M4: the authentic mainmenu.frm / pickchar.frm / credits.txt screens (each with its own
+        // black background). Falls through to the plain-text path when the art is absent.
+        if (_menu == MenuState.Credits)
+        {
+            DrawCredits();
+        }
+        else if (_menu == MenuState.Title && DrawAuthenticMainMenu())
+        {
+            // handled by the art path
+        }
+        else if (_menu == MenuState.CharacterPick && DrawAuthenticSelector())
+        {
+            // handled by the art path
+        }
+        else if (_menu is MenuState.CreateStats or MenuState.CreateTraits or MenuState.CreateTags
+                 && DrawAuthenticCreation())
+        {
+            // handled by the art path (the unified edtrcrte.frm creation screen)
+        }
+        else if (_menu != MenuState.None)
         {
             _panelPixel ??= CreatePixel();
             _spriteBatch.Draw(_panelPixel,
@@ -492,8 +513,10 @@ public sealed partial class ViewerGame
 
             if (_menu is MenuState.Title or MenuState.CharacterPick)
             {
+                // The Title fallback must list the 6 buttons in MainMenuButtons order so the row index maps
+                // to the same ActivateMainMenuButton action the art path uses (P83-M1 review fix).
                 string[] items = _menu == MenuState.Title
-                    ? ["New game", "Quit"]
+                    ? ["Intro", "New game", "Load game", "Options", "Credits", "Exit"]
                     : ["Create your own", .. _premadeGcds.Select(g => g.Label)];
                 float itemY = center.Y - 20;
                 for (int i = 0; i < items.Length; i++)

@@ -63,7 +63,10 @@ filing an issue.
   armor-piercing vs hollow-point, which shifts to-hit/damage vs armored vs soft
   targets); armor, lootable corpses, scripted aggro, same-team joiners, a minimum
   party member, barter, kill XP, level-ups, per-map persistent world, versioned
-  JSON save/load, a main menu, character creation, rest, and carry weight +
+  JSON save/load, an authentic front-door shell (the real `mainmenu.frm` menu, the
+  `pickchar.frm` premade selector with portrait + bio, the `edtrcrte.frm`
+  character-creation editor, a `credits.txt` scroll, and the `death.frm` death
+  screen), rest, and carry weight +
   encumbrance (item weights, a STAT_CARRY_WEIGHT capacity, an over-limit combat
   AP penalty, and pickup/loot/barter blocking).
 - **Character progression**: the 16 optional **traits** apply real effects

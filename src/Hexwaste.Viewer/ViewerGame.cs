@@ -146,8 +146,10 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
     /// <summary>Main-menu front door (v0.6): Title → character pick → play.
     /// Headless/test flags skip it entirely.</summary>
     public bool StartInMenu { get; set; }
+    /// <summary>P83: optional shell state to boot straight into ("pick" / "create"), for screenshots.</summary>
+    public string? MenuStartState { get; set; }
 
-    private enum MenuState { None, Title, CharacterPick, CreateStats, CreateTraits, CreateTags }
+    private enum MenuState { None, Title, CharacterPick, CreateStats, CreateTraits, CreateTags, Credits }
 
     private MenuState _menu = MenuState.None;
     private int _menuIndex;
@@ -589,6 +591,10 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
         /// "options" / "pipboy" / "pipboy-rest", Row is 0-based. Drives the same
         /// geometry + dispatch a live click does and reports which row was hit.</summary>
         public sealed record MenuClick(string Menu, int Row) : StartupAction;
+        /// <summary>P83-M1: dump the authentic main-menu button layout (window-local rects + the
+        /// misc.msg labels + enabled flags), hit-testing each band centre back to prove the geometry
+        /// round-trips. Window-independent (local coords), so it is a deterministic data-backed golden.</summary>
+        public sealed record MenuProbe : StartupAction;
         public sealed record UseSkill(int Skill, int TargetHex) : StartupAction;
         public sealed record RestFor(int Minutes) : StartupAction;
         public sealed record OpenAutomap : StartupAction;
@@ -1172,6 +1178,13 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
                         + $" C{gcd.Stats.BaseStats[3]} I{gcd.Stats.BaseStats[4]} A{gcd.Stats.BaseStats[5]} L{gcd.Stats.BaseStats[6]})",
                         t.Item1);
                 })];
+            switch (MenuStartState) // P83: boot straight into a shell sub-screen (for screenshots)
+            {
+                case "pick": _menu = MenuState.CharacterPick; _premadeSel = 0; break;
+                case "create": EnterCreation(); break;
+                case "credits": _menu = MenuState.Credits; _creditsScroll = 320; break; // mid-scroll for the screenshot
+                case "death": _menu = MenuState.None; _debugDeathScreen = true; break;
+            }
         }
         if (StartOnWorldmap)
             _worldmapOpen = true;
@@ -1492,10 +1505,22 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
         KeyboardState keyboard = Keyboard.GetState();
         MouseState mouse = Mouse.GetState();
 
-        // Main menu / character creation: the world idles underneath.
-        if (_menu != MenuState.None)
+        // Main menu / character creation: the world idles underneath. The menu/creation flow plays the
+        // engine's menu music (mainmenu.cc → 07desert); PlayMusic de-dups so calling each frame is a no-op.
+        // When LOAD GAME opens the 10-slot picker FROM the menu, defer to the _saveLoadOpen handler below so
+        // its input runs (otherwise the picker freezes and Esc quits the app) — P83-M1 review fix.
+        if (_menu != MenuState.None && !_saveLoadOpen)
         {
-            HandleMenuInput(keyboard);
+            _audio?.PlayMusic("07desert");
+            if (_menu == MenuState.Credits)
+                UpdateCredits(gameTime.ElapsedGameTime.TotalMilliseconds, keyboard, mouse);
+            else
+            {
+                HandleMenuInput(keyboard);
+                HandleMenuMouse(mouse);
+                HandleSelectorMouse(mouse);
+                HandleCreationMouse(mouse);
+            }
             _previousMouse = mouse;
             _previousKeyboard = keyboard;
             base.Update(gameTime);
@@ -1724,6 +1749,7 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
                 {
                     LoadGameFromSlot(pick);
                     _saveLoadOpen = false;
+                    _menu = MenuState.None; // close the main menu if we loaded from it (no-op in-game)
                 }
             }
             if (IsKeyPressed(keyboard, Keys.Escape))
@@ -4789,17 +4815,31 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
         switch (_menu)
         {
             case MenuState.Title:
-                MoveMenu(k, 2);
-                if (MenuActivated(k))
-                {
-                    if (_menuIndex == 0) { _menu = MenuState.CharacterPick; _menuIndex = 0; }
-                    else Exit();
-                }
-                if (IsKeyPressed(k, Keys.Escape)) Exit();
+                MoveMenu(k, MainMenuButtons.Length);
+                if (MenuActivated(k)) ActivateMainMenuButton(_menuIndex);
+                // The engine's letter hotkeys (mainmenu.cc:55-62): i/n/l/o/c/e.
+                if (IsKeyPressed(k, Keys.I)) ActivateMainMenuButton(0);
+                if (IsKeyPressed(k, Keys.N)) ActivateMainMenuButton(1);
+                if (IsKeyPressed(k, Keys.L)) ActivateMainMenuButton(2);
+                if (IsKeyPressed(k, Keys.O)) ActivateMainMenuButton(3);
+                if (IsKeyPressed(k, Keys.C)) ActivateMainMenuButton(4);
+                if (IsKeyPressed(k, Keys.Escape) || IsKeyPressed(k, Keys.E)) ActivateMainMenuButton(5);
                 break;
 
             case MenuState.CharacterPick:
             {
+                // Art path (pickchar.frm): ◄─► cycle the premade, Enter = Take, M = Modify, C = Create.
+                if (_pickCharBg is not null && _premadeGcds.Count > 0)
+                {
+                    if (IsKeyPressed(k, Keys.Left)) ActivateSelectorButton("prev");
+                    if (IsKeyPressed(k, Keys.Right)) ActivateSelectorButton("next");
+                    if (IsKeyPressed(k, Keys.Enter)) ActivateSelectorButton("take");
+                    if (IsKeyPressed(k, Keys.M)) ActivateSelectorButton("modify");
+                    if (IsKeyPressed(k, Keys.C)) ActivateSelectorButton("create");
+                    if (IsKeyPressed(k, Keys.Escape)) ActivateSelectorButton("back");
+                    break;
+                }
+                // Text fallback (no art): the old "Create your own" + premade list.
                 int n = _premadeGcds.Count + 1; // index 0 = "Create your own"
                 MoveMenu(k, n);
                 if (MenuActivated(k))

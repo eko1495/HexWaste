@@ -30,6 +30,7 @@ int? travelArea = null;
 bool noAudio = false;
 bool noAmbient = false;
 bool forceMenu = false;
+string? menuStartState = null;
 
 for (int i = 0; i < args.Length; i++)
 {
@@ -62,8 +63,10 @@ for (int i = 0; i < args.Length; i++)
         case "--worldmap":
             worldmap = true;
             break;
-        case "--menu": // force the front door (menu screenshots/testing)
+        case "--menu": // force the front door (menu screenshots/testing); optional state: pick/create
             forceMenu = true;
+            if (i + 1 < args.Length && !args[i + 1].StartsWith("--"))
+                menuStartState = args[++i];
             break;
         case "--travel" when i + 1 < args.Length:
             travelArea = int.Parse(args[++i]);
@@ -178,6 +181,10 @@ for (int i = 0; i < args.Length; i++)
             // --use-skill <skillId> <targetHex> (hex<0 = self): apply a Skilldex skill.
             actions.Add(new ViewerGame.StartupAction.UseSkill(int.Parse(args[i + 1]), int.Parse(args[i + 2])));
             i += 2;
+            break;
+        case "--menu-probe":
+            // P83-M1: dump the authentic main-menu button layout (rects + misc.msg labels + hit round-trip).
+            actions.Add(new ViewerGame.StartupAction.MenuProbe());
             break;
         case "--rest-for" when i + 1 < args.Length:
             // --rest-for <minutes> (or -1 healed / -2,-3 until morning,evening): Pip-Boy rest.
@@ -692,6 +699,7 @@ bool interactiveLaunch = screenshot is null && actions.Count == 0 && talkHex is 
 using var game = new ViewerGame(gameDir!, mapName, screenshot, roofs)
 {
     StartInMenu = interactiveLaunch || forceMenu,
+    MenuStartState = menuStartState,
     AdvanceCyclingMs = advanceMs,
     BenchFrames = benchFrames,
     StartInWalkMode = walk,
