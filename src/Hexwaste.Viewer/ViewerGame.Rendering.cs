@@ -256,10 +256,14 @@ public sealed partial class ViewerGame
                     _spriteBatch.Draw(outline, new Vector2(sprite.Left, sprite.Top), teamColor);
                 }
             }
-            else if (obj == _hoveredObject && _combat.Phase == Formats.Combat.CombatPhase.Idle)
+            else if (obj == _hoveredObject && _combat.Phase == Formats.Combat.CombatPhase.Idle
+                     && Fid.Type(obj.Fid) is ObjectType.Item)
             {
+                // FO2 only highlights GROUND ITEMS on hover (game_mouse.cc:680, the OBJ_TYPE_ITEM case),
+                // in the amber item-outline colour (OUTLINE_TYPE_ITEM = _colorTable[30632] ≈ 232,232,64) —
+                // NOT every scenery/wall/critter, and NOT green (green/229 is the combat-ally outline).
                 Texture2D outline = _frmCache.GetOutlineTexture(sprite.Fid, sprite.FrameIndex, sprite.Rotation);
-                _spriteBatch.Draw(outline, new Vector2(sprite.Left, sprite.Top), new Color(0, 252, 0));
+                _spriteBatch.Draw(outline, new Vector2(sprite.Left, sprite.Top), new Color(232, 232, 64));
             }
         }
     }

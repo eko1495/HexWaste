@@ -44,6 +44,14 @@ public sealed class DudeController(MapObject dude, FrmCache frmCache, Func<int, 
 
     public bool WalkTo(int targetTile)
     {
+        // Player movement never paths to a BLOCKED destination. The pathfinder deliberately exempts the
+        // goal tile from its blocking check (so AI can path adjacent to a target, and Reachable() works),
+        // but the engine's click-to-move passes _make_path(..., a5=1) which refuses a blocked goal
+        // (game_mouse.cc:807 → animation.cc:1718-1722). Without this guard the dude steps ONTO a wall, and
+        // clicking into it repeatedly re-paths from that blocked tile and walks him straight through.
+        if (isBlocked(targetTile))
+            return false;
+
         byte[]? rotations = Pathfinder.FindPath(Dude.HexTile, targetTile, isBlocked);
         if (rotations is null)
             return false;

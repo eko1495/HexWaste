@@ -122,12 +122,16 @@ SCENARIOS=(
   "steal-caught|--character combat --map denbus2.map --steal 15278 0 --rng-seed 1"
   # P15 M1 — the HUD weapon slot cycles the attack mode (single->burst) for a burst gun.
   "weapon-mode-cycle|--map arcaves.map --give 9 --use-item 9 --hud-click WEAPON --rng-seed 1"
-  # P18 M0/M1 — in-combat movement costs AP per hex. AP 8 reaches the 4-hex target (4 left);
-  # AP 2 TRUNCATES at 2 hexes (gate halts the walk); a crippled leg costs 4 AP/hex so 8 AP
-  # only covers 2 hexes — the P14-M3 MovePointCost now bites the player (the SCOPE asymmetry).
-  "combat-walk-full|--map arcaves.map --combat-walk 20529 20534 8 --rng-seed 1"
-  "combat-walk-truncated|--map arcaves.map --combat-walk 20529 20534 2 --rng-seed 1"
-  "combat-walk-crippled|--map arcaves.map --combat-walk 20529 20534 8 cripple --rng-seed 1"
+  # P18 M0/M1 — in-combat movement costs AP per hex. AP 8 reaches the 3-hex OPEN target (5 left);
+  # AP 2 TRUNCATES at 2 hexes (gate halts the walk); a crippled leg costs 4 AP/hex so 8 AP only
+  # covers 2 hexes — the P14-M3 MovePointCost bites the player (the SCOPE asymmetry). The target is
+  # the OPEN tile 20533; 20534 is a BLOCKED tile (see combat-walk-blocked) where movement is refused.
+  "combat-walk-full|--map arcaves.map --combat-walk 20529 20533 8 --rng-seed 1"
+  "combat-walk-truncated|--map arcaves.map --combat-walk 20529 20533 2 --rng-seed 1"
+  "combat-walk-crippled|--map arcaves.map --combat-walk 20529 20533 8 cripple --rng-seed 1"
+  # Walk-to-wall refusal: clicking a BLOCKED destination (20534) yields NO movement (started=False) —
+  # the engine's _make_path(a5=1) destination guard (game_mouse.cc:807). Pins the through-walls fix.
+  "combat-walk-blocked|--map arcaves.map --combat-walk 20529 20534 8 --rng-seed 1"
   # P15 M2 — item-panel row CLICK == its number key: open the inventory (HUD INV), click an
   # empty row (out of bounds -> no-op, consumed=false) then row 0 (equips, same as pressing 1).
   "panel-click-equip|--character combat --map denbus2.map --give 9 --hud-click INV --panel-click 0 5 --panel-click 0 0 --rng-seed 1"
