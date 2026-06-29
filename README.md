@@ -209,7 +209,7 @@ Prebuilt self-contained builds (Linux x64 / Windows x64) are produced by
 | Space | end combat turn |
 | L | lockpick the hovered door (the Skilldex Lockpick skill) |
 | S | Skilldex — pick a skill (1–8), then click a target to use it |
-| P | Pip-Boy — status page + rest (R for the rest menu, 1–9 pick a duration) |
+| P | Pip-Boy — status page, rest (R for the rest menu, 1–9 pick a duration), and the Archives quest log |
 | I | inventory (drag an item onto the weapon/armor slot to equip, or click / 1–9 use/equip/consume, Shift+1–9 drop) |
 | C / K | character sheet (spend level-up skill points) |
 | Z | rest to heal (when no enemies are near) |

@@ -1,0 +1,2 @@
+menu-click: menu=pipboy-archives row=9 hit=-1 -> pipboy=True rest=False archives=True automap=False
+menu-click: menu=pipboy-archives row=0 hit=0 -> pipboy=True rest=False archives=False automap=False

@@ -217,11 +217,17 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
     private static readonly int[] SkilldexSkills = [8, 9, 10, 11, 6, 7, 12, 13];
 
     /// <summary>Pip-Boy (P12 M1): the status + rest panel (PIP.FRM). _pipboyRestMenu
-    /// = the rest-duration sub-page (pipboy.cc PipboyRestDuration). Automaps, archives/
-    /// holodisks and the alarm are out of scope (content-gated).</summary>
+    /// = the rest-duration sub-page (pipboy.cc PipboyRestDuration); _pipboyArchives = the
+    /// quest-log page (P88). Holodisks + the alarm remain out of scope (content-gated).</summary>
     private bool _pipboyOpen;
     private bool _pipboyRestMenu;
+    private bool _pipboyArchives; // P88: the Archives (quest-log) page
     private Texture2D? _pipboyBg;
+    // P88: data\quests.txt + the quest description / location-name message lists, lazy-loaded.
+    private IReadOnlyList<Formats.Quest>? _quests;
+    private bool _questsTried;
+    private Formats.Text.MessageFile? _questsMsg, _mapMsg;
+    private bool _questsMsgTried, _mapMsgTried;
 
     /// <summary>Skilldex authentic art (P13 follow-up): SKLDXBOX background + SKLDXOFF/
     /// SKLDXON button states (skilldex.cc). Null if the art is missing → text fallback.</summary>
@@ -1928,7 +1934,7 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
 
         // P opens the Pip-Boy (engine KEY_LOWERCASE_P).
         if (IsKeyPressed(keyboard, Keys.P))
-            _pipboyOpen = true;
+            { _pipboyOpen = true; _pipboyArchives = false; } // P88: (re)open on the STATUS page
 
         // Z rests to heal (when it's safe).
         if (IsKeyPressed(keyboard, Keys.Z))

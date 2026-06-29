@@ -716,7 +716,12 @@ public sealed partial class ViewerGame
     private List<(string Label, Action OnClick)> PipboyRows()
     {
         var rows = new List<(string, Action)>();
-        if (!_pipboyRestMenu)
+        if (_pipboyArchives) // P88: the quest-log page — Status returns, Close exits
+        {
+            rows.Add(("Status", () => _pipboyArchives = false));
+            rows.Add(("Close", () => _pipboyOpen = false));
+        }
+        else if (!_pipboyRestMenu)
         {
             rows.Add(("Rest", () => _pipboyRestMenu = true));
             rows.Add(("Automap", () => { _pipboyOpen = false; _automapOpen = true; }));
@@ -764,9 +769,9 @@ public sealed partial class ViewerGame
         int ry = my - po.Y;
         return ry switch
         {
-            >= 336 and < 366 => () => _pipboyRestMenu = false,                       // STATUS (stay on it)
-            >= 390 and < 419 => () => { _pipboyOpen = false; _automapOpen = true; }, // AUTOMAPS
-            >= 419 and < 446 => () => Log("No archives."),                           // ARCHIVES
+            >= 336 and < 366 => () => { _pipboyRestMenu = false; _pipboyArchives = false; }, // STATUS
+            >= 390 and < 419 => () => { _pipboyOpen = false; _automapOpen = true; },         // AUTOMAPS
+            >= 419 and < 446 => () => { _pipboyArchives = true; _pipboyRestMenu = false; },  // ARCHIVES (P88)
             >= 446 and < 478 => () => _pipboyOpen = false,                           // CLOSE
             _ => null,
         };
@@ -807,7 +812,11 @@ public sealed partial class ViewerGame
         // overlaid them ("looks strange" + covered the tabs). The full automap (the Automap row / left tab)
         // is the map; DrawPipboyMiniMap stays for any future authentic-recess use.
 
-        if (!_pipboyRestMenu)
+        if (_pipboyArchives) // P88: the quest-log page
+        {
+            DrawPipboyArchives(cx, ty, lh, green, dim, po.Y + ph - 36);
+        }
+        else if (!_pipboyRestMenu)
         {
             Line("STATUS", green); ty += 4;
             string name = _dudeGcd is { Name.Length: > 0 } g && g.Name != "None" ? g.Name : "Wanderer";
@@ -841,6 +850,68 @@ public sealed partial class ViewerGame
         }
         _fontRenderer.Draw(_spriteBatch, _pipboyRestMenu ? "click a duration, Esc back" : "click a row, P / Esc close",
             new Vector2(cx, po.Y + ph - 30), dim);
+    }
+
+    /// <summary>data\quests.txt, lazy-loaded (P88). Empty if absent.</summary>
+    private IReadOnlyList<Formats.Quest> Quests()
+    {
+        if (!_questsTried)
+        {
+            _questsTried = true;
+            if (_vfs.Exists(@"data\quests.txt"))
+            {
+                using Stream s = _vfs.OpenRead(@"data\quests.txt");
+                _quests = Formats.QuestLog.Parse(s);
+            }
+        }
+        return _quests ?? [];
+    }
+
+    /// <summary>P88: the Pip-Boy ARCHIVES quest log. Each quest shows once its global var reaches the
+    /// quests.txt displayThreshold (so the displayThreshold-0 quests like "Retrieve the GECK" show from
+    /// the start), grouped under its town name (map.msg), numbered per town, dimmed + "(done)" once the
+    /// var reaches completedThreshold. ported from fallout2-ce src/pipboy.cc pipboyRenderQuestList().</summary>
+    private void DrawPipboyArchives(int cx, int ty, int lh, Color green, Color dim, int bottomLimit)
+    {
+        _fontRenderer!.Draw(_spriteBatch, "ARCHIVES", new Vector2(cx, ty), green);
+        ty += lh + 4;
+
+        int lastLocation = -1, number = 1, shown = 0;
+        foreach (Formats.Quest q in Quests())
+        {
+            int gv = _scriptHost?.GlobalVars.GetValueOrDefault(q.Gvar) ?? 0;
+            if (gv < q.DisplayThreshold)
+                continue;
+            if (ty > bottomLimit - lh)
+                break;
+
+            if (q.Location != lastLocation) // a new town header (map.msg name)
+            {
+                lastLocation = q.Location;
+                number = 1;
+                string loc = LazyMsg(@"text\english\game\map.msg", ref _mapMsgTried, ref _mapMsg)?.GetText(q.Location)
+                             ?? $"Area {q.Location}";
+                ty += 4;
+                _fontRenderer.Draw(_spriteBatch, loc, new Vector2(cx, ty), green);
+                ty += lh;
+            }
+
+            string desc = LazyMsg(@"text\english\game\quests.msg", ref _questsMsgTried, ref _questsMsg)?.GetText(q.Description)
+                          ?? $"quest {q.Description}";
+            bool done = gv >= q.CompletedThreshold;
+            foreach (string wrapped in _fontRenderer.WrapText($"{number}. {desc}{(done ? " (done)" : "")}", 350))
+            {
+                if (ty > bottomLimit - lh)
+                    break;
+                _fontRenderer.Draw(_spriteBatch, wrapped, new Vector2(cx + 6, ty), done ? dim : green);
+                ty += lh;
+            }
+            number++;
+            shown++;
+        }
+
+        if (shown == 0)
+            _fontRenderer.Draw(_spriteBatch, "(no current quests)", new Vector2(cx, ty), dim);
     }
 
     /// <summary>The automap dot colour for an object by FID type, shared by the full-window

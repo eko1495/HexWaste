@@ -680,6 +680,27 @@ and Arroyo's head NPCs (Elder/Hakunin) sit behind the vsuit.mve intro cutscene, 
 capture wasn't scripted — but the render path is identical to the --force-head proof. New harness:
 --force-head <index>, plus a HEAD: <id> dialog diagnostic.
 
+Phase 88 (DONE — "Pip-Boy Archives quest log"): the long-inert ARCHIVES tab (it logged "No archives.") now
+shows the real Fallout 2 quest log. **It is NOT content-gated-empty: some quests have displayThreshold 0
+(e.g. "Retrieve the GECK for Arroyo"), so the log is populated from a fresh game** — the verifier's "nothing
+to populate" worry was wrong, caught by reading the data. PIPELINE: pure Formats.QuestLog.Parse(data\
+quests.txt → Quest{location, description, gvar, displayThreshold, completedThreshold}, '#'/'//' comments
+skipped) — **ported from fallout2-ce src/pipboy.cc questInit()/pipboyRenderQuestList()**; the viewer's
+DrawPipboyArchives iterates the quests, shows each whose live GVAR (_scriptHost.GlobalVars.GetValueOrDefault)
+≥ displayThreshold, groups them under the town name (map.msg <location>), numbers them per-town, pulls the
+line from quests.msg <description>, and dims it + appends "(done)" once the GVAR ≥ completedThreshold.
+ARCHIVES/STATUS tabs toggle _pipboyArchives; the page's nav rows are Status/Close. **KEY GROUNDING (dumped):
+the script passes ids into THREE message lists — location→map.msg (1500=Arroyo/1501=Den), description→
+quests.msg, the engine's "(quests)" suffix→pipboy.msg; all CRLF {id}{}{text}, parsed by the existing
+MessageFile.** GOLDEN-SAFE bar ONE deterministic re-record: the quest rows are Draw-only, but I added
+`archives=` to the --menu-click state probe → menu-click-pipboy re-recorded (gains "archives=False"); new
+menu-click-archives golden asserts the page opens. VERIFIED VISUALLY: a fresh artemple Pip-Boy shows
+"Arroyo / 1. Retrieve the GECK for Arroyo."; forcing GVARs 191=1 + 619=2 adds "Rescue Nagor's dog" and
+"Find Vic the Trader. (done)" (the dimmed completed marking). 838 Formats tests incl. 2 new QuestLog parser
+tests. DOCUMENTED CUT: holodisks + the alarm-clock stay out (separate subsystems); quest PROGRESSION to
+completion is content (the GVARs advance via quest scripts), but the log + thresholds + the from-fresh
+displayThreshold-0 quests are all live. New harness: --menu-click pipboy-archives.
+
 ---
 
 Phase 10 (DONE — "The Wasteland Bites Back"; trailing duplicate in this range, full text in CLAUDE.md): M0-M5 worldmap encounters + companion lifecycle. **Durable CORRECTION: the phase-10 research notes' "partymbr.msg list-14" claim was UNVERIFIED and WRONG — partymbr.msg does not exist in the game data, "partymbr" appears nowhere in fallout2-ce, and message list 14 resolves to Generic.int/generic.msg.** The engine has NO dedicated wait/follow/dismiss UI: recruit/dismiss are plain party_add/party_remove (interpreter_extra.cc:3943/3956 → party_member.cc:375/426) called from a companion's own talk_p_proc reply procedure (game_dialog.cc:2080); the hub reproduces those side effects. The only dedicated party UI is the AI-disposition combat-control window (game_dialog.cc:3354) — SUPERSEDED, shipped in P50. **GOTCHA: companions travel OUTSIDE map deltas — exclude PartyMembers from EVERY CaptureMapDelta loop or an F5 duplicates them on load.** v1 cuts now SUPERSEDED (wait/dismiss persistence #2/#3, per-member If()/Distance [P10 + P16-M4 lowercase-if fix], X-FIGHTING-Y [P16-M3], projectile tween [#11] all shipped); lone residual = Vic's radio ITEM has no in-slice source (one --give).

@@ -137,6 +137,9 @@ SCENARIOS=(
   # row 1 = Automap. All side-effect-free rows so the state line is map-independent.
   "menu-click-options|--character combat --map denbus2.map --menu-click options 4 --rng-seed 1"
   "menu-click-pipboy|--character combat --map denbus2.map --menu-click pipboy 0 --menu-click pipboy-rest 9 --menu-click pipboy 1 --rng-seed 1"
+  # P88 — the Pip-Boy ARCHIVES quest-log page opens (archives=True); row 0 = Status returns. The quest
+  # rows themselves are Draw-only (verified by screenshot); this asserts the page state machine.
+  "menu-click-archives|--character combat --map denbus2.map --menu-click pipboy-archives 9 --menu-click pipboy-archives 0 --rng-seed 1"
   # P15 M0 — the Pip-Boy automap object census (the dots it plots): deterministic
   # per-type object counts + the dude tile for a fixed map (no RNG).
   "automap-arcaves|--map arcaves.map --automap --rng-seed 1"

@@ -1214,11 +1214,12 @@ public sealed partial class ViewerGame
                     {
                         _pipboyOpen = true;
                         _pipboyRestMenu = menu == "pipboy-rest";
+                        _pipboyArchives = menu == "pipboy-archives"; // P88: the quest-log page
                         Point c = PipboyRowRect(mrow).Center;
                         hit = PipboyRowAt(c.X, c.Y);
                         if (hit >= 0)
                             PipboyRows()[hit].OnClick();
-                        state = $"pipboy={_pipboyOpen} rest={_pipboyRestMenu} automap={_automapOpen}";
+                        state = $"pipboy={_pipboyOpen} rest={_pipboyRestMenu} archives={_pipboyArchives} automap={_automapOpen}";
                     }
                     Console.WriteLine($"menu-click: menu={menu} row={mrow} hit={hit} -> {state}");
                     break;
