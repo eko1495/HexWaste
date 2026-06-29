@@ -4671,11 +4671,13 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
     private double _headFrameTimerMs;
     private const double HeadFrameMs = 1000.0 / 8; // heads.lst fps ~8
 
-    /// <summary>P87: render the dialogue talking head above the conversation panel. The head FRM is the
-    /// neutral fidget pose (art.cc anim 4 = _head1 'n' + _head2 'f', fidget #1, e.g. ELDERNF1); its frames
-    /// cycle for an idle "living" head. Falls back silently to a text-only dialog if the head art is
-    /// absent. ported from fallout2-ce src/game_dialog.cc gdialogInitFromScript()/_gdSetupFidget().</summary>
-    private void DrawTalkingHead(int headId, int panelTop)
+    /// <summary>P87/P89: render the dialogue talking head in the upper area of the centred 640x480 dialog
+    /// frame, at the engine's display anchor. The head FRM is the neutral fidget pose (art.cc anim 4 =
+    /// _head1 'n' + _head2 'f', fidget #1, e.g. ELDERNF1); its frames cycle for an idle "living" head.
+    /// Falls back silently to a text-only dialog if the head art is absent. ported from fallout2-ce
+    /// src/game_dialog.cc gdialogInitFromScript()/_gdSetupFidget() (the head display buffer at window-
+    /// local (126,14), gameDialogRenderTalkingHead).</summary>
+    private void DrawTalkingHead(int headId, int frameX, int frameY)
     {
         int fid = Formats.Fid.Build(Formats.ObjectType.Head, headId, animType: 4, weaponCode: 1);
         Texture2D head;
@@ -4689,11 +4691,11 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
             return; // head art missing -> graceful text-only dialog
         }
 
-        Rectangle vp = GraphicsDevice.Viewport.Bounds;
-        int availH = Math.Max(0, panelTop - 8);
-        float scale = Math.Min(1f, Math.Min(availH / (float)head.Height, vp.Width * 0.55f / head.Width));
-        int w = (int)(head.Width * scale), h = (int)(head.Height * scale);
-        _spriteBatch.Draw(head, new Rectangle((vp.Width - w) / 2, Math.Max(4, (panelTop - h) / 2), w, h), Color.White);
+        // The engine's head display area is window-local (126,14), ~388px wide; the heads sit centred in
+        // the 640 frame. Centre this head's own width within that area and draw it at natural size.
+        int x = frameX + 126 + (388 - head.Width) / 2;
+        int y = frameY + 14;
+        _spriteBatch.Draw(head, new Vector2(x, y), Color.White);
     }
 
     private void DrawConversationPanel(string name, string reply, IReadOnlyList<string> options,
@@ -4709,7 +4711,18 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
         _panelPixel ??= CreatePixel();
 
         Rectangle viewport = GraphicsDevice.Viewport.Bounds;
-        int panelWidth = Math.Min(720, viewport.Width - 40);
+
+        // P89: the dialogue is a screen takeover — dim the world so the head + text read as the FO2 dialog
+        // screen (game_dialog.cc darkens the captured scene), instead of floating over live, lit play.
+        _spriteBatch.Draw(_panelPixel, viewport, new Color(0, 0, 0, 175));
+
+        // FO2 lays the dialog in a 640x480 frame centred on screen: the head display at window-local
+        // (126,14), the reply window at (135,225). With a head we honour that frame; a head-less dialog
+        // keeps the simple bottom panel over the dimmed scene.
+        int frameX = Math.Max(0, (viewport.Width - 640) / 2);
+        int frameY = Math.Max(0, (viewport.Height - 480) / 2);
+
+        int panelWidth = headId >= 0 ? 397 : Math.Min(720, viewport.Width - 40);
         int textWidth = panelWidth - 32;
         int lineHeight = _fontRenderer.LineHeight;
 
@@ -4723,11 +4736,13 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
         }
 
         int panelHeight = (replyLines.Count + optionLines.Count + 3) * lineHeight + 24;
-        int panelX = (viewport.Width - panelWidth) / 2;
-        int panelY = viewport.Height - panelHeight - 16;
+        // With a head, anchor the reply/options panel in the FO2 lower-frame region (the ~225 reply window)
+        // so head + panel form the authentic dialog screen; otherwise pin it to the bottom of the screen.
+        int panelX = headId >= 0 ? frameX + 122 : (viewport.Width - panelWidth) / 2;
+        int panelY = headId >= 0 ? frameY + 219 : viewport.Height - panelHeight - 16;
 
-        if (headId >= 0) // P87: the talking head fills the space above the conversation panel
-            DrawTalkingHead(headId, panelY);
+        if (headId >= 0) // P89: the talking head sits in the upper frame, over the dimmed scene
+            DrawTalkingHead(headId, frameX, frameY);
 
         _spriteBatch.Draw(_panelPixel, new Rectangle(panelX, panelY, panelWidth, panelHeight),
             new Color(8, 8, 8, 230));

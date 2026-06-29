@@ -701,6 +701,18 @@ tests. DOCUMENTED CUT: holodisks + the alarm-clock stay out (separate subsystems
 completion is content (the GVARs advance via quest scripts), but the log + thresholds + the from-fresh
 displayThreshold-0 quests are all live. New harness: --menu-click pipboy-archives.
 
+Phase 89 (DONE — "FO2 dialog screen", a P87 follow-up after user feedback that the head floated over the
+bright live world). The engine's dialog is a SCREEN TAKEOVER: the captured scene is DARKENED, the head sits
+in the UPPER area, and the reply/options fill the lower panel — not a head hovering over lit gameplay. Fixed
+to match, grounded in src/game_dialog.cc constants: a full-viewport dim quad (black α175 ≈ the engine's
+darken-blend) drawn first; then the dialog is laid out in a 640x480 frame centred on screen — the head at the
+display anchor (126,14) at natural size, centred within the ~388px head area; the reply/options panel anchored
+in the lower-frame reply region (frameY+219, ≈ the engine's REPLY_WINDOW 135,225 / OPTIONS_WINDOW 127,335)
+instead of pinned to the screen bottom. Head-less dialog + the companion hub also dim now (the engine dims all
+dialog) but keep their bottom panel. GOLDEN-SAFE: pure Draw-only — the --talk-seq dialog goldens print REPLY/
+OPTION (filtered) and never render, so 16 combat + 179 encounter BYTE-IDENTICAL. Screenshot-verified: the
+dimmed scene + top head + lower panel read as the FO2 dialog screen.
+
 ---
 
 Phase 10 (DONE — "The Wasteland Bites Back"; trailing duplicate in this range, full text in CLAUDE.md): M0-M5 worldmap encounters + companion lifecycle. **Durable CORRECTION: the phase-10 research notes' "partymbr.msg list-14" claim was UNVERIFIED and WRONG — partymbr.msg does not exist in the game data, "partymbr" appears nowhere in fallout2-ce, and message list 14 resolves to Generic.int/generic.msg.** The engine has NO dedicated wait/follow/dismiss UI: recruit/dismiss are plain party_add/party_remove (interpreter_extra.cc:3943/3956 → party_member.cc:375/426) called from a companion's own talk_p_proc reply procedure (game_dialog.cc:2080); the hub reproduces those side effects. The only dedicated party UI is the AI-disposition combat-control window (game_dialog.cc:3354) — SUPERSEDED, shipped in P50. **GOTCHA: companions travel OUTSIDE map deltas — exclude PartyMembers from EVERY CaptureMapDelta loop or an F5 duplicates them on load.** v1 cuts now SUPERSEDED (wait/dismiss persistence #2/#3, per-member If()/Distance [P10 + P16-M4 lowercase-if fix], X-FIGHTING-Y [P16-M3], projectile tween [#11] all shipped); lone residual = Vic's radio ITEM has no in-slice source (one --give).
