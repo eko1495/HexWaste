@@ -1175,6 +1175,14 @@ public sealed partial class ViewerGame
                     Console.WriteLine($"hud-click: {hudName} -> inv={_inventoryOpen} skills={_skillAllocOpen} worldmap={_worldmapOpen} skilldex={_skilldexOpen} pipboy={_pipboyOpen} options={_optionsOpen}");
                     break;
                 }
+                case StartupAction.OpenBarterAt(var obHex):
+                {
+                    if (CritterAt(obHex) is { } obNpc)
+                        OpenBarter(obNpc, 100);
+                    else
+                        Console.WriteLine($"barter: no critter at hex {obHex}");
+                    break;
+                }
                 case StartupAction.PanelClick(var pcSide, var pcRow):
                 {
                     // Click the centre of a row rect via the same geometry + dispatch a live

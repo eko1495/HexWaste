@@ -1415,6 +1415,7 @@ public sealed partial class ViewerGame
         if (_fontRenderer is null)
             return;
         DrawInventoryWindow(); // P67: the INVBOX paperdoll backdrop (behind the list); no-op if the art is absent
+        DrawItemWindow();      // P86: the loot/barter/trade FRM backdrop; no-op if the art is absent
         foreach (ItemPanel panel in CurrentItemPanels())
         {
             int bottom = DrawItemList(panel.Title, panel.Items, panel.X, panel.Price);
@@ -1484,6 +1485,67 @@ public sealed partial class ViewerGame
     // The INVBOX DONE button (inventory.cc: window-local 437,329 15x16; padded for an easier click).
     // Only meaningful when the INVBOX art is up — the fallback boxes layout has no DONE button.
     private Rectangle? InvBoxDoneRect() => InvBoxOrigin() is { } o ? new Rectangle(o.X + 432, o.Y + 324, 26, 24) : null;
+
+    // ====================================================================
+    //  P86: authentic LOOT / BARTER / TRADE window art (FID 114/111/420)
+    // ====================================================================
+    //
+    // The dark full-panel boxes are replaced by the real interface chrome, following the proven P67
+    // INVBOX pattern: lazy-load on the first live Draw; headless the texture stays null so the panels
+    // fall back to the boxes layout (which is what the --panel-click / barter / loot goldens exercise),
+    // so those goldens are byte-identical. Filenames + dims dumped from master.dat (not guessed):
+    //   loot.frm  (FID 114) 537x376 — a centred container window (left=you/empty, right=container scroller)
+    //   barter.frm(FID 111) 640x191 — a bottom strip: your list (left), merchant list (right), offer tables
+    //   trade.frm (FID 420) 640x190 — the party-member trade strip, same layout
+    // DOCUMENTED DIVERGENCE (the P67 one): Hexwaste is a TEXT list, not the engine's 64x48 icon grid, so a
+    // long item name can extend past the narrow art slot; and the offer-table mechanic isn't modelled
+    // (barter is direct click-to-buy/sell). The text-fallback path keeps the existing geometry/goldens.
+    private Texture2D? _lootBox, _barterBox, _tradeBox;
+    private bool _lootBoxTried, _barterBoxTried, _tradeBoxTried;
+    private const int LootBoxW = 537, LootBoxH = 376;
+    private const int TradeStripW = 640, TradeStripH = 191;
+
+    /// <summary>The active loot/barter/trade FRM backdrop + its top-left screen placement (and whether it
+    /// is a bottom strip), or null when no such panel is up OR the art is absent (headless) — in which case
+    /// the item panels fall back to the dark text boxes and every existing golden stays byte-identical.</summary>
+    private (Texture2D Tex, Point Origin, bool Strip)? ItemWindowArt()
+    {
+        int vw = GraphicsDevice.Viewport.Width, vh = GraphicsDevice.Viewport.Height;
+        if (_lootContainer is not null)
+        {
+            if (!_lootBoxTried) { _lootBoxTried = true; _lootBox = InterfaceBar.LoadFrm(GraphicsDevice, _vfs, _palette, @"art\intrface\loot.frm"); }
+            return _lootBox is null ? null
+                : (_lootBox, new Point(Math.Max(0, (vw - LootBoxW) / 2), Math.Max(0, (vh - LootBoxH) / 2)), false);
+        }
+        if (_barterNpc is not null)
+        {
+            if (!_barterBoxTried) { _barterBoxTried = true; _barterBox = InterfaceBar.LoadFrm(GraphicsDevice, _vfs, _palette, @"art\intrface\barter.frm"); }
+            return _barterBox is null ? null
+                : (_barterBox, new Point((vw - TradeStripW) / 2, Math.Max(0, vh - TradeStripH)), true);
+        }
+        if (_tradePartner is not null)
+        {
+            if (!_tradeBoxTried) { _tradeBoxTried = true; _tradeBox = InterfaceBar.LoadFrm(GraphicsDevice, _vfs, _palette, @"art\intrface\trade.frm"); }
+            return _tradeBox is null ? null
+                : (_tradeBox, new Point((vw - TradeStripW) / 2, Math.Max(0, vh - TradeStripH)), true);
+        }
+        return null;
+    }
+
+    /// <summary>Window-relative list region (row origin + visible row count) for the panel at the logical
+    /// X (40 / 420) when an art window is up, or null → the dark-box fallback. Mapping: x=40 (the "them"
+    /// list — container / merchant stock / follower items) → the RIGHT slot; x=420 (your list) → the LEFT
+    /// slot. Both the renderer (DrawItemList) and the hit-test (ItemRowRect) go through this so they agree.</summary>
+    private (int X, int Y, int Rows)? ItemPanelRegion(int logicalX)
+    {
+        if (ItemWindowArt() is not { } w)
+            return null;
+        if (w.Strip) // barter/trade bottom strip: two tall side lists flanking the centre offer tables
+            return logicalX == 40
+                ? (w.Origin.X + 462, w.Origin.Y + 26, 5)   // their list (merchant/follower — right tall slot)
+                : (w.Origin.X + 92, w.Origin.Y + 26, 5);   // your list (left tall slot)
+        return (w.Origin.X + 180, w.Origin.Y + 38, 9);     // loot: the container list across the central scrollers
+    }
 
     // The object-flag bit a weapon slot wields into: WeaponLeft → left hand, else the right hand.
     private static int SlotHandBit(Formats.Combat.EquipSlot slot) =>
@@ -1736,16 +1798,56 @@ public sealed partial class ViewerGame
         // long name can extend toward the paperdoll (Hexwaste is a text-list inventory, not an icon grid).
         if (InvBoxOrigin() is { } o && x == o.X + InvBoxListLocalX)
             return new Rectangle(x, o.Y + 40 + displayRow * lineHeight, 128, lineHeight);
+        // P86: loot/barter/trade rows sit in the FRM window's slot region (render == hit-test).
+        if (ItemPanelRegion(x) is { } reg)
+            return new Rectangle(reg.X, reg.Y + displayRow * lineHeight, 150, lineHeight);
         int rowY = 60 + 8 + lineHeight + 6 + displayRow * lineHeight;
         return new Rectangle(x + 6, rowY - 4, 360 - 12, lineHeight);
     }
 
     /// <summary>Draws the panel and returns the y just below it (P24 — the weight readout sits there).</summary>
+    /// <summary>P86: draw the active loot/barter/trade FRM backdrop behind the item lists. No-op when no
+    /// such panel is up or the art is absent (→ the dark-box fallback, byte-identical goldens).</summary>
+    private void DrawItemWindow()
+    {
+        if (ItemWindowArt() is not { } w)
+            return;
+        int wide = w.Strip ? TradeStripW : LootBoxW;
+        int high = w.Strip ? TradeStripH : LootBoxH;
+        _spriteBatch.Draw(w.Tex, new Rectangle(w.Origin.X, w.Origin.Y, wide, high), Color.White);
+    }
+
     private int DrawItemList(string title, List<MapObject> items, int x,
         Func<MapObject, int>? price = null)
     {
         _panelPixel ??= CreatePixel();
         int lineHeight = Math.Max(_fontRenderer!.LineHeight, 26);
+
+        // P86: on the loot/barter/trade FRM window, render the rows in the slot region (no dark box — the
+        // window art is the backdrop). Geometry via ItemPanelRegion so render == ItemRowRect hit-test.
+        // Headless ItemWindowArt is null → this never fires → the dark-box path below keeps the goldens.
+        if (ItemPanelRegion(x) is { } reg)
+        {
+            var rowCol = new Color(0, 252, 0);
+            int start0 = _panelPage * ItemRowsPerPage;
+            if (items.Count == 0)
+                _fontRenderer.Draw(_spriteBatch, "(empty)", new Vector2(reg.X, reg.Y), Color.Gray);
+            for (int row = 0; row < reg.Rows; row++)
+            {
+                int gi = start0 + row;
+                if (gi >= items.Count)
+                    break;
+                MapObject item = items[gi];
+                Rectangle rr = ItemRowRect(x, row);
+                DrawItemIcon(item, new Rectangle(rr.X, rr.Y, 18, Math.Min(rr.Height - 4, 18)));
+                string c = item.StackCount > 1 ? $" x{item.StackCount}" : "";
+                string tag = price is null ? "" : $" ${price(item)}";
+                _fontRenderer.Draw(_spriteBatch, $"{row + 1}.{ObjectName(item)}{c}{tag}", new Vector2(rr.X + 20, rr.Y), rowCol);
+            }
+            if (items.Count > reg.Rows)
+                _fontRenderer.Draw(_spriteBatch, "PgUp/Dn", new Vector2(reg.X, reg.Y + reg.Rows * lineHeight + 1), Color.Gray);
+            return reg.Y + reg.Rows * lineHeight;
+        }
         int panelWidth = 360;
         int start = _panelPage * ItemRowsPerPage;
         int shown = Math.Clamp(items.Count - start, 0, ItemRowsPerPage);

@@ -168,6 +168,10 @@ for (int i = 0; i < args.Length; i++)
         case "--hud-click" when i + 1 < args.Length:
             actions.Add(new ViewerGame.StartupAction.HudClick(args[++i]));
             break;
+        case "--open-barter" when i + 1 < args.Length:
+            // P86: open a barter window with the critter at a hex (screenshot/debug aid).
+            actions.Add(new ViewerGame.StartupAction.OpenBarterAt(int.Parse(args[++i])));
+            break;
         case "--panel-click" when i + 2 < args.Length:
             // --panel-click <side> <row>: click an item-panel row (side 0=left, 1=right).
             actions.Add(new ViewerGame.StartupAction.PanelClick(int.Parse(args[i + 1]), int.Parse(args[i + 2])));

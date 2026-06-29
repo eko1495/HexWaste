@@ -634,6 +634,27 @@ The cull in DrawFloors is conservative under zoom-in (logical viewport ⊇ the v
 wrongly dropped. CUTS (documented): magnify-only (no <1× zoom-out, which would need a wider floor cull +
 show map borders); zoom anchors on the screen centre, not the cursor.
 
+Phase 86 (DONE — "Authentic Loot/Barter/Trade windows"): replaced the dark text-box item panels with the real
+FO2 interface chrome, following the proven P67 INVBOX pattern (lazy-load on first live Draw; headless the
+texture stays null → the panels fall back to the boxes layout → every golden byte-identical). FIDs + dims
+DUMPED from master.dat, NOT guessed (the recurring "dump, don't trust" rule — and it CORRECTED my own P83-
+derived doubt: I suspected FID 420 was CUSSEL, but intrface.lst line 420 = trade.frm, so the original survey
+was right): **loot.frm (FID 114) 537×376** centred container window; **barter.frm (FID 111) 640×191** and
+**trade.frm (FID 420) 640×190** bottom strips (your list left, their list right, the offer-table divider +
+OFFER/TALK between). IMPL (all in ViewerGame.Panels.cs): `ItemWindowArt()` picks the active backdrop by mode
+(_lootContainer→loot, _barterNpc→barter, _tradePartner→trade) + its placement; `DrawItemWindow()` draws it
+behind the lists; `ItemPanelRegion(logicalX)` maps each panel's logical X (40=their list→right slot, 420=your
+list→left slot; loot's single list→the central scrollers) to the window-relative row origin, and BOTH the
+renderer (DrawItemList) and the hit-test (ItemRowRect) route through it so a click always lands on the row it
+draws. GOLDEN-SAFE: the only --panel-click golden is the INVENTORY (no loot/barter/trade open → ItemWindowArt
+null → the new branch never fires); the use-hex goldens hit scenery not containers → 16 combat + 178 encounter
+BYTE-IDENTICAL. VERIFIED VISUALLY: a denbus1 footlocker renders the loot.frm chrome with its items as text+icon
+rows; --open-barter (a new screenshot aid) on Metzger renders the barter.frm strip with his stock in the right
+slot. DOCUMENTED DIVERGENCE (the P67 one): Hexwaste is a TEXT list, not the engine's 64×48 icon grid, so a long
+item name + price can overrun the narrow art slot; and the offer-table mechanic isn't modelled (barter stays
+direct click-to-buy/sell). trade.frm shares the barter strip path (verified via barter). New harness:
+--open-barter <hex>.
+
 ---
 
 Phase 10 (DONE — "The Wasteland Bites Back"; trailing duplicate in this range, full text in CLAUDE.md): M0-M5 worldmap encounters + companion lifecycle. **Durable CORRECTION: the phase-10 research notes' "partymbr.msg list-14" claim was UNVERIFIED and WRONG — partymbr.msg does not exist in the game data, "partymbr" appears nowhere in fallout2-ce, and message list 14 resolves to Generic.int/generic.msg.** The engine has NO dedicated wait/follow/dismiss UI: recruit/dismiss are plain party_add/party_remove (interpreter_extra.cc:3943/3956 → party_member.cc:375/426) called from a companion's own talk_p_proc reply procedure (game_dialog.cc:2080); the hub reproduces those side effects. The only dedicated party UI is the AI-disposition combat-control window (game_dialog.cc:3354) — SUPERSEDED, shipped in P50. **GOTCHA: companions travel OUTSIDE map deltas — exclude PartyMembers from EVERY CaptureMapDelta loop or an F5 duplicates them on load.** v1 cuts now SUPERSEDED (wait/dismiss persistence #2/#3, per-member If()/Distance [P10 + P16-M4 lowercase-if fix], X-FIGHTING-Y [P16-M3], projectile tween [#11] all shipped); lone residual = Vic's radio ITEM has no in-slice source (one --give).

@@ -594,6 +594,9 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
         /// Row is 0-based within the current page. Drives the same geometry+dispatch path
         /// a live mouse click does, then reports the result — regression-proofs row clicks.</summary>
         public sealed record PanelClick(int Side, int Row) : StartupAction;
+        /// <summary>P86: open a barter session with the barter-flagged critter at a hex, bypassing the
+        /// dialog gate — a screenshot/debug aid for the barter.frm window (like the other --probe flags).</summary>
+        public sealed record OpenBarterAt(int Hex) : StartupAction;
         /// <summary>Click a row of the Options or Pip-Boy menu (phase-15 M3): Menu is
         /// "options" / "pipboy" / "pipboy-rest", Row is 0-based. Drives the same
         /// geometry + dispatch a live click does and reports which row was hit.</summary>

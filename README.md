@@ -181,7 +181,10 @@ Prebuilt self-contained builds (Linux x64 / Windows x64) are produced by
   (timed rests or rest-until-healed); press A for the full-window automap, which
   reveals as you explore (fog-of-war). The OPT tab
   (or Esc) opens the options/pause menu: save, load, main menu, quit, resume — and the
-  10-slot save/load picker renders its authentic `LSGAME.frm` window. Every
+  10-slot save/load picker renders its authentic `LSGAME.frm` window. The inventory
+  (`INVBOX.frm` paperdoll), container looting (`loot.frm`), merchant barter
+  (`barter.frm`) and companion trade (`trade.frm`) all render on their real Fallout 2
+  window chrome. Every
   panel and menu is fully mouse-navigable — click a row in the inventory/loot/barter/
   trade lists (PgUp/PgDn page past the 9th item) or in the Pip-Boy/Options menus; the
   keyboard shortcuts still work alongside. The called-shot picker shows the live to-hit
