@@ -616,6 +616,24 @@ before-DT scaling on the ranged + melee formulas, and two fake-host end-to-end c
 dude harder on Hard / softer on Easy, while the dude's own punch deals identical damage regardless of the setting
 (the team gate). 769 Formats tests.
 
+Phase 85 (DONE — "Integer zoom camera"): shipped the "optional integer zoom" the CLAUDE.md mission has
+promised since day one but never built — Camera.cs had only PanX/PanY and the world drew at 1:1 pixels.
+DESIGN (chosen to keep the faithful src/tile.cc projection PRISTINE): the camera math stays in logical
+(un-zoomed) pixels; zoom is a VIEWER-layer transform. The world renders in its own SpriteBatch under a
+`WorldZoomMatrix()` (scale by _zoom about the screen centre, identity at 1×) and the FloorRenderer's
+BasicEffect.World gets the same matrix; the HUD/UI + worldmap draw in a SECOND, native batch on top, so
+the 640×480 chrome never scales. Input inverts the same transform: `ToWorldPoint(screen)` →
+`(p−centre)/zoom + centre` feeds every mouse→world pick (hover/attack/examine via PickObject, click-to-move
++ the cursor hit-test via a new `PickHex` helper); the world-anchored hex-ring cursor (drawn in the native
+batch) is forward-transformed by `ToScreenPoint` + scaled. Mouse WHEEL zooms 1×..4× (the wheel was unused);
+`--zoom N` sets it for screenshots. Thumbnails force 1× (the canonical world view). GOLDEN-SAFE: the golden
+suites are headless TEXT transcripts that never render and never read the wheel, and 1× is identity — 16
+combat + 178 encounter BYTE-IDENTICAL. Verified VISUALLY: artemple screenshots at 1×/2×/3× show the world
+magnifying about centre (the dude stays centred) while the HUD bar + HP/AP text hold native size/position.
+The cull in DrawFloors is conservative under zoom-in (logical viewport ⊇ the visible region) so no tile is
+wrongly dropped. CUTS (documented): magnify-only (no <1× zoom-out, which would need a wider floor cull +
+show map borders); zoom anchors on the screen centre, not the cursor.
+
 ---
 
 Phase 10 (DONE — "The Wasteland Bites Back"; trailing duplicate in this range, full text in CLAUDE.md): M0-M5 worldmap encounters + companion lifecycle. **Durable CORRECTION: the phase-10 research notes' "partymbr.msg list-14" claim was UNVERIFIED and WRONG — partymbr.msg does not exist in the game data, "partymbr" appears nowhere in fallout2-ce, and message list 14 resolves to Generic.int/generic.msg.** The engine has NO dedicated wait/follow/dismiss UI: recruit/dismiss are plain party_add/party_remove (interpreter_extra.cc:3943/3956 → party_member.cc:375/426) called from a companion's own talk_p_proc reply procedure (game_dialog.cc:2080); the hub reproduces those side effects. The only dedicated party UI is the AI-disposition combat-control window (game_dialog.cc:3354) — SUPERSEDED, shipped in P50. **GOTCHA: companions travel OUTSIDE map deltas — exclude PartyMembers from EVERY CaptureMapDelta loop or an F5 duplicates them on load.** v1 cuts now SUPERSEDED (wait/dismiss persistence #2/#3, per-member If()/Distance [P10 + P16-M4 lowercase-if fix], X-FIGHTING-Y [P16-M3], projectile tween [#11] all shipped); lone residual = Vic's radio ITEM has no in-slice source (one --give).

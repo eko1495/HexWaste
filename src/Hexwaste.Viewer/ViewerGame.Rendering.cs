@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using Hexwaste.Formats;
 using Hexwaste.Formats.Map;
@@ -12,6 +13,50 @@ namespace Hexwaste.Viewer;
 // + DrawRoofs/DrawCombatText stay in core); fields stay central.
 public sealed partial class ViewerGame
 {
+    /// <summary>P85: the WORLD-layer zoom transform — scale by <see cref="_zoom"/> about the screen
+    /// centre, so the centred hex stays put while the HUD (its own native batch) is untouched. Identity
+    /// at 1× so every default frame is unchanged. The camera projection stays in logical (un-zoomed)
+    /// pixels; this matrix scales both the position and the size of everything drawn in the world batch.</summary>
+    private Matrix WorldZoomMatrix()
+    {
+        if (_zoom == 1)
+            return Matrix.Identity;
+        float cx = GraphicsDevice.Viewport.Width / 2f;
+        float cy = GraphicsDevice.Viewport.Height / 2f;
+        return Matrix.CreateTranslation(-cx, -cy, 0) * Matrix.CreateScale(_zoom) * Matrix.CreateTranslation(cx, cy, 0);
+    }
+
+    /// <summary>Inverse of <see cref="WorldZoomMatrix"/> for a single point: turn a physical screen
+    /// point (the mouse) into the logical un-zoomed point the camera projection / sprite-bounds picking
+    /// expect. Identity at 1×.</summary>
+    private (int X, int Y) ToWorldPoint(int screenX, int screenY)
+    {
+        if (_zoom == 1)
+            return (screenX, screenY);
+        float cx = GraphicsDevice.Viewport.Width / 2f;
+        float cy = GraphicsDevice.Viewport.Height / 2f;
+        return ((int)MathF.Round((screenX - cx) / _zoom + cx), (int)MathF.Round((screenY - cy) / _zoom + cy));
+    }
+
+    /// <summary>Forward zoom of a single logical world point to its physical screen position — for the
+    /// few world-anchored sprites drawn in the native HUD batch (the hex-ring cursor). Identity at 1×.</summary>
+    private Vector2 ToScreenPoint(int worldX, int worldY)
+    {
+        if (_zoom == 1)
+            return new Vector2(worldX, worldY);
+        float cx = GraphicsDevice.Viewport.Width / 2f;
+        float cy = GraphicsDevice.Viewport.Height / 2f;
+        return new Vector2((worldX - cx) * _zoom + cx, (worldY - cy) * _zoom + cy);
+    }
+
+    /// <summary>The hex under a physical screen point, accounting for zoom (P85). The camera works in
+    /// logical pixels, so convert the point first.</summary>
+    private int PickHex(int screenX, int screenY)
+    {
+        (int wx, int wy) = ToWorldPoint(screenX, screenY);
+        return _camera.ScreenToHex(wx, wy);
+    }
+
     private void DrawFloors()
     {
         MapElevation? elevation = _map.Elevations[_elevation];
@@ -19,7 +64,7 @@ public sealed partial class ViewerGame
             return;
 
         _floorRenderer ??= new FloorRenderer(GraphicsDevice);
-        _floorRenderer.Begin(GraphicsDevice.Viewport.Width, GraphicsDevice.Viewport.Height);
+        _floorRenderer.Begin(GraphicsDevice.Viewport.Width, GraphicsDevice.Viewport.Height, WorldZoomMatrix());
 
         Rectangle viewport = GraphicsDevice.Viewport.Bounds;
 

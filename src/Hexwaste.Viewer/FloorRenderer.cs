@@ -16,7 +16,7 @@ public sealed class FloorRenderer(GraphicsDevice device)
     private BasicEffect? _effect;
     private readonly Dictionary<Texture2D, List<VertexPositionColorTexture>> _batches = [];
 
-    public void Begin(int viewportWidth, int viewportHeight)
+    public void Begin(int viewportWidth, int viewportHeight, Matrix? world = null)
     {
         _effect ??= new BasicEffect(device)
         {
@@ -26,7 +26,8 @@ public sealed class FloorRenderer(GraphicsDevice device)
         };
         _effect.Projection = Matrix.CreateOrthographicOffCenter(0, viewportWidth, viewportHeight, 0, 0, 1);
         _effect.View = Matrix.Identity;
-        _effect.World = Matrix.Identity;
+        // P85: the world-layer zoom transform (identity at 1×) — the floor quads scale with the sprites.
+        _effect.World = world ?? Matrix.Identity;
 
         foreach (List<VertexPositionColorTexture> list in _batches.Values)
             list.Clear();

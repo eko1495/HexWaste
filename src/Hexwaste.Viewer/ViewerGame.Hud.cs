@@ -85,17 +85,20 @@ public sealed partial class ViewerGame
         MouseState m = Mouse.GetState();
         Rectangle vp = GraphicsDevice.Viewport.Bounds;
         bool overWorld = _debugCursorTile >= 0
-            || (WorldCursorActive() && m.Y < vp.Height - _hudBarHeight && _camera.ScreenToHex(m.X, m.Y) >= 0);
+            || (WorldCursorActive() && m.Y < vp.Height - _hudBarHeight && PickHex(m.X, m.Y) >= 0); // P85: zoom-aware
         // The red hex ring at the destination tile (UNDER the arrow) when the world is the active
         // surface; then the arrow on top at the pointer (over UI the arrow is the only cursor).
         Vector2 arrowAt = new(m.X, m.Y);
         if (overWorld && _hexCursor is not null)
         {
-            int hex = _debugCursorTile >= 0 ? _debugCursorTile : _camera.ScreenToHex(m.X, m.Y);
+            int hex = _debugCursorTile >= 0 ? _debugCursorTile : PickHex(m.X, m.Y);
             (int hx, int hy) = _camera.HexToScreen(hex);
-            _spriteBatch.Draw(_hexCursor, new Vector2(hx, hy), Color.White); // msef000 32x16, centred on the tile
+            // P85: the ring is a world-anchored sprite drawn in the native HUD batch, so apply the zoom
+            // transform to its position + size by hand (msef000 32×16, centred on the tile).
+            Vector2 ringAt = ToScreenPoint(hx, hy);
+            _spriteBatch.Draw(_hexCursor, ringAt, null, Color.White, 0f, Vector2.Zero, _zoom, SpriteEffects.None, 0f);
             if (_debugCursorTile >= 0)
-                arrowAt = new Vector2(hx + 16, hy + 8); // screenshot: place the arrow over the ring to show the layering
+                arrowAt = ringAt + new Vector2(16, 8) * _zoom; // screenshot: arrow over the ring to show layering
         }
         _spriteBatch.Draw(_stdArrow, arrowAt, Color.White); // STDARROW hotspot is (0,0), on top of the ring
     }

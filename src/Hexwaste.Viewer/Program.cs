@@ -4,6 +4,7 @@ string? gameDir = null;
 string mapName = "artemple.map";
 string? screenshot = null;
 bool roofs = true;
+int zoom = 1; // P85: initial world zoom (1×..4×), for --zoom screenshots
 double advanceMs = 0;
 int benchFrames = 0;
 bool walk = false;
@@ -640,6 +641,9 @@ for (int i = 0; i < args.Length; i++)
         case "--screenshot" when i + 1 < args.Length:
             screenshot = args[++i];
             break;
+        case "--zoom" when i + 1 < args.Length:
+            int.TryParse(args[++i], out zoom);
+            break;
         default:
             Console.Error.WriteLine($"unknown argument '{args[i]}'");
             Console.Error.WriteLine("usage: Hexwaste.Viewer --game-dir <dir> [--map artemple.map] [--screenshot out.png]");
@@ -702,6 +706,7 @@ using var game = new ViewerGame(gameDir!, mapName, screenshot, roofs)
     MenuStartState = menuStartState,
     AdvanceCyclingMs = advanceMs,
     BenchFrames = benchFrames,
+    Zoom = zoom,
     StartInWalkMode = walk,
     PickAt = pick,
     ExamineAt = examine,

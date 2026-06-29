@@ -193,6 +193,7 @@ Prebuilt self-contained builds (Linux x64 / Windows x64) are produced by
 | Input | Action |
 | --- | --- |
 | mouse drag / arrow keys | pan (hold Shift for fast) |
+| mouse wheel | zoom the world 1×–4× (integer magnify; the HUD stays native) |
 | click open ground | walk there (A* on the hex grid) |
 | click door / container / item / stairs | use / loot (click a row or 1–9 take, A take all) / pick up / travel |
 | click a critter | talk (real scripted dialog, 1–9 to choose; shopkeepers open a barter panel) |

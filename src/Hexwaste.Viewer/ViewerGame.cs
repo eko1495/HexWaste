@@ -539,6 +539,13 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
     public bool LoadOnStart { get; set; }
     private Texture2D? _panelPixel;
     private FloorRenderer? _floorRenderer;
+    // P85: integer zoom (the CLAUDE.md mission's "optional integer zoom"). The WORLD layer scales by
+    // _zoom about the screen centre (mouse wheel, 1×..MaxZoom); the HUD/UI stays native. Default 1× =
+    // identity → every existing screen/probe path is unchanged.
+    private int _zoom = 1;
+    private const int MaxZoom = 4;
+    /// <summary>Initial/probe world zoom (1×..MaxZoom). Set by --zoom for screenshots; live zoom is the wheel.</summary>
+    public int Zoom { get => _zoom; set => _zoom = Math.Clamp(value, 1, MaxZoom); }
     private readonly List<string> _messageLog = [];
 
     /// <summary>P52-M5: lines scrolled back from the newest in the green monitor (display_monitor.cc
@@ -2064,6 +2071,12 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
         if (IsKeyPressed(keyboard, Keys.PageDown))
             SwitchElevation(-1);
 
+        // P85: the mouse wheel zooms the world 1×..MaxZoom about the screen centre (the HUD stays
+        // native). ScrollWheelValue is cumulative; a positive delta (scroll up) magnifies.
+        int wheelDelta = mouse.ScrollWheelValue - _previousMouse.ScrollWheelValue;
+        if (wheelDelta != 0)
+            _zoom = Math.Clamp(_zoom + Math.Sign(wheelDelta), 1, MaxZoom);
+
         if (IsKeyPressed(keyboard, Keys.F4))
             _roofsVisible = !_roofsVisible;
 
@@ -2173,9 +2186,10 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
 
         // Hover picking; click prints the object's identity.
         MapObject? previousHover = _hoveredObject;
+        (int pickX, int pickY) = ToWorldPoint(mouse.X, mouse.Y); // P85: zoom-correct the pointer before picking
         _hoveredObject = PickAt is { } fixedPoint
             ? PickObject(fixedPoint.X, fixedPoint.Y)
-            : PickObject(mouse.X, mouse.Y);
+            : PickObject(pickX, pickY);
 
         if (PickAt is { } p && !_pickPrinted)
         {
@@ -2236,7 +2250,7 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
                 InteractWith(_hoveredObject);
             else if (_dude is not null)
             {
-                int target = _camera.ScreenToHex(mouse.X, mouse.Y);
+                int target = PickHex(mouse.X, mouse.Y); // P85: zoom-correct click-to-move
                 // Phase-18 M0: in combat a move needs AP for at least the first hex (P74-M4: the Bonus
                 // Move free-move pool counts toward affording the hex).
                 if (_combat.Phase != Formats.Combat.CombatPhase.Idle
@@ -4245,6 +4259,20 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
             DrawFloors();
         }
 
+        // P85: the WORLD layer renders in its own batch under the zoom transform (identity at 1×); the
+        // HUD/UI + worldmap follow in a second, native batch so the chrome never scales with zoom.
+        if (!_worldmapOpen && _map is not null)
+        {
+            _spriteBatch.Begin(samplerState: SamplerState.PointClamp, transformMatrix: WorldZoomMatrix());
+            DrawObjects(_flatObjects[_elevation]);
+            DrawObjects(_solidObjects[_elevation]);
+            DrawProjectiles();
+            if (_roofsVisible)
+                DrawRoofs();
+            DrawCombatText(); // P45: over the world, under the HUD bar
+            _spriteBatch.End();
+        }
+
         _spriteBatch.Begin(samplerState: SamplerState.PointClamp);
         if (_worldmapOpen)
         {
@@ -4261,15 +4289,7 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
             // title menu) the UI overlays below still render. Inert for every real flow (_map is always
             // loaded there); this just keeps a missing-map soft-fail from NPE-ing on null draw lists.
             if (_map is not null)
-            {
-                DrawObjects(_flatObjects[_elevation]);
-                DrawObjects(_solidObjects[_elevation]);
-                DrawProjectiles();
-                if (_roofsVisible)
-                    DrawRoofs();
-                DrawCombatText(); // P45: over the world, under the HUD bar
-                DrawInterfaceBar();
-            }
+                DrawInterfaceBar(); // the world sprites already drew in the zoomed batch above
             DrawTextOverlay();
             DrawDialogPanel();
             DrawItemPanels();
@@ -5157,6 +5177,10 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
         _thumbnailTarget ??= new RenderTarget2D(GraphicsDevice, ThumbW, ThumbH);
 
         // 1) the world only (floors → objects → roofs → HUD bar), no menu panels, into the full-size target.
+        // P85: thumbnails are always the canonical 1× world view (the object batch below is un-zoomed),
+        // so force identity for the capture regardless of the live zoom, then restore it.
+        int savedZoom = _zoom;
+        _zoom = 1;
         GraphicsDevice.SetRenderTarget(_screenshotTarget);
         GraphicsDevice.Clear(Color.Black);
         if (!_worldmapOpen && _map is not null)
@@ -5177,6 +5201,7 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
             DrawInterfaceBar();
         }
         _spriteBatch.End();
+        _zoom = savedZoom; // P85: restore the live zoom after the 1× thumbnail capture
 
         // 2) downscale into the thumbnail target.
         GraphicsDevice.SetRenderTarget(_thumbnailTarget);
