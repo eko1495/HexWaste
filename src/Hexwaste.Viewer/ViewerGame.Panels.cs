@@ -1618,6 +1618,12 @@ public sealed partial class ViewerGame
         return (w.Origin.X + 180, w.Origin.Y + 38, 9);     // loot: the container list across the central scrollers
     }
 
+    /// <summary>Items shown per page in the current item panels — the FRM barter/trade STRIP only fits 5
+    /// rows where loot/inventory fit 9, so paging, the number keys and the click hit-test must all stride
+    /// by THIS (not the bare ItemRowsPerPage) or rows 5..8 of every page are silently skipped. Derived
+    /// from ItemPanelRegion so it tracks the rendered row count; headless (no art) → ItemRowsPerPage.</summary>
+    private int PanelPageRows() => ItemPanelRegion(40)?.Rows ?? ItemRowsPerPage;
+
     // The object-flag bit a weapon slot wields into: WeaponLeft → left hand, else the right hand.
     private static int SlotHandBit(Formats.Combat.EquipSlot slot) =>
         slot == Formats.Combat.EquipSlot.WeaponLeft ? MapObject.FlagInLeftHand : MapObject.FlagInRightHand;
@@ -1900,7 +1906,7 @@ public sealed partial class ViewerGame
         if (ItemPanelRegion(x) is { } reg)
         {
             var rowCol = new Color(0, 252, 0);
-            int start0 = _panelPage * ItemRowsPerPage;
+            int start0 = _panelPage * reg.Rows; // P89-fix: stride by the rendered row count, not 9 (bug_001)
             if (items.Count == 0)
                 _fontRenderer.Draw(_spriteBatch, "(empty)", new Vector2(reg.X, reg.Y), Color.Gray);
             for (int row = 0; row < reg.Rows; row++)
@@ -1984,8 +1990,9 @@ public sealed partial class ViewerGame
     private int MaxPanelPage()
     {
         int max = 0;
+        int rows = PanelPageRows(); // P89-fix: the strip pages by 5, so its last page is items.Count/5
         foreach (ItemPanel panel in CurrentItemPanels())
-            max = Math.Max(max, (Math.Max(panel.Items.Count, 1) - 1) / ItemRowsPerPage);
+            max = Math.Max(max, (Math.Max(panel.Items.Count, 1) - 1) / rows);
         return max;
     }
 
@@ -2013,10 +2020,11 @@ public sealed partial class ViewerGame
     // (no Draw dependency) so the headless --panel-click harness can drive it too.
     private bool TryClickItemPanel(int mx, int my, bool shift)
     {
+        int rows = PanelPageRows(); // P89-fix: only the visible rows are clickable (5 on the strip, bug_001)
         foreach (ItemPanel panel in CurrentItemPanels())
         {
-            int start = _panelPage * ItemRowsPerPage;
-            for (int row = 0; row < ItemRowsPerPage; row++)
+            int start = _panelPage * rows;
+            for (int row = 0; row < rows; row++)
             {
                 int gi = start + row;
                 if (gi >= panel.Items.Count)

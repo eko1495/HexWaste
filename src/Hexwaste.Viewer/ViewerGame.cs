@@ -1816,11 +1816,12 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
         if (_barterNpc is not null)
         {
             bool shift = keyboard.IsKeyDown(Keys.LeftShift) || keyboard.IsKeyDown(Keys.RightShift);
-            for (int i = 0; i < 9; i++)
+            int barterRows = PanelPageRows(); // P89-fix: the strip shows 5 rows, so only 1-5 map (bug_001)
+            for (int i = 0; i < barterRows; i++)
             {
                 if (IsKeyPressed(keyboard, Keys.D1 + i) || IsKeyPressed(keyboard, Keys.NumPad1 + i))
                 {
-                    int gi = _panelPage * ItemRowsPerPage + i;
+                    int gi = _panelPage * barterRows + i;
                     if (shift)
                         BarterSell(gi);
                     else
@@ -1847,11 +1848,12 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
         if (_lootContainer is not null || _inventoryOpen)
         {
             bool shiftHeld = keyboard.IsKeyDown(Keys.LeftShift) || keyboard.IsKeyDown(Keys.RightShift);
-            for (int i = 0; i < 9; i++)
+            int rows = PanelPageRows(); // P89-fix: the trade strip shows 5 rows; loot/inventory 9 (bug_001)
+            for (int i = 0; i < rows; i++)
             {
                 if (IsKeyPressed(keyboard, Keys.D1 + i) || IsKeyPressed(keyboard, Keys.NumPad1 + i))
                 {
-                    int gi = _panelPage * ItemRowsPerPage + i;
+                    int gi = _panelPage * rows + i;
                     if (_tradePartner is not null && shiftHeld)
                     {
                         GiveToFollower(gi); // trade give-side: Shift+1-9 → the follower
@@ -5012,7 +5014,9 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
         string path = _premadeGcds[idx].VirtualPath;
         using (Stream stream = _vfs.OpenRead(path))
             _dudeGcd = Formats.Combat.GcdFile.Load(stream);
-        _activeCharacter = Path.GetFileNameWithoutExtension(path);
+        // PremadeBase, not Path.GetFileNameWithoutExtension: the DAT vpath "premade\combat.gcd" uses '\',
+        // which Path won't split on Linux (the P83 trap) — it'd persist "premade\combat" into the save name.
+        _activeCharacter = PremadeBase(path);
         StartNewGame();
         _menu = MenuState.None;
     }
