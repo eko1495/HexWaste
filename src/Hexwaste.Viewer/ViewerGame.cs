@@ -1491,6 +1491,32 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
         _mapAmbient = _mapList.GetAmbientSfx(mapName); // P34-M5: per-map ambient sfx list
         _ambientTimerMs = AmbientIntervalMs;
         _mapFadeElapsed = 0; // P52-M6: fade the freshly-loaded map in from black
+
+        // Reveal the worldmap subtile of the town we just walked into, so the place
+        // we're standing isn't a black hole on the worldmap fog. Without this the
+        // worldmap stays 100% fogged until the first travel leg. Only non-transient
+        // (MAP_SAVED) maps that belong to a worldmap area reveal it; transient encounter
+        // maps reveal nothing. ported from fallout2-ce src/worldmap.cc wmMapMarkVisited()
+        if (!transient)
+            RevealCurrentWorldArea(mapName);
+    }
+
+    /// <summary>Reveal the worldmap fog around the area whose entrance is the just-loaded
+    /// map — the engine reveals a town's worldmap subtile on entry. ported from fallout2-ce
+    /// src/worldmap.cc wmMapMarkVisited() → wmMatchAreaContainingMapIdx → wmAreaMarkVisited →
+    /// wmMarkSubTileRadiusVisited.</summary>
+    private void RevealCurrentWorldArea(string mapName)
+    {
+        int mapIdx = _mapList.GetIndexByFileName(mapName);
+        if (mapIdx < 0)
+            return;
+        foreach (WorldArea area in _cities.Areas)
+            foreach (AreaEntrance entrance in area.Entrances)
+                if (_mapList.FindByLookupName(entrance.MapLookupName) == mapIdx)
+                {
+                    WorldFog.MarkRadiusVisited(area.WorldX, area.WorldY);
+                    return;
+                }
     }
 
     /// <summary>
