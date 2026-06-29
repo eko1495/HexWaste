@@ -655,6 +655,31 @@ item name + price can overrun the narrow art slot; and the offer-table mechanic 
 direct click-to-buy/sell). trade.frm shares the barter strip path (verified via barter). New harness:
 --open-barter <hex>.
 
+Phase 87 (DONE — "Talking-head dialog screen"): the iconic FO2 animated head now renders above the
+conversation panel — the marquee visible feature, replacing a dark box of green text. The "no head model"
+premise was FALSE (the P82 survey's correction held): 187 head FRMs ship in master.dat, and the script DOES
+hand a head to start_gdialog. **KEY GROUNDING (dump, don't trust): the script passes a BARE head INDEX, not
+a FID — the engine builds it via buildFid(OBJ_TYPE_HEAD, headId, …) (interpreter_extra.cc:1919); -1 = head-
+less.** PIPELINE (5 steps, end-to-end): (1) ScriptContext.DialogSessionStart(headId,bg) captures the index
+(IntVm already extracted + passed it to the no-op stub — the memory's "IntVm drops it" was inaccurate; the
+loss was the un-overridden stub); (2) DialogSession.HeadId exposes it; (3) ArtIndex resolves OBJ_TYPE_HEAD
+FIDs — **ported art.cc artBuildFilePath() head branch: name = heads.lst-base + _head1[anim] + _head2[anim]
+(+ a 1-based fidget number for the 'f' kind)**, e.g. anim 4 → ELDERNF1 (neutral fidget), anim 10 → ELDERNP
+(neutral talk); TypeDirs extended with "heads"/"backgrnd"/"skilldex" (was 8 entries, head=8 threw); (4)
+FrmCache loads it (heads use color.pal — confirmed via FrmDump, UNLIKE P83's death/ending sibling-palette
+art); (5) DrawTalkingHead draws the neutral-fidget pose centred above the panel, frames CYCLING on a wall-
+time tick for an idle living head. GOLDEN-SAFE: heads are Draw-only and the new HEAD: diagnostic line sits
+OUTSIDE the encounter FILTER (verified: no fixture contains REPLY/HEAD) + combat scenarios never dialog → 16
+combat + 178 encounter BYTE-IDENTICAL. VERIFIED: the Elder head (ELDERNF1 388×200) renders correctly with
+color.pal (FrmDump); --force-head (new debug aid) shows a perfect talking head above a real Metzger dialog
+in-game; 836 Formats tests incl. 2 new head-FID-resolution tests (fidget + talk naming). DOCUMENTED CUT: no
+.lip phoneme lip-sync (the .lip timing files aren't shipped) — the fidget idle is the authentic core; the
+emotion is fixed neutral (reaction-driven good/bad fidgets are a forward step). LIVENESS: the pipeline fires
+for ANY dialog that supplies a head; the immediate-slice entry NPCs (Metzger et al.) are head-less text NPCs
+and Arroyo's head NPCs (Elder/Hakunin) sit behind the vsuit.mve intro cutscene, so a clean headless real-NPC
+capture wasn't scripted — but the render path is identical to the --force-head proof. New harness:
+--force-head <index>, plus a HEAD: <id> dialog diagnostic.
+
 ---
 
 Phase 10 (DONE — "The Wasteland Bites Back"; trailing duplicate in this range, full text in CLAUDE.md): M0-M5 worldmap encounters + companion lifecycle. **Durable CORRECTION: the phase-10 research notes' "partymbr.msg list-14" claim was UNVERIFIED and WRONG — partymbr.msg does not exist in the game data, "partymbr" appears nowhere in fallout2-ce, and message list 14 resolves to Generic.int/generic.msg.** The engine has NO dedicated wait/follow/dismiss UI: recruit/dismiss are plain party_add/party_remove (interpreter_extra.cc:3943/3956 → party_member.cc:375/426) called from a companion's own talk_p_proc reply procedure (game_dialog.cc:2080); the hub reproduces those side effects. The only dedicated party UI is the AI-disposition combat-control window (game_dialog.cc:3354) — SUPERSEDED, shipped in P50. **GOTCHA: companions travel OUTSIDE map deltas — exclude PartyMembers from EVERY CaptureMapDelta loop or an F5 duplicates them on load.** v1 cuts now SUPERSEDED (wait/dismiss persistence #2/#3, per-member If()/Distance [P10 + P16-M4 lowercase-if fix], X-FIGHTING-Y [P16-M3], projectile tween [#11] all shipped); lone residual = Vic's radio ITEM has no in-slice source (one --give).

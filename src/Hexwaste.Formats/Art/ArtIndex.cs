@@ -8,9 +8,16 @@ namespace Hexwaste.Formats.Art;
 /// </summary>
 public sealed class ArtIndex(GameFileSystem vfs)
 {
-    // ported from fallout2-ce src/art.cc gArtListDescriptions
+    // ported from fallout2-ce src/art.cc gArtListDescriptions (indexed by ObjectType — heads=8 added P87)
     private static readonly string[] TypeDirs =
-        ["items", "critters", "scenery", "walls", "tiles", "misc", "intrface", "inven"];
+        ["items", "critters", "scenery", "walls", "tiles", "misc", "intrface", "inven", "heads", "backgrnd", "skilldex"];
+
+    // ported from fallout2-ce src/art.cc _head1/_head2: the per-head-anim suffix chars. v4 = FID_ANIM_TYPE
+    // indexes both — _head1 = the emotion (g/n/b), _head2 = the kind (v transition / f fidget / n/g/b
+    // neutral-pose / p phoneme-talk). e.g. anim 4 → 'n','f' = neutral fidget (ELDERNF<n>); anim 10 → 'n','p'
+    // = neutral talk (ELDERNP).
+    private const string Head1 = "gggnnnbbbgnb";
+    private const string Head2 = "vfngfbnfvppp";
 
     private readonly Dictionary<int, string[]> _lists = [];
 
@@ -18,7 +25,7 @@ public sealed class ArtIndex(GameFileSystem vfs)
     {
         var type = Fid.Type(fid);
         if (type is ObjectType.Head)
-            throw new NotSupportedException($"FID 0x{fid:X8}: {type} art is out of scope for this PoC.");
+            return GetHeadFrmPath(fid); // P87: talking-head dialog art
         if (type is ObjectType.Critter)
             return GetCritterFrmPath(fid);
 
@@ -70,6 +77,31 @@ public sealed class ArtIndex(GameFileSystem vfs)
         int rotation = Fid.Rotation(fid);
         string extension = rotation != 0 ? $".fr{(char)(rotation + 47)}" : ".frm";
         return $@"art\critters\{list[index]}{weaponChar}{animChar}{extension}";
+    }
+
+    /// <summary>
+    /// Talking-head FRM names are composed (like critters): the heads.lst base name + an emotion char
+    /// (_head1) + a kind char (_head2), with a trailing fidget number for the 'f' kind.
+    /// ported from fallout2-ce src/art.cc artBuildFilePath() (the type==OBJ_TYPE_HEAD branch): v4 =
+    /// FID_ANIM_TYPE selects the suffix pair; v5 = the weapon-code nibble = the fidget number.
+    /// </summary>
+    private string GetHeadFrmPath(int fid)
+    {
+        string[] list = GetList((int)ObjectType.Head);
+        int index = Fid.Index(fid);
+        if (index < 0 || index >= list.Length)
+            throw new InvalidDataException(
+                $"FID 0x{fid:X8} index {index} is out of range of heads.lst ({list.Length} lines).");
+
+        int v4 = Fid.AnimType(fid);
+        if (v4 < 0 || v4 >= Head1.Length)
+            throw new InvalidDataException($"FID 0x{fid:X8} has unsupported head animation {v4}.");
+
+        char c1 = Head1[v4], c2 = Head2[v4];
+        int fidget = Fid.WeaponCode(fid); // the 'f' (fidget) variants carry a 1-based index suffix
+        return c2 == 'f'
+            ? $@"art\heads\{list[index]}{c1}f{fidget}.frm"
+            : $@"art\heads\{list[index]}{c1}{c2}.frm";
     }
 
     /// <summary>ported from fallout2-ce src/art.cc _art_get_code().</summary>

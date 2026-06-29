@@ -5,6 +5,7 @@ string mapName = "artemple.map";
 string? screenshot = null;
 bool roofs = true;
 int zoom = 1; // P85: initial world zoom (1×..4×), for --zoom screenshots
+int forceHead = -1; // P87: --force-head debug aid (render a head on a head-less dialog)
 double advanceMs = 0;
 int benchFrames = 0;
 bool walk = false;
@@ -171,6 +172,9 @@ for (int i = 0; i < args.Length; i++)
         case "--open-barter" when i + 1 < args.Length:
             // P86: open a barter window with the critter at a hex (screenshot/debug aid).
             actions.Add(new ViewerGame.StartupAction.OpenBarterAt(int.Parse(args[++i])));
+            break;
+        case "--force-head" when i + 1 < args.Length:
+            forceHead = int.Parse(args[++i]); // P87: render a talking head on a head-less dialog (debug aid)
             break;
         case "--panel-click" when i + 2 < args.Length:
             // --panel-click <side> <row>: click an item-panel row (side 0=left, 1=right).
@@ -711,6 +715,7 @@ using var game = new ViewerGame(gameDir!, mapName, screenshot, roofs)
     AdvanceCyclingMs = advanceMs,
     BenchFrames = benchFrames,
     Zoom = zoom,
+    ForceHeadId = forceHead,
     StartInWalkMode = walk,
     PickAt = pick,
     ExamineAt = examine,

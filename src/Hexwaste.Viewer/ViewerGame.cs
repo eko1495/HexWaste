@@ -519,6 +519,12 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
     private ProtoMessages _protoMessages = null!;
     private Formats.Int.ScriptHost? _scriptHost;
     private Formats.Int.ScriptHost.DialogSession? _dialog;
+    /// <summary>P87 debug/screenshot aid (--force-head): render this head index on a dialog that the
+    /// script gave no head, so the talking-head rendering can be verified on any NPC. -1 = off.</summary>
+    public int ForceHeadId { get; set; } = -1;
+    /// <summary>The talking head to show for the open dialog: the script's head, else the --force-head
+    /// override, else -1 (no head).</summary>
+    private int EffectiveHeadId() => _dialog is null ? -1 : (_dialog.HeadId >= 0 ? _dialog.HeadId : ForceHeadId);
     private MapObject? _lootContainer;
     private bool _inventoryOpen;
     /// <summary>The dude's bag. Aliased to the dude MapObject's Inventory at
@@ -1514,6 +1520,15 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
         _frameClock.Restart();
         KeyboardState keyboard = Keyboard.GetState();
         MouseState mouse = Mouse.GetState();
+
+        // P87: advance the talking-head fidget on a wall-time tick while a head dialog is open (Draw-only
+        // state — never read by the headless transcript goldens). Reset when no head is shown.
+        if (EffectiveHeadId() >= 0)
+        {
+            _headFrameTimerMs += gameTime.ElapsedGameTime.TotalMilliseconds;
+            while (_headFrameTimerMs >= HeadFrameMs) { _headFrameTimerMs -= HeadFrameMs; _headFrame++; }
+        }
+        else { _headFrame = 0; _headFrameTimerMs = 0; }
 
         // Main menu / character creation: the world idles underneath. The menu/creation flow plays the
         // engine's menu music (mainmenu.cc → 07desert); PlayMusic de-dups so calling each frame is a no-op.
@@ -3199,6 +3214,8 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
     {
         if (_dialog is null)
             return;
+        if (_dialog.HeadId >= 0) // P87: report the talking-head art id (heads.lst index) when present
+            Console.WriteLine($"HEAD: {_dialog.HeadId}");
         Console.WriteLine($"REPLY: {_dialog.Reply}");
         for (int i = 0; i < _dialog.Options.Count; i++)
             Console.WriteLine($"  OPTION {i + 1}: {_dialog.Options[i]}");
@@ -4636,14 +4653,45 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
             return;
         }
         if (_dialog is not null)
-            DrawConversationPanel(_dialog.NpcName, _dialog.Reply, _dialog.Options, _dialog.OptionReactions);
+            DrawConversationPanel(_dialog.NpcName, _dialog.Reply, _dialog.Options, _dialog.OptionReactions, EffectiveHeadId());
     }
 
     /// <summary>The shared conversation panel — reply text + numbered options at the
     /// bottom of the screen. Drives both scripted dialog and the companion-control hub
     /// (phase-10 M4); <see cref="_dialogOptionRects"/> feeds mouse hit-testing.</summary>
+    // P87: talking-head animation — the fidget cycles on a wall-time tick (game_dialog.cc head-fidget),
+    // a documented presentation choice (no .lip phoneme lip-sync; the .lip timing files aren't shipped).
+    private int _headFrame;
+    private double _headFrameTimerMs;
+    private const double HeadFrameMs = 1000.0 / 8; // heads.lst fps ~8
+
+    /// <summary>P87: render the dialogue talking head above the conversation panel. The head FRM is the
+    /// neutral fidget pose (art.cc anim 4 = _head1 'n' + _head2 'f', fidget #1, e.g. ELDERNF1); its frames
+    /// cycle for an idle "living" head. Falls back silently to a text-only dialog if the head art is
+    /// absent. ported from fallout2-ce src/game_dialog.cc gdialogInitFromScript()/_gdSetupFidget().</summary>
+    private void DrawTalkingHead(int headId, int panelTop)
+    {
+        int fid = Formats.Fid.Build(Formats.ObjectType.Head, headId, animType: 4, weaponCode: 1);
+        Texture2D head;
+        try
+        {
+            int frames = _frmCache.FrameCount(fid);
+            head = _frmCache.GetTexture(fid, frames > 0 ? _headFrame % frames : 0);
+        }
+        catch (Exception ex) when (ex is FileNotFoundException or InvalidDataException or NotSupportedException)
+        {
+            return; // head art missing -> graceful text-only dialog
+        }
+
+        Rectangle vp = GraphicsDevice.Viewport.Bounds;
+        int availH = Math.Max(0, panelTop - 8);
+        float scale = Math.Min(1f, Math.Min(availH / (float)head.Height, vp.Width * 0.55f / head.Width));
+        int w = (int)(head.Width * scale), h = (int)(head.Height * scale);
+        _spriteBatch.Draw(head, new Rectangle((vp.Width - w) / 2, Math.Max(4, (panelTop - h) / 2), w, h), Color.White);
+    }
+
     private void DrawConversationPanel(string name, string reply, IReadOnlyList<string> options,
-        IReadOnlyList<int>? reactions = null)
+        IReadOnlyList<int>? reactions = null, int headId = -1)
     {
         if (_fontRenderer is null)
             return;
@@ -4671,6 +4719,9 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
         int panelHeight = (replyLines.Count + optionLines.Count + 3) * lineHeight + 24;
         int panelX = (viewport.Width - panelWidth) / 2;
         int panelY = viewport.Height - panelHeight - 16;
+
+        if (headId >= 0) // P87: the talking head fills the space above the conversation panel
+            DrawTalkingHead(headId, panelY);
 
         _spriteBatch.Draw(_panelPixel, new Rectangle(panelX, panelY, panelWidth, panelHeight),
             new Color(8, 8, 8, 230));

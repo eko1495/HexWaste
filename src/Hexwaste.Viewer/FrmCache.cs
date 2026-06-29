@@ -115,6 +115,9 @@ public sealed class FrmCache(GameFileSystem vfs, ArtIndex artIndex, GraphicsDevi
         return entry.Textures[rotation][frame] ??= CreateTexture(frmFrame);
     }
 
+    /// <summary>Frame count of a FID's animation in the given rotation (P87 head-fidget cycling).</summary>
+    public int FrameCount(int fid, int rotation = 0) => GetEntry(fid).Frm.Directions[rotation].Length;
+
     /// <summary>Called by the palette cycler: re-uploads only textures that contain cycling indices.</summary>
     public void OnPaletteChanged(Palette updated)
     {

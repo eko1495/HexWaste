@@ -35,7 +35,9 @@ Prebuilt self-contained builds (Linux x64 / Windows x64) are produced by
 - **Scripts**: a micro INT-bytecode VM with a real script host — map-entry
   scripts lock doors and stock containers, examine/dialog/lockpick/timer
   procedures run for real, script timers fire (doors auto-close behind you).
-- **Dialog**: full `gsay` conversation trees with keyboard choices.
+- **Dialog**: full `gsay` conversation trees with keyboard choices, and the
+  iconic Fallout 2 animated talking head above the reply (the real per-NPC head
+  art, idling on its fidget animation) whenever a script supplies one.
 - **Persistent world**: per-map deltas keyed to the pristine map files —
   loot a footlocker in the Den, walk to the Temple and back, it stays
   looted; F5/F9 saves the whole visited world as JSON.

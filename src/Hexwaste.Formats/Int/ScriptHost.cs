@@ -855,6 +855,10 @@ public sealed class ScriptHost(GameFileSystem vfs, ScriptList scripts, Hexwaste.
 
         public bool Active { get; private set; } = true;
 
+        /// <summary>P87: the talking-head index the script's start_gdialog supplied (heads.lst index), or
+        /// -1 for a head-less dialog. The viewer renders the head FRM above the conversation panel.</summary>
+        public int HeadId => _context.DialogHeadId;
+
         internal DialogSession(IntVm vm, ScriptContext context, string npcName)
         {
             _vm = vm;
@@ -1407,6 +1411,14 @@ public sealed class ScriptHost(GameFileSystem vfs, ScriptList scripts, Hexwaste.
             // re-sets it by calling end_dialogue from inside the proc we run next.
             SessionEnded = false;
         }
+
+        /// <summary>P87: the talking-head art the script handed to start_gdialog (interpreter_extra.cc
+        /// opStartGameDialog → the FID passed to gdialogInitFromScript), or -1 for a head-less dialog.
+        /// Set once per session by <see cref="DialogSessionStart"/>; it persists across dialog rounds
+        /// (ResetDialogRound/DialogStart leave it alone) until the next start_gdialog.</summary>
+        public int DialogHeadId { get; private set; } = -1;
+
+        public void DialogSessionStart(int headId, int backgroundId) => DialogHeadId = headId;
 
         public void DialogStart()
         {

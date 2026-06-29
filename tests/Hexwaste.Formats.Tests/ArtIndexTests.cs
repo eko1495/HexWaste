@@ -43,3 +43,33 @@ public class CritterArtRealGameDataTests
         Assert.Equal(6, distinct.Count);
     }
 }
+
+public class HeadArtRealGameDataTests
+{
+    // P87: talking-head FRM names compose like critters — heads.lst base + _head1(emotion) + _head2(kind),
+    // with a fidget number for the 'f' kind. heads.lst index 3 = elder (reser,mrcus,myron,elder,...).
+    [GameDataFact]
+    public void ResolvesNeutralFidgetHeadFrm()
+    {
+        using var vfs = GameFileSystem.Open(GameData.RequiredDir);
+        var artIndex = new ArtIndex(vfs);
+
+        // anim 4 = _head1 'n' + _head2 'f' (neutral fidget), fidget #1 -> ELDERNF1.FRM
+        string path = artIndex.GetFrmPath(Fid.Build(ObjectType.Head, 3, animType: 4, weaponCode: 1));
+        Assert.EndsWith(@"heads\eldernf1.frm", path.ToLowerInvariant());
+        Assert.True(vfs.Exists(path), $"{path} not found");
+        Assert.True(FrmFile.Load(vfs.ReadAllBytes(path)).Directions[0].Length > 0);
+    }
+
+    [GameDataFact]
+    public void ResolvesNeutralTalkHeadFrm()
+    {
+        using var vfs = GameFileSystem.Open(GameData.RequiredDir);
+        var artIndex = new ArtIndex(vfs);
+
+        // anim 10 = _head1 'n' + _head2 'p' (neutral phoneme/talk) -> ELDERNP.FRM (no fidget number)
+        string path = artIndex.GetFrmPath(Fid.Build(ObjectType.Head, 3, animType: 10));
+        Assert.EndsWith(@"heads\eldernp.frm", path.ToLowerInvariant());
+        Assert.True(vfs.Exists(path), $"{path} not found");
+    }
+}
