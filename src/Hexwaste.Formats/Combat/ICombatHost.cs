@@ -43,6 +43,12 @@ public interface ICombatHost
     /// false — a non-sneaking dude is inert, so the combat goldens stay byte-identical.</summary>
     bool DudeSneakFlag => false;
 
+    /// <summary>The Easy/Normal/Hard combat-difficulty damage modifier as a percentage (75/100/125),
+    /// applied by <see cref="CombatEngine"/> to damage dealt by attackers NOT on the dude's team
+    /// (combat.cc:4554). Default 100 — the fake test host has no difficulty setting and the dude/allies
+    /// always deal 100%, so a 100 modifier is identity and the combat goldens stay byte-identical. P84.</summary>
+    int CombatDifficultyDamageModifier => 100;
+
     // --- Critter / weapon data resolution --------------------------------
     CritterState? GetCritterState(MapObject critter);                    // :1410
     /// <summary>The critter's ai.txt behaviour packet (instance aiPacket, proto

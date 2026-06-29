@@ -29,25 +29,32 @@ public static class CombatMath
     /// then DT/DR. BYPASS cuts DT/DR to 20% (combat.cc:4530). <paramref name="extraDr"/>
     /// (P29-M1 Finesse) is added to the defender's DR on the non-bypass path.</summary>
     public static int RollDamage(ICombatRng rng, CritterState attacker, CritterState target,
-        int critMultiplier = 2, bool bypassArmor = false, int extraDr = 0, bool penetrate = false)
+        int critMultiplier = 2, bool bypassArmor = false, int extraDr = 0, bool penetrate = false,
+        int difficultyDamageModifier = 100)
     {
         int raw = rng.Next(1, attacker.MeleeDamage + 3); // inclusive 1 .. 2+meleeDmg
-        return ReduceByArmor(raw * critMultiplier / 2, target, bypassArmor, extraDr, penetrate);
+        return ReduceByArmor(raw * critMultiplier / 2, target, bypassArmor, extraDr, penetrate, difficultyDamageModifier);
     }
 
     /// <summary>Melee weapon: rand(min, max) + the attacker's melee-damage
     /// bonus (item.cc:1244), ×critMult/2, then DT/DR.</summary>
     public static int RollWeaponDamage(ICombatRng rng, CritterState attacker, CritterState target,
         int minDamage, int maxDamage, int critMultiplier = 2, bool bypassArmor = false, int extraDr = 0,
-        bool penetrate = false)
+        bool penetrate = false, int difficultyDamageModifier = 100)
     {
         int raw = rng.Next(minDamage, Math.Max(minDamage, maxDamage) + 1) + attacker.MeleeDamage;
-        return ReduceByArmor(raw * critMultiplier / 2, target, bypassArmor, extraDr, penetrate);
+        return ReduceByArmor(raw * critMultiplier / 2, target, bypassArmor, extraDr, penetrate, difficultyDamageModifier);
     }
 
     private static int ReduceByArmor(int raw, CritterState target, bool bypassArmor = false, int extraDr = 0,
-        bool penetrate = false)
+        bool penetrate = false, int difficultyDamageModifier = 100)
     {
+        // P84: the Easy/Hard combat-difficulty damage modifier (75/100/125) scales damage dealt by
+        // attackers NOT on the dude's team — applied AFTER the ×crit/2 wrapper and BEFORE the DT
+        // subtraction, exactly as the engine. 100 (Normal / a dude or ally attacker) = identity, so the
+        // combat goldens stay byte-identical. ported from fallout2-ce src/combat.cc attackComputeDamage()
+        // (the team gate combat.cc:4554, the `damage *= combatDifficultyDamageModifier; damage /= 100` at :4602).
+        raw = raw * difficultyDamageModifier / 100;
         int dt = target.DamageThreshold;
         int dr = target.DamageResistance;
         if (bypassArmor)
@@ -109,7 +116,7 @@ public static class RangedMath
     public static int RollDamage(ICombatRng rng, int minDamage, int maxDamage, CritterState target,
         int ammoDrModifier, int ammoDamageMultiplier, int ammoDamageDivisor,
         int critMultiplier = 2, bool bypassArmor = false, int extraDr = 0, int rangedDamageBonus = 0,
-        bool penetrate = false)
+        bool penetrate = false, int difficultyDamageModifier = 100)
     {
         // P29-M4 Bonus Ranged Damage (combat.cc:4592): the perk's +2/rank is added to the raw roll
         // BEFORE the multiplier (so the ÷2 wrapper nets +2/rank in the final). 0 = no perk → unchanged.
@@ -118,6 +125,10 @@ public static class RangedMath
         int damage = raw * critMultiplier * Math.Max(ammoDamageMultiplier, 1);
         damage /= Math.Max(ammoDamageDivisor, 1);
         damage /= 2;
+        // P84: the Easy/Hard combat-difficulty damage modifier (75/125 for a non-dude-team attacker),
+        // applied after the ÷2 wrapper and before DT (combat.cc:4602). 100 (Normal/dude/ally) = identity
+        // → byte-identical. ported from fallout2-ce src/combat.cc attackComputeDamage().
+        damage = damage * difficultyDamageModifier / 100;
 
         int dt = target.DamageThreshold;
         int dr = target.DamageResistance;

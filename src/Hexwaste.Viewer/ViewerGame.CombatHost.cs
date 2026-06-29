@@ -525,6 +525,11 @@ public sealed partial class ViewerGame
     /// (combat.cc:4190); the trigger still fires from day 2. Non-dude fumbles have no such gate.</summary>
     public bool DudeCritFailuresEnabled => _clock.Ticks / Formats.GameClock.TicksPerDay >= 6;
 
+    /// <summary>ICombatHost (P84): the Easy/Normal/Hard combat-difficulty damage modifier (75/100/125),
+    /// honouring the same <see cref="Difficulty"/> that drives the worldmap. The engine applies it to
+    /// damage dealt by off-team attackers only (the gate lives in CombatEngine); Normal = 100 = identity.</summary>
+    public int CombatDifficultyDamageModifier => Formats.Combat.CombatDifficulty.DamageModifier(Difficulty);
+
     private Formats.Combat.AiPacketTable? _aiPackets;
     private bool _aiPacketsLoaded;
 

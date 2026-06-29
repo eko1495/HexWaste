@@ -93,7 +93,10 @@ Prebuilt self-contained builds (Linux x64 / Windows x64) are produced by
   it settles back — but lean on them and you can get addicted: after a while withdrawal
   saps the matching stats until it passes (Jet's is permanent without the antidote).
   Kills pay XP at combat end and are tallied by type on your character sheet; levels
-  raise your HP. Lose, and F9 puts you back.
+  raise your HP. The game difficulty (`--difficulty easy|normal|hard`) scales how hard
+  the wasteland hits back — on Easy everything not on your team deals 75% damage, on Hard
+  125% (the engine's combat-difficulty modifier; your own and your companions' blows are
+  untouched). Lose, and F9 puts you back.
 - **Game shell**: the authentic Fallout 2 front door — the real `mainmenu.frm`
   main menu (mouse + keyboard), the `pickchar.frm` premade selector (portrait, SPECIAL,
   bio), the `edtrcrte.frm` character-creation editor (point-buy SPECIAL with steppers,

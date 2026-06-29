@@ -81,6 +81,28 @@ public class CombatMathTests
     }
 
     [Fact]
+    public void DifficultyDamageModifierScalesAfterHalvingBeforeThreshold()
+    {
+        // P84: Easy 75% / Normal 100% / Hard 125% on the post-÷2 damage, before DT — combat.cc:4602.
+        var rng = new SystemCombatRng(1);
+        CritterState target = NewState(dt: 4, dr: 0);
+
+        // Ranged: raw 20 (min=max), ×2/÷2 = 20, ×mod/100, −DT 4.
+        //   easy:   20×75/100=15, 15−4 = 11
+        //   normal: 20,           20−4 = 16
+        //   hard:   20×125/100=25, 25−4 = 21
+        Assert.Equal(16, RangedMath.RollDamage(rng, 20, 20, target, 0, 1, 1));                                    // default 100
+        Assert.Equal(11, RangedMath.RollDamage(rng, 20, 20, target, 0, 1, 1, difficultyDamageModifier: 75));
+        Assert.Equal(21, RangedMath.RollDamage(rng, 20, 20, target, 0, 1, 1, difficultyDamageModifier: 125));
+
+        // Melee weapon: raw 20 (+0 melee bonus), same wrapper.
+        CritterState attacker = NewState(meleeDmg: 0);
+        Assert.Equal(16, CombatMath.RollWeaponDamage(rng, attacker, target, 20, 20));                             // default 100
+        Assert.Equal(11, CombatMath.RollWeaponDamage(rng, attacker, target, 20, 20, difficultyDamageModifier: 75));
+        Assert.Equal(21, CombatMath.RollWeaponDamage(rng, attacker, target, 20, 20, difficultyDamageModifier: 125));
+    }
+
+    [Fact]
     public void SeededRollsAreDeterministic()
     {
         int[] RollSeries()

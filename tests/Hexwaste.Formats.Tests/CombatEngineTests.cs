@@ -217,6 +217,54 @@ public class CombatEngineTests
     }
 
     [Fact]
+    public void EasyHardDifficultyScalesEnemyDamageDealtToTheDude()
+    {
+        // P84: an off-team (hostile) attacker's damage is scaled by the combat-difficulty modifier
+        // (Easy 75 / Normal 100 / Hard 125). One scripted enemy punch (raw 8 → 8/6/10 after the wrapper).
+        int EnemyPunch(int modifier)
+        {
+            var host = new FakeCombatHost { CombatDifficultyDamageModifier = modifier };
+            MapObject dude = host.SetDude(NewCritter(tile: 20100, hp: 100, ap: 10));
+            MapObject enemy = host.AddCritter(NewCritter(tile: HexGrid.TileInDirection(20100, 0), hp: 30, ap: 3, meleeDmg: 10));
+            var engine = new CombatEngine(host, new SequenceRng(1, 8)); // to-hit d100=1 (connects), damage raw=8
+            engine.BeginScriptAggro(enemy, dude);
+            for (int i = 0; i < 200 && engine.Phase == CombatPhase.EnemyTurn; i++)
+            {
+                host.Animating.Clear();
+                engine.Step();
+            }
+            return 100 - dude.CurrentHp; // damage the enemy dealt to the dude
+        }
+
+        int normal = EnemyPunch(100);
+        Assert.True(normal > 0);
+        Assert.True(EnemyPunch(125) > normal); // Hard: the enemy hits harder
+        Assert.True(EnemyPunch(75) < normal);  // Easy: the enemy hits softer
+    }
+
+    [Fact]
+    public void DifficultyDoesNotScaleTheDudesOwnDamage()
+    {
+        // P84: the modifier gates on attacker.team != dude.team — so the DUDE's damage is unchanged by
+        // the difficulty setting (DiffDmgMod returns 100 for the dude). The enemy ends with identical HP
+        // whether the host reports Normal (100) or Hard (125).
+        int DudePunch(int modifier)
+        {
+            var host = new FakeCombatHost { CombatDifficultyDamageModifier = modifier };
+            host.SetDude(NewCritter(tile: 20100, hp: 30, ap: 10, meleeDmg: 10));
+            MapObject enemy = host.AddCritter(NewCritter(tile: HexGrid.TileInDirection(20100, 0), hp: 100));
+            var engine = new CombatEngine(host, new SequenceRng(1, 8)); // identical rolls for both runs
+            Assert.True(engine.TryAttack(enemy));
+            host.Animating.Clear();
+            engine.ProcessAnimations();
+            return 100 - enemy.CurrentHp;
+        }
+
+        Assert.Equal(DudePunch(100), DudePunch(125)); // the dude is immune to the difficulty modifier
+        Assert.True(DudePunch(100) > 0);
+    }
+
+    [Fact]
     public void MassiveCriticalAppliesTheStatusOnAFailedDefenderRoll()
     {
         // P14-M4: a day-2 aimed HEAD crit (MAN sev1 = {4, BYPASS, EN, 0, KNOCKED_OUT}).
@@ -2114,6 +2162,7 @@ public class CombatEngineTests
         public readonly Dictionary<MapObject, AiPacket> AiPackets = [];
         public bool CriticalsEnabled { get; set; }
         public bool DudeCritFailuresEnabled { get; set; } // P41: the dude's day≥6 crit-failure-effect gate
+        public int CombatDifficultyDamageModifier { get; set; } = 100; // P84: Easy 75 / Normal 100 / Hard 125
         public readonly Dictionary<int, int> PerkRanks = []; // P28-M3 combat perk effects
         public int DudePerkRank(int perk) => PerkRanks.GetValueOrDefault(perk);
         public readonly HashSet<int> Traits = []; // P29-M1 combat-path trait effects

@@ -352,7 +352,7 @@ public sealed class CombatEngine
         dude.Rotation = HexGrid.RotationTo(dude.HexTile, target.HexTile);
 
         (int chance, bool hit, int damage, int critFlags, int delta) = RollAttack(attacker, defender, weaponProto, weaponItem,
-            distance, crittersInPath, attackerIsDude: true, defenderIsDude: target == dude, hitLocation);
+            distance, crittersInPath, attackerIsDude: true, defenderIsDude: target == dude, hitLocation, DiffDmgMod(dude));
 
         // P41: a missed attack can fumble into a critical failure (the full _cf_table — drop/destroy/
         // explode/hurt-self/cripple/random-hit/lose-turn), replacing the P29 lose-turn-only Jinxed stub.
@@ -551,6 +551,7 @@ public sealed class CombatEngine
         int mainTargetExposure = Math.Max(centerRounds, mainTargetRounds);
 
         AmmoProtoStats? ammo = _host.LoadedAmmo(weaponProto, weaponItem);
+        int diffMod = DiffDmgMod(dudeObj); // P84: the shooter's Easy/Hard modifier (100 for dude/ally bursts)
         int roundsHit = 0, totalDamage = 0;
         for (int i = 0; i < mainTargetExposure; i++)
         {
@@ -559,7 +560,8 @@ public sealed class CombatEngine
                 roundsHit++;
                 totalDamage += RangedMath.RollDamage(_rng,
                     weaponProto.Weapon.MinDamage, weaponProto.Weapon.MaxDamage, defender,
-                    ammo?.DrModifier ?? 0, ammo?.DamageMultiplier ?? 1, ammo?.DamageDivisor ?? 1);
+                    ammo?.DrModifier ?? 0, ammo?.DamageMultiplier ?? 1, ammo?.DamageDivisor ?? 1,
+                    difficultyDamageModifier: diffMod);
             }
         }
 
@@ -570,7 +572,7 @@ public sealed class CombatEngine
         // Bresenham Trace (the single named LoF divergence); only the end-tiles use the
         // exact TileNumBeyond. Cap 6 extras (combat.cc:3637).
         List<BurstExtra> extras = ConeCollateral(dudeObj, targetObj, attacker, weaponProto,
-            weaponItem, ammo, centerRounds - roundsHit, leftRounds, rightRounds, accuracy);
+            weaponItem, ammo, centerRounds - roundsHit, leftRounds, rightRounds, accuracy, diffMod);
 
         return (accuracy, n, roundsHit, totalDamage, extras);
     }
@@ -580,7 +582,7 @@ public sealed class CombatEngine
     /// _shoot_along_path passes. Returns the accumulated collateral victims (cap 6).</summary>
     private List<BurstExtra> ConeCollateral(MapObject dudeObj, MapObject targetObj, CritterState attacker,
         ProtoInfo weaponProto, MapObject weaponItem, AmmoProtoStats? ammo,
-        int centerBudget, int leftRounds, int rightRounds, int accuracy)
+        int centerBudget, int leftRounds, int rightRounds, int accuracy, int difficultyDamageModifier = 100)
     {
         var extras = new List<BurstExtra>();
         int from = dudeObj.HexTile;
@@ -595,11 +597,11 @@ public sealed class CombatEngine
         int rightTile = HexGrid.TileInDirection(pivot, (rotation + 5) % 6, 1);
 
         ShootCollateral(from, HexGrid.TileNumBeyond(from, targetObj.HexTile, range), centerBudget,
-            dudeObj, targetObj, attacker, weaponProto, weaponItem, ammo, accuracy, extras);
+            dudeObj, targetObj, attacker, weaponProto, weaponItem, ammo, accuracy, extras, difficultyDamageModifier);
         ShootCollateral(from, HexGrid.TileNumBeyond(from, leftTile, range), leftRounds,
-            dudeObj, targetObj, attacker, weaponProto, weaponItem, ammo, accuracy, extras);
+            dudeObj, targetObj, attacker, weaponProto, weaponItem, ammo, accuracy, extras, difficultyDamageModifier);
         ShootCollateral(from, HexGrid.TileNumBeyond(from, rightTile, range), rightRounds,
-            dudeObj, targetObj, attacker, weaponProto, weaponItem, ammo, accuracy, extras);
+            dudeObj, targetObj, attacker, weaponProto, weaponItem, ammo, accuracy, extras, difficultyDamageModifier);
         return extras;
     }
 
@@ -609,7 +611,8 @@ public sealed class CombatEngine
     /// the main target; accumulates on a repeat victim across lines.</summary>
     private void ShootCollateral(int from, int endTile, int budget,
         MapObject dudeObj, MapObject targetObj, CritterState attacker,
-        ProtoInfo weaponProto, MapObject weaponItem, AmmoProtoStats? ammo, int accuracy, List<BurstExtra> extras)
+        ProtoInfo weaponProto, MapObject weaponItem, AmmoProtoStats? ammo, int accuracy, List<BurstExtra> extras,
+        int difficultyDamageModifier = 100)
     {
         if (budget <= 0 || extras.Count >= 6 || endTile == from)
             return;
@@ -649,7 +652,8 @@ public sealed class CombatEngine
             int dmg = 0;
             for (int h = 0; h < hits; h++)
                 dmg += RangedMath.RollDamage(_rng, weaponProto.Weapon!.MinDamage, weaponProto.Weapon.MaxDamage,
-                    vstate, ammo?.DrModifier ?? 0, ammo?.DamageMultiplier ?? 1, ammo?.DamageDivisor ?? 1);
+                    vstate, ammo?.DrModifier ?? 0, ammo?.DamageMultiplier ?? 1, ammo?.DamageDivisor ?? 1,
+                    difficultyDamageModifier: difficultyDamageModifier);
 
             int idx = extras.FindIndex(e => e.Victim == victim);
             if (idx >= 0)
@@ -757,7 +761,8 @@ public sealed class CombatEngine
 
         int damage = hit && targetCritter is not null && _host.GetCritterState(targetCritter) is { } td
             ? RangedMath.RollDamage(_rng, weaponProto.Weapon.MinDamage, weaponProto.Weapon.MaxDamage, td,
-                0, 1, 1, critMultiplier, (critFlags & CriticalTables.DamBypass) != 0)
+                0, 1, 1, critMultiplier, (critFlags & CriticalTables.DamBypass) != 0,
+                difficultyDamageModifier: DiffDmgMod(dude)) // P84 (dude-only throw → 100, byte-identical)
             : 0;
 
         dude.Rotation = HexGrid.RotationTo(dude.HexTile, targetTile);
@@ -892,13 +897,23 @@ public sealed class CombatEngine
         }
     }
 
+    /// <summary>P84: the combat-difficulty damage modifier (75/100/125) to apply to THIS attacker's
+    /// damage. The engine gates it on <c>attacker.team != gDude.team</c> (combat.cc:4554) — i.e. only
+    /// attackers NOT on the dude's team are scaled. Hexwaste's dude-team = the dude + party members, so
+    /// the dude and allies deal 100% (identity) and only hostiles feel Easy/Hard. A null attacker
+    /// (environmental blast) is treated as off-team but Normal still returns 100 → byte-identical.</summary>
+    private int DiffDmgMod(MapObject? attacker) =>
+        attacker == _host.Dude || (attacker is not null && _host.PartyMembers.Contains(attacker))
+            ? 100
+            : _host.CombatDifficultyDamageModifier;
+
     /// <summary>Roll an attack with the equipped weapon (or fists). Guns use the
     /// ranged to-hit (distance/PE, ammo AC mod, min-ST, crowd) and ammo damage
     /// mods; melee keeps the phase-6 path.</summary>
     private (int Chance, bool Hit, int Damage, int CritFlags, int Delta) RollAttack(
         CritterState attacker, CritterState defender,
         ProtoInfo? weaponProto, MapObject? weaponItem, int distance, int crittersInPath,
-        bool attackerIsDude, bool defenderIsDude, int hitLocation)
+        bool attackerIsDude, bool defenderIsDude, int hitLocation, int difficultyDamageModifier = 100)
     {
         bool isGun = weaponProto?.Weapon is { } w && w.IsGun(weaponProto.ExtendedFlags);
 
@@ -970,13 +985,13 @@ public sealed class CombatEngine
                 damage = RangedMath.RollDamage(_rng,
                     weaponProto!.Weapon!.MinDamage, weaponProto.Weapon.MaxDamage, defender,
                     ammo?.DrModifier ?? 0, ammo?.DamageMultiplier ?? 1, ammo?.DamageDivisor ?? 1,
-                    critMultiplier, bypass, extraDr, rangedBonus, penetrate);
+                    critMultiplier, bypass, extraDr, rangedBonus, penetrate, difficultyDamageModifier);
             }
             else
             {
                 damage = weaponProto?.Weapon is { } weapon
-                    ? CombatMath.RollWeaponDamage(_rng, attacker, defender, weapon.MinDamage, weapon.MaxDamage, critMultiplier, bypass, extraDr, penetrate)
-                    : CombatMath.RollDamage(_rng, attacker, defender, critMultiplier, bypass, extraDr);
+                    ? CombatMath.RollWeaponDamage(_rng, attacker, defender, weapon.MinDamage, weapon.MaxDamage, critMultiplier, bypass, extraDr, penetrate, difficultyDamageModifier)
+                    : CombatMath.RollDamage(_rng, attacker, defender, critMultiplier, bypass, extraDr, penetrate: false, difficultyDamageModifier);
             }
 
             // P29-M4 flat post-armor damage perks (combat.cc:4618-4630), dude-only, inert at rank 0.
@@ -1412,6 +1427,7 @@ public sealed class CombatEngine
         if (_host.Dude is { } dude && !victims.Contains(dude))
             victims.Add(dude);
 
+        int diffMod = DiffDmgMod(killer); // P84: an enemy blast scales by Easy/Hard; a dude/null blast = 100
         int hits = 0;
         foreach (MapObject victim in victims
             .Where(c => HexGrid.Distance(c.HexTile, centerTile) <= radius)
@@ -1428,7 +1444,9 @@ public sealed class CombatEngine
                 continue;
 
             hits++;
-            int raw = _rng.Next(minDamage, maxDamage + 1);
+            // P84: the difficulty modifier scales the raw blast before DT (engine order), like every
+            // other attackComputeDamage path. 100 (Normal / dude / environmental) = byte-identical.
+            int raw = _rng.Next(minDamage, maxDamage + 1) * diffMod / 100;
             int damage = Math.Max(raw - state.Stat(explosionDt), 0);
             damage -= state.Stat(explosionDr) * damage / 100;
             if (damage <= 0)
@@ -2577,7 +2595,7 @@ public sealed class CombatEngine
             ally.Rotation = HexGrid.RotationTo(ally.HexTile, target.HexTile);
             (int chance, bool hit, int damage, int critFlags, int delta) = RollAttack(attacker, defender, weaponProto, weaponItem,
                 distance, crittersInPath, attackerIsDude: false, defenderIsDude: false,
-                AiHitLocation(ally, attacker, defender, weaponProto, weaponItem, distance, crittersInPath)); // P75-M4
+                AiHitLocation(ally, attacker, defender, weaponProto, weaponItem, distance, crittersInPath), DiffDmgMod(ally)); // P75-M4 + P84
             if (!hit && TriggerCritFailure(attacker, attackerIsDude: false, weaponProto, weaponItem, delta))
                 _actingAllyAp = 0; // P41: a fumble can cost the ally its turn
             if (isGun && weaponItem is not null)
@@ -2703,7 +2721,7 @@ public sealed class CombatEngine
         bool isGun = weaponProto?.Weapon is { } w && w.IsGun(weaponProto.ExtendedFlags);
         (int chance, bool hit, int damage, int critFlags, int delta) = RollAttack(attacker, defender, weaponProto, weaponItem,
             distance, crittersInPath, attackerIsDude: false, defenderIsDude: defenderObj == _host.Dude,
-            AiHitLocation(enemy, attacker, defender, weaponProto, weaponItem, distance, crittersInPath)); // P75-M4
+            AiHitLocation(enemy, attacker, defender, weaponProto, weaponItem, distance, crittersInPath), DiffDmgMod(enemy)); // P75-M4 + P84
         if (!hit && TriggerCritFailure(attacker, attackerIsDude: false, weaponProto, weaponItem, delta))
             _actingEnemyAp = 0; // P41: a fumble can cost the enemy the rest of its turn
         if (isGun && weaponItem is not null)

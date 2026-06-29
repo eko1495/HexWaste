@@ -597,6 +597,25 @@ game golden). The shell STATE MACHINE already existed (MenuState enum; EnterCrea
   slideshow will reuse (each EG_*.frm has its own EG_*.pal).** The victory slideshow itself stays content-gated
   (no quest completes on the slice) — forward-looking, like the P53 VO infra. Adversarially reviewed.
 
+Phase 84 (DONE — "Easy/Hard combat damage modifier"): closed a real latent gap surfaced by the P83 re-verify
+workflow — the `--difficulty easy|normal|hard` setting drove only the WORLDMAP (encounter rate/group size) and
+changed NOTHING in combat. Wired the engine's combat-difficulty damage modifier (Easy 75% / Normal 100% / Hard
+125%), **ported from fallout2-ce src/combat.cc attackComputeDamage()**: the modifier is applied to the post-÷2
+damage BEFORE the DT subtraction (combat.cc:4602), and gated on `attacker.team != gDude.team` (combat.cc:4554) —
+i.e. ONLY attackers NOT on the dude's team are scaled, so the dude's and the party's own blows are untouched.
+IMPL: a pure `CombatDifficulty.DamageModifier(GameDifficulty)→75/100/125`; a new `ICombatHost.Combat
+DifficultyDamageModifier` (default 100 → the fake test host + any Normal game is identity) overridden in the
+viewer off the same `Difficulty` the worldmap reads; a `CombatEngine.DiffDmgMod(attacker)` helper (dude or a
+PartyMembers entry → 100, else the host modifier) threaded into every damage path — RollAttack (the 3 call
+sites: dude/ally pass 100, EnemyAttack passes the modifier), the burst main + cone-collateral, the throw pre-roll
+(dude-only → 100), and the inline Explode raw. The modifier rides as a trailing optional param (default 100) on
+CombatMath.RollDamage/RollWeaponDamage/ReduceByArmor + RangedMath.RollDamage, so every existing caller is
+unchanged. GOLDEN-SAFE: all golden scenarios run at the Normal default (modifier 100 = identity) → 16 combat +
+the full encounter net BYTE-IDENTICAL. Proven live by 6 new tests: the 75/100/125 mapping (theory), the post-÷2/
+before-DT scaling on the ranged + melee formulas, and two fake-host end-to-end checks — an enemy punch hits the
+dude harder on Hard / softer on Easy, while the dude's own punch deals identical damage regardless of the setting
+(the team gate). 769 Formats tests.
+
 ---
 
 Phase 10 (DONE — "The Wasteland Bites Back"; trailing duplicate in this range, full text in CLAUDE.md): M0-M5 worldmap encounters + companion lifecycle. **Durable CORRECTION: the phase-10 research notes' "partymbr.msg list-14" claim was UNVERIFIED and WRONG — partymbr.msg does not exist in the game data, "partymbr" appears nowhere in fallout2-ce, and message list 14 resolves to Generic.int/generic.msg.** The engine has NO dedicated wait/follow/dismiss UI: recruit/dismiss are plain party_add/party_remove (interpreter_extra.cc:3943/3956 → party_member.cc:375/426) called from a companion's own talk_p_proc reply procedure (game_dialog.cc:2080); the hub reproduces those side effects. The only dedicated party UI is the AI-disposition combat-control window (game_dialog.cc:3354) — SUPERSEDED, shipped in P50. **GOTCHA: companions travel OUTSIDE map deltas — exclude PartyMembers from EVERY CaptureMapDelta loop or an F5 duplicates them on load.** v1 cuts now SUPERSEDED (wait/dismiss persistence #2/#3, per-member If()/Distance [P10 + P16-M4 lowercase-if fix], X-FIGHTING-Y [P16-M3], projectile tween [#11] all shipped); lone residual = Vic's radio ITEM has no in-slice source (one --give).
