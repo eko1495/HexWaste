@@ -52,6 +52,9 @@ internal sealed class FakeExternals : IVmExternals
 
     public List<(int Attacker, int Defender)> AttackSetups { get; } = [];
     public void AttackSetup(int attackerHandle, int defenderHandle) => AttackSetups.Add((attackerHandle, defenderHandle));
+
+    public List<(int Tile, int Elevation, int MaxDamage)> Explosions { get; } = [];
+    public void Explosion(int tile, int elevation, int maxDamage) => Explosions.Add((tile, elevation, maxDamage));
 }
 
 public class IntVmTests
@@ -247,5 +250,21 @@ public class IntVmTests
         Assert.True(vm.TryRunProcedure("doFight"));
         Assert.Equal(0, vm.ReturnStackDepth);
         Assert.NotEmpty(externals.AttackSetups); // attack_setup dispatched (attacker, defender)
+    }
+
+    [GameDataFact]
+    public void TrappedBoxDamageProcDispatchesExplosion()
+    {
+        // P0-M8: a Kids-map booby-trapped box (kidbox) blows up the first time it's damaged — its
+        // damage_p_proc calls explosion(self.tile, self.elevation, random(10,20)). Running it (the box not
+        // yet destroyed: local_var == 0) proves the IntVm pops (maxDamage, elevation, tile) in order and
+        // dispatches to Explosion with a balanced stack.
+        IntProgram program = LoadScript(@"scripts\kidbox.int");
+        var externals = new FakeExternals();
+        var vm = new IntVm(program, externals);
+
+        Assert.True(vm.TryRunProcedure("damage_p_proc"));
+        Assert.Equal(0, vm.ReturnStackDepth);
+        Assert.NotEmpty(externals.Explosions); // explosion dispatched (tile, elevation, maxDamage)
     }
 }

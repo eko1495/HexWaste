@@ -179,6 +179,10 @@ public sealed class ScriptHost(GameFileSystem vfs, ScriptList scripts, Hexwaste.
     /// attacker as the aggressor (dude-target → script-aggro; NPC-vs-NPC → a spectated brawl).</summary>
     public Action<MapObject, MapObject>? AttackSetupRequested { get; set; }
 
+    /// <summary>P0 (campaign port): explosion(tile, elevation, minDamage, maxDamage) — the host detonates an
+    /// environmental blast (script trap, reactor meltdown, etc.) on that tile/elevation.</summary>
+    public Action<int, int, int, int>? ExplosionRequested { get; set; }
+
     /// <summary>P57: set_exit_grids(elevation, destMap, destElevation, destTile) — the host retargets
     /// the exit-grid objects on an elevation.</summary>
     public Action<int, int, int, int>? SetExitGridsRequested { get; set; }
@@ -1287,6 +1291,18 @@ public sealed class ScriptHost(GameFileSystem vfs, ScriptList scripts, Hexwaste.
             if ((defender.Maneuver & CritterManeuverFleeing) != 0)
                 return;
             _host.AttackSetupRequested?.Invoke(attacker, defender);
+        }
+
+        // ported from fallout2-ce src/interpreter_extra.cc opExplosion (0x811A): a script detonates a blast on
+        // a tile/elevation. A -1 tile is rejected; minDamage is 1 unless maxDamage is 0 (then 0). The engine
+        // defers it (scriptsRequestExplosion → actionExplode with a null source), so the blast is environmental
+        // — no attacker is credited.
+        public void Explosion(int tile, int elevation, int maxDamage)
+        {
+            if (tile == -1)
+                return;
+            int minDamage = maxDamage == 0 ? 0 : 1;
+            _host.ExplosionRequested?.Invoke(tile, elevation, minDamage, maxDamage);
         }
 
         // P57: set_exit_grids retargets exit-grid objects; wield_obj_critter equips an item on a critter.

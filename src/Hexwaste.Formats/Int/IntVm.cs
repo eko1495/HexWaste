@@ -313,6 +313,11 @@ public interface IVmExternals
     /// Default no-op.</summary>
     void AttackSetup(int attackerHandle, int defenderHandle) { }
 
+    /// <summary>explosion (0x811A, opExplosion): a script detonates a blast centred on <paramref name="tile"/>
+    /// at <paramref name="elevation"/> dealing up to <paramref name="maxDamage"/> explosion damage. A tile of
+    /// -1 is a no-op (engine). Default no-op.</summary>
+    void Explosion(int tile, int elevation, int maxDamage) { }
+
     /// <summary>anim (0x810C, opAnim): play animation code <paramref name="anim"/> on the object once.</summary>
     void Anim(int objectHandle, int anim, int frame) { }
 
@@ -1755,6 +1760,13 @@ public sealed class IntVm
             {
                 int defender = PopInt();
                 _externals.AttackSetup(PopInt(), defender);
+                break;
+            }
+            case 0x811A: // explosion (pops maxDamage, elevation, tile) — interpreter_extra.cc opExplosion
+            {
+                int maxDamage = PopInt();
+                int elevation = PopInt();
+                _externals.Explosion(PopInt(), elevation, maxDamage);
                 break;
             }
             case 0x80E5: // wm_area_set_pos (pops y, x, then city) — opWorldmapCitySetPos

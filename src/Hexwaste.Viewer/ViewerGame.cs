@@ -1084,6 +1084,11 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
                     else if (attacker != _dude?.Dude)
                         _combat.StartBrawl([attacker, defender], dudeSpectator: true); // NPC-vs-NPC the dude only watches
                 },
+                ExplosionRequested = (tile, elevation, minDamage, maxDamage) => // P0: explosion (0x811A) — script blast
+                {
+                    if (elevation == _elevation) // a blast on another elevation never reaches the current critters
+                        _combat.Explode(tile, killer: null, minDamage, maxDamage, radius: 3);
+                },
                 CritterModSkillRequested = (skill, points) => // P0: critter_mod_skill (0x813C), dude-only
                 {
                     if (_dudeGcd is null || skill < 0 || skill >= 18 || points == 0)
