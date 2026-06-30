@@ -40,9 +40,11 @@ internal sealed class FakeExternals : IVmExternals
     public List<(int Target, int Item)> UseOnObj { get; } = [];
     public List<(int Handle, int Kind, int Param, int Value)> RmTraits { get; } = [];
     public List<(int Handle, int Skill, int Points)> ModSkills { get; } = [];
+    public int DialogueEnters { get; private set; }
     public void UseObjectOnObject(int targetHandle, int itemHandle) => UseOnObj.Add((targetHandle, itemHandle));
     public int CritterRemoveTrait(int h, int kind, int param, int value) { RmTraits.Add((h, kind, param, value)); return -1; }
     public int CritterModSkill(int h, int skill, int points) { ModSkills.Add((h, skill, points)); return 0; }
+    public void DialogueSystemEnter() => DialogueEnters++;
 }
 
 public class IntVmTests
@@ -192,5 +194,20 @@ public class IntVmTests
         Assert.True(vm.TryRunProcedure("Node016a"));
         Assert.Equal(0, vm.ReturnStackDepth);
         Assert.NotEmpty(externals.ModSkills); // critter_mod_skill dispatched (handle, skill, points)
+    }
+
+    [GameDataFact]
+    public void ReactorTerminalUseProcDispatchesDialogueSystemEnter()
+    {
+        // P0-M5: the Gecko reactor control terminal (gsterm) opens its dialog by calling
+        // dialogue_system_enter (0x80F9) from its use_p_proc. Running that proc proves the opcode
+        // dispatches to DialogueSystemEnter (the viewer then opens the terminal's talk_p_proc).
+        IntProgram program = LoadScript(@"scripts\gsterm.int");
+        var externals = new FakeExternals();
+        var vm = new IntVm(program, externals);
+
+        Assert.True(vm.TryRunProcedure("use_p_proc"));
+        Assert.Equal(0, vm.ReturnStackDepth);
+        Assert.True(externals.DialogueEnters > 0, "dialogue_system_enter was not dispatched");
     }
 }

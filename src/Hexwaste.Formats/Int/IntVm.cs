@@ -293,6 +293,11 @@ public interface IVmExternals
     /// canvas. Default no-op.</summary>
     void WmAreaSetPos(int city, int x, int y) { }
 
+    /// <summary>dialogue_system_enter (0x80F9, opGameDialogSystemEnter): request entering dialog with the
+    /// script's self — the mechanism a scenery use_p_proc (terminal/well/computer) uses to open its own
+    /// talk_p_proc. Suppressed in combat. Default no-op.</summary>
+    void DialogueSystemEnter() { }
+
     /// <summary>anim (0x810C, opAnim): play animation code <paramref name="anim"/> on the object once.</summary>
     void Anim(int objectHandle, int anim, int frame) { }
 
@@ -1717,6 +1722,9 @@ public sealed class IntVm
             }
             case 0x8108: // scripts_request_world_map (0 args) — interpreter_extra.cc opWorldmap
                 _externals.RequestWorldMap();
+                break;
+            case 0x80F9: // dialogue_system_enter (0 args) — interpreter_extra.cc opGameDialogSystemEnter
+                _externals.DialogueSystemEnter();
                 break;
             case 0x80E5: // wm_area_set_pos (pops y, x, then city) — opWorldmapCitySetPos
             {

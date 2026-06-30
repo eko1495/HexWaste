@@ -164,6 +164,11 @@ public sealed class ScriptHost(GameFileSystem vfs, ScriptList scripts, Hexwaste.
     /// <summary>P0 (campaign port): wm_area_set_pos(city, x, y) — the host moves a worldmap area marker.</summary>
     public Action<int, int, int>? WmAreaSetPosRequested { get; set; }
 
+    /// <summary>P0 (campaign port): the object a dialogue_system_enter (0x80F9) call requested a dialog with,
+    /// set during a use_p_proc run and consumed by the viewer right after (it opens the speaker's
+    /// talk_p_proc). Null when no dialog was requested. The viewer resets it per interaction.</summary>
+    public MapObject? PendingDialogSpeaker { get; set; }
+
     /// <summary>P57: set_exit_grids(elevation, destMap, destElevation, destTile) — the host retargets
     /// the exit-grid objects on an elevation.</summary>
     public Action<int, int, int, int>? SetExitGridsRequested { get; set; }
@@ -1219,6 +1224,18 @@ public sealed class ScriptHost(GameFileSystem vfs, ScriptList scripts, Hexwaste.
 
         // wm_area_set_pos → wmAreaSetWorldPos: move a worldmap area marker.
         public void WmAreaSetPos(int city, int x, int y) => _host.WmAreaSetPosRequested?.Invoke(city, x, y);
+
+        // dialogue_system_enter → opGameDialogSystemEnter: request a dialog with self (gGameDialogSpeaker).
+        // The engine suppresses it in combat and, for a critter self, requires it be active. The viewer
+        // picks up PendingDialogSpeaker after the use_p_proc and opens that object's talk_p_proc.
+        public void DialogueSystemEnter()
+        {
+            if (IsInCombat())
+                return;
+            if (Fid.PidType(_self.Pid) == 1 && (_self.IsDead || _self.IsHidden)) // critter self must be active
+                return;
+            _host.PendingDialogSpeaker = _self;
+        }
 
         // P57: set_exit_grids retargets exit-grid objects; wield_obj_critter equips an item on a critter.
         public void SetExitGrids(int elevation, int destMap, int destElevation, int destTile) =>

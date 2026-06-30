@@ -3799,6 +3799,11 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
 
     private void InteractWith(MapObject obj)
     {
+        // P0: dialogue_system_enter (0x80F9) — a use_p_proc below may request a dialog with its own object
+        // (the terminal/well/computer pattern). Reset the request per interaction; consumed after the proc.
+        if (_scriptHost is not null)
+            _scriptHost.PendingDialogSpeaker = null;
+
         if (Fid.Type(obj.Fid) is ObjectType.Critter)
         {
             // Dead critters are containers (gate on DAM_DEAD).
@@ -3915,6 +3920,13 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
             // State-only info line (like the "picked:" examine line below), so a harness can confirm the
             // scenery's use_p_proc ran instead of falling through to the no-op. Never the dialogue text.
             Console.WriteLine($"scenery-use@{obj.HexTile}: handled overridden={(useResult.Overridden ? 1 : 0)}");
+            // P0: dialogue_system_enter — the terminal/well/computer's use_p_proc asked to talk to itself.
+            if (_scriptHost?.PendingDialogSpeaker is { } speaker)
+            {
+                _scriptHost.PendingDialogSpeaker = null;
+                Console.WriteLine($"dialogue-system-enter@{obj.HexTile}: opening dialog");
+                OpenScriptedDialog(speaker);
+            }
             return; // the scenery's use_p_proc ran — it handled the interaction
         }
 
