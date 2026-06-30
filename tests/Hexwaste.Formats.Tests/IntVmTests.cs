@@ -41,10 +41,14 @@ internal sealed class FakeExternals : IVmExternals
     public List<(int Handle, int Kind, int Param, int Value)> RmTraits { get; } = [];
     public List<(int Handle, int Skill, int Points)> ModSkills { get; } = [];
     public int DialogueEnters { get; private set; }
+    public List<(int Index, int Param)> LoadMaps { get; } = [];
+    public List<(string Name, int Param)> LoadMapNames { get; } = [];
     public void UseObjectOnObject(int targetHandle, int itemHandle) => UseOnObj.Add((targetHandle, itemHandle));
     public int CritterRemoveTrait(int h, int kind, int param, int value) { RmTraits.Add((h, kind, param, value)); return -1; }
     public int CritterModSkill(int h, int skill, int points) { ModSkills.Add((h, skill, points)); return 0; }
     public void DialogueSystemEnter() => DialogueEnters++;
+    public void LoadMap(int mapIndex, int param) => LoadMaps.Add((mapIndex, param));
+    public void LoadMapByName(string mapName, int param) => LoadMapNames.Add((mapName, param));
 }
 
 public class IntVmTests
@@ -209,5 +213,20 @@ public class IntVmTests
         Assert.True(vm.TryRunProcedure("use_p_proc"));
         Assert.Equal(0, vm.ReturnStackDepth);
         Assert.True(externals.DialogueEnters > 0, "dialogue_system_enter was not dispatched");
+    }
+
+    [GameDataFact]
+    public void MetzgerNodeDispatchesLoadMap()
+    {
+        // P0-M6: Metzger's slave-run departure node (dcMetzge Node989) sends the player to another map via
+        // load_map (0x80E4). Running it proves the IntVm pops (param, mapIndexOrName), routes the int vs
+        // string form to LoadMap/LoadMapByName, and balances both stacks.
+        IntProgram program = LoadScript(@"scripts\dcMetzge.int");
+        var externals = new FakeExternals();
+        var vm = new IntVm(program, externals);
+
+        Assert.True(vm.TryRunProcedure("Node989"));
+        Assert.Equal(0, vm.ReturnStackDepth);
+        Assert.True(externals.LoadMaps.Count + externals.LoadMapNames.Count > 0, "load_map was not dispatched");
     }
 }

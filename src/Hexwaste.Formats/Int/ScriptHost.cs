@@ -169,6 +169,12 @@ public sealed class ScriptHost(GameFileSystem vfs, ScriptList scripts, Hexwaste.
     /// talk_p_proc). Null when no dialog was requested. The viewer resets it per interaction.</summary>
     public MapObject? PendingDialogSpeaker { get; set; }
 
+    /// <summary>P0 (campaign port): load_map(mapIndex) — the host defers a transition to that map.</summary>
+    public Action<int>? LoadMapRequested { get; set; }
+
+    /// <summary>P0 (campaign port): resolve a load_map(string) map FILE name to its maps.txt index, or -1.</summary>
+    public Func<string, int>? MapIndexByNameProvider { get; set; }
+
     /// <summary>P57: set_exit_grids(elevation, destMap, destElevation, destTile) — the host retargets
     /// the exit-grid objects on an elevation.</summary>
     public Action<int, int, int, int>? SetExitGridsRequested { get; set; }
@@ -1235,6 +1241,26 @@ public sealed class ScriptHost(GameFileSystem vfs, ScriptList scripts, Hexwaste.
             if (Fid.PidType(_self.Pid) == 1 && (_self.IsDead || _self.IsHidden)) // critter self must be active
                 return;
             _host.PendingDialogSpeaker = _self;
+        }
+
+        // load_map → opLoadMap: set GVAR_LOAD_MAP_INDEX (=27, game_vars.h) so the target map's map_enter
+        // can read the caller's param, then defer the transition (default start, tile/elev/rot = -1).
+        private const int GvarLoadMapIndex = 27;
+
+        public void LoadMap(int mapIndex, int param)
+        {
+            if (mapIndex < 0) // engine: a negative index sets neither the gvar nor a transition
+                return;
+            SetGlobalVar(GvarLoadMapIndex, param);
+            _host.LoadMapRequested?.Invoke(mapIndex);
+        }
+
+        public void LoadMapByName(string mapName, int param)
+        {
+            SetGlobalVar(GvarLoadMapIndex, param);
+            int idx = _host.MapIndexByNameProvider?.Invoke(mapName) ?? -1;
+            if (idx >= 0)
+                _host.LoadMapRequested?.Invoke(idx);
         }
 
         // P57: set_exit_grids retargets exit-grid objects; wield_obj_critter equips an item on a critter.

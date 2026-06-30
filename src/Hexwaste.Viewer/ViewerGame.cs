@@ -1066,6 +1066,9 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
                 },
                 WorldMapRequested = () => // P0: scripts_request_world_map (0x8108) — leave to the worldmap
                     _pendingTransition = new MapDestination(-1, 0, 0, 0),
+                LoadMapRequested = mapIndex => // P0: load_map (0x80E4) — deferred transition to the map default start
+                    _pendingTransition = new MapDestination(mapIndex, -1, -1, -1),
+                MapIndexByNameProvider = name => _mapList.GetIndexByFileName(name), // load_map(string) name->index
                 WmAreaSetPosRequested = (city, x, y) => // P0: wm_area_set_pos (0x80E5) — relocate a town marker
                 {
                     if (_cities.Areas.FirstOrDefault(a => a.Index == city) is { } area)

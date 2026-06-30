@@ -298,6 +298,15 @@ public interface IVmExternals
     /// talk_p_proc. Suppressed in combat. Default no-op.</summary>
     void DialogueSystemEnter() { }
 
+    /// <summary>load_map (0x80E4, opLoadMap) by map index: set GVAR_LOAD_MAP_INDEX = <paramref
+    /// name="param"/> and defer a transition to that map's default start. A negative index is a no-op
+    /// (engine). Default no-op.</summary>
+    void LoadMap(int mapIndex, int param) { }
+
+    /// <summary>load_map (0x80E4) by map FILE name (wmMapMatchNameToIdx): resolve the name to an index,
+    /// set GVAR_LOAD_MAP_INDEX, and defer the transition. Default no-op.</summary>
+    void LoadMapByName(string mapName, int param) { }
+
     /// <summary>anim (0x810C, opAnim): play animation code <paramref name="anim"/> on the object once.</summary>
     void Anim(int objectHandle, int anim, int frame) { }
 
@@ -1726,6 +1735,16 @@ public sealed class IntVm
             case 0x80F9: // dialogue_system_enter (0 args) — interpreter_extra.cc opGameDialogSystemEnter
                 _externals.DialogueSystemEnter();
                 break;
+            case 0x80E4: // load_map (pops param, then mapIndexOrName: int index or string filename) — opLoadMap
+            {
+                int param = PopInt();
+                Value mapArg = Pop();
+                if (mapArg.IsString)
+                    _externals.LoadMapByName(AsString(mapArg), param);
+                else
+                    _externals.LoadMap(mapArg.Raw, param);
+                break;
+            }
             case 0x80E5: // wm_area_set_pos (pops y, x, then city) — opWorldmapCitySetPos
             {
                 int y = PopInt();
