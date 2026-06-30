@@ -36,6 +36,11 @@ internal sealed class FakeExternals : IVmExternals
     public int CritterHeal(int objectHandle, int amount) { Heals.Add((objectHandle, amount)); return 0; }
     public int GetPoison(int objectHandle) { PoisonReads.Add(objectHandle); return PoisonValue; }
     public void KillCritter(int objectHandle, int deathFrame) { Kills.Add((objectHandle, deathFrame)); }
+
+    public List<(int Target, int Item)> UseOnObj { get; } = [];
+    public List<(int Handle, int Kind, int Param, int Value)> RmTraits { get; } = [];
+    public void UseObjectOnObject(int targetHandle, int itemHandle) => UseOnObj.Add((targetHandle, itemHandle));
+    public int CritterRemoveTrait(int h, int kind, int param, int value) { RmTraits.Add((h, kind, param, value)); return -1; }
 }
 
 public class IntVmTests
@@ -147,5 +152,28 @@ public class IntVmTests
         Assert.Equal(0, vm.ReturnStackDepth);       // return stack balanced
         Assert.NotEmpty(externals.Heals);           // critter_heal dispatched: (handle, amount) popped in order
         Assert.NotEmpty(externals.PoisonReads);     // get_poison dispatched: handle popped, value pushed
+    }
+
+    [GameDataFact]
+    public void DenMapEnterDispatchesUseObjOnObj()
+    {
+        // P0-M2: a denbus1 map_enter script calls use_obj_on_obj (0x8145) — that's why --smoke listed it
+        // as the Den's one stubbed external. Running map_enter through the real ScriptHost proves the full
+        // path fires: opcode dispatch -> ScriptContext.UseObjectOnObject -> the UseObjOnObjRequested host
+        // delegate (which in the viewer runs the use_obj_on_p_proc chain).
+        using var vfs = GameFileSystem.Open(GameData.RequiredDir);
+        var protos = new Hexwaste.Formats.Proto.ProtoDatabase(vfs);
+        int fired = 0;
+        var host = new ScriptHost(vfs, ScriptList.Load(vfs), protos)
+        {
+            NameResolver = _ => "x",
+            UseObjOnObjRequested = (_, _) => fired++,
+        };
+
+        using Stream stream = vfs.OpenRead(@"maps\denbus1.map");
+        Hexwaste.Formats.Map.MapFile map = Hexwaste.Formats.Map.MapFile.Load(stream, protos);
+        host.RunMapEnter(map, map.Elevations[0]!.Objects.Where(o => o.Sid != -1), null);
+
+        Assert.True(fired > 0, "no denbus1 map_enter script dispatched use_obj_on_obj");
     }
 }

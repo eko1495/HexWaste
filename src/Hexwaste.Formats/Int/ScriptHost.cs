@@ -148,6 +148,12 @@ public sealed class ScriptHost(GameFileSystem vfs, ScriptList scripts, Hexwaste.
     /// <summary>P0 (campaign port): kill_critter(object, deathFrame) — the host destroys a specific critter.</summary>
     public Action<MapObject, int>? KillCritterRequested { get; set; }
 
+    /// <summary>P0 (campaign port): critter_rm_trait(PERK) — the host removes a perk from the dude.</summary>
+    public Action<int>? PerkRemoveRequested { get; set; }
+
+    /// <summary>P0 (campaign port): use_obj_on_obj — the host runs the use_obj_on_p_proc chain (item, target).</summary>
+    public Action<MapObject, MapObject>? UseObjOnObjRequested { get; set; }
+
     /// <summary>P57: set_exit_grids(elevation, destMap, destElevation, destTile) — the host retargets
     /// the exit-grid objects on an elevation.</summary>
     public Action<int, int, int, int>? SetExitGridsRequested { get; set; }
@@ -1169,6 +1175,24 @@ public sealed class ScriptHost(GameFileSystem vfs, ScriptList scripts, Hexwaste.
                 return;
             if (_host.ObjectOf(objectHandle) is { } obj)
                 _host.KillCritterRequested?.Invoke(obj, deathFrame);
+        }
+
+        // critter_rm_trait → the engine ONLY removes perks (kind 0, looping perkRemove to rank 0); other
+        // kinds are no-op errors. Restricted to the dude — Hexwaste's mutable perk store (_dudePerkRanks)
+        // is the dude's; non-dude perk removal is a no-op (no slice script targets a non-dude). Pushes -1.
+        public int CritterRemoveTrait(int objectHandle, int kind, int param, int value)
+        {
+            if (kind == 0 && _host.ObjectOf(objectHandle) is { } obj && obj == _dude && Fid.PidType(obj.Pid) == 1)
+                _host.PerkRemoveRequested?.Invoke(param);
+            return -1;
+        }
+
+        // use_obj_on_obj → run the use_obj_on_p_proc chain (item then target). ported from
+        // interpreter_extra.cc opUseObjectOnObject → _obj_use_item_on.
+        public void UseObjectOnObject(int targetHandle, int itemHandle)
+        {
+            if (_host.ObjectOf(itemHandle) is { } item && _host.ObjectOf(targetHandle) is { } target)
+                _host.UseObjOnObjRequested?.Invoke(item, target);
         }
 
         // P57: set_exit_grids retargets exit-grid objects; wield_obj_critter equips an item on a critter.

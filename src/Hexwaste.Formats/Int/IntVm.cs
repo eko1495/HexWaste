@@ -270,6 +270,15 @@ public interface IVmExternals
     /// given <paramref name="deathFrame"/> animation. Default no-op.</summary>
     void KillCritter(int objectHandle, int deathFrame) { }
 
+    /// <summary>critter_rm_trait (0x8103, opCritterRemoveTrait): the engine handles ONLY
+    /// CRITTER_TRAIT_PERK (kind 0) — it loops perkRemove until the rank hits 0; every other kind is a
+    /// no-op error. Always returns -1. Default no-op returning -1.</summary>
+    int CritterRemoveTrait(int objectHandle, int kind, int param, int value) => -1;
+
+    /// <summary>use_obj_on_obj (0x8145, opUseObjectOnObject): run the use_obj_on_p_proc chain — the
+    /// item's then the target's — for scripted "use item on object" steps. Default no-op.</summary>
+    void UseObjectOnObject(int targetHandle, int itemHandle) { }
+
     /// <summary>anim (0x810C, opAnim): play animation code <paramref name="anim"/> on the object once.</summary>
     void Anim(int objectHandle, int anim, int frame) { }
 
@@ -1669,6 +1678,20 @@ public sealed class IntVm
             {
                 int deathFrame = PopInt();
                 _externals.KillCritter(PopInt(), deathFrame);
+                break;
+            }
+            case 0x8103: // critter_rm_trait (pops value, param, kind, then object) — opCritterRemoveTrait
+            {
+                int value = PopInt();
+                int param = PopInt();
+                int kind = PopInt();
+                PushInt(_externals.CritterRemoveTrait(PopInt(), kind, param, value)); // last pop = object; pushes -1
+                break;
+            }
+            case 0x8145: // use_obj_on_obj (pops target, then item) — interpreter_extra.cc opUseObjectOnObject
+            {
+                int target = PopInt();
+                _externals.UseObjectOnObject(target, PopInt()); // second pop = item
                 break;
             }
             case 0x80E6: // set_exit_grids (opSetExitGrids): pops rotation, tile, destElev, map, elevation

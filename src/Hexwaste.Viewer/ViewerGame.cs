@@ -1053,6 +1053,17 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
                 },
                 KillCritterTypeRequested = KillCrittersByType,
                 KillCritterRequested = KillCritterObject, // P0: kill_critter (0x80ED)
+                PerkRemoveRequested = perkIndex => // P0: critter_rm_trait (0x8103, perk-only)
+                {
+                    if (perkIndex >= 0 && perkIndex < _dudePerkRanks.Length)
+                        _dudePerkRanks[perkIndex] = 0; // engine loops perkRemove to 0; effects are rank-derived
+                },
+                UseObjOnObjRequested = (item, target) => // P0: use_obj_on_obj (0x8145)
+                {
+                    if (_scriptHost?.RunUseObjOn(item, target, _map, _dude?.Dude) is { } r)
+                        foreach (string line in r.Messages)
+                            Log(line);
+                },
                 IsLoadingGameProvider = () => _isLoadingGame,
                 // P57 (Broken Hills): set_exit_grids retargets every exit-grid object on the source
                 // elevation (the engine discards the rotation arg, so preserve the parsed one).
