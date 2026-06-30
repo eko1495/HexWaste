@@ -323,6 +323,21 @@ public sealed partial class ViewerGame
             RebuildBlockedTiles(_dude?.Dude);
     }
 
+    /// <summary>kill_critter (0x80ED): destroy one specific critter into a lootable corpse. ported from
+    /// fallout2-ce src/critter.cc critterKill(). The specific deathFrame anim is simplified to the
+    /// art-resolved PickDeathAnim (the same documented simplification as KillCrittersByType — cosmetic).
+    /// The dude is guarded: a scripted dude-kill would corrupt control/HUD and no slice script does it.
+    /// ConvertToCorpse already drops the animator entry and rebuilds the blocked-tile set.</summary>
+    public void KillCritterObject(MapObject obj, int deathFrame)
+    {
+        if (obj == _dude?.Dude || obj.IsDead)
+            return;
+        obj.Sid = -1;
+        obj.CombatResults |= 0x80; // DAM_DEAD
+        obj.CurrentHp = Math.Min(obj.CurrentHp, 0);
+        ConvertToCorpse(obj, PickDeathAnim(obj));
+    }
+
     /// <summary>Does this object get a critter_p_proc this tick: a live, scripted,
     /// non-dude critter that isn't a "wait here" companion (phase-10 M4). The single
     /// source of truth for both the heartbeat pump and the --companion diagnostic.</summary>

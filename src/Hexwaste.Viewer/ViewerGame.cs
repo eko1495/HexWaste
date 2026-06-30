@@ -1052,6 +1052,7 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
                     _camera.SetCenter(tile);
                 },
                 KillCritterTypeRequested = KillCrittersByType,
+                KillCritterRequested = KillCritterObject, // P0: kill_critter (0x80ED)
                 IsLoadingGameProvider = () => _isLoadingGame,
                 // P57 (Broken Hills): set_exit_grids retargets every exit-grid object on the source
                 // elevation (the engine discards the rotation arg, so preserve the parsed one).

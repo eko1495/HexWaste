@@ -26,6 +26,16 @@ internal sealed class FakeExternals : IVmExternals
     public int GetLocalVar(int index) => 0;
 
     public int GetMapVar(int index) => 0;
+
+    // P0 (campaign port): record the critter-state EFFECT externals so a real script run proves dispatch.
+    public List<(int Handle, int Amount)> Heals { get; } = [];
+    public List<int> PoisonReads { get; } = [];
+    public List<(int Handle, int DeathFrame)> Kills { get; } = [];
+    public int PoisonValue { get; set; }
+
+    public int CritterHeal(int objectHandle, int amount) { Heals.Add((objectHandle, amount)); return 0; }
+    public int GetPoison(int objectHandle) { PoisonReads.Add(objectHandle); return PoisonValue; }
+    public void KillCritter(int objectHandle, int deathFrame) { Kills.Add((objectHandle, deathFrame)); }
 }
 
 public class IntVmTests
@@ -120,5 +130,22 @@ public class IntVmTests
         Assert.Equal(0, vm.ReturnStackDepth);                // stack intact (stubs popped their arity)
 
         Assert.False(vm.TryRunProcedure("no_such_procedure"));
+    }
+
+    [GameDataFact]
+    public void HakuninHealNodeDispatchesCritterHealAndGetPoison()
+    {
+        // P0 (campaign port): Hakunin's healing node (ahhakun Node014) is a real caller of the newly
+        // wired critter-state externals. Running it proves the IntVm dispatches critter_heal (0x80E8) and
+        // get_poison (0x8123) to the right interface methods with the right popped args, and balances both
+        // stacks. PoisonValue>0 makes the script take its cure-poison branch so get_poison is observed.
+        IntProgram program = LoadScript(@"scripts\ahhakun.int");
+        var externals = new FakeExternals { PoisonValue = 5 };
+        var vm = new IntVm(program, externals);
+
+        Assert.True(vm.TryRunProcedure("Node014")); // ran clean (no throw, all other externals arity-stubbed)
+        Assert.Equal(0, vm.ReturnStackDepth);       // return stack balanced
+        Assert.NotEmpty(externals.Heals);           // critter_heal dispatched: (handle, amount) popped in order
+        Assert.NotEmpty(externals.PoisonReads);     // get_poison dispatched: handle popped, value pushed
     }
 }

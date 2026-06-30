@@ -145,6 +145,9 @@ public sealed class ScriptHost(GameFileSystem vfs, ScriptList scripts, Hexwaste.
     /// <summary>P56-M2: kill_critter_type(pid, deathFrame) — the host destroys live critters of a proto.</summary>
     public Action<int, int>? KillCritterTypeRequested { get; set; }
 
+    /// <summary>P0 (campaign port): kill_critter(object, deathFrame) — the host destroys a specific critter.</summary>
+    public Action<MapObject, int>? KillCritterRequested { get; set; }
+
     /// <summary>P57: set_exit_grids(elevation, destMap, destElevation, destTile) — the host retargets
     /// the exit-grid objects on an elevation.</summary>
     public Action<int, int, int, int>? SetExitGridsRequested { get; set; }
@@ -1129,6 +1132,43 @@ public sealed class ScriptHost(GameFileSystem vfs, ScriptList scripts, Hexwaste.
             if (_host.IsLoadingGame()) // engine: never destroy critters during a load/save replay (:2384)
                 return;
             _host.KillCritterTypeRequested?.Invoke(pid, deathFrame);
+        }
+
+        // P0 (campaign port): the critter-state EFFECT externals. ported from fallout2-ce
+        // interpreter_extra.cc opCritterHeal / opGetPoison / opKillCritter.
+
+        // critter_heal → critter.cc critterAdjustHitPoints: add amount, clamp to STAT_MAXIMUM_HIT_POINTS(7);
+        // a drop to ≤0 kills (critterKill(-1)). Returns the engine's rc (always 0).
+        public int CritterHeal(int objectHandle, int amount)
+        {
+            if (_host.ObjectOf(objectHandle) is not { } obj || Fid.PidType(obj.Pid) != 1)
+                return 0;
+            int maxHp = _host.CritterStatValue(obj, 7); // STAT_MAXIMUM_HIT_POINTS
+            int newHp = obj.CurrentHp + amount;
+            if (newHp <= maxHp)
+            {
+                obj.CurrentHp = newHp;
+                if (newHp <= 0 && !obj.IsDead)
+                    _host.KillCritterRequested?.Invoke(obj, -1);
+            }
+            else
+            {
+                obj.CurrentHp = maxHp;
+            }
+            return 0;
+        }
+
+        // get_poison → critter.cc critterGetPoison: the poison counter (0 for null/non-critter).
+        public int GetPoison(int objectHandle) =>
+            _host.ObjectOf(objectHandle) is { } obj && Fid.PidType(obj.Pid) == 1 ? obj.Poison : 0;
+
+        // kill_critter → critter.cc critterKill(object, deathFrame, 1). Never during a load replay.
+        public void KillCritter(int objectHandle, int deathFrame)
+        {
+            if (_host.IsLoadingGame())
+                return;
+            if (_host.ObjectOf(objectHandle) is { } obj)
+                _host.KillCritterRequested?.Invoke(obj, deathFrame);
         }
 
         // P57: set_exit_grids retargets exit-grid objects; wield_obj_critter equips an item on a critter.

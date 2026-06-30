@@ -254,6 +254,22 @@ public interface IVmExternals
     /// DAM_CRIP crippled-limb/blind flags into the critter's combat results.</summary>
     void CritterInjure(int objectHandle, int damageFlags) { }
 
+    // ---- P0 (campaign port) critter-state EFFECT externals: each bridges to a system Hexwaste
+    // already tracks (HP / poison / the death path). Inert by default so the fake test host stays silent.
+
+    /// <summary>critter_heal (0x80E8, opCritterHeal → critterAdjustHitPoints): adjust the critter's HP
+    /// by <paramref name="amount"/>, clamped to STAT_MAXIMUM_HIT_POINTS; a drop to ≤0 kills it. Returns
+    /// the engine's rc (always 0). Default no-op returning 0.</summary>
+    int CritterHeal(int objectHandle, int amount) => 0;
+
+    /// <summary>get_poison (0x8123, opGetPoison → critterGetPoison): the critter's poison counter
+    /// (0 for null / non-critter, matching the engine's default). Default 0.</summary>
+    int GetPoison(int objectHandle) => 0;
+
+    /// <summary>kill_critter (0x80ED, opKillCritter → critterKill): destroy a specific critter with the
+    /// given <paramref name="deathFrame"/> animation. Default no-op.</summary>
+    void KillCritter(int objectHandle, int deathFrame) { }
+
     /// <summary>anim (0x810C, opAnim): play animation code <paramref name="anim"/> on the object once.</summary>
     void Anim(int objectHandle, int anim, int frame) { }
 
@@ -1638,6 +1654,21 @@ public sealed class IntVm
             {
                 int deathFrame = PopInt();
                 _externals.KillCritterType(PopInt(), deathFrame);
+                break;
+            }
+            case 0x80E8: // critter_heal (pops amount, then critter) — interpreter_extra.cc opCritterHeal
+            {
+                int amount = PopInt();
+                PushInt(_externals.CritterHeal(PopInt(), amount));
+                break;
+            }
+            case 0x8123: // get_poison (pops obj) — interpreter_extra.cc opGetPoison
+                PushInt(_externals.GetPoison(PopInt()));
+                break;
+            case 0x80ED: // kill_critter (pops deathFrame, then object) — interpreter_extra.cc opKillCritter
+            {
+                int deathFrame = PopInt();
+                _externals.KillCritter(PopInt(), deathFrame);
                 break;
             }
             case 0x80E6: // set_exit_grids (opSetExitGrids): pops rotation, tile, destElev, map, elevation
