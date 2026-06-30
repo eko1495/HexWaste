@@ -175,6 +175,10 @@ public sealed class ScriptHost(GameFileSystem vfs, ScriptList scripts, Hexwaste.
     /// <summary>P0 (campaign port): resolve a load_map(string) map FILE name to its maps.txt index, or -1.</summary>
     public Func<string, int>? MapIndexByNameProvider { get; set; }
 
+    /// <summary>P0 (campaign port): attack_setup(attacker, defender) — the host starts combat with the
+    /// attacker as the aggressor (dude-target → script-aggro; NPC-vs-NPC → a spectated brawl).</summary>
+    public Action<MapObject, MapObject>? AttackSetupRequested { get; set; }
+
     /// <summary>P57: set_exit_grids(elevation, destMap, destElevation, destTile) — the host retargets
     /// the exit-grid objects on an elevation.</summary>
     public Action<int, int, int, int>? SetExitGridsRequested { get; set; }
@@ -1261,6 +1265,28 @@ public sealed class ScriptHost(GameFileSystem vfs, ScriptList scripts, Hexwaste.
             int idx = _host.MapIndexByNameProvider?.Invoke(mapName) ?? -1;
             if (idx >= 0)
                 _host.LoadMapRequested?.Invoke(idx);
+        }
+
+        private const int CritterManeuverFleeing = 0x04; // CRITTER_MANUEVER_FLEEING (obj_types.h)
+
+        // ported from fallout2-ce src/interpreter_extra.cc opAttackSetup (0x8143): a script forces combat
+        // between two critters. A dead/inactive/invisible attacker or defender — or a fleeing defender — aborts
+        // it (critterIsActive, critter.cc:928); otherwise the attacker engages the defender and the host opens
+        // (or joins) the fight. Both must be critters; never fire mid-load (a map_enter caller must not start
+        // combat before the map is live).
+        public void AttackSetup(int attackerHandle, int defenderHandle)
+        {
+            if (_host.IsLoadingGame())
+                return;
+            if (_host.ObjectOf(attackerHandle) is not { } attacker || Fid.PidType(attacker.Pid) != 1)
+                return;
+            if (_host.ObjectOf(defenderHandle) is not { } defender || Fid.PidType(defender.Pid) != 1)
+                return;
+            if (attacker.IsDead || attacker.IsHidden || defender.IsDead || defender.IsHidden)
+                return;
+            if ((defender.Maneuver & CritterManeuverFleeing) != 0)
+                return;
+            _host.AttackSetupRequested?.Invoke(attacker, defender);
         }
 
         // P57: set_exit_grids retargets exit-grid objects; wield_obj_critter equips an item on a critter.

@@ -1077,6 +1077,13 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
                         area.WorldY = y;
                     }
                 },
+                AttackSetupRequested = (attacker, defender) => // P0: attack_setup (0x8143) — script forces combat
+                {
+                    if (defender == _dude?.Dude)
+                        _combat.BeginScriptAggro(attacker, defender); // a master/NPC duels or ambushes the player
+                    else if (attacker != _dude?.Dude)
+                        _combat.StartBrawl([attacker, defender], dudeSpectator: true); // NPC-vs-NPC the dude only watches
+                },
                 CritterModSkillRequested = (skill, points) => // P0: critter_mod_skill (0x813C), dude-only
                 {
                     if (_dudeGcd is null || skill < 0 || skill >= 18 || points == 0)

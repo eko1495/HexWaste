@@ -307,6 +307,12 @@ public interface IVmExternals
     /// set GVAR_LOAD_MAP_INDEX, and defer the transition. Default no-op.</summary>
     void LoadMapByName(string mapName, int param) { }
 
+    /// <summary>attack_setup (0x8143, opAttackSetup): a script forces combat between two critters — the
+    /// attacker becomes the aggressor against the defender (e.g. the New Reno kung-fu duel makes a master
+    /// attack the dude). A dead/inactive/invisible attacker or defender, or a fleeing defender, aborts it.
+    /// Default no-op.</summary>
+    void AttackSetup(int attackerHandle, int defenderHandle) { }
+
     /// <summary>anim (0x810C, opAnim): play animation code <paramref name="anim"/> on the object once.</summary>
     void Anim(int objectHandle, int anim, int frame) { }
 
@@ -1743,6 +1749,12 @@ public sealed class IntVm
                     _externals.LoadMapByName(AsString(mapArg), param);
                 else
                     _externals.LoadMap(mapArg.Raw, param);
+                break;
+            }
+            case 0x8143: // attack_setup (pops defender, then attacker) — interpreter_extra.cc opAttackSetup
+            {
+                int defender = PopInt();
+                _externals.AttackSetup(PopInt(), defender);
                 break;
             }
             case 0x80E5: // wm_area_set_pos (pops y, x, then city) — opWorldmapCitySetPos

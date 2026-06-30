@@ -49,6 +49,9 @@ internal sealed class FakeExternals : IVmExternals
     public void DialogueSystemEnter() => DialogueEnters++;
     public void LoadMap(int mapIndex, int param) => LoadMaps.Add((mapIndex, param));
     public void LoadMapByName(string mapName, int param) => LoadMapNames.Add((mapName, param));
+
+    public List<(int Attacker, int Defender)> AttackSetups { get; } = [];
+    public void AttackSetup(int attackerHandle, int defenderHandle) => AttackSetups.Add((attackerHandle, defenderHandle));
 }
 
 public class IntVmTests
@@ -228,5 +231,21 @@ public class IntVmTests
         Assert.True(vm.TryRunProcedure("Node989"));
         Assert.Equal(0, vm.ReturnStackDepth);
         Assert.True(externals.LoadMaps.Count + externals.LoadMapNames.Count > 0, "load_map was not dispatched");
+    }
+
+    [GameDataFact]
+    public void DragonDoFightDispatchesAttackSetup()
+    {
+        // P0-M7: the New Reno martial-arts duel (fcdragon doFight) makes the master attack the dude via
+        // attack_setup (0x8143) — the disassembly pushes local_var(12) then dude_obj, so the VM pops
+        // (defender=dude, attacker=master). Running it proves the IntVm pops both pointers in order and
+        // dispatches to AttackSetup with balanced stacks.
+        IntProgram program = LoadScript(@"scripts\fcdragon.int");
+        var externals = new FakeExternals();
+        var vm = new IntVm(program, externals);
+
+        Assert.True(vm.TryRunProcedure("doFight"));
+        Assert.Equal(0, vm.ReturnStackDepth);
+        Assert.NotEmpty(externals.AttackSetups); // attack_setup dispatched (attacker, defender)
     }
 }
