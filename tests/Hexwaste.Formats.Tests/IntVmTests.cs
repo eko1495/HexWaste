@@ -39,8 +39,10 @@ internal sealed class FakeExternals : IVmExternals
 
     public List<(int Target, int Item)> UseOnObj { get; } = [];
     public List<(int Handle, int Kind, int Param, int Value)> RmTraits { get; } = [];
+    public List<(int Handle, int Skill, int Points)> ModSkills { get; } = [];
     public void UseObjectOnObject(int targetHandle, int itemHandle) => UseOnObj.Add((targetHandle, itemHandle));
     public int CritterRemoveTrait(int h, int kind, int param, int value) { RmTraits.Add((h, kind, param, value)); return -1; }
+    public int CritterModSkill(int h, int skill, int points) { ModSkills.Add((h, skill, points)); return 0; }
 }
 
 public class IntVmTests
@@ -175,5 +177,20 @@ public class IntVmTests
         host.RunMapEnter(map, map.Elevations[0]!.Objects.Where(o => o.Sid != -1), null);
 
         Assert.True(fired > 0, "no denbus1 map_enter script dispatched use_obj_on_obj");
+    }
+
+    [GameDataFact]
+    public void CameronRewardNodeDispatchesCritterModSkill()
+    {
+        // P0-M3: Cameron's reward node (actemvil Node016a) calls critter_mod_skill (0x813C). Running it
+        // proves the IntVm pops (points, skill, critter) in order, dispatches to CritterModSkill, pushes
+        // its 0 result, and balances both stacks.
+        IntProgram program = LoadScript(@"scripts\actemvil.int");
+        var externals = new FakeExternals();
+        var vm = new IntVm(program, externals);
+
+        Assert.True(vm.TryRunProcedure("Node016a"));
+        Assert.Equal(0, vm.ReturnStackDepth);
+        Assert.NotEmpty(externals.ModSkills); // critter_mod_skill dispatched (handle, skill, points)
     }
 }

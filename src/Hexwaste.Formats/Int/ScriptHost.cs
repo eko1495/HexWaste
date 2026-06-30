@@ -154,6 +154,10 @@ public sealed class ScriptHost(GameFileSystem vfs, ScriptList scripts, Hexwaste.
     /// <summary>P0 (campaign port): use_obj_on_obj — the host runs the use_obj_on_p_proc chain (item, target).</summary>
     public Action<MapObject, MapObject>? UseObjOnObjRequested { get; set; }
 
+    /// <summary>P0 (campaign port): critter_mod_skill(skill, points) — the host adds skill points to the
+    /// dude's skill (tagged-halved, value-capped). Dude-only, so no object is passed.</summary>
+    public Action<int, int>? CritterModSkillRequested { get; set; }
+
     /// <summary>P57: set_exit_grids(elevation, destMap, destElevation, destTile) — the host retargets
     /// the exit-grid objects on an elevation.</summary>
     public Action<int, int, int, int>? SetExitGridsRequested { get; set; }
@@ -1193,6 +1197,15 @@ public sealed class ScriptHost(GameFileSystem vfs, ScriptList scripts, Hexwaste.
         {
             if (_host.ObjectOf(itemHandle) is { } item && _host.ObjectOf(targetHandle) is { } target)
                 _host.UseObjOnObjRequested?.Invoke(item, target);
+        }
+
+        // critter_mod_skill → opCritterModifySkill: dude-only (the engine errors for anyone else). The host
+        // applies the tagged-halving + value cap against the dude's skill-points array. Always pushes 0.
+        public int CritterModSkill(int objectHandle, int skill, int points)
+        {
+            if (points != 0 && _host.ObjectOf(objectHandle) is { } obj && obj == _dude && Fid.PidType(obj.Pid) == 1)
+                _host.CritterModSkillRequested?.Invoke(skill, points);
+            return 0;
         }
 
         // P57: set_exit_grids retargets exit-grid objects; wield_obj_critter equips an item on a critter.

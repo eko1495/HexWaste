@@ -1064,6 +1064,27 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
                         foreach (string line in r.Messages)
                             Log(line);
                 },
+                CritterModSkillRequested = (skill, points) => // P0: critter_mod_skill (0x813C), dude-only
+                {
+                    if (_dudeGcd is null || skill < 0 || skill >= 18 || points == 0)
+                        return;
+                    int n = Math.Abs(points);
+                    if (Array.IndexOf(_dudeGcd.TaggedSkills, skill) >= 0)
+                        n /= 2; // tagged skills grant/cost half (skill.cc:251)
+                    int[] sk = _dudeGcd.Stats.Skills; // same array the skill resolver + skill-book read/write
+                    for (int i = 0; i < n; i++)
+                    {
+                        if (points > 0)
+                        {
+                            if (DudeSkillValue(skill) >= 300) break; // skillAddForce caps at value 300
+                            sk[skill]++;
+                        }
+                        else
+                        {
+                            sk[skill]--; // skillSubForce
+                        }
+                    }
+                },
                 IsLoadingGameProvider = () => _isLoadingGame,
                 // P57 (Broken Hills): set_exit_grids retargets every exit-grid object on the source
                 // elevation (the engine discards the rotation arg, so preserve the parsed one).

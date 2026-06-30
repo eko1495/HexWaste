@@ -279,6 +279,11 @@ public interface IVmExternals
     /// item's then the target's — for scripted "use item on object" steps. Default no-op.</summary>
     void UseObjectOnObject(int targetHandle, int itemHandle) { }
 
+    /// <summary>critter_mod_skill (0x813C, opCritterModifySkill): add <paramref name="points"/> skill
+    /// points to the dude's skill (skillAddForce/skillSubForce, halved for a tagged skill, capped at a
+    /// value of 300). Dude-only in the engine. Always returns 0. Default no-op returning 0.</summary>
+    int CritterModSkill(int objectHandle, int skill, int points) => 0;
+
     /// <summary>anim (0x810C, opAnim): play animation code <paramref name="anim"/> on the object once.</summary>
     void Anim(int objectHandle, int anim, int frame) { }
 
@@ -1692,6 +1697,13 @@ public sealed class IntVm
             {
                 int target = PopInt();
                 _externals.UseObjectOnObject(target, PopInt()); // second pop = item
+                break;
+            }
+            case 0x813C: // critter_mod_skill (pops points, skill, then critter) — opCritterModifySkill
+            {
+                int points = PopInt();
+                int skill = PopInt();
+                PushInt(_externals.CritterModSkill(PopInt(), skill, points)); // last pop = critter; pushes 0
                 break;
             }
             case 0x80E6: // set_exit_grids (opSetExitGrids): pops rotation, tile, destElev, map, elevation
