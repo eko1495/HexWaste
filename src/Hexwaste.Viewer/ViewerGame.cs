@@ -2502,10 +2502,15 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
     }
 
     /// <summary>
-    /// Blocking per fallout2-ce src/object.cc _obj_blocking_at(): visible,
-    /// non-NO_BLOCK critters/scenery/walls block their tile; MULTIHEX objects
-    /// also block their six neighbors. Computed once per elevation (static
-    /// scene — only the dude moves).
+    /// Blocking per fallout2-ce src/object.cc _obj_blocking_at(): non-NO_BLOCK
+    /// critters/scenery/walls block their tile; MULTIHEX objects also block their
+    /// six neighbors. Computed once per elevation (static scene — only the dude moves).
+    /// IMPORTANT: scans FLAT objects too. OBJECT_FLAT (0x08) is a RENDER flag (the sprite
+    /// draws flat on the ground), NOT a collision flag — _obj_blocking_at never tests it.
+    /// Many walls/scenery are flat, INCLUDING FO2's invisible collision markers ("Secret
+    /// Blocking Hex" / "Block Hex Auto Inviso", flags 0xA0000008, non-NO_BLOCK) that seal
+    /// hut/building interiors. Iterating only _solidObjects dropped them, so the dude could
+    /// path straight through walls into sealed interiors.
     /// </summary>
     private void RebuildBlockedTiles(MapObject? exclude)
     {
@@ -2513,7 +2518,7 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
         const int objectMultiHex = 0x800;
 
         _blockedTiles = [];
-        foreach (MapObject obj in _solidObjects[_elevation])
+        foreach (MapObject obj in _solidObjects[_elevation].Concat(_flatObjects[_elevation]))
         {
             if (obj == exclude || (obj.Flags & objectNoBlock) != 0)
                 continue;
