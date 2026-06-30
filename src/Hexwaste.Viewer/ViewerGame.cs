@@ -1064,6 +1064,16 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
                         foreach (string line in r.Messages)
                             Log(line);
                 },
+                WorldMapRequested = () => // P0: scripts_request_world_map (0x8108) — leave to the worldmap
+                    _pendingTransition = new MapDestination(-1, 0, 0, 0),
+                WmAreaSetPosRequested = (city, x, y) => // P0: wm_area_set_pos (0x80E5) — relocate a town marker
+                {
+                    if (_cities.Areas.FirstOrDefault(a => a.Index == city) is { } area)
+                    {
+                        area.WorldX = x;
+                        area.WorldY = y;
+                    }
+                },
                 CritterModSkillRequested = (skill, points) => // P0: critter_mod_skill (0x813C), dude-only
                 {
                     if (_dudeGcd is null || skill < 0 || skill >= 18 || points == 0)

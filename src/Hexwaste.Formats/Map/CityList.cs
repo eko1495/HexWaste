@@ -16,9 +16,10 @@ public sealed class WorldArea
     public required int Index { get; init; }
     public required string Name { get; init; }
 
-    /// <summary>Position in worldmap pixels (the 1400x1500 tile canvas).</summary>
-    public required int WorldX { get; init; }
-    public required int WorldY { get; init; }
+    /// <summary>Position in worldmap pixels (the 1400x1500 tile canvas). Settable so the
+    /// wm_area_set_pos (0x80E5) script external can relocate a town marker at runtime.</summary>
+    public required int WorldX { get; set; }
+    public required int WorldY { get; set; }
 
     public required string Size { get; init; }
     public required bool StartsOn { get; init; }

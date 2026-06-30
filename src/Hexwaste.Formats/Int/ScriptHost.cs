@@ -158,6 +158,12 @@ public sealed class ScriptHost(GameFileSystem vfs, ScriptList scripts, Hexwaste.
     /// dude's skill (tagged-halved, value-capped). Dude-only, so no object is passed.</summary>
     public Action<int, int>? CritterModSkillRequested { get; set; }
 
+    /// <summary>P0 (campaign port): scripts_request_world_map — the host leaves to the worldmap.</summary>
+    public Action? WorldMapRequested { get; set; }
+
+    /// <summary>P0 (campaign port): wm_area_set_pos(city, x, y) — the host moves a worldmap area marker.</summary>
+    public Action<int, int, int>? WmAreaSetPosRequested { get; set; }
+
     /// <summary>P57: set_exit_grids(elevation, destMap, destElevation, destTile) — the host retargets
     /// the exit-grid objects on an elevation.</summary>
     public Action<int, int, int, int>? SetExitGridsRequested { get; set; }
@@ -1207,6 +1213,12 @@ public sealed class ScriptHost(GameFileSystem vfs, ScriptList scripts, Hexwaste.
                 _host.CritterModSkillRequested?.Invoke(skill, points);
             return 0;
         }
+
+        // scripts_request_world_map → scriptsRequestWorldMap: leave to the worldmap (the host defers it).
+        public void RequestWorldMap() => _host.WorldMapRequested?.Invoke();
+
+        // wm_area_set_pos → wmAreaSetWorldPos: move a worldmap area marker.
+        public void WmAreaSetPos(int city, int x, int y) => _host.WmAreaSetPosRequested?.Invoke(city, x, y);
 
         // P57: set_exit_grids retargets exit-grid objects; wield_obj_critter equips an item on a critter.
         public void SetExitGrids(int elevation, int destMap, int destElevation, int destTile) =>

@@ -284,6 +284,15 @@ public interface IVmExternals
     /// value of 300). Dude-only in the engine. Always returns 0. Default no-op returning 0.</summary>
     int CritterModSkill(int objectHandle, int skill, int points) => 0;
 
+    /// <summary>scripts_request_world_map (0x8108, opWorldmap → scriptsRequestWorldMap): leave the
+    /// current map out to the worldmap (deferred until the script returns). Default no-op.</summary>
+    void RequestWorldMap() { }
+
+    /// <summary>wm_area_set_pos (0x80E5, opWorldmapCitySetPos → wmAreaSetWorldPos): move worldmap area
+    /// <paramref name="city"/>'s marker to (<paramref name="x"/>, <paramref name="y"/>) on the world
+    /// canvas. Default no-op.</summary>
+    void WmAreaSetPos(int city, int x, int y) { }
+
     /// <summary>anim (0x810C, opAnim): play animation code <paramref name="anim"/> on the object once.</summary>
     void Anim(int objectHandle, int anim, int frame) { }
 
@@ -1704,6 +1713,16 @@ public sealed class IntVm
                 int points = PopInt();
                 int skill = PopInt();
                 PushInt(_externals.CritterModSkill(PopInt(), skill, points)); // last pop = critter; pushes 0
+                break;
+            }
+            case 0x8108: // scripts_request_world_map (0 args) — interpreter_extra.cc opWorldmap
+                _externals.RequestWorldMap();
+                break;
+            case 0x80E5: // wm_area_set_pos (pops y, x, then city) — opWorldmapCitySetPos
+            {
+                int y = PopInt();
+                int x = PopInt();
+                _externals.WmAreaSetPos(PopInt(), x, y); // last pop = city
                 break;
             }
             case 0x80E6: // set_exit_grids (opSetExitGrids): pops rotation, tile, destElev, map, elevation
