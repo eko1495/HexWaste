@@ -2515,12 +2515,17 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
     private void RebuildBlockedTiles(MapObject? exclude)
     {
         const int objectNoBlock = 0x10;
+        const int objectHidden = 0x01;
         const int objectMultiHex = 0x800;
 
         _blockedTiles = [];
         foreach (MapObject obj in _solidObjects[_elevation].Concat(_flatObjects[_elevation]))
         {
-            if (obj == exclude || (obj.Flags & objectNoBlock) != 0)
+            // Skip HIDDEN as well as NO_BLOCK — _obj_blocking_at (object.cc:2401) ignores both. Maps
+            // scatter HIDDEN flat scenery (spawn/event markers) in the open terrain; once we started
+            // scanning flat objects, NOT skipping HIDDEN boxed the dude in (couldn't reach open ground).
+            // The interior-sealing markers (0xA0000008) are NOT hidden, so they still block.
+            if (obj == exclude || (obj.Flags & (objectNoBlock | objectHidden)) != 0)
                 continue;
             if (Fid.Type(obj.Fid) is not (ObjectType.Critter or ObjectType.Scenery or ObjectType.Wall))
                 continue;
