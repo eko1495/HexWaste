@@ -1218,6 +1218,44 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
                         _animator.PlayActionOnce(obj, Fid.Build(ObjectType.Critter, Fid.Index(obj.Fid),
                             0 /* ANIM_STAND */, Fid.WeaponCode(obj.Fid), obj.Rotation));
                 },
+                // P101 (Tier A): animate_stand_obj — same idle STAND anim as the reverse twin.
+                AnimateStandRequested = obj =>
+                {
+                    if (_combat.Phase == Formats.Combat.CombatPhase.Idle && Fid.Type(obj.Fid) is ObjectType.Critter)
+                        _animator.PlayActionOnce(obj, Fid.Build(ObjectType.Critter, Fid.Index(obj.Fid),
+                            0 /* ANIM_STAND */, Fid.WeaponCode(obj.Fid), obj.Rotation));
+                },
+                // P101 (Tier A): gfade_in re-arms the post-load fade-in (P52-M6); gfade_out has no
+                // fade-to-black in Hexwaste (documented cut) → no-op. Draw-only, headless-inert.
+                ScreenFadeRequested = fadeIn => { if (fadeIn) _mapFadeElapsed = 0; },
+                // P101 (Tier A): play_sfx / reg_anim_play_sfx.
+                PlaySfxRequested = name => _audio?.PlaySfx(name),
+                // P101 (Tier B): tile_is_visible — the camera-centre tile.
+                CenterTileProvider = () => _camera.ScreenToHex(GraphicsDevice.Viewport.Width / 2, GraphicsDevice.Viewport.Height / 2),
+                // P101 (Tier C): inven_unwield — clear the critter's in-hand flags (dude uses _dudeInventory).
+                InvenUnwieldRequested = obj =>
+                {
+                    foreach (MapObject it in obj == _dude?.Dude ? _dudeInventory : obj.Inventory)
+                        it.Flags &= ~(MapObject.FlagInRightHand | MapObject.FlagInLeftHand);
+                },
+                // P101 (Tier C): use_obj — run the object's use_p_proc (single-object use path).
+                UseObjRequested = obj =>
+                {
+                    foreach (string line in _scriptHost?.RunObjectProc(obj, _map, _dude?.Dude, 0, -1, "use_p_proc")?.Messages ?? [])
+                        Log(line);
+                },
+                // P101 (Tier C): drop_obj — drop the item from the dropper's inventory onto its tile.
+                DropObjRequested = (dropper, item) =>
+                {
+                    List<MapObject> inv = dropper == _dude?.Dude ? _dudeInventory : dropper.Inventory;
+                    if (!inv.Remove(item)) return;
+                    item.Flags &= ~(MapObject.FlagInRightHand | MapObject.FlagInLeftHand | MapObject.FlagWorn);
+                    item.HexTile = dropper.HexTile;
+                    _map.Elevations[_elevation]?.Objects.Add(item);
+                    OnScriptObjectPlaced(item);
+                },
+                // P101 (Tier D): radiation_inc/dec — the dude radiation counter.
+                RadiationRequested = ApplyRadiation,
                 // First hit of each distinct stub goes to stderr; counts are
                 // dumped per map on exit (gap analysis for wiring externals).
                 OnStubbedExternal = name =>

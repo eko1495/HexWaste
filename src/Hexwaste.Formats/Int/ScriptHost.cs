@@ -213,6 +213,30 @@ public sealed class ScriptHost(GameFileSystem vfs, ScriptList scripts, Hexwaste.
     /// <summary>P63: animate_stand_reverse_obj(obj) — the host plays the object's stand anim.</summary>
     public Action<MapObject>? AnimateStandReverseRequested { get; set; }
 
+    /// <summary>P101 (Tier A): gfade_out/in — the host fades the screen to/from black (true = fade in).</summary>
+    public Action<bool>? ScreenFadeRequested { get; set; }
+
+    /// <summary>P101 (Tier A): play_sfx / reg_anim_play_sfx — the host plays a named sound effect.</summary>
+    public Action<string>? PlaySfxRequested { get; set; }
+
+    /// <summary>P101 (Tier A): animate_stand_obj(obj) — the host plays the object's idle stand anim.</summary>
+    public Action<MapObject>? AnimateStandRequested { get; set; }
+
+    /// <summary>P101 (Tier B): tile_is_visible — the camera-centre tile (viewer camera). Null headless → 0.</summary>
+    public Func<int>? CenterTileProvider { get; set; }
+
+    /// <summary>P101 (Tier C): inven_unwield — the host holsters the critter's wielded weapon.</summary>
+    public Action<MapObject>? InvenUnwieldRequested { get; set; }
+
+    /// <summary>P101 (Tier C): use_obj(obj) — the host runs the object's use_p_proc.</summary>
+    public Action<MapObject>? UseObjRequested { get; set; }
+
+    /// <summary>P101 (Tier C): drop_obj(dropper, item) — the host drops the item from the dropper's inventory.</summary>
+    public Action<MapObject, MapObject>? DropObjRequested { get; set; }
+
+    /// <summary>P101 (Tier D): radiation_inc/dec(obj, ±amount) — the host adjusts the dude's radiation.</summary>
+    public Action<MapObject, int>? RadiationRequested { get; set; }
+
     /// <summary>True during a save/load replay — gates kill_critter_type (interpreter_extra.cc:2384).</summary>
     public Func<bool>? IsLoadingGameProvider { get; set; }
     public bool IsLoadingGame() => IsLoadingGameProvider?.Invoke() ?? false;
@@ -1446,6 +1470,90 @@ public sealed class ScriptHost(GameFileSystem vfs, ScriptList scripts, Hexwaste.
         // P63 (Sierra Army Depot): a tile-object-pid query + a cosmetic stand animation.
         public bool TileContainsObjPid(int tile, int elevation, int pid) =>
             _host.TileContainsObjPidProvider?.Invoke(tile, elevation, pid) ?? false;
+
+        // ---- P101 Tier B (queries) ----
+        public int ItemSubtype(int objectHandle)
+        {
+            if (_host.ObjectOf(objectHandle) is not { } obj || Fid.PidType(obj.Pid) != 0 /* OBJ_TYPE_ITEM */)
+                return -1;                       // null / non-item → -1 (opGetItemType default)
+            if (obj.Pid == 383) return 5;        // the shiv → MISC (item.cc:712 special-case)
+            try { return _host.Protos.Get(obj.Pid).SubType; } catch { return -1; }
+        }
+
+        public int ProtoData(int pid, int member)
+        {
+            Proto.ProtoInfo p;
+            try { p = _host.Protos.Get(pid); } catch { return 0; }
+            switch (member) // universal Proto-header members (same across all object types)
+            {
+                case 0: return p.Pid;            // *_DATA_MEMBER_PID
+                case 3: return p.Fid;            // FID
+                case 6: return p.Flags;          // FLAGS
+                case 7: return p.ExtendedFlags;  // EXTENDED_FLAGS
+            }
+            if (Fid.PidType(pid) == 0) // OBJ_TYPE_ITEM — item-specific members
+                switch (member)
+                {
+                    case 9: return p.SubType;          // ITEM_DATA_MEMBER_TYPE
+                    case 12: return p.Size;            // SIZE
+                    case 13: return p.Weight;          // WEIGHT
+                    case 14: return p.Cost;            // COST
+                    case 15: return p.InventoryFid;    // INVENTORY_FID
+                    case 555: return p.Weapon?.MaxRange1 ?? 0; // WEAPON_RANGE
+                }
+            return 0; // NAME/DESC strings + type-specific/unimplemented members → 0 (documented cut)
+        }
+
+        public int TileIsVisible(int tile)
+        {
+            if (_host.CenterTileProvider is not { } prov) return 0; // headless / no camera → not visible
+            int d = Math.Abs(prov() - tile);
+            return d % 200 < 5 || d / 200 < 5 ? 1 : 0; // tileIsVisible (interpreter_extra.cc:401)
+        }
+
+        public int InvenPtr(int objectHandle, int index)
+        {
+            if (_host.ObjectOf(objectHandle) is not { } obj || index < 0 || index >= obj.Inventory.Count)
+                return 0;
+            return _host.HandleOf(obj.Inventory[index]);
+        }
+
+        // ---- P101 Tier C (object/inventory/script-return) ----
+        /// <summary>scr_return's stored value (opScrReturn). Currently store-only — the engine's
+        /// use_obj_on fallthrough gate change (Overridden → ReturnValue) is a documented deferred item.</summary>
+        public int ReturnValue { get; private set; }
+        public void ScrReturn(int value) => ReturnValue = value;
+
+        public void InvenUnwield() => _host.InvenUnwieldRequested?.Invoke(_self);
+
+        public void UseObj(int objectHandle)
+        {
+            if (_host.ObjectOf(objectHandle) is { } obj)
+                _host.UseObjRequested?.Invoke(obj);
+        }
+
+        public void DropObj(int objectHandle)
+        {
+            if (_host.ObjectOf(objectHandle) is { } item)
+                _host.DropObjRequested?.Invoke(_self, item);
+        }
+
+        // ---- P101 Tier D (radiation) ----
+        public void Radiation(int objectHandle, int amount)
+        {
+            if (_host.ObjectOf(objectHandle) is { } obj)
+                _host.RadiationRequested?.Invoke(obj, amount);
+        }
+
+        public void ScreenFade(bool fadeIn) => _host.ScreenFadeRequested?.Invoke(fadeIn);
+
+        public void PlaySfx(string name) => _host.PlaySfxRequested?.Invoke(name);
+
+        public void AnimateStand(int objectHandle)
+        {
+            if (_host.ObjectOf(objectHandle) is { } obj) // engine falls back to self on null (documented cut, like the reverse twin)
+                _host.AnimateStandRequested?.Invoke(obj);
+        }
 
         public void AnimateStandReverse(int objectHandle)
         {

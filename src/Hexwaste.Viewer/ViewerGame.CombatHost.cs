@@ -501,6 +501,22 @@ public sealed partial class ViewerGame
     /// engine also shows a misc.msg monitor line ("You have been poisoned!") — we apply silently to keep a
     /// copyrighted game string out of the goldens.
     /// </summary>
+    /// <summary>P101 (Tier D): radiation_inc/dec — the dude's radiation counter, ported from fallout2-ce
+    /// src/critter.cc:412 critterAdjustRadiation: DUDE-ONLY, resistance reduces the +amount, clamp ≥0.
+    /// COUNTER-ONLY (makes get_critter_stat(dude,37) + rad-gated dialogue correct); the delayed rad-damage
+    /// band model (thresholds + stat penalties + midnight check) is a documented deferred layer.</summary>
+    private void ApplyRadiation(MapObject obj, int amount)
+    {
+        if (_dude is null || obj != _dude.Dude)
+            return; // critterAdjustRadiation: non-dude returns -1 (no-op)
+        if (amount > 0)
+        {
+            int resist = GetCritterState(obj)?.Stat(31) ?? 0; // STAT_RADIATION_RESISTANCE
+            amount -= amount * resist / 100;
+        }
+        obj.Radiation = Math.Max(0, obj.Radiation + amount);
+    }
+
     private void ApplyPoison(MapObject obj, int amount)
     {
         if (_dude is null || obj != _dude.Dude)

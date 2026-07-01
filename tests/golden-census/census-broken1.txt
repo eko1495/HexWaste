@@ -1,2 +1,1 @@
-procanalyze: map=broken1 scripts=38 defined-procs=254 externals=109 wired=106 stubbed=3
-  stubbed: item_subtype(0x80C9) gfade_out(0x8136) gfade_in(0x8137)
+procanalyze: map=broken1 scripts=38 defined-procs=254 externals=109 wired=109 stubbed=0

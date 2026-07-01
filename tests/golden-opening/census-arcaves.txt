@@ -1,2 +1,1 @@
-procanalyze: map=arcaves scripts=27 defined-procs=63 externals=88 wired=83 stubbed=5
-  stubbed: play_sfx(0x80A3) proto_data(0x8104) gfade_out(0x8136) gfade_in(0x8137) art_anim(0x814A)
+procanalyze: map=arcaves scripts=27 defined-procs=63 externals=88 wired=88 stubbed=0

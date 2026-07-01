@@ -1,2 +1,1 @@
-procanalyze: map=modmain scripts=26 defined-procs=142 externals=110 wired=104 stubbed=6
-  stubbed: play_sfx(0x80A3) item_subtype(0x80C9) animate_stand_obj(0x80CC) use_obj(0x80DB) gfade_out(0x8136) gfade_in(0x8137)
+procanalyze: map=modmain scripts=26 defined-procs=142 externals=110 wired=110 stubbed=0

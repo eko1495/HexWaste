@@ -1,2 +1,1 @@
-procanalyze: map=ncr1 scripts=38 defined-procs=272 externals=111 wired=103 stubbed=8
-  stubbed: play_sfx(0x80A3) item_subtype(0x80C9) use_obj(0x80DB) proto_data(0x8104) gfade_out(0x8136) gfade_in(0x8137) reg_anim_play_sfx(0x813B) sfx_build_char_name(0x813D)
+procanalyze: map=ncr1 scripts=38 defined-procs=272 externals=111 wired=111 stubbed=0

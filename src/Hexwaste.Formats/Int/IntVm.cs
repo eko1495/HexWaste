@@ -376,6 +376,44 @@ public interface IVmExternals
     /// (<paramref name="tile"/>, <paramref name="elevation"/>) has proto <paramref name="pid"/>.</summary>
     bool TileContainsObjPid(int tile, int elevation, int pid) => false;
 
+    /// <summary>P101 (Tier B): item_subtype (0x80C9, opGetItemType) — the ITEM_TYPE of an item object
+    /// (ARMOR=0..KEY=6), MISC(5) for the shiv, or -1 for null/non-item. Default -1.</summary>
+    int ItemSubtype(int objectHandle) => -1;
+
+    /// <summary>P101 (Tier B): proto_data (0x8104, opGetProtoData) — a proto's data member (int). Default 0.</summary>
+    int ProtoData(int pid, int member) => 0;
+
+    /// <summary>P101 (Tier B): tile_is_visible (0x80F8) — crude on-screen proximity to the camera-centre tile.</summary>
+    int TileIsVisible(int tile) => 0;
+
+    /// <summary>P101 (Tier C): inven_cmds cmd==13 — the handle of the object's inventory item at index, or 0.</summary>
+    int InvenPtr(int objectHandle, int index) => 0;
+
+    /// <summary>P101 (Tier C): inven_unwield — the SELF critter holsters its wielded weapon.</summary>
+    void InvenUnwield() { }
+
+    /// <summary>P101 (Tier C): use_obj (0x80DB, opUseObject) — run the object's use_p_proc (single-object use).</summary>
+    void UseObj(int objectHandle) { }
+
+    /// <summary>P101 (Tier C): drop_obj (0x80D7, opDrop) — the SELF drops an item from its inventory to the ground.</summary>
+    void DropObj(int objectHandle) { }
+
+    /// <summary>P101 (Tier C): scr_return — store the running script's return value (consumed by the
+    /// use_obj_on fallthrough gate in the engine). Default no-op.</summary>
+    void ScrReturn(int value) { }
+
+    /// <summary>P101 (Tier D): radiation_inc(+)/radiation_dec(-) — adjust the dude's radiation counter.</summary>
+    void Radiation(int objectHandle, int amount) { }
+
+    /// <summary>P101: gfade_out(false)/gfade_in(true) — screen fade to/from black for a cutscene.</summary>
+    void ScreenFade(bool fadeIn) { }
+
+    /// <summary>P101: play_sfx / reg_anim_play_sfx — play a named sound effect (sound\sfx\&lt;name&gt;.acm).</summary>
+    void PlaySfx(string name) { }
+
+    /// <summary>P101: animate_stand_obj (0x80CC, opAnimateStand) — the object plays its idle STAND anim.</summary>
+    void AnimateStand(int objectHandle) { }
+
     /// <summary>animate_stand_reverse_obj (0x80CD, opAnimateStandReverse): the object plays its
     /// stand animation (reversed in the engine; not in combat).</summary>
     void AnimateStandReverse(int objectHandle) { }
@@ -1107,15 +1145,17 @@ public sealed class IntVm
     {
         0x80A1, 0x80A4, 0x80A6, 0x80A7, 0x80A8, 0x80A9, 0x80AA, 0x80AB, 0x80AC, 0x80AE, 0x80AF, 0x80B0,
         0x80B2, 0x80B4, 0x80B6, 0x80B7, 0x80B8, 0x80B9, 0x80BA, 0x80BB, 0x80BC, 0x80BD, 0x80BE, 0x80BF,
-        0x80C0, 0x80C1, 0x80C2, 0x80C3, 0x80C4, 0x80C5, 0x80C6, 0x80C7, 0x80C8, 0x80CA, 0x80CB, 0x80CD,
-        0x80CE, 0x80CF, 0x80D0, 0x80D2, 0x80D3, 0x80D4, 0x80D5, 0x80D8, 0x80D9, 0x80DA, 0x80DC, 0x80DD,
+        0x80A2, 0x80A3, // scr_return, play_sfx (P101)
+        0x80C0, 0x80C1, 0x80C2, 0x80C3, 0x80C4, 0x80C5, 0x80C6, 0x80C7, 0x80C8, 0x80C9, 0x80CA, 0x80CB, 0x80CC, 0x80CD,
+        0x80CE, 0x80CF, 0x80D0, 0x80D2, 0x80D3, 0x80D4, 0x80D5, 0x80D7, 0x80D8, 0x80D9, 0x80DA, 0x80DB, 0x80DC, 0x80DD,
         0x80DE, 0x80DF, 0x80E1, 0x80E3, 0x80E4, 0x80E5, 0x80E6, 0x80E7, 0x80E8, 0x80E9, 0x80EA, 0x80EB,
-        0x80EC, 0x80ED, 0x80EE, 0x80EF, 0x80F0, 0x80F1, 0x80F2, 0x80F3, 0x80F4, 0x80F5, 0x80F6, 0x80F7,
-        0x80F9, 0x80FA, 0x80FB, 0x80FC, 0x80FF, 0x8100, 0x8101, 0x8102, 0x8103, 0x8105, 0x8106, 0x8107,
-        0x8108, 0x810A, 0x810B, 0x810C, 0x810D, 0x810E, 0x810F, 0x8110, 0x8111, 0x8112, 0x8113, 0x8114,
+        0x80EC, 0x80ED, 0x80EE, 0x80EF, 0x80F0, 0x80F1, 0x80F2, 0x80F3, 0x80F4, 0x80F5, 0x80F6, 0x80F7, 0x80F8,
+        0x80F9, 0x80FA, 0x80FB, 0x80FC, 0x80FD, 0x80FE, 0x80FF, 0x8100, 0x8101, 0x8102, 0x8103, 0x8104, 0x8105, 0x8106, 0x8107,
+        0x8108, 0x8109, 0x810A, 0x810B, 0x810C, 0x810D, 0x810E, 0x810F, 0x8110, 0x8111, 0x8112, 0x8113, 0x8114,
         0x8115, 0x8116, 0x8117, 0x8118, 0x8119, 0x811A, 0x811C, 0x811D, 0x811E, 0x811F, 0x8120, 0x8121,
-        0x8122, 0x8123, 0x8124, 0x8125, 0x8126, 0x8127, 0x8128, 0x8129, 0x812D, 0x812E, 0x812F, 0x8130,
-        0x8131, 0x8132, 0x8133, 0x8134, 0x8138, 0x8139, 0x813C, 0x8143, 0x8145, 0x8146, 0x8147, 0x8148, 0x8149, 0x814B,
+        0x8122, 0x8123, 0x8124, 0x8125, 0x8126, 0x8127, 0x8128, 0x8129, 0x812C, 0x812D, 0x812E, 0x812F, 0x8130,
+        0x8131, 0x8132, 0x8133, 0x8134, 0x8136, 0x8137, 0x8138, 0x8139, 0x813B, 0x813C, 0x813D, 0x8141, 0x8143,
+        0x8145, 0x8146, 0x8147, 0x8148, 0x8149, 0x814A, 0x814B,
         0x814C, 0x814D, 0x814E, 0x8150, 0x8151, 0x8152, 0x8153, 0x8154,
     };
 
@@ -1884,6 +1924,85 @@ public sealed class IntVm
             }
             case 0x80CD: // animate_stand_reverse_obj (opAnimateStandReverse): pops object
                 _externals.AnimateStandReverse(PopInt());
+                break;
+            // ---- P101 (Tier B queries / C object-inv / D radiation): fallout2-ce interpreter_extra.cc ----
+            case 0x80C9: // item_subtype (opGetItemType, :1274): pop obj, push ITEM_TYPE
+                PushInt(_externals.ItemSubtype(PopInt()));
+                break;
+            case 0x8104: // proto_data (opGetProtoData, :2962): pops member FIRST then pid, push value
+            {
+                int pdMember = PopInt();
+                PushInt(_externals.ProtoData(PopInt(), pdMember));
+                break;
+            }
+            case 0x80F8: // tile_is_visible (opTileIsVisible, :2671): pop tile, push 0/1
+                PushInt(_externals.TileIsVisible(PopInt()));
+                break;
+            case 0x8109: // inven_cmds (_op_inven_cmds, :3090): pops index, cmd, obj; cmd==13 → item handle
+            {
+                int icIndex = PopInt();
+                int icCmd = PopInt();
+                int icObj = PopInt();
+                PushInt(icCmd == 13 ? _externals.InvenPtr(icObj, icIndex) : 0);
+                break;
+            }
+            case 0x812C: // inven_unwield (_op_inven_unwield, :4050): pops NOTHING, self holsters its weapon
+                _externals.InvenUnwield();
+                break;
+            case 0x80DB: // use_obj (opUseObject, :1750): pop obj, run its use_p_proc
+                _externals.UseObj(PopInt());
+                break;
+            case 0x80D7: // drop_obj (opDrop, :1597): pop obj, self drops it to the ground
+                _externals.DropObj(PopInt());
+                break;
+            case 0x80A2: // scr_return (opScrReturn, :476): pop value, store the script's return value
+                _externals.ScrReturn(PopInt());
+                break;
+            case 0x80FD: // radiation_inc (opRadiationIncrease, :2779): pops amount FIRST then object
+            {
+                int rAmt = PopInt();
+                _externals.Radiation(PopInt(), rAmt);
+                break;
+            }
+            case 0x80FE: // radiation_dec (opRadiationDecrease, :2794): pops amount FIRST then object; subtracts
+            {
+                int rAmt = PopInt();
+                _externals.Radiation(PopInt(), -rAmt);
+                break;
+            }
+            // ---- P101 (Tier A, cosmetic): ported from fallout2-ce src/interpreter_extra.cc ----
+            case 0x814A: // art_anim (opGetFidAnim): the anim-code byte of a FID (pure bit-op, :4659)
+                PushInt((PopInt() & 0xFF0000) >> 16);
+                break;
+            case 0x8136: // gfade_out (opGameFadeOut, :4172): pop 1, fade to black
+                PopInt();
+                _externals.ScreenFade(fadeIn: false);
+                break;
+            case 0x8137: // gfade_in (opGameFadeIn, :4185): pop 1, fade from black
+                PopInt();
+                _externals.ScreenFade(fadeIn: true);
+                break;
+            case 0x80A3: // play_sfx (opPlaySfx, :490): pop 1 string, play it
+                _externals.PlaySfx(PopString());
+                break;
+            case 0x80CC: // animate_stand_obj (opAnimateStand, :1339): pop 1 object, idle stand anim
+                _externals.AnimateStand(PopInt());
+                break;
+            case 0x813B: // reg_anim_play_sfx (opRegAnimPlaySfx, :4255): pops delay, name, obj — play now (delay/queue dropped)
+            {
+                PopInt();                         // delay
+                string sfx = PopString();         // name
+                PopInt();                         // obj
+                _externals.PlaySfx(sfx);
+                break;
+            }
+            case 0x813D: // sfx_build_char_name (opSfxBuildCharName, :4325): pops extra, anim, obj; pushes the sfx NAME
+                PopInt(); PopInt(); PopInt();     // extra, anim, obj
+                PushString("");                   // name feeds play_sfx only (never branched) — minimal faithful "" (silent)
+                break;
+            case 0x8141: // sfx_build_weapon_name (opSfxBuildWeaponName, :4376): pops target, hitMode, weapon, weaponSfxType; pushes NAME
+                PopInt(); PopInt(); PopInt(); PopInt();
+                PushString("");
                 break;
             default:
             {

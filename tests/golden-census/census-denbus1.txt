@@ -1,2 +1,1 @@
-procanalyze: map=denbus1 scripts=37 defined-procs=220 externals=108 wired=100 stubbed=8
-  stubbed: play_sfx(0x80A3) item_subtype(0x80C9) animate_stand_obj(0x80CC) drop_obj(0x80D7) proto_data(0x8104) inven_cmds(0x8109) gfade_out(0x8136) gfade_in(0x8137)
+procanalyze: map=denbus1 scripts=37 defined-procs=220 externals=108 wired=108 stubbed=0

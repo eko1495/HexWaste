@@ -1,2 +1,1 @@
-procanalyze: map=navarro scripts=49 defined-procs=105 externals=105 wired=102 stubbed=3
-  stubbed: proto_data(0x8104) gfade_out(0x8136) gfade_in(0x8137)
+procanalyze: map=navarro scripts=49 defined-procs=105 externals=105 wired=105 stubbed=0
