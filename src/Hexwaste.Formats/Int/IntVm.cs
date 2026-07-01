@@ -206,6 +206,10 @@ public interface IVmExternals
     /// <summary>endgame_movie (opEndgameMovie): the host runs the endgame "movie" (credits scroll) directly.</summary>
     void EndgameMovie() { }
 
+    /// <summary>game_ui_disable / game_ui_enable (opGameUiDisable/Enable): lock/unlock the player interface
+    /// for a scripted cutscene (e.g. a New Reno prizefight round). Default no-op (headless has no live UI).</summary>
+    void GameUiEnabled(bool enabled) { }
+
     /// <summary>critter_damage (opCritterDamage → actionDamage): flag 0x100 =
     /// bypass armor, 0x200 = no animation; low bits = damage type.</summary>
     void CritterDamage(int objectHandle, int amount, int damageTypeWithFlags) { }
@@ -1111,7 +1115,7 @@ public sealed class IntVm
         0x8108, 0x810A, 0x810B, 0x810C, 0x810D, 0x810E, 0x810F, 0x8110, 0x8111, 0x8112, 0x8113, 0x8114,
         0x8115, 0x8116, 0x8117, 0x8118, 0x8119, 0x811A, 0x811C, 0x811D, 0x811E, 0x811F, 0x8120, 0x8121,
         0x8122, 0x8123, 0x8124, 0x8125, 0x8126, 0x8127, 0x8128, 0x8129, 0x812D, 0x812E, 0x812F, 0x8130,
-        0x8131, 0x8132, 0x8138, 0x8139, 0x813C, 0x8143, 0x8145, 0x8146, 0x8147, 0x8148, 0x8149, 0x814B,
+        0x8131, 0x8132, 0x8133, 0x8134, 0x8138, 0x8139, 0x813C, 0x8143, 0x8145, 0x8146, 0x8147, 0x8148, 0x8149, 0x814B,
         0x814C, 0x814D, 0x814E, 0x8150, 0x8151, 0x8152, 0x8153, 0x8154,
     };
 
@@ -1389,6 +1393,12 @@ public sealed class IntVm
                 break;
             case 0x8115: // play_gmovie
                 _externals.PlayMovie(PopInt());
+                break;
+            case 0x8133: // game_ui_disable — ported from fallout2-ce src/interpreter_extra.cc opGameUiDisable
+                _externals.GameUiEnabled(false);
+                break;
+            case 0x8134: // game_ui_enable — ported from fallout2-ce src/interpreter_extra.cc opGameUiEnable
+                _externals.GameUiEnabled(true);
                 break;
             case 0x8146: // endgame_slideshow — ported from fallout2-ce src/interpreter_extra.cc opEndgameSlideshow
                 _externals.EndgameSlideshow();

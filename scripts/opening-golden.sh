@@ -26,6 +26,9 @@ SCENARIOS=(
   "census-arvillag|census|--map arvillag.map"
   "census-argarden|census|--map argarden.map"
   "census-arbridge|census|--map arbridge.map"
+  # P101 (bucket 1b): New Reno — locks the prizefight-adjacent wired-external count (game_ui_disable/enable
+  # now wired → stubbed dropped 11→9). Regression net for New Reno's remaining (cosmetic) stub surface.
+  "census-newr2|census|--map Newr2.map"
   "mapupdate-artemple|viewer|--map artemple.map --map-update-probe --rng-seed 1"
   "mapupdate-arvillag|viewer|--map arvillag.map --map-update-probe --rng-seed 1"
   "chain-opening|viewer|--map artemple.map --goto-map arcaves.map --goto-map arvillag.map --goto-map argarden.map --goto-map arbridge.map --rng-seed 1"

@@ -190,6 +190,10 @@ public sealed class ScriptHost(GameFileSystem vfs, ScriptList scripts, Hexwaste.
     /// <summary>P100 (Point 1): endgame_movie — the host runs the endgame "movie" (credits) directly.</summary>
     public Action? EndgameMovieRequested { get; set; }
 
+    /// <summary>P101 (bucket 1b): game_ui_disable(false)/enable(true) — lock/unlock the player interface for a
+    /// scripted cutscene (New Reno prizefight rounds). Null until the viewer wires it.</summary>
+    public Action<bool>? GameUiEnabledRequested { get; set; }
+
     /// <summary>P57: set_exit_grids(elevation, destMap, destElevation, destTile) — the host retargets
     /// the exit-grid objects on an elevation.</summary>
     public Action<int, int, int, int>? SetExitGridsRequested { get; set; }
@@ -1636,6 +1640,8 @@ public sealed class ScriptHost(GameFileSystem vfs, ScriptList scripts, Hexwaste.
         public void EndgameSlideshow() => _host.EndgameSlideshowRequested?.Invoke();
 
         public void EndgameMovie() => _host.EndgameMovieRequested?.Invoke();
+
+        public void GameUiEnabled(bool enabled) => _host.GameUiEnabledRequested?.Invoke(enabled);
 
         public void PartyAdd(int objectHandle)
         {

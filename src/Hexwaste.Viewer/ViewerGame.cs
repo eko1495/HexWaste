@@ -158,6 +158,10 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
 
     private enum MenuState { None, Title, CharacterPick, CreateStats, CreateTraits, CreateTags, Credits, Endgame }
 
+    /// <summary>P101 (bucket 1b): game_ui_disable/enable — a scripted cutscene (New Reno prizefight round)
+    /// locks player input. Set via ScriptHost.GameUiEnabledRequested; gated in the live input handler.</summary>
+    private bool _gameUiDisabled;
+
     private MenuState _menu = MenuState.None;
     private int _menuIndex;
     private List<(string Label, string VirtualPath)> _premadeGcds = [];
@@ -1239,6 +1243,8 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
                 MoviePlayed = movieId => ShowMovieCard(movieId),
                 EndgameSlideshowRequested = ShowEndgameSlideshow,
                 EndgameMovieRequested = ShowEndgameMovie,
+                GameUiEnabledRequested = enabled => _gameUiDisabled = !enabled, // P101: cutscene input-lock
+
                 CritterDamaged = (victim, amount, bypassArmor) => OnScriptDamage(victim, amount, bypassArmor),
                 PartyChanged = (critter, joined) => OnPartyChanged(critter, joined),
                 AnimBusyResolver = obj => _animator.TryGetState(obj, out _)
@@ -2374,8 +2380,8 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
             CloseActionMenu();
 
         // Click: doors toggle, stairs/ladders travel, other objects identify,
-        // open ground walks.
-        if (!_debugForceActionMenu && mouse.LeftButton == ButtonState.Pressed && _previousMouse.LeftButton == ButtonState.Released)
+        // open ground walks. Suppressed while a script locked the UI for a cutscene (P101 game_ui_disable).
+        if (!_debugForceActionMenu && !_gameUiDisabled && mouse.LeftButton == ButtonState.Pressed && _previousMouse.LeftButton == ButtonState.Released)
         {
             // P82-M6: the action menu (opened via right-click) consumes the left click first — pick
             // an item, or close if the click misses the menu.

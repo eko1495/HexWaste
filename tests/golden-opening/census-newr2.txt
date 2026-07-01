@@ -1,0 +1,2 @@
+procanalyze: map=Newr2 scripts=57 defined-procs=205 externals=119 wired=110 stubbed=9
+  stubbed: scr_return(0x80A2) play_sfx(0x80A3) item_subtype(0x80C9) animate_stand_obj(0x80CC) inven_unwield(0x812C) gfade_out(0x8136) gfade_in(0x8137) reg_anim_play_sfx(0x813B) sfx_build_char_name(0x813D)
