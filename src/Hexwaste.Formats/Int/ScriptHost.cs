@@ -847,6 +847,26 @@ public sealed class ScriptHost(GameFileSystem vfs, ScriptList scripts, Hexwaste.
     }
 
     /// <summary>
+    /// P105: run map-EXIT scripts like fallout2-ce scripts.cc scriptsExecMapExitScripts()
+    /// (SCRIPT_PROC_MAP_EXIT = 16): the MAP script's map_exit_p_proc first, then every scripted
+    /// object's, when the dude LEAVES the map. This is how escort quests complete — the escort NPC's
+    /// map_exit_p_proc (its leave_player procedure) fires when the dude walks the follower out, setting the
+    /// quest GVAR (Rescue Smiley 197, Rescue Torr 391). Mirrors RunMapUpdate; map_exit takes no fixed param.
+    /// </summary>
+    public void RunMapExit(MapFile map, IEnumerable<MapObject> objects, MapObject? dude)
+    {
+        if (map.Header.ScriptIndex > 0)
+        {
+            var record = new MapScriptRecord(map.Header.ScriptIndex - 1, -1, 0);
+            RunProc(record.ScriptListIndex, map, sid: -2, record, SynthMapScriptOwner(), dude,
+                fixedParam: 0, -1, ["map_exit_p_proc"]);
+        }
+
+        foreach (MapObject obj in objects.ToList())
+            RunObjectProc(obj, map, dude, 0, -1, "map_exit_p_proc");
+    }
+
+    /// <summary>
     /// P100 (Point 3): the map-script combat_p_proc "combat over" hook, ported from fallout2-ce
     /// src/scripts.cc:2848 _scr_end_combat(): when the dude is knocked out (not killed) in combat, run the
     /// MAP script's combat_p_proc with fixedParam = the team that KO'd the dude, and report whether it
@@ -967,6 +987,20 @@ public sealed class ScriptHost(GameFileSystem vfs, ScriptList scripts, Hexwaste.
 
         _localVarSlices[(map.Header.Name, sid)] = slice;
         return slice;
+    }
+
+    /// <summary>P105 (test aid): directly set a scripted object's local var (e.g. an escort NPC's follow
+    /// flag) so a later map_exit_p_proc / other proc reads it — mirrors set_local_var without running a
+    /// script. Returns false if the object has no script or the index is out of range.</summary>
+    public bool SetObjectLocalVar(MapFile map, MapObject obj, int index, int value)
+    {
+        if (obj.Sid == -1 || !map.ScriptsBySid.TryGetValue(obj.Sid, out MapScriptRecord? record))
+            return false;
+        int[] slice = GetLocalVarSlice(map, obj.Sid, record);
+        if (index < 0 || index >= slice.Length)
+            return false;
+        slice[index] = value;
+        return true;
     }
 
     /// <summary>Clears the object handle table — call on map transitions

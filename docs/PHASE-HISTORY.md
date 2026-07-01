@@ -866,3 +866,22 @@ Hexwaste (grep found no leave_player / escort-exit handling anywhere; no talk pa
 genuine engine gap, not a test gap — a faithful escort e2e needs the follower-on-exit-grid → leave_player
 mechanism wired first (a real feature: temporary escort follower + exit-grid crossing detection + the
 leave_player proc). Not faked.
+---
+
+Phase 106 (DONE — "Escort-completion mechanism"): wired map_exit_p_proc (SCRIPT_PROC_MAP_EXIT=16), the
+engine hook escort quests complete through. ScriptHost.RunMapExit (mirrors RunMapUpdate — the map script's
+map_exit_p_proc then every scripted object's) is now called on map-LEAVE in LoadMap (before party extraction,
+so an escorting NPC's proc runs while it's still on the map); ported from fallout2-ce scripts.cc
+scriptsExecMapExitScripts. Previously unwired (a documented engine-wide residual). GROUNDED by disassembling
+KCSmiley (Rescue Smiley, GVAR 197): its map_exit_p_proc (proc 46) conditionally calls leave_player (proc 14,
+sets 197=2) ONLY when a checkPartyMembersNearDoor tile-proximity test passes — i.e. the escorted follower is
+positioned at an exit grid. So the escort completion is faithfully POSITION-GATED. Verified: entering+leaving
+klatoxcv without the escort does NOT fire 197 (the gate holds); all 16 combat + opening + quest goldens
+byte-identical (map_exit procs on transitioned maps are gated/inert). Also added --set-local <hex> <index>
+<value> (ScriptHost.SetObjectLocalVar) — a test aid to set a scripted object's local var (e.g. an escort
+follow flag), and the cross-elevation critter search it needs.
+HONEST LIMIT: a full headless escort e2e GOLDEN is not achievable — map_exit_p_proc position-gates on the
+follower being near the exit grid, and the headless harness does not simulate the follower's live walk to the
+exit (no follow-movement/pathing). In LIVE play (the follower walks out with the dude) the escort quests now
+complete. Not faked into a passing test. Wiring the follow-movement simulation (temporary escort follower that
+paths to the dude + reaches the exit) is the remaining piece for a headless escort golden.

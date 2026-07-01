@@ -265,6 +265,12 @@ for (int i = 0; i < args.Length; i++)
             actions.Add(new ViewerGame.StartupAction.SetGlobal(int.Parse(args[i + 1]), int.Parse(args[i + 2])));
             i += 2;
             break;
+        case "--set-local" when i + 3 < args.Length:
+            // P105: set the local var [index]=value on the scripted object at <hex> (e.g. an escort follow flag).
+            actions.Add(new ViewerGame.StartupAction.SetLocal(
+                int.Parse(args[i + 1]), int.Parse(args[i + 2]), int.Parse(args[i + 3])));
+            i += 3;
+            break;
         case "--talk-seq" when i + 2 < args.Length:
             // --talk-seq <hex> <c1,c2,...>: talk to the critter at hex, auto-pick the
             // 1-based choices. Repeatable; multiple share the session GVAR dict so a

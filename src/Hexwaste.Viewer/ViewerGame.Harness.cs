@@ -1574,6 +1574,24 @@ public sealed partial class ViewerGame
                         Console.WriteLine($"set-global: GVAR{gid} = {gval}");
                     }
                     break;
+                case StartupAction.SetLocal(var slHex, var slIndex, var slValue):
+                {
+                    // P105: set a scripted object's local var (e.g. an escort NPC's follow flag) so its
+                    // map_exit_p_proc reads it — proves the escort-completion mechanism deterministically
+                    // without reverse-engineering the gated follow dialogue.
+                    // Search ALL elevations (escort NPCs may sit off the dude's spawn elevation).
+                    MapObject? slObj = null;
+                    for (int slE = 0; slE < _solidObjects.Length && slObj is null; slE++)
+                        slObj = _solidObjects[slE].Concat(_flatObjects[slE])
+                            .FirstOrDefault(o => o.HexTile == slHex && Fid.Type(o.Fid) is ObjectType.Critter);
+                    bool slOk = slObj is not null && _map is not null
+                        && (_scriptHost?.SetObjectLocalVar(_map, slObj, slIndex, slValue) ?? false);
+                    int slSid = slObj?.Sid ?? -99;
+                    bool slInMap = slObj is not null && _map is not null && _map.ScriptsBySid.ContainsKey(slSid);
+                    Console.WriteLine($"set-local: hex={slHex} found={(slObj is not null ? 1 : 0)} sid={slSid}"
+                        + $" inScriptsBySid={(slInMap ? 1 : 0)} lvar[{slIndex}]={slValue} ok={(slOk ? 1 : 0)}");
+                    break;
+                }
                 case StartupAction.TalkChoose(var tcHex, var tcChoices):
                 {
                     MapObject? npc = CritterAt(tcHex);

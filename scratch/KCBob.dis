@@ -1,0 +1,3667 @@
+### KCBob.int  16678b code@0xb8e procs=55
+PROCS: 0:.............., 1:checkPartyMembersNearDoor, 2:start, 3:critter_p_proc, 4:pickup_p_proc, 5:talk_p_proc, 6:destroy_p_proc, 7:look_at_p_proc, 8:description_p_proc, 9:use_skill_on_p_proc, 10:damage_p_proc, 11:map_enter_p_proc, 12:push_p_proc, 13:Node910, 14:Node920, 15:Node950, 16:Node955, 17:Node995, 18:Node996, 19:Node997, 20:Node998, 21:Node999, 22:Node001, 23:Node002, 24:Node003, 25:Node004, 26:Node005, 27:Node006, 28:Node007, 29:Node008, 30:Node009, 31:Node010, 32:Node011, 33:Node012, 34:Node013, 35:Node014, 36:Node015, 37:Node016, 38:Node017, 39:Node018, 40:Node019, 41:Node020, 42:Node021, 43:Node022, 44:Node023, 45:Node024, 46:Node025, 47:Node026, 48:Node027, 49:Node028, 50:Node029, 51:Node030, 52:Node031, 53:Node032, 54:Node040
+
+--- proc 0 ..............  [0xc48,0xc48) ---
+
+--- proc 1 checkPartyMembersNearDoor  [0xc48,0x11ec) ---
+  0x0c48: push_base
+  0x0c4a: push int 3216
+  0x0c50: push int 16777278
+  0x0c56: party_member_obj
+  0x0c58: push int 0
+  0x0c5e: not_equal
+  0x0c60: if
+  0x0c62: push int 3216
+  0x0c68: self_obj
+  0x0c6a: push int 16777278
+  0x0c70: party_member_obj
+  0x0c72: tile_distance_objs
+  0x0c74: push int 5
+  0x0c7a: less_than_equal
+  0x0c7c: if
+  0x0c7e: push int 1
+  0x0c84: d_to_a
+  0x0c86: swapa
+  0x0c88: pop_to_base
+  0x0c8a: pop_base
+  0x0c8c: a_to_d
+  0x0c8e: pop_return
+  0x0c90: push int 3286
+  0x0c96: push int 16777376
+  0x0c9c: party_member_obj
+  0x0c9e: push int 0
+  0x0ca4: not_equal
+  0x0ca6: if
+  0x0ca8: push int 3286
+  0x0cae: self_obj
+  0x0cb0: push int 16777376
+  0x0cb6: party_member_obj
+  0x0cb8: tile_distance_objs
+  0x0cba: push int 5
+  0x0cc0: less_than_equal
+  0x0cc2: if
+  0x0cc4: push int 1
+  0x0cca: d_to_a
+  0x0ccc: swapa
+  0x0cce: pop_to_base
+  0x0cd0: pop_base
+  0x0cd2: a_to_d
+  0x0cd4: pop_return
+  0x0cd6: push int 3356
+  0x0cdc: push int 16777377
+  0x0ce2: party_member_obj
+  0x0ce4: push int 0
+  0x0cea: not_equal
+  0x0cec: if
+  0x0cee: push int 3356
+  0x0cf4: self_obj
+  0x0cf6: push int 16777377
+  0x0cfc: party_member_obj
+  0x0cfe: tile_distance_objs
+  0x0d00: push int 5
+  0x0d06: less_than_equal
+  0x0d08: if
+  0x0d0a: push int 1
+  0x0d10: d_to_a
+  0x0d12: swapa
+  0x0d14: pop_to_base
+  0x0d16: pop_base
+  0x0d18: a_to_d
+  0x0d1a: pop_return
+  0x0d1c: push int 3426
+  0x0d22: push int 16777305
+  0x0d28: party_member_obj
+  0x0d2a: push int 0
+  0x0d30: not_equal
+  0x0d32: if
+  0x0d34: push int 3426
+  0x0d3a: self_obj
+  0x0d3c: push int 16777305
+  0x0d42: party_member_obj
+  0x0d44: tile_distance_objs
+  0x0d46: push int 5
+  0x0d4c: less_than_equal
+  0x0d4e: if
+  0x0d50: push int 1
+  0x0d56: d_to_a
+  0x0d58: swapa
+  0x0d5a: pop_to_base
+  0x0d5c: pop_base
+  0x0d5e: a_to_d
+  0x0d60: pop_return
+  0x0d62: push int 3496
+  0x0d68: push int 16777313
+  0x0d6e: party_member_obj
+  0x0d70: push int 0
+  0x0d76: not_equal
+  0x0d78: if
+  0x0d7a: push int 3496
+  0x0d80: self_obj
+  0x0d82: push int 16777313
+  0x0d88: party_member_obj
+  0x0d8a: tile_distance_objs
+  0x0d8c: push int 5
+  0x0d92: less_than_equal
+  0x0d94: if
+  0x0d96: push int 1
+  0x0d9c: d_to_a
+  0x0d9e: swapa
+  0x0da0: pop_to_base
+  0x0da2: pop_base
+  0x0da4: a_to_d
+  0x0da6: pop_return
+  0x0da8: push int 3566
+  0x0dae: push int 16777323
+  0x0db4: party_member_obj
+  0x0db6: push int 0
+  0x0dbc: not_equal
+  0x0dbe: if
+  0x0dc0: push int 3566
+  0x0dc6: self_obj
+  0x0dc8: push int 16777323
+  0x0dce: party_member_obj
+  0x0dd0: tile_distance_objs
+  0x0dd2: push int 5
+  0x0dd8: less_than_equal
+  0x0dda: if
+  0x0ddc: push int 1
+  0x0de2: d_to_a
+  0x0de4: swapa
+  0x0de6: pop_to_base
+  0x0de8: pop_base
+  0x0dea: a_to_d
+  0x0dec: pop_return
+  0x0dee: push int 3636
+  0x0df4: push int 16777352
+  0x0dfa: party_member_obj
+  0x0dfc: push int 0
+  0x0e02: not_equal
+  0x0e04: if
+  0x0e06: push int 3636
+  0x0e0c: self_obj
+  0x0e0e: push int 16777352
+  0x0e14: party_member_obj
+  0x0e16: tile_distance_objs
+  0x0e18: push int 5
+  0x0e1e: less_than_equal
+  0x0e20: if
+  0x0e22: push int 1
+  0x0e28: d_to_a
+  0x0e2a: swapa
+  0x0e2c: pop_to_base
+  0x0e2e: pop_base
+  0x0e30: a_to_d
+  0x0e32: pop_return
+  0x0e34: push int 3706
+  0x0e3a: push int 16777378
+  0x0e40: party_member_obj
+  0x0e42: push int 0
+  0x0e48: not_equal
+  0x0e4a: if
+  0x0e4c: push int 3706
+  0x0e52: self_obj
+  0x0e54: push int 16777378
+  0x0e5a: party_member_obj
+  0x0e5c: tile_distance_objs
+  0x0e5e: push int 5
+  0x0e64: less_than_equal
+  0x0e66: if
+  0x0e68: push int 1
+  0x0e6e: d_to_a
+  0x0e70: swapa
+  0x0e72: pop_to_base
+  0x0e74: pop_base
+  0x0e76: a_to_d
+  0x0e78: pop_return
+  0x0e7a: push int 3776
+  0x0e80: push int 16777368
+  0x0e86: party_member_obj
+  0x0e88: push int 0
+  0x0e8e: not_equal
+  0x0e90: if
+  0x0e92: push int 3776
+  0x0e98: self_obj
+  0x0e9a: push int 16777368
+  0x0ea0: party_member_obj
+  0x0ea2: tile_distance_objs
+  0x0ea4: push int 5
+  0x0eaa: less_than_equal
+  0x0eac: if
+  0x0eae: push int 1
+  0x0eb4: d_to_a
+  0x0eb6: swapa
+  0x0eb8: pop_to_base
+  0x0eba: pop_base
+  0x0ebc: a_to_d
+  0x0ebe: pop_return
+  0x0ec0: push int 3846
+  0x0ec6: push int 16777379
+  0x0ecc: party_member_obj
+  0x0ece: push int 0
+  0x0ed4: not_equal
+  0x0ed6: if
+  0x0ed8: push int 3846
+  0x0ede: self_obj
+  0x0ee0: push int 16777379
+  0x0ee6: party_member_obj
+  0x0ee8: tile_distance_objs
+  0x0eea: push int 5
+  0x0ef0: less_than_equal
+  0x0ef2: if
+  0x0ef4: push int 1
+  0x0efa: d_to_a
+  0x0efc: swapa
+  0x0efe: pop_to_base
+  0x0f00: pop_base
+  0x0f02: a_to_d
+  0x0f04: pop_return
+  0x0f06: push int 3916
+  0x0f0c: push int 16777380
+  0x0f12: party_member_obj
+  0x0f14: push int 0
+  0x0f1a: not_equal
+  0x0f1c: if
+  0x0f1e: push int 3916
+  0x0f24: self_obj
+  0x0f26: push int 16777380
+  0x0f2c: party_member_obj
+  0x0f2e: tile_distance_objs
+  0x0f30: push int 5
+  0x0f36: less_than_equal
+  0x0f38: if
+  0x0f3a: push int 1
+  0x0f40: d_to_a
+  0x0f42: swapa
+  0x0f44: pop_to_base
+  0x0f46: pop_base
+  0x0f48: a_to_d
+  0x0f4a: pop_return
+  0x0f4c: push int 3986
+  0x0f52: push int 16777295
+  0x0f58: party_member_obj
+  0x0f5a: push int 0
+  0x0f60: not_equal
+  0x0f62: if
+  0x0f64: push int 3986
+  0x0f6a: self_obj
+  0x0f6c: push int 16777295
+  0x0f72: party_member_obj
+  0x0f74: tile_distance_objs
+  0x0f76: push int 5
+  0x0f7c: less_than_equal
+  0x0f7e: if
+  0x0f80: push int 1
+  0x0f86: d_to_a
+  0x0f88: swapa
+  0x0f8a: pop_to_base
+  0x0f8c: pop_base
+  0x0f8e: a_to_d
+  0x0f90: pop_return
+  0x0f92: push int 4056
+  0x0f98: push int 16777381
+  0x0f9e: party_member_obj
+  0x0fa0: push int 0
+  0x0fa6: not_equal
+  0x0fa8: if
+  0x0faa: push int 4056
+  0x0fb0: self_obj
+  0x0fb2: push int 16777381
+  0x0fb8: party_member_obj
+  0x0fba: tile_distance_objs
+  0x0fbc: push int 5
+  0x0fc2: less_than_equal
+  0x0fc4: if
+  0x0fc6: push int 1
+  0x0fcc: d_to_a
+  0x0fce: swapa
+  0x0fd0: pop_to_base
+  0x0fd2: pop_base
+  0x0fd4: a_to_d
+  0x0fd6: pop_return
+  0x0fd8: push int 4126
+  0x0fde: push int 16777407
+  0x0fe4: party_member_obj
+  0x0fe6: push int 0
+  0x0fec: not_equal
+  0x0fee: if
+  0x0ff0: push int 4126
+  0x0ff6: self_obj
+  0x0ff8: push int 16777407
+  0x0ffe: party_member_obj
+  0x1000: tile_distance_objs
+  0x1002: push int 5
+  0x1008: less_than_equal
+  0x100a: if
+  0x100c: push int 1
+  0x1012: d_to_a
+  0x1014: swapa
+  0x1016: pop_to_base
+  0x1018: pop_base
+  0x101a: a_to_d
+  0x101c: pop_return
+  0x101e: push int 4196
+  0x1024: push int 16777411
+  0x102a: party_member_obj
+  0x102c: push int 0
+  0x1032: not_equal
+  0x1034: if
+  0x1036: push int 4196
+  0x103c: self_obj
+  0x103e: push int 16777411
+  0x1044: party_member_obj
+  0x1046: tile_distance_objs
+  0x1048: push int 5
+  0x104e: less_than_equal
+  0x1050: if
+  0x1052: push int 1
+  0x1058: d_to_a
+  0x105a: swapa
+  0x105c: pop_to_base
+  0x105e: pop_base
+  0x1060: a_to_d
+  0x1062: pop_return
+  0x1064: push int 4266
+  0x106a: push int 16777412
+  0x1070: party_member_obj
+  0x1072: push int 0
+  0x1078: not_equal
+  0x107a: if
+  0x107c: push int 4266
+  0x1082: self_obj
+  0x1084: push int 16777412
+  0x108a: party_member_obj
+  0x108c: tile_distance_objs
+  0x108e: push int 5
+  0x1094: less_than_equal
+  0x1096: if
+  0x1098: push int 1
+  0x109e: d_to_a
+  0x10a0: swapa
+  0x10a2: pop_to_base
+  0x10a4: pop_base
+  0x10a6: a_to_d
+  0x10a8: pop_return
+  0x10aa: push int 4336
+  0x10b0: push int 16777413
+  0x10b6: party_member_obj
+  0x10b8: push int 0
+  0x10be: not_equal
+  0x10c0: if
+  0x10c2: push int 4336
+  0x10c8: self_obj
+  0x10ca: push int 16777413
+  0x10d0: party_member_obj
+  0x10d2: tile_distance_objs
+  0x10d4: push int 5
+  0x10da: less_than_equal
+  0x10dc: if
+  0x10de: push int 1
+  0x10e4: d_to_a
+  0x10e6: swapa
+  0x10e8: pop_to_base
+  0x10ea: pop_base
+  0x10ec: a_to_d
+  0x10ee: pop_return
+  0x10f0: push int 4406
+  0x10f6: push int 16777481
+  0x10fc: party_member_obj
+  0x10fe: push int 0
+  0x1104: not_equal
+  0x1106: if
+  0x1108: push int 4406
+  0x110e: self_obj
+  0x1110: push int 16777481
+  0x1116: party_member_obj
+  0x1118: tile_distance_objs
+  0x111a: push int 5
+  0x1120: less_than_equal
+  0x1122: if
+  0x1124: push int 1
+  0x112a: d_to_a
+  0x112c: swapa
+  0x112e: pop_to_base
+  0x1130: pop_base
+  0x1132: a_to_d
+  0x1134: pop_return
+  0x1136: push int 4476
+  0x113c: push int 16777558
+  0x1142: party_member_obj
+  0x1144: push int 0
+  0x114a: not_equal
+  0x114c: if
+  0x114e: push int 4476
+  0x1154: self_obj
+  0x1156: push int 16777558
+  0x115c: party_member_obj
+  0x115e: tile_distance_objs
+  0x1160: push int 5
+  0x1166: less_than_equal
+  0x1168: if
+  0x116a: push int 1
+  0x1170: d_to_a
+  0x1172: swapa
+  0x1174: pop_to_base
+  0x1176: pop_base
+  0x1178: a_to_d
+  0x117a: pop_return
+  0x117c: push int 4546
+  0x1182: push int 16777600
+  0x1188: party_member_obj
+  0x118a: push int 0
+  0x1190: not_equal
+  0x1192: if
+  0x1194: push int 4546
+  0x119a: self_obj
+  0x119c: push int 16777600
+  0x11a2: party_member_obj
+  0x11a4: tile_distance_objs
+  0x11a6: push int 5
+  0x11ac: less_than_equal
+  0x11ae: if
+  0x11b0: push int 1
+  0x11b6: d_to_a
+  0x11b8: swapa
+  0x11ba: pop_to_base
+  0x11bc: pop_base
+  0x11be: a_to_d
+  0x11c0: pop_return
+  0x11c2: push int 0
+  0x11c8: d_to_a
+  0x11ca: swapa
+  0x11cc: pop_to_base
+  0x11ce: pop_base
+  0x11d0: a_to_d
+  0x11d2: pop_return
+  0x11d4: push int 0
+  0x11da: d_to_a
+  0x11dc: swapa
+  0x11de: pop_to_base
+  0x11e0: pop_base
+  0x11e2: a_to_d
+  0x11e4: pop_return
+  0x11e6: pop_to_base
+  0x11e8: pop_base
+  0x11ea: pop_return
+
+--- proc 2 start  [0x11ec,0x1206) ---
+  0x11ec: push_base
+  0x11ee: push int 0
+  0x11f4: d_to_a
+  0x11f6: swapa
+  0x11f8: pop_to_base
+  0x11fa: pop_base
+  0x11fc: a_to_d
+  0x11fe: pop_return
+  0x1200: pop_to_base
+  0x1202: pop_base
+  0x1204: pop_return
+
+--- proc 3 critter_p_proc  [0x1206,0x127c) ---
+  0x1206: push_base
+  0x1208: push int 4708
+  0x120e: push int 5
+  0x1214: get_local_var
+  0x1216: push int 2
+  0x121c: equal
+  0x121e: self_obj
+  0x1220: opGetDude
+  0x1222: obj_can_see_obj
+  0x1224: and
+  0x1226: if
+  0x1228: push int 5
+  0x122e: push int 1
+  0x1234: set_local_var   <== [int:5 | int:1]
+  0x1236: opGetDude
+  0x1238: push int 0
+  0x123e: push int 1
+  0x1244: push int 0
+  0x124a: push int 0
+  0x1250: push int 30000
+  0x1256: push int 0
+  0x125c: push int 0
+  0x1262: attack
+  0x1264: push int 0
+  0x126a: d_to_a
+  0x126c: swapa
+  0x126e: pop_to_base
+  0x1270: pop_base
+  0x1272: a_to_d
+  0x1274: pop_return
+  0x1276: pop_to_base
+  0x1278: pop_base
+  0x127a: pop_return
+
+--- proc 4 pickup_p_proc  [0x127c,0x12b2) ---
+  0x127c: push_base
+  0x127e: push int 4762
+  0x1284: source_obj
+  0x1286: opGetDude
+  0x1288: equal
+  0x128a: if
+  0x128c: push int 5
+  0x1292: push int 2
+  0x1298: set_local_var   <== [int:5 | int:2]
+  0x129a: push int 0
+  0x12a0: d_to_a
+  0x12a2: swapa
+  0x12a4: pop_to_base
+  0x12a6: pop_base
+  0x12a8: a_to_d
+  0x12aa: pop_return
+  0x12ac: pop_to_base
+  0x12ae: pop_base
+  0x12b0: pop_return
+
+--- proc 5 talk_p_proc  [0x12b2,0x2340) ---
+  0x12b2: push_base
+  0x12b4: push int 4882
+  0x12ba: push int 2
+  0x12c0: get_local_var
+  0x12c2: push int 0
+  0x12c8: equal
+  0x12ca: if
+  0x12cc: push int 2
+  0x12d2: push int 1
+  0x12d8: set_local_var   <== [int:2 | int:1]
+  0x12da: push int 3
+  0x12e0: opGetDude
+  0x12e2: push int 3
+  0x12e8: get_critter_stat
+  0x12ea: self_obj
+  0x12ec: push int 3
+  0x12f2: get_critter_stat
+  0x12f4: sub
+  0x12f6: push int 5
+  0x12fc: mul
+  0x12fe: set_local_var   <== []
+  0x1300: push sstr "@6"
+  0x1306: push int 3
+  0x130c: get_local_var
+  0x130e: add
+  0x1310: debug_msg
+  0x1312: push int 0
+  0x1318: push int 19
+  0x131e: store_global
+  0x1320: push int 0
+  0x1326: push int 0
+  0x132c: set_local_var   <== [int:0 | int:19 | int:0 | int:0]
+  0x132e: push sstr "@26"
+  0x1334: push int 0
+  0x133a: get_local_var
+  0x133c: add
+  0x133e: debug_msg
+  0x1340: push int 4984
+  0x1346: push int 24
+  0x134c: fetch_global
+  0x134e: push int 0
+  0x1354: greater_than_equal
+  0x1356: if
+  0x1358: push int 24
+  0x135e: fetch_global
+  0x1360: push int 1000
+  0x1366: div
+  0x1368: push int 24
+  0x136e: store_global
+  0x1370: push int 5028
+  0x1376: jump
+  0x1378: push int 1
+  0x137e: negate
+  0x1380: push int 1
+  0x1386: negate
+  0x1388: push int 24
+  0x138e: fetch_global
+  0x1390: mul
+  0x1392: push int 1000
+  0x1398: div
+  0x139a: mul
+  0x139c: push int 24
+  0x13a2: store_global
+  0x13a4: push int 5084
+  0x13aa: push int 48
+  0x13b0: get_global_var
+  0x13b2: push int 0
+  0x13b8: greater_than_equal
+  0x13ba: if
+  0x13bc: push int 48
+  0x13c2: get_global_var
+  0x13c4: push int 2
+  0x13ca: div
+  0x13cc: push int 23
+  0x13d2: store_global
+  0x13d4: push int 5128
+  0x13da: jump
+  0x13dc: push int 1
+  0x13e2: negate
+  0x13e4: push int 1
+  0x13ea: negate
+  0x13ec: push int 48
+  0x13f2: get_global_var
+  0x13f4: mul
+  0x13f6: push int 2
+  0x13fc: div
+  0x13fe: mul
+  0x1400: push int 23
+  0x1406: store_global
+  0x1408: push int 5266
+  0x140e: push int 2
+  0x1414: opGetDude
+  0x1416: push int 13
+  0x141c: has_trait
+  0x141e: if
+  0x1420: push int 5216
+  0x1426: opGetDude
+  0x1428: push int 34
+  0x142e: get_critter_stat
+  0x1430: self_obj
+  0x1432: push int 34
+  0x1438: get_critter_stat
+  0x143a: equal
+  0x143c: if
+  0x143e: push int 19
+  0x1444: fetch_global
+  0x1446: push int 20
+  0x144c: negate
+  0x144e: add
+  0x1450: push int 19
+  0x1456: store_global
+  0x1458: push int 5240
+  0x145e: jump
+  0x1460: push int 19
+  0x1466: fetch_global
+  0x1468: push int 20
+  0x146e: add
+  0x1470: push int 19
+  0x1476: store_global
+  0x1478: push sstr "@48"
+  0x147e: push int 19
+  0x1484: fetch_global
+  0x1486: add
+  0x1488: debug_msg
+  0x148a: push int 5274
+  0x1490: jump
+  0x1492: push sstr "@72"
+  0x1498: debug_msg
+  0x149a: push int 6408
+  0x14a0: push int 20
+  0x14a6: fetch_global
+  0x14a8: push int 1
+  0x14ae: equal
+  0x14b0: if
+  0x14b2: push int 19
+  0x14b8: fetch_global
+  0x14ba: push int 24
+  0x14c0: fetch_global
+  0x14c2: sub
+  0x14c4: push int 19
+  0x14ca: store_global
+  0x14cc: push sstr "@96"
+  0x14d2: push int 19
+  0x14d8: fetch_global
+  0x14da: add
+  0x14dc: debug_msg
+  0x14de: push int 19
+  0x14e4: fetch_global
+  0x14e6: push int 23
+  0x14ec: fetch_global
+  0x14ee: sub
+  0x14f0: push int 19
+  0x14f6: store_global
+  0x14f8: push sstr "@124"
+  0x14fe: push int 19
+  0x1504: fetch_global
+  0x1506: add
+  0x1508: debug_msg
+  0x150a: push int 37
+  0x1510: push int 0
+  0x1516: set_global_var   <== [int:37 | int:0]
+  0x1518: push int 38
+  0x151e: push int 0
+  0x1524: set_global_var   <== [int:38 | int:0]
+  0x1526: push int 39
+  0x152c: push int 0
+  0x1532: set_global_var   <== [int:39 | int:0]
+  0x1534: push int 40
+  0x153a: push int 0
+  0x1540: set_global_var   <== [int:40 | int:0]
+  0x1542: push int 41
+  0x1548: push int 0
+  0x154e: set_global_var   <== [int:41 | int:0]
+  0x1550: push int 42
+  0x1556: push int 0
+  0x155c: set_global_var   <== [int:42 | int:0]
+  0x155e: push int 43
+  0x1564: push int 0
+  0x156a: set_global_var   <== [int:43 | int:0]
+  0x156c: push int 44
+  0x1572: push int 0
+  0x1578: set_global_var   <== [int:44 | int:0]
+  0x157a: push int 45
+  0x1580: push int 0
+  0x1586: set_global_var   <== [int:45 | int:0]
+  0x1588: push int 5558
+  0x158e: push int 0
+  0x1594: get_global_var
+  0x1596: push int 1000
+  0x159c: greater_than_equal
+  0x159e: if
+  0x15a0: push int 37
+  0x15a6: push int 1
+  0x15ac: set_global_var   <== [int:37 | int:1]
+  0x15ae: push int 5902
+  0x15b4: jump
+  0x15b6: push int 5604
+  0x15bc: push int 0
+  0x15c2: get_global_var
+  0x15c4: push int 750
+  0x15ca: greater_than_equal
+  0x15cc: if
+  0x15ce: push int 38
+  0x15d4: push int 1
+  0x15da: set_global_var   <== [int:38 | int:1]
+  0x15dc: push int 5902
+  0x15e2: jump
+  0x15e4: push int 5650
+  0x15ea: push int 0
+  0x15f0: get_global_var
+  0x15f2: push int 500
+  0x15f8: greater_than_equal
+  0x15fa: if
+  0x15fc: push int 39
+  0x1602: push int 1
+  0x1608: set_global_var   <== [int:39 | int:1]
+  0x160a: push int 5902
+  0x1610: jump
+  0x1612: push int 5696
+  0x1618: push int 0
+  0x161e: get_global_var
+  0x1620: push int 250
+  0x1626: greater_than_equal
+  0x1628: if
+  0x162a: push int 40
+  0x1630: push int 1
+  0x1636: set_global_var   <== [int:40 | int:1]
+  0x1638: push int 5902
+  0x163e: jump
+  0x1640: push int 5744
+  0x1646: push int 0
+  0x164c: get_global_var
+  0x164e: push int 250
+  0x1654: negate
+  0x1656: greater_than
+  0x1658: if
+  0x165a: push int 41
+  0x1660: push int 1
+  0x1666: set_global_var   <== [int:41 | int:1]
+  0x1668: push int 5902
+  0x166e: jump
+  0x1670: push int 5792
+  0x1676: push int 0
+  0x167c: get_global_var
+  0x167e: push int 500
+  0x1684: negate
+  0x1686: greater_than
+  0x1688: if
+  0x168a: push int 42
+  0x1690: push int 1
+  0x1696: set_global_var   <== [int:42 | int:1]
+  0x1698: push int 5902
+  0x169e: jump
+  0x16a0: push int 5840
+  0x16a6: push int 0
+  0x16ac: get_global_var
+  0x16ae: push int 750
+  0x16b4: negate
+  0x16b6: greater_than
+  0x16b8: if
+  0x16ba: push int 43
+  0x16c0: push int 1
+  0x16c6: set_global_var   <== [int:43 | int:1]
+  0x16c8: push int 5902
+  0x16ce: jump
+  0x16d0: push int 5888
+  0x16d6: push int 0
+  0x16dc: get_global_var
+  0x16de: push int 1000
+  0x16e4: negate
+  0x16e6: greater_than
+  0x16e8: if
+  0x16ea: push int 44
+  0x16f0: push int 1
+  0x16f6: set_global_var   <== [int:44 | int:1]
+  0x16f8: push int 5902
+  0x16fe: jump
+  0x1700: push int 45
+  0x1706: push int 1
+  0x170c: set_global_var   <== [int:45 | int:1]
+  0x170e: push int 5958
+  0x1714: push int 37
+  0x171a: get_global_var
+  0x171c: push int 1
+  0x1722: equal
+  0x1724: if
+  0x1726: push int 19
+  0x172c: fetch_global
+  0x172e: push int 20
+  0x1734: sub
+  0x1736: push int 19
+  0x173c: store_global
+  0x173e: push int 6382
+  0x1744: jump
+  0x1746: push int 6014
+  0x174c: push int 38
+  0x1752: get_global_var
+  0x1754: push int 1
+  0x175a: equal
+  0x175c: if
+  0x175e: push int 19
+  0x1764: fetch_global
+  0x1766: push int 15
+  0x176c: sub
+  0x176e: push int 19
+  0x1774: store_global
+  0x1776: push int 6382
+  0x177c: jump
+  0x177e: push int 6070
+  0x1784: push int 39
+  0x178a: get_global_var
+  0x178c: push int 1
+  0x1792: equal
+  0x1794: if
+  0x1796: push int 19
+  0x179c: fetch_global
+  0x179e: push int 10
+  0x17a4: sub
+  0x17a6: push int 19
+  0x17ac: store_global
+  0x17ae: push int 6382
+  0x17b4: jump
+  0x17b6: push int 6126
+  0x17bc: push int 40
+  0x17c2: get_global_var
+  0x17c4: push int 1
+  0x17ca: equal
+  0x17cc: if
+  0x17ce: push int 19
+  0x17d4: fetch_global
+  0x17d6: push int 5
+  0x17dc: sub
+  0x17de: push int 19
+  0x17e4: store_global
+  0x17e6: push int 6382
+  0x17ec: jump
+  0x17ee: push int 6182
+  0x17f4: push int 41
+  0x17fa: get_global_var
+  0x17fc: push int 1
+  0x1802: equal
+  0x1804: if
+  0x1806: push int 19
+  0x180c: fetch_global
+  0x180e: push int 0
+  0x1814: sub
+  0x1816: push int 19
+  0x181c: store_global
+  0x181e: push int 6382
+  0x1824: jump
+  0x1826: push int 6240
+  0x182c: push int 42
+  0x1832: get_global_var
+  0x1834: push int 1
+  0x183a: equal
+  0x183c: if
+  0x183e: push int 19
+  0x1844: fetch_global
+  0x1846: push int 5
+  0x184c: negate
+  0x184e: sub
+  0x1850: push int 19
+  0x1856: store_global
+  0x1858: push int 6382
+  0x185e: jump
+  0x1860: push int 6298
+  0x1866: push int 43
+  0x186c: get_global_var
+  0x186e: push int 1
+  0x1874: equal
+  0x1876: if
+  0x1878: push int 19
+  0x187e: fetch_global
+  0x1880: push int 10
+  0x1886: negate
+  0x1888: sub
+  0x188a: push int 19
+  0x1890: store_global
+  0x1892: push int 6382
+  0x1898: jump
+  0x189a: push int 6356
+  0x18a0: push int 44
+  0x18a6: get_global_var
+  0x18a8: push int 1
+  0x18ae: equal
+  0x18b0: if
+  0x18b2: push int 19
+  0x18b8: fetch_global
+  0x18ba: push int 15
+  0x18c0: negate
+  0x18c2: sub
+  0x18c4: push int 19
+  0x18ca: store_global
+  0x18cc: push int 6382
+  0x18d2: jump
+  0x18d4: push int 19
+  0x18da: fetch_global
+  0x18dc: push int 20
+  0x18e2: negate
+  0x18e4: sub
+  0x18e6: push int 19
+  0x18ec: store_global
+  0x18ee: push sstr "@146"
+  0x18f4: push int 19
+  0x18fa: fetch_global
+  0x18fc: add
+  0x18fe: debug_msg
+  0x1900: push int 7510
+  0x1906: jump
+  0x1908: push int 19
+  0x190e: fetch_global
+  0x1910: push int 24
+  0x1916: fetch_global
+  0x1918: add
+  0x191a: push int 19
+  0x1920: store_global
+  0x1922: push sstr "@96"
+  0x1928: push int 19
+  0x192e: fetch_global
+  0x1930: add
+  0x1932: debug_msg
+  0x1934: push int 19
+  0x193a: fetch_global
+  0x193c: push int 23
+  0x1942: fetch_global
+  0x1944: add
+  0x1946: push int 19
+  0x194c: store_global
+  0x194e: push sstr "@124"
+  0x1954: push int 19
+  0x195a: fetch_global
+  0x195c: add
+  0x195e: debug_msg
+  0x1960: push int 37
+  0x1966: push int 0
+  0x196c: set_global_var   <== [int:37 | int:0]
+  0x196e: push int 38
+  0x1974: push int 0
+  0x197a: set_global_var   <== [int:38 | int:0]
+  0x197c: push int 39
+  0x1982: push int 0
+  0x1988: set_global_var   <== [int:39 | int:0]
+  0x198a: push int 40
+  0x1990: push int 0
+  0x1996: set_global_var   <== [int:40 | int:0]
+  0x1998: push int 41
+  0x199e: push int 0
+  0x19a4: set_global_var   <== [int:41 | int:0]
+  0x19a6: push int 42
+  0x19ac: push int 0
+  0x19b2: set_global_var   <== [int:42 | int:0]
+  0x19b4: push int 43
+  0x19ba: push int 0
+  0x19c0: set_global_var   <== [int:43 | int:0]
+  0x19c2: push int 44
+  0x19c8: push int 0
+  0x19ce: set_global_var   <== [int:44 | int:0]
+  0x19d0: push int 45
+  0x19d6: push int 0
+  0x19dc: set_global_var   <== [int:45 | int:0]
+  0x19de: push int 6668
+  0x19e4: push int 0
+  0x19ea: get_global_var
+  0x19ec: push int 1000
+  0x19f2: greater_than_equal
+  0x19f4: if
+  0x19f6: push int 37
+  0x19fc: push int 1
+  0x1a02: set_global_var   <== [int:37 | int:1]
+  0x1a04: push int 7012
+  0x1a0a: jump
+  0x1a0c: push int 6714
+  0x1a12: push int 0
+  0x1a18: get_global_var
+  0x1a1a: push int 750
+  0x1a20: greater_than_equal
+  0x1a22: if
+  0x1a24: push int 38
+  0x1a2a: push int 1
+  0x1a30: set_global_var   <== [int:38 | int:1]
+  0x1a32: push int 7012
+  0x1a38: jump
+  0x1a3a: push int 6760
+  0x1a40: push int 0
+  0x1a46: get_global_var
+  0x1a48: push int 500
+  0x1a4e: greater_than_equal
+  0x1a50: if
+  0x1a52: push int 39
+  0x1a58: push int 1
+  0x1a5e: set_global_var   <== [int:39 | int:1]
+  0x1a60: push int 7012
+  0x1a66: jump
+  0x1a68: push int 6806
+  0x1a6e: push int 0
+  0x1a74: get_global_var
+  0x1a76: push int 250
+  0x1a7c: greater_than_equal
+  0x1a7e: if
+  0x1a80: push int 40
+  0x1a86: push int 1
+  0x1a8c: set_global_var   <== [int:40 | int:1]
+  0x1a8e: push int 7012
+  0x1a94: jump
+  0x1a96: push int 6854
+  0x1a9c: push int 0
+  0x1aa2: get_global_var
+  0x1aa4: push int 250
+  0x1aaa: negate
+  0x1aac: greater_than
+  0x1aae: if
+  0x1ab0: push int 41
+  0x1ab6: push int 1
+  0x1abc: set_global_var   <== [int:41 | int:1]
+  0x1abe: push int 7012
+  0x1ac4: jump
+  0x1ac6: push int 6902
+  0x1acc: push int 0
+  0x1ad2: get_global_var
+  0x1ad4: push int 500
+  0x1ada: negate
+  0x1adc: greater_than
+  0x1ade: if
+  0x1ae0: push int 42
+  0x1ae6: push int 1
+  0x1aec: set_global_var   <== [int:42 | int:1]
+  0x1aee: push int 7012
+  0x1af4: jump
+  0x1af6: push int 6950
+  0x1afc: push int 0
+  0x1b02: get_global_var
+  0x1b04: push int 750
+  0x1b0a: negate
+  0x1b0c: greater_than
+  0x1b0e: if
+  0x1b10: push int 43
+  0x1b16: push int 1
+  0x1b1c: set_global_var   <== [int:43 | int:1]
+  0x1b1e: push int 7012
+  0x1b24: jump
+  0x1b26: push int 6998
+  0x1b2c: push int 0
+  0x1b32: get_global_var
+  0x1b34: push int 1000
+  0x1b3a: negate
+  0x1b3c: greater_than
+  0x1b3e: if
+  0x1b40: push int 44
+  0x1b46: push int 1
+  0x1b4c: set_global_var   <== [int:44 | int:1]
+  0x1b4e: push int 7012
+  0x1b54: jump
+  0x1b56: push int 45
+  0x1b5c: push int 1
+  0x1b62: set_global_var   <== [int:45 | int:1]
+  0x1b64: push int 7068
+  0x1b6a: push int 37
+  0x1b70: get_global_var
+  0x1b72: push int 1
+  0x1b78: equal
+  0x1b7a: if
+  0x1b7c: push int 19
+  0x1b82: fetch_global
+  0x1b84: push int 20
+  0x1b8a: add
+  0x1b8c: push int 19
+  0x1b92: store_global
+  0x1b94: push int 7492
+  0x1b9a: jump
+  0x1b9c: push int 7124
+  0x1ba2: push int 38
+  0x1ba8: get_global_var
+  0x1baa: push int 1
+  0x1bb0: equal
+  0x1bb2: if
+  0x1bb4: push int 19
+  0x1bba: fetch_global
+  0x1bbc: push int 15
+  0x1bc2: add
+  0x1bc4: push int 19
+  0x1bca: store_global
+  0x1bcc: push int 7492
+  0x1bd2: jump
+  0x1bd4: push int 7180
+  0x1bda: push int 39
+  0x1be0: get_global_var
+  0x1be2: push int 1
+  0x1be8: equal
+  0x1bea: if
+  0x1bec: push int 19
+  0x1bf2: fetch_global
+  0x1bf4: push int 10
+  0x1bfa: add
+  0x1bfc: push int 19
+  0x1c02: store_global
+  0x1c04: push int 7492
+  0x1c0a: jump
+  0x1c0c: push int 7236
+  0x1c12: push int 40
+  0x1c18: get_global_var
+  0x1c1a: push int 1
+  0x1c20: equal
+  0x1c22: if
+  0x1c24: push int 19
+  0x1c2a: fetch_global
+  0x1c2c: push int 5
+  0x1c32: add
+  0x1c34: push int 19
+  0x1c3a: store_global
+  0x1c3c: push int 7492
+  0x1c42: jump
+  0x1c44: push int 7292
+  0x1c4a: push int 41
+  0x1c50: get_global_var
+  0x1c52: push int 1
+  0x1c58: equal
+  0x1c5a: if
+  0x1c5c: push int 19
+  0x1c62: fetch_global
+  0x1c64: push int 0
+  0x1c6a: add
+  0x1c6c: push int 19
+  0x1c72: store_global
+  0x1c74: push int 7492
+  0x1c7a: jump
+  0x1c7c: push int 7350
+  0x1c82: push int 42
+  0x1c88: get_global_var
+  0x1c8a: push int 1
+  0x1c90: equal
+  0x1c92: if
+  0x1c94: push int 19
+  0x1c9a: fetch_global
+  0x1c9c: push int 5
+  0x1ca2: negate
+  0x1ca4: add
+  0x1ca6: push int 19
+  0x1cac: store_global
+  0x1cae: push int 7492
+  0x1cb4: jump
+  0x1cb6: push int 7408
+  0x1cbc: push int 43
+  0x1cc2: get_global_var
+  0x1cc4: push int 1
+  0x1cca: equal
+  0x1ccc: if
+  0x1cce: push int 19
+  0x1cd4: fetch_global
+  0x1cd6: push int 10
+  0x1cdc: negate
+  0x1cde: add
+  0x1ce0: push int 19
+  0x1ce6: store_global
+  0x1ce8: push int 7492
+  0x1cee: jump
+  0x1cf0: push int 7466
+  0x1cf6: push int 44
+  0x1cfc: get_global_var
+  0x1cfe: push int 1
+  0x1d04: equal
+  0x1d06: if
+  0x1d08: push int 19
+  0x1d0e: fetch_global
+  0x1d10: push int 15
+  0x1d16: negate
+  0x1d18: add
+  0x1d1a: push int 19
+  0x1d20: store_global
+  0x1d22: push int 7492
+  0x1d28: jump
+  0x1d2a: push int 19
+  0x1d30: fetch_global
+  0x1d32: push int 20
+  0x1d38: negate
+  0x1d3a: add
+  0x1d3c: push int 19
+  0x1d42: store_global
+  0x1d44: push sstr "@178"
+  0x1d4a: push int 19
+  0x1d50: fetch_global
+  0x1d52: add
+  0x1d54: debug_msg
+  0x1d56: push int 7600
+  0x1d5c: push int 21
+  0x1d62: fetch_global
+  0x1d64: push int 0
+  0x1d6a: equal
+  0x1d6c: if
+  0x1d6e: push int 7592
+  0x1d74: push int 11
+  0x1d7a: get_global_var
+  0x1d7c: push int 1
+  0x1d82: equal
+  0x1d84: if
+  0x1d86: push int 19
+  0x1d8c: fetch_global
+  0x1d8e: push int 2
+  0x1d94: push int 25
+  0x1d9a: negate
+  0x1d9c: mul
+  0x1d9e: add
+  0x1da0: push int 19
+  0x1da6: store_global
+  0x1da8: push int 7756
+  0x1dae: jump
+  0x1db0: push int 7682
+  0x1db6: push int 21
+  0x1dbc: fetch_global
+  0x1dbe: push int 1
+  0x1dc4: equal
+  0x1dc6: if
+  0x1dc8: push int 7674
+  0x1dce: push int 11
+  0x1dd4: get_global_var
+  0x1dd6: push int 1
+  0x1ddc: equal
+  0x1dde: if
+  0x1de0: push int 19
+  0x1de6: fetch_global
+  0x1de8: push int 25
+  0x1dee: negate
+  0x1df0: add
+  0x1df2: push int 19
+  0x1df8: store_global
+  0x1dfa: push int 7756
+  0x1e00: jump
+  0x1e02: push int 7756
+  0x1e08: push int 21
+  0x1e0e: fetch_global
+  0x1e10: push int 3
+  0x1e16: equal
+  0x1e18: if
+  0x1e1a: push int 7756
+  0x1e20: push int 11
+  0x1e26: get_global_var
+  0x1e28: push int 1
+  0x1e2e: equal
+  0x1e30: if
+  0x1e32: push int 19
+  0x1e38: fetch_global
+  0x1e3a: push int 25
+  0x1e40: negate
+  0x1e42: sub
+  0x1e44: push int 19
+  0x1e4a: store_global
+  0x1e4c: push sstr "@212"
+  0x1e52: push int 19
+  0x1e58: fetch_global
+  0x1e5a: add
+  0x1e5c: debug_msg
+  0x1e5e: push int 19
+  0x1e64: fetch_global
+  0x1e66: push int 10
+  0x1e6c: push int 0
+  0x1e72: opGetDude
+  0x1e74: push int 10
+  0x1e7a: has_trait
+  0x1e7c: mul
+  0x1e7e: add
+  0x1e80: push int 19
+  0x1e86: store_global
+  0x1e88: push sstr "@244"
+  0x1e8e: push int 19
+  0x1e94: fetch_global
+  0x1e96: add
+  0x1e98: debug_msg
+  0x1e9a: push int 7884
+  0x1ea0: push int 1
+  0x1ea6: get_global_var
+  0x1ea8: push int 2
+  0x1eae: greater_than_equal
+  0x1eb0: if
+  0x1eb2: push int 19
+  0x1eb8: fetch_global
+  0x1eba: push int 30
+  0x1ec0: negate
+  0x1ec2: add
+  0x1ec4: push int 19
+  0x1eca: store_global
+  0x1ecc: push sstr "@268"
+  0x1ed2: push int 19
+  0x1ed8: fetch_global
+  0x1eda: add
+  0x1edc: debug_msg
+  0x1ede: push int 0
+  0x1ee4: push int 3
+  0x1eea: get_local_var
+  0x1eec: push int 19
+  0x1ef2: fetch_global
+  0x1ef4: add
+  0x1ef6: set_local_var   <== []
+  0x1ef8: push sstr "@296"
+  0x1efe: push int 0
+  0x1f04: get_local_var
+  0x1f06: add
+  0x1f08: debug_msg
+  0x1f0a: push int 8020
+  0x1f10: push int 68
+  0x1f16: get_global_var
+  0x1f18: push int 1
+  0x1f1e: equal
+  0x1f20: push int 6
+  0x1f26: get_local_var
+  0x1f28: push int 1
+  0x1f2e: equal
+  0x1f30: or
+  0x1f32: if
+  0x1f34: push int 8010
+  0x1f3a: d_to_a
+  0x1f3c: push int 0
+  0x1f42: push int 20
+  0x1f48: call
+  0x1f4a: pop
+  0x1f4c: push int 9000
+  0x1f52: jump
+  0x1f54: push int 8068
+  0x1f5a: push int 13
+  0x1f60: get_local_var
+  0x1f62: push int 1
+  0x1f68: equal
+  0x1f6a: if
+  0x1f6c: push int 74
+  0x1f72: push int 550
+  0x1f78: message_str
+  0x1f7a: display_msg
+  0x1f7c: push int 9000
+  0x1f82: jump
+  0x1f84: push int 8162
+  0x1f8a: push int 198
+  0x1f90: get_global_var
+  0x1f92: push int 4
+  0x1f98: equal
+  0x1f9a: if
+  0x1f9c: push int 74
+  0x1fa2: self_obj
+  0x1fa4: push int 4
+  0x1faa: push int 1
+  0x1fb0: negate
+  0x1fb2: push int 1
+  0x1fb8: negate
+  0x1fba: start_gdialog   <== []
+  0x1fbc: _op_gsay_start
+  0x1fbe: push int 8148
+  0x1fc4: d_to_a
+  0x1fc6: push int 0
+  0x1fcc: push int 38
+  0x1fd2: call
+  0x1fd4: pop
+  0x1fd6: _op_gsay_end
+  0x1fd8: end_gdialog
+  0x1fda: push int 9000
+  0x1fe0: jump
+  0x1fe2: push int 8268
+  0x1fe8: opGetDude
+  0x1fea: push int 4
+  0x1ff0: get_critter_stat
+  0x1ff2: push int 0
+  0x1ff8: push int 3
+  0x1ffe: negate
+  0x2000: sub
+  0x2002: less_than_equal
+  0x2004: if
+  0x2006: push int 74
+  0x200c: self_obj
+  0x200e: push int 4
+  0x2014: push int 1
+  0x201a: negate
+  0x201c: push int 1
+  0x2022: negate
+  0x2024: start_gdialog   <== []
+  0x2026: _op_gsay_start
+  0x2028: push int 8254
+  0x202e: d_to_a
+  0x2030: push int 0
+  0x2036: push int 22
+  0x203c: call
+  0x203e: pop
+  0x2040: _op_gsay_end
+  0x2042: end_gdialog
+  0x2044: push int 9000
+  0x204a: jump
+  0x204c: push int 8362
+  0x2052: push int 198
+  0x2058: get_global_var
+  0x205a: push int 5
+  0x2060: equal
+  0x2062: if
+  0x2064: push int 74
+  0x206a: self_obj
+  0x206c: push int 4
+  0x2072: push int 1
+  0x2078: negate
+  0x207a: push int 1
+  0x2080: negate
+  0x2082: start_gdialog   <== []
+  0x2084: _op_gsay_start
+  0x2086: push int 8348
+  0x208c: d_to_a
+  0x208e: push int 0
+  0x2094: push int 54
+  0x209a: call
+  0x209c: pop
+  0x209e: _op_gsay_end
+  0x20a0: end_gdialog
+  0x20a2: push int 9000
+  0x20a8: jump
+  0x20aa: push int 8456
+  0x20b0: push int 198
+  0x20b6: get_global_var
+  0x20b8: push int 2
+  0x20be: equal
+  0x20c0: if
+  0x20c2: push int 74
+  0x20c8: self_obj
+  0x20ca: push int 4
+  0x20d0: push int 1
+  0x20d6: negate
+  0x20d8: push int 1
+  0x20de: negate
+  0x20e0: start_gdialog   <== []
+  0x20e2: _op_gsay_start
+  0x20e4: push int 8442
+  0x20ea: d_to_a
+  0x20ec: push int 0
+  0x20f2: push int 39
+  0x20f8: call
+  0x20fa: pop
+  0x20fc: _op_gsay_end
+  0x20fe: end_gdialog
+  0x2100: push int 9000
+  0x2106: jump
+  0x2108: push int 8550
+  0x210e: push int 198
+  0x2114: get_global_var
+  0x2116: push int 3
+  0x211c: equal
+  0x211e: if
+  0x2120: push int 74
+  0x2126: self_obj
+  0x2128: push int 4
+  0x212e: push int 1
+  0x2134: negate
+  0x2136: push int 1
+  0x213c: negate
+  0x213e: start_gdialog   <== []
+  0x2140: _op_gsay_start
+  0x2142: push int 8536
+  0x2148: d_to_a
+  0x214a: push int 0
+  0x2150: push int 50
+  0x2156: call
+  0x2158: pop
+  0x215a: _op_gsay_end
+  0x215c: end_gdialog
+  0x215e: push int 9000
+  0x2164: jump
+  0x2166: push int 8742
+  0x216c: push int 198
+  0x2172: get_global_var
+  0x2174: push int 1
+  0x217a: equal
+  0x217c: if
+  0x217e: push int 74
+  0x2184: self_obj
+  0x2186: push int 4
+  0x218c: push int 1
+  0x2192: negate
+  0x2194: push int 1
+  0x219a: negate
+  0x219c: start_gdialog   <== []
+  0x219e: _op_gsay_start
+  0x21a0: push int 8706
+  0x21a6: game_time
+  0x21a8: push int 10
+  0x21ae: push int 60
+  0x21b4: mul
+  0x21b6: push int 60
+  0x21bc: mul
+  0x21be: div
+  0x21c0: push int 458
+  0x21c6: get_global_var
+  0x21c8: sub
+  0x21ca: push int 24
+  0x21d0: greater_than
+  0x21d2: if
+  0x21d4: push int 198
+  0x21da: push int 3
+  0x21e0: set_global_var   <== [int:198 | int:3]
+  0x21e2: push int 8696
+  0x21e8: d_to_a
+  0x21ea: push int 0
+  0x21f0: push int 50
+  0x21f6: call
+  0x21f8: pop
+  0x21fa: push int 8730
+  0x2200: jump
+  0x2202: push int 8728
+  0x2208: d_to_a
+  0x220a: push int 0
+  0x2210: push int 37
+  0x2216: call
+  0x2218: pop
+  0x221a: _op_gsay_end
+  0x221c: end_gdialog
+  0x221e: push int 9000
+  0x2224: jump
+  0x2226: push int 8840
+  0x222c: push int 48
+  0x2232: get_global_var
+  0x2234: get_global_var
+  0x2236: push int 3
+  0x223c: negate
+  0x223e: less_than_equal
+  0x2240: if
+  0x2242: push int 74
+  0x2248: self_obj
+  0x224a: push int 4
+  0x2250: push int 1
+  0x2256: negate
+  0x2258: push int 1
+  0x225e: negate
+  0x2260: start_gdialog   <== []
+  0x2262: _op_gsay_start
+  0x2264: push int 8826
+  0x226a: d_to_a
+  0x226c: push int 0
+  0x2272: push int 25
+  0x2278: call
+  0x227a: pop
+  0x227c: _op_gsay_end
+  0x227e: end_gdialog
+  0x2280: push int 9000
+  0x2286: jump
+  0x2288: push int 9000
+  0x228e: push int 48
+  0x2294: get_global_var
+  0x2296: get_global_var
+  0x2298: push int 2
+  0x229e: negate
+  0x22a0: greater_than_equal
+  0x22a2: if
+  0x22a4: push int 74
+  0x22aa: self_obj
+  0x22ac: push int 4
+  0x22b2: push int 1
+  0x22b8: negate
+  0x22ba: push int 1
+  0x22c0: negate
+  0x22c2: start_gdialog   <== []
+  0x22c4: _op_gsay_start
+  0x22c6: push int 8972
+  0x22cc: push int 4
+  0x22d2: get_local_var
+  0x22d4: push int 0
+  0x22da: equal
+  0x22dc: if
+  0x22de: push int 4
+  0x22e4: push int 1
+  0x22ea: set_local_var   <== [int:4 | int:1]
+  0x22ec: push int 8962
+  0x22f2: d_to_a
+  0x22f4: push int 0
+  0x22fa: push int 26
+  0x2300: call
+  0x2302: pop
+  0x2304: push int 8996
+  0x230a: jump
+  0x230c: push int 8994
+  0x2312: d_to_a
+  0x2314: push int 0
+  0x231a: push int 36
+  0x2320: call
+  0x2322: pop
+  0x2324: _op_gsay_end
+  0x2326: end_gdialog
+  0x2328: push int 0
+  0x232e: d_to_a
+  0x2330: swapa
+  0x2332: pop_to_base
+  0x2334: pop_base
+  0x2336: a_to_d
+  0x2338: pop_return
+  0x233a: pop_to_base
+  0x233c: pop_base
+  0x233e: pop_return
+
+--- proc 6 destroy_p_proc  [0x2340,0x2990) ---
+  0x2340: push_base
+  0x2342: push int 10616
+  0x2348: source_obj
+  0x234a: opGetDude
+  0x234c: equal
+  0x234e: if
+  0x2350: push int 5
+  0x2356: push int 5
+  0x235c: get_global_var
+  0x235e: push int 1
+  0x2364: add
+  0x2366: set_global_var   <== []
+  0x2368: push int 9190
+  0x236e: push int 4
+  0x2374: get_global_var
+  0x2376: push int 5
+  0x237c: get_global_var
+  0x237e: add
+  0x2380: push int 25
+  0x2386: greater_than_equal
+  0x2388: push int 4
+  0x238e: get_global_var
+  0x2390: push int 3
+  0x2396: push int 5
+  0x239c: get_global_var
+  0x239e: mul
+  0x23a0: greater_than
+  0x23a2: push int 2
+  0x23a8: get_global_var
+  0x23aa: push int 1
+  0x23b0: equal
+  0x23b2: or
+  0x23b4: and
+  0x23b6: push int 1
+  0x23bc: get_global_var
+  0x23be: push int 0
+  0x23c4: equal
+  0x23c6: and
+  0x23c8: if
+  0x23ca: push int 2
+  0x23d0: push int 1
+  0x23d6: set_global_var   <== [int:2 | int:1]
+  0x23d8: push int 3
+  0x23de: push int 0
+  0x23e4: set_global_var   <== [int:3 | int:0]
+  0x23e6: push int 9888
+  0x23ec: push int 51
+  0x23f2: self_obj
+  0x23f4: metarule
+  0x23f6: push int 2
+  0x23fc: equal
+  0x23fe: if
+  0x2400: push int 9888
+  0x2406: source_obj
+  0x2408: opGetDude
+  0x240a: equal
+  0x240c: if
+  0x240e: push int 2
+  0x2414: push int 0
+  0x241a: set_global_var   <== [int:2 | int:0]
+  0x241c: push int 1
+  0x2422: push int 1
+  0x2428: get_global_var
+  0x242a: push int 1
+  0x2430: add
+  0x2432: set_global_var   <== []
+  0x2434: push int 0
+  0x243a: push int 0
+  0x2440: get_global_var
+  0x2442: push int 15
+  0x2448: negate
+  0x244a: add
+  0x244c: set_global_var   <== []
+  0x244e: push sstr "@320"
+  0x2454: push int 15
+  0x245a: negate
+  0x245c: add
+  0x245e: push sstr "@336"
+  0x2464: add
+  0x2466: debug_msg
+  0x2468: push int 37
+  0x246e: push int 0
+  0x2474: set_global_var   <== [int:37 | int:0]
+  0x2476: push int 38
+  0x247c: push int 0
+  0x2482: set_global_var   <== [int:38 | int:0]
+  0x2484: push int 39
+  0x248a: push int 0
+  0x2490: set_global_var   <== [int:39 | int:0]
+  0x2492: push int 40
+  0x2498: push int 0
+  0x249e: set_global_var   <== [int:40 | int:0]
+  0x24a0: push int 41
+  0x24a6: push int 0
+  0x24ac: set_global_var   <== [int:41 | int:0]
+  0x24ae: push int 42
+  0x24b4: push int 0
+  0x24ba: set_global_var   <== [int:42 | int:0]
+  0x24bc: push int 43
+  0x24c2: push int 0
+  0x24c8: set_global_var   <== [int:43 | int:0]
+  0x24ca: push int 44
+  0x24d0: push int 0
+  0x24d6: set_global_var   <== [int:44 | int:0]
+  0x24d8: push int 45
+  0x24de: push int 0
+  0x24e4: set_global_var   <== [int:45 | int:0]
+  0x24e6: push int 9492
+  0x24ec: push int 0
+  0x24f2: get_global_var
+  0x24f4: push int 1000
+  0x24fa: greater_than_equal
+  0x24fc: if
+  0x24fe: push int 37
+  0x2504: push int 1
+  0x250a: set_global_var   <== [int:37 | int:1]
+  0x250c: push int 9836
+  0x2512: jump
+  0x2514: push int 9538
+  0x251a: push int 0
+  0x2520: get_global_var
+  0x2522: push int 750
+  0x2528: greater_than_equal
+  0x252a: if
+  0x252c: push int 38
+  0x2532: push int 1
+  0x2538: set_global_var   <== [int:38 | int:1]
+  0x253a: push int 9836
+  0x2540: jump
+  0x2542: push int 9584
+  0x2548: push int 0
+  0x254e: get_global_var
+  0x2550: push int 500
+  0x2556: greater_than_equal
+  0x2558: if
+  0x255a: push int 39
+  0x2560: push int 1
+  0x2566: set_global_var   <== [int:39 | int:1]
+  0x2568: push int 9836
+  0x256e: jump
+  0x2570: push int 9630
+  0x2576: push int 0
+  0x257c: get_global_var
+  0x257e: push int 250
+  0x2584: greater_than_equal
+  0x2586: if
+  0x2588: push int 40
+  0x258e: push int 1
+  0x2594: set_global_var   <== [int:40 | int:1]
+  0x2596: push int 9836
+  0x259c: jump
+  0x259e: push int 9678
+  0x25a4: push int 0
+  0x25aa: get_global_var
+  0x25ac: push int 250
+  0x25b2: negate
+  0x25b4: greater_than
+  0x25b6: if
+  0x25b8: push int 41
+  0x25be: push int 1
+  0x25c4: set_global_var   <== [int:41 | int:1]
+  0x25c6: push int 9836
+  0x25cc: jump
+  0x25ce: push int 9726
+  0x25d4: push int 0
+  0x25da: get_global_var
+  0x25dc: push int 500
+  0x25e2: negate
+  0x25e4: greater_than
+  0x25e6: if
+  0x25e8: push int 42
+  0x25ee: push int 1
+  0x25f4: set_global_var   <== [int:42 | int:1]
+  0x25f6: push int 9836
+  0x25fc: jump
+  0x25fe: push int 9774
+  0x2604: push int 0
+  0x260a: get_global_var
+  0x260c: push int 750
+  0x2612: negate
+  0x2614: greater_than
+  0x2616: if
+  0x2618: push int 43
+  0x261e: push int 1
+  0x2624: set_global_var   <== [int:43 | int:1]
+  0x2626: push int 9836
+  0x262c: jump
+  0x262e: push int 9822
+  0x2634: push int 0
+  0x263a: get_global_var
+  0x263c: push int 1000
+  0x2642: negate
+  0x2644: greater_than
+  0x2646: if
+  0x2648: push int 44
+  0x264e: push int 1
+  0x2654: set_global_var   <== [int:44 | int:1]
+  0x2656: push int 9836
+  0x265c: jump
+  0x265e: push int 45
+  0x2664: push int 1
+  0x266a: set_global_var   <== [int:45 | int:1]
+  0x266c: push int 48
+  0x2672: push int 48
+  0x2678: get_global_var
+  0x267a: push int 8
+  0x2680: negate
+  0x2682: add
+  0x2684: set_global_var   <== []
+  0x2686: push sstr "@354"
+  0x268c: push int 8
+  0x2692: negate
+  0x2694: add
+  0x2696: push sstr "@364"
+  0x269c: add
+  0x269e: debug_msg
+  0x26a0: push int 9996
+  0x26a6: push int 4
+  0x26ac: get_global_var
+  0x26ae: push int 5
+  0x26b4: get_global_var
+  0x26b6: add
+  0x26b8: push int 25
+  0x26be: greater_than_equal
+  0x26c0: push int 5
+  0x26c6: get_global_var
+  0x26c8: push int 2
+  0x26ce: push int 4
+  0x26d4: get_global_var
+  0x26d6: mul
+  0x26d8: greater_than
+  0x26da: push int 3
+  0x26e0: get_global_var
+  0x26e2: push int 1
+  0x26e8: equal
+  0x26ea: or
+  0x26ec: and
+  0x26ee: if
+  0x26f0: push int 3
+  0x26f6: push int 1
+  0x26fc: set_global_var   <== [int:3 | int:1]
+  0x26fe: push int 2
+  0x2704: push int 0
+  0x270a: set_global_var   <== [int:2 | int:0]
+  0x270c: push int 0
+  0x2712: push int 0
+  0x2718: get_global_var
+  0x271a: push int 10
+  0x2720: negate
+  0x2722: add
+  0x2724: set_global_var   <== []
+  0x2726: push sstr "@320"
+  0x272c: push int 10
+  0x2732: negate
+  0x2734: add
+  0x2736: push sstr "@336"
+  0x273c: add
+  0x273e: debug_msg
+  0x2740: push int 37
+  0x2746: push int 0
+  0x274c: set_global_var   <== [int:37 | int:0]
+  0x274e: push int 38
+  0x2754: push int 0
+  0x275a: set_global_var   <== [int:38 | int:0]
+  0x275c: push int 39
+  0x2762: push int 0
+  0x2768: set_global_var   <== [int:39 | int:0]
+  0x276a: push int 40
+  0x2770: push int 0
+  0x2776: set_global_var   <== [int:40 | int:0]
+  0x2778: push int 41
+  0x277e: push int 0
+  0x2784: set_global_var   <== [int:41 | int:0]
+  0x2786: push int 42
+  0x278c: push int 0
+  0x2792: set_global_var   <== [int:42 | int:0]
+  0x2794: push int 43
+  0x279a: push int 0
+  0x27a0: set_global_var   <== [int:43 | int:0]
+  0x27a2: push int 44
+  0x27a8: push int 0
+  0x27ae: set_global_var   <== [int:44 | int:0]
+  0x27b0: push int 45
+  0x27b6: push int 0
+  0x27bc: set_global_var   <== [int:45 | int:0]
+  0x27be: push int 10220
+  0x27c4: push int 0
+  0x27ca: get_global_var
+  0x27cc: push int 1000
+  0x27d2: greater_than_equal
+  0x27d4: if
+  0x27d6: push int 37
+  0x27dc: push int 1
+  0x27e2: set_global_var   <== [int:37 | int:1]
+  0x27e4: push int 10564
+  0x27ea: jump
+  0x27ec: push int 10266
+  0x27f2: push int 0
+  0x27f8: get_global_var
+  0x27fa: push int 750
+  0x2800: greater_than_equal
+  0x2802: if
+  0x2804: push int 38
+  0x280a: push int 1
+  0x2810: set_global_var   <== [int:38 | int:1]
+  0x2812: push int 10564
+  0x2818: jump
+  0x281a: push int 10312
+  0x2820: push int 0
+  0x2826: get_global_var
+  0x2828: push int 500
+  0x282e: greater_than_equal
+  0x2830: if
+  0x2832: push int 39
+  0x2838: push int 1
+  0x283e: set_global_var   <== [int:39 | int:1]
+  0x2840: push int 10564
+  0x2846: jump
+  0x2848: push int 10358
+  0x284e: push int 0
+  0x2854: get_global_var
+  0x2856: push int 250
+  0x285c: greater_than_equal
+  0x285e: if
+  0x2860: push int 40
+  0x2866: push int 1
+  0x286c: set_global_var   <== [int:40 | int:1]
+  0x286e: push int 10564
+  0x2874: jump
+  0x2876: push int 10406
+  0x287c: push int 0
+  0x2882: get_global_var
+  0x2884: push int 250
+  0x288a: negate
+  0x288c: greater_than
+  0x288e: if
+  0x2890: push int 41
+  0x2896: push int 1
+  0x289c: set_global_var   <== [int:41 | int:1]
+  0x289e: push int 10564
+  0x28a4: jump
+  0x28a6: push int 10454
+  0x28ac: push int 0
+  0x28b2: get_global_var
+  0x28b4: push int 500
+  0x28ba: negate
+  0x28bc: greater_than
+  0x28be: if
+  0x28c0: push int 42
+  0x28c6: push int 1
+  0x28cc: set_global_var   <== [int:42 | int:1]
+  0x28ce: push int 10564
+  0x28d4: jump
+  0x28d6: push int 10502
+  0x28dc: push int 0
+  0x28e2: get_global_var
+  0x28e4: push int 750
+  0x28ea: negate
+  0x28ec: greater_than
+  0x28ee: if
+  0x28f0: push int 43
+  0x28f6: push int 1
+  0x28fc: set_global_var   <== [int:43 | int:1]
+  0x28fe: push int 10564
+  0x2904: jump
+  0x2906: push int 10550
+  0x290c: push int 0
+  0x2912: get_global_var
+  0x2914: push int 1000
+  0x291a: negate
+  0x291c: greater_than
+  0x291e: if
+  0x2920: push int 44
+  0x2926: push int 1
+  0x292c: set_global_var   <== [int:44 | int:1]
+  0x292e: push int 10564
+  0x2934: jump
+  0x2936: push int 45
+  0x293c: push int 1
+  0x2942: set_global_var   <== [int:45 | int:1]
+  0x2944: push int 48
+  0x294a: push int 48
+  0x2950: get_global_var
+  0x2952: push int 5
+  0x2958: negate
+  0x295a: add
+  0x295c: set_global_var   <== []
+  0x295e: push sstr "@354"
+  0x2964: push int 5
+  0x296a: negate
+  0x296c: add
+  0x296e: push sstr "@364"
+  0x2974: add
+  0x2976: debug_msg
+  0x2978: push int 0
+  0x297e: d_to_a
+  0x2980: swapa
+  0x2982: pop_to_base
+  0x2984: pop_base
+  0x2986: a_to_d
+  0x2988: pop_return
+  0x298a: pop_to_base
+  0x298c: pop_base
+  0x298e: pop_return
+
+--- proc 7 look_at_p_proc  [0x2990,0x29bc) ---
+  0x2990: push_base
+  0x2992: script_overrides
+  0x2994: push int 74
+  0x299a: push int 100
+  0x29a0: message_str
+  0x29a2: display_msg
+  0x29a4: push int 0
+  0x29aa: d_to_a
+  0x29ac: swapa
+  0x29ae: pop_to_base
+  0x29b0: pop_base
+  0x29b2: a_to_d
+  0x29b4: pop_return
+  0x29b6: pop_to_base
+  0x29b8: pop_base
+  0x29ba: pop_return
+
+--- proc 8 description_p_proc  [0x29bc,0x29e8) ---
+  0x29bc: push_base
+  0x29be: script_overrides
+  0x29c0: push int 74
+  0x29c6: push int 101
+  0x29cc: message_str
+  0x29ce: display_msg
+  0x29d0: push int 0
+  0x29d6: d_to_a
+  0x29d8: swapa
+  0x29da: pop_to_base
+  0x29dc: pop_base
+  0x29de: a_to_d
+  0x29e0: pop_return
+  0x29e2: pop_to_base
+  0x29e4: pop_base
+  0x29e6: pop_return
+
+--- proc 9 use_skill_on_p_proc  [0x29e8,0x2a02) ---
+  0x29e8: push_base
+  0x29ea: push int 0
+  0x29f0: d_to_a
+  0x29f2: swapa
+  0x29f4: pop_to_base
+  0x29f6: pop_base
+  0x29f8: a_to_d
+  0x29fa: pop_return
+  0x29fc: pop_to_base
+  0x29fe: pop_base
+  0x2a00: pop_return
+
+--- proc 10 damage_p_proc  [0x2a02,0x2a46) ---
+  0x2a02: push_base
+  0x2a04: push int 10798
+  0x2a0a: source_obj
+  0x2a0c: opGetDude
+  0x2a0e: equal
+  0x2a10: if
+  0x2a12: push int 6
+  0x2a18: push int 1
+  0x2a1e: set_local_var   <== [int:6 | int:1]
+  0x2a20: push int 68
+  0x2a26: push int 1
+  0x2a2c: set_global_var   <== [int:68 | int:1]
+  0x2a2e: push int 0
+  0x2a34: d_to_a
+  0x2a36: swapa
+  0x2a38: pop_to_base
+  0x2a3a: pop_base
+  0x2a3c: a_to_d
+  0x2a3e: pop_return
+  0x2a40: pop_to_base
+  0x2a42: pop_base
+  0x2a44: pop_return
+
+--- proc 11 map_enter_p_proc  [0x2a46,0x2a9e) ---
+  0x2a46: push_base
+  0x2a48: push int 0
+  0x2a4e: push int 25
+  0x2a54: store_global
+  0x2a56: self_obj
+  0x2a58: push int 1
+  0x2a5e: push int 6
+  0x2a64: push int 43
+  0x2a6a: critter_add_trait
+  0x2a6c: pop
+  0x2a6e: self_obj
+  0x2a70: push int 1
+  0x2a76: push int 5
+  0x2a7c: push int 24
+  0x2a82: critter_add_trait
+  0x2a84: pop
+  0x2a86: push int 0
+  0x2a8c: d_to_a
+  0x2a8e: swapa
+  0x2a90: pop_to_base
+  0x2a92: pop_base
+  0x2a94: a_to_d
+  0x2a96: pop_return
+  0x2a98: pop_to_base
+  0x2a9a: pop_base
+  0x2a9c: pop_return
+
+--- proc 12 push_p_proc  [0x2a9e,0x2aba) ---
+  0x2a9e: push_base
+  0x2aa0: script_overrides
+  0x2aa2: push int 0
+  0x2aa8: d_to_a
+  0x2aaa: swapa
+  0x2aac: pop_to_base
+  0x2aae: pop_base
+  0x2ab0: a_to_d
+  0x2ab2: pop_return
+  0x2ab4: pop_to_base
+  0x2ab6: pop_base
+  0x2ab8: pop_return
+
+--- proc 13 Node910  [0x2aba,0x2b66) ---
+  0x2aba: push_base
+  0x2abc: push int 11062
+  0x2ac2: opGetDude
+  0x2ac4: item_caps_total
+  0x2ac6: push int 4
+  0x2acc: greater_than
+  0x2ace: if
+  0x2ad0: opGetDude
+  0x2ad2: push int 5
+  0x2ad8: negate
+  0x2ada: item_caps_adjust
+  0x2adc: pop
+  0x2ade: push int 11030
+  0x2ae4: push int 198
+  0x2aea: get_global_var
+  0x2aec: push int 0
+  0x2af2: equal
+  0x2af4: if
+  0x2af6: push int 11020
+  0x2afc: d_to_a
+  0x2afe: push int 0
+  0x2b04: push int 28
+  0x2b0a: call
+  0x2b0c: pop
+  0x2b0e: push int 11054
+  0x2b14: jump
+  0x2b16: push int 11052
+  0x2b1c: d_to_a
+  0x2b1e: push int 0
+  0x2b24: push int 21
+  0x2b2a: call
+  0x2b2c: pop
+  0x2b2e: push int 11086
+  0x2b34: jump
+  0x2b36: push int 11084
+  0x2b3c: d_to_a
+  0x2b3e: push int 0
+  0x2b44: push int 29
+  0x2b4a: call
+  0x2b4c: pop
+  0x2b4e: push int 0
+  0x2b54: d_to_a
+  0x2b56: swapa
+  0x2b58: pop_to_base
+  0x2b5a: pop_base
+  0x2b5c: a_to_d
+  0x2b5e: pop_return
+  0x2b60: pop_to_base
+  0x2b62: pop_base
+  0x2b64: pop_return
+
+--- proc 14 Node920  [0x2b66,0x2bd2) ---
+  0x2b66: push_base
+  0x2b68: push int 11170
+  0x2b6e: opGetDude
+  0x2b70: push int 14
+  0x2b76: push int 0
+  0x2b7c: roll_vs_skill
+  0x2b7e: success
+  0x2b80: if
+  0x2b82: push int 11160
+  0x2b88: d_to_a
+  0x2b8a: push int 0
+  0x2b90: push int 32
+  0x2b96: call
+  0x2b98: pop
+  0x2b9a: push int 11194
+  0x2ba0: jump
+  0x2ba2: push int 11192
+  0x2ba8: d_to_a
+  0x2baa: push int 0
+  0x2bb0: push int 25
+  0x2bb6: call
+  0x2bb8: pop
+  0x2bba: push int 0
+  0x2bc0: d_to_a
+  0x2bc2: swapa
+  0x2bc4: pop_to_base
+  0x2bc6: pop_base
+  0x2bc8: a_to_d
+  0x2bca: pop_return
+  0x2bcc: pop_to_base
+  0x2bce: pop_base
+  0x2bd0: pop_return
+
+--- proc 15 Node950  [0x2bd2,0x2c06) ---
+  0x2bd2: push_base
+  0x2bd4: push int 198
+  0x2bda: push int 5
+  0x2be0: set_global_var   <== [int:198 | int:5]
+  0x2be2: opGetDude
+  0x2be4: push int 50
+  0x2bea: item_caps_adjust
+  0x2bec: pop
+  0x2bee: push int 0
+  0x2bf4: d_to_a
+  0x2bf6: swapa
+  0x2bf8: pop_to_base
+  0x2bfa: pop_base
+  0x2bfc: a_to_d
+  0x2bfe: pop_return
+  0x2c00: pop_to_base
+  0x2c02: pop_base
+  0x2c04: pop_return
+
+--- proc 16 Node955  [0x2c06,0x2c3a) ---
+  0x2c06: push_base
+  0x2c08: push int 198
+  0x2c0e: push int 5
+  0x2c14: set_global_var   <== [int:198 | int:5]
+  0x2c16: opGetDude
+  0x2c18: push int 55
+  0x2c1e: item_caps_adjust
+  0x2c20: pop
+  0x2c22: push int 0
+  0x2c28: d_to_a
+  0x2c2a: swapa
+  0x2c2c: pop_to_base
+  0x2c2e: pop_base
+  0x2c30: a_to_d
+  0x2c32: pop_return
+  0x2c34: pop_to_base
+  0x2c36: pop_base
+  0x2c38: pop_return
+
+--- proc 17 Node995  [0x2c3a,0x2cb2) ---
+  0x2c3a: push_base
+  0x2c3c: push int 11386
+  0x2c42: opGetDude
+  0x2c44: push int 3
+  0x2c4a: get_critter_stat
+  0x2c4c: push int 7
+  0x2c52: greater_than_equal
+  0x2c54: if
+  0x2c56: push int 3
+  0x2c5c: push int 100
+  0x2c62: set_local_var   <== [int:3 | int:100]
+  0x2c64: push int 1
+  0x2c6a: push int 4
+  0x2c70: set_local_var   <== [int:1 | int:4]
+  0x2c72: push int 11418
+  0x2c78: jump
+  0x2c7a: push int 1
+  0x2c80: push int 4
+  0x2c86: negate
+  0x2c88: set_local_var   <== []
+  0x2c8a: push int 3
+  0x2c90: push int 100
+  0x2c96: negate
+  0x2c98: set_local_var   <== []
+  0x2c9a: push int 0
+  0x2ca0: d_to_a
+  0x2ca2: swapa
+  0x2ca4: pop_to_base
+  0x2ca6: pop_base
+  0x2ca8: a_to_d
+  0x2caa: pop_return
+  0x2cac: pop_to_base
+  0x2cae: pop_base
+  0x2cb0: pop_return
+
+--- proc 18 Node996  [0x2cb2,0x2cec) ---
+  0x2cb2: push_base
+  0x2cb4: push int 1
+  0x2cba: push int 4
+  0x2cc0: negate
+  0x2cc2: set_local_var   <== []
+  0x2cc4: push int 3
+  0x2cca: push int 100
+  0x2cd0: negate
+  0x2cd2: set_local_var   <== []
+  0x2cd4: push int 0
+  0x2cda: d_to_a
+  0x2cdc: swapa
+  0x2cde: pop_to_base
+  0x2ce0: pop_base
+  0x2ce2: a_to_d
+  0x2ce4: pop_return
+  0x2ce6: pop_to_base
+  0x2ce8: pop_base
+  0x2cea: pop_return
+
+--- proc 19 Node997  [0x2cec,0x2d58) ---
+  0x2cec: push_base
+  0x2cee: push int 11560
+  0x2cf4: opGetDude
+  0x2cf6: push int 3
+  0x2cfc: get_critter_stat
+  0x2cfe: push int 8
+  0x2d04: greater_than_equal
+  0x2d06: if
+  0x2d08: push int 11550
+  0x2d0e: d_to_a
+  0x2d10: push int 0
+  0x2d16: push int 25
+  0x2d1c: call
+  0x2d1e: pop
+  0x2d20: push int 11584
+  0x2d26: jump
+  0x2d28: push int 11582
+  0x2d2e: d_to_a
+  0x2d30: push int 0
+  0x2d36: push int 26
+  0x2d3c: call
+  0x2d3e: pop
+  0x2d40: push int 0
+  0x2d46: d_to_a
+  0x2d48: swapa
+  0x2d4a: pop_to_base
+  0x2d4c: pop_base
+  0x2d4e: a_to_d
+  0x2d50: pop_return
+  0x2d52: pop_to_base
+  0x2d54: pop_base
+  0x2d56: pop_return
+
+--- proc 20 Node998  [0x2d58,0x2d80) ---
+  0x2d58: push_base
+  0x2d5a: push int 5
+  0x2d60: push int 2
+  0x2d66: set_local_var   <== [int:5 | int:2]
+  0x2d68: push int 0
+  0x2d6e: d_to_a
+  0x2d70: swapa
+  0x2d72: pop_to_base
+  0x2d74: pop_base
+  0x2d76: a_to_d
+  0x2d78: pop_return
+  0x2d7a: pop_to_base
+  0x2d7c: pop_base
+  0x2d7e: pop_return
+
+--- proc 21 Node999  [0x2d80,0x2d9a) ---
+  0x2d80: push_base
+  0x2d82: push int 0
+  0x2d88: d_to_a
+  0x2d8a: swapa
+  0x2d8c: pop_to_base
+  0x2d8e: pop_base
+  0x2d90: a_to_d
+  0x2d92: pop_return
+  0x2d94: pop_to_base
+  0x2d96: pop_base
+  0x2d98: pop_return
+
+--- proc 22 Node001  [0x2d9a,0x2e88) ---
+  0x2d9a: push_base
+  0x2d9c: push int 11724
+  0x2da2: opGetDude
+  0x2da4: push int 34
+  0x2daa: get_critter_stat
+  0x2dac: push int 0
+  0x2db2: equal
+  0x2db4: if
+  0x2db6: push int 74
+  0x2dbc: push int 110
+  0x2dc2: gsay_reply   <== [int:74 | int:110]
+  0x2dc4: push int 11738
+  0x2dca: jump
+  0x2dcc: push int 74
+  0x2dd2: push int 111
+  0x2dd8: gsay_reply   <== [int:74 | int:111]
+  0x2dda: push int 3
+  0x2de0: negate
+  0x2de2: push int 74
+  0x2de8: push int 112
+  0x2dee: push int 23
+  0x2df4: push int 50
+  0x2dfa: giq_option  msg=112 -> target proc[23]=Node002 react=50   [int:74 | int:112 | int:23 | int:50]
+  0x2dfc: push int 3
+  0x2e02: negate
+  0x2e04: push int 74
+  0x2e0a: push int 113
+  0x2e10: push int 23
+  0x2e16: push int 50
+  0x2e1c: giq_option  msg=113 -> target proc[23]=Node002 react=50   [int:74 | int:113 | int:23 | int:50]
+  0x2e1e: push int 3
+  0x2e24: negate
+  0x2e26: push int 74
+  0x2e2c: push int 74
+  0x2e32: push int 114
+  0x2e38: message_str
+  0x2e3a: opGetDude
+  0x2e3c: obj_name
+  0x2e3e: add
+  0x2e40: push int 23
+  0x2e46: push int 50
+  0x2e4c: giq_option  msg=None -> target proc[23]=Node002 react=50   [int:23 | int:50]
+  0x2e4e: push int 3
+  0x2e54: negate
+  0x2e56: push int 74
+  0x2e5c: push int 115
+  0x2e62: push int 24
+  0x2e68: push int 50
+  0x2e6e: giq_option  msg=115 -> target proc[24]=Node003 react=50   [int:74 | int:115 | int:24 | int:50]
+  0x2e70: push int 0
+  0x2e76: d_to_a
+  0x2e78: swapa
+  0x2e7a: pop_to_base
+  0x2e7c: pop_base
+  0x2e7e: a_to_d
+  0x2e80: pop_return
+  0x2e82: pop_to_base
+  0x2e84: pop_base
+  0x2e86: pop_return
+
+--- proc 23 Node002  [0x2e88,0x2eec) ---
+  0x2e88: push_base
+  0x2e8a: push int 11968
+  0x2e90: opGetDude
+  0x2e92: push int 34
+  0x2e98: get_critter_stat
+  0x2e9a: push int 0
+  0x2ea0: equal
+  0x2ea2: if
+  0x2ea4: push int 74
+  0x2eaa: push int 120
+  0x2eb0: push int 50
+  0x2eb6: gsay_message   <== [int:74 | int:120 | int:50]
+  0x2eb8: push int 11988
+  0x2ebe: jump
+  0x2ec0: push int 74
+  0x2ec6: push int 121
+  0x2ecc: push int 50
+  0x2ed2: gsay_message   <== [int:74 | int:121 | int:50]
+  0x2ed4: push int 0
+  0x2eda: d_to_a
+  0x2edc: swapa
+  0x2ede: pop_to_base
+  0x2ee0: pop_base
+  0x2ee2: a_to_d
+  0x2ee4: pop_return
+  0x2ee6: pop_to_base
+  0x2ee8: pop_base
+  0x2eea: pop_return
+
+--- proc 24 Node003  [0x2eec,0x2f50) ---
+  0x2eec: push_base
+  0x2eee: push int 12068
+  0x2ef4: opGetDude
+  0x2ef6: push int 34
+  0x2efc: get_critter_stat
+  0x2efe: push int 0
+  0x2f04: equal
+  0x2f06: if
+  0x2f08: push int 74
+  0x2f0e: push int 130
+  0x2f14: push int 50
+  0x2f1a: gsay_message   <== [int:74 | int:130 | int:50]
+  0x2f1c: push int 12088
+  0x2f22: jump
+  0x2f24: push int 74
+  0x2f2a: push int 131
+  0x2f30: push int 50
+  0x2f36: gsay_message   <== [int:74 | int:131 | int:50]
+  0x2f38: push int 0
+  0x2f3e: d_to_a
+  0x2f40: swapa
+  0x2f42: pop_to_base
+  0x2f44: pop_base
+  0x2f46: a_to_d
+  0x2f48: pop_return
+  0x2f4a: pop_to_base
+  0x2f4c: pop_base
+  0x2f4e: pop_return
+
+--- proc 25 Node004  [0x2f50,0x2fb4) ---
+  0x2f50: push_base
+  0x2f52: push int 12168
+  0x2f58: opGetDude
+  0x2f5a: push int 34
+  0x2f60: get_critter_stat
+  0x2f62: push int 0
+  0x2f68: equal
+  0x2f6a: if
+  0x2f6c: push int 74
+  0x2f72: push int 140
+  0x2f78: push int 50
+  0x2f7e: gsay_message   <== [int:74 | int:140 | int:50]
+  0x2f80: push int 12188
+  0x2f86: jump
+  0x2f88: push int 74
+  0x2f8e: push int 141
+  0x2f94: push int 50
+  0x2f9a: gsay_message   <== [int:74 | int:141 | int:50]
+  0x2f9c: push int 0
+  0x2fa2: d_to_a
+  0x2fa4: swapa
+  0x2fa6: pop_to_base
+  0x2fa8: pop_base
+  0x2faa: a_to_d
+  0x2fac: pop_return
+  0x2fae: pop_to_base
+  0x2fb0: pop_base
+  0x2fb2: pop_return
+
+--- proc 26 Node005  [0x2fb4,0x3078) ---
+  0x2fb4: push_base
+  0x2fb6: push int 74
+  0x2fbc: push int 150
+  0x2fc2: gsay_reply   <== [int:74 | int:150]
+  0x2fc4: push int 4
+  0x2fca: push int 74
+  0x2fd0: push int 74
+  0x2fd6: push int 151
+  0x2fdc: message_str
+  0x2fde: opGetDude
+  0x2fe0: obj_name
+  0x2fe2: add
+  0x2fe4: push int 74
+  0x2fea: push int 152
+  0x2ff0: message_str
+  0x2ff2: add
+  0x2ff4: push int 27
+  0x2ffa: push int 50
+  0x3000: giq_option  msg=None -> target proc[27]=Node006 react=50   [int:27 | int:50]
+  0x3002: push int 4
+  0x3008: push int 74
+  0x300e: push int 74
+  0x3014: push int 153
+  0x301a: message_str
+  0x301c: opGetDude
+  0x301e: obj_name
+  0x3020: add
+  0x3022: push int 74
+  0x3028: push int 154
+  0x302e: message_str
+  0x3030: add
+  0x3032: push int 27
+  0x3038: push int 50
+  0x303e: giq_option  msg=None -> target proc[27]=Node006 react=50   [int:27 | int:50]
+  0x3040: push int 4
+  0x3046: push int 74
+  0x304c: push int 155
+  0x3052: push int 24
+  0x3058: push int 50
+  0x305e: giq_option  msg=155 -> target proc[24]=Node003 react=50   [int:4 | int:74 | int:155 | int:24 | int:50]
+  0x3060: push int 0
+  0x3066: d_to_a
+  0x3068: swapa
+  0x306a: pop_to_base
+  0x306c: pop_base
+  0x306e: a_to_d
+  0x3070: pop_return
+  0x3072: pop_to_base
+  0x3074: pop_base
+  0x3076: pop_return
+
+--- proc 27 Node006  [0x3078,0x3138) ---
+  0x3078: push_base
+  0x307a: push int 74
+  0x3080: push int 160
+  0x3086: gsay_reply   <== [int:74 | int:160]
+  0x3088: push int 4
+  0x308e: push int 74
+  0x3094: push int 161
+  0x309a: push int 13
+  0x30a0: push int 50
+  0x30a6: giq_option  msg=161 -> target proc[13]=Node910 react=50   [int:4 | int:74 | int:161 | int:13 | int:50]
+  0x30a8: push int 4
+  0x30ae: push int 74
+  0x30b4: push int 162
+  0x30ba: push int 24
+  0x30c0: push int 50
+  0x30c6: giq_option  msg=162 -> target proc[24]=Node003 react=50   [int:4 | int:74 | int:162 | int:24 | int:50]
+  0x30c8: push int 4
+  0x30ce: push int 74
+  0x30d4: push int 163
+  0x30da: push int 25
+  0x30e0: push int 50
+  0x30e6: giq_option  msg=163 -> target proc[25]=Node004 react=50   [int:4 | int:74 | int:163 | int:25 | int:50]
+  0x30e8: push int 12576
+  0x30ee: push int 198
+  0x30f4: get_global_var
+  0x30f6: push int 0
+  0x30fc: equal
+  0x30fe: if
+  0x3100: push int 7
+  0x3106: push int 74
+  0x310c: push int 164
+  0x3112: push int 14
+  0x3118: push int 50
+  0x311e: giq_option  msg=164 -> target proc[14]=Node920 react=50   [int:7 | int:74 | int:164 | int:14 | int:50]
+  0x3120: push int 0
+  0x3126: d_to_a
+  0x3128: swapa
+  0x312a: pop_to_base
+  0x312c: pop_base
+  0x312e: a_to_d
+  0x3130: pop_return
+  0x3132: pop_to_base
+  0x3134: pop_base
+  0x3136: pop_return
+
+--- proc 28 Node007  [0x3138,0x3200) ---
+  0x3138: push_base
+  0x313a: push int 74
+  0x3140: push int 170
+  0x3146: gsay_reply   <== [int:74 | int:170]
+  0x3148: push int 4
+  0x314e: push int 74
+  0x3154: push int 171
+  0x315a: push int 24
+  0x3160: push int 50
+  0x3166: giq_option  msg=171 -> target proc[24]=Node003 react=50   [int:4 | int:74 | int:171 | int:24 | int:50]
+  0x3168: push int 4
+  0x316e: push int 74
+  0x3174: push int 172
+  0x317a: push int 30
+  0x3180: push int 50
+  0x3186: giq_option  msg=172 -> target proc[30]=Node009 react=50   [int:4 | int:74 | int:172 | int:30 | int:50]
+  0x3188: push int 4
+  0x318e: push int 74
+  0x3194: push int 173
+  0x319a: push int 31
+  0x31a0: push int 50
+  0x31a6: giq_option  msg=173 -> target proc[31]=Node010 react=50   [int:4 | int:74 | int:173 | int:31 | int:50]
+  0x31a8: push int 6
+  0x31ae: push int 74
+  0x31b4: push int 174
+  0x31ba: push int 31
+  0x31c0: push int 50
+  0x31c6: giq_option  msg=174 -> target proc[31]=Node010 react=50   [int:6 | int:74 | int:174 | int:31 | int:50]
+  0x31c8: push int 6
+  0x31ce: push int 74
+  0x31d4: push int 175
+  0x31da: push int 40
+  0x31e0: push int 50
+  0x31e6: giq_option  msg=175 -> target proc[40]=Node019 react=50   [int:6 | int:74 | int:175 | int:40 | int:50]
+  0x31e8: push int 0
+  0x31ee: d_to_a
+  0x31f0: swapa
+  0x31f2: pop_to_base
+  0x31f4: pop_base
+  0x31f6: a_to_d
+  0x31f8: pop_return
+  0x31fa: pop_to_base
+  0x31fc: pop_base
+  0x31fe: pop_return
+
+--- proc 29 Node008  [0x3200,0x324a) ---
+  0x3200: push_base
+  0x3202: push int 74
+  0x3208: push int 180
+  0x320e: gsay_reply   <== [int:74 | int:180]
+  0x3210: push int 3
+  0x3216: negate
+  0x3218: push int 74
+  0x321e: push int 181
+  0x3224: push int 24
+  0x322a: push int 50
+  0x3230: giq_option  msg=181 -> target proc[24]=Node003 react=50   [int:74 | int:181 | int:24 | int:50]
+  0x3232: push int 0
+  0x3238: d_to_a
+  0x323a: swapa
+  0x323c: pop_to_base
+  0x323e: pop_base
+  0x3240: a_to_d
+  0x3242: pop_return
+  0x3244: pop_to_base
+  0x3246: pop_base
+  0x3248: pop_return
+
+--- proc 30 Node009  [0x324a,0x32b2) ---
+  0x324a: push_base
+  0x324c: push int 74
+  0x3252: push int 190
+  0x3258: gsay_reply   <== [int:74 | int:190]
+  0x325a: push int 4
+  0x3260: push int 74
+  0x3266: push int 191
+  0x326c: push int 33
+  0x3272: push int 50
+  0x3278: giq_option  msg=191 -> target proc[33]=Node012 react=50   [int:4 | int:74 | int:191 | int:33 | int:50]
+  0x327a: push int 4
+  0x3280: push int 74
+  0x3286: push int 192
+  0x328c: push int 24
+  0x3292: push int 50
+  0x3298: giq_option  msg=192 -> target proc[24]=Node003 react=50   [int:4 | int:74 | int:192 | int:24 | int:50]
+  0x329a: push int 0
+  0x32a0: d_to_a
+  0x32a2: swapa
+  0x32a4: pop_to_base
+  0x32a6: pop_base
+  0x32a8: a_to_d
+  0x32aa: pop_return
+  0x32ac: pop_to_base
+  0x32ae: pop_base
+  0x32b0: pop_return
+
+--- proc 31 Node010  [0x32b2,0x331a) ---
+  0x32b2: push_base
+  0x32b4: push int 74
+  0x32ba: push int 200
+  0x32c0: gsay_reply   <== [int:74 | int:200]
+  0x32c2: push int 4
+  0x32c8: push int 74
+  0x32ce: push int 201
+  0x32d4: push int 30
+  0x32da: push int 50
+  0x32e0: giq_option  msg=201 -> target proc[30]=Node009 react=50   [int:4 | int:74 | int:201 | int:30 | int:50]
+  0x32e2: push int 4
+  0x32e8: push int 74
+  0x32ee: push int 202
+  0x32f4: push int 21
+  0x32fa: push int 50
+  0x3300: giq_option  msg=202 -> target proc[21]=Node999 react=50   [int:4 | int:74 | int:202 | int:21 | int:50]
+  0x3302: push int 0
+  0x3308: d_to_a
+  0x330a: swapa
+  0x330c: pop_to_base
+  0x330e: pop_base
+  0x3310: a_to_d
+  0x3312: pop_return
+  0x3314: pop_to_base
+  0x3316: pop_base
+  0x3318: pop_return
+
+--- proc 32 Node011  [0x331a,0x33c4) ---
+  0x331a: push_base
+  0x331c: push int 13180
+  0x3322: self_obj
+  0x3324: push int 125
+  0x332a: obj_is_carrying_obj
+  0x332c: if
+  0x332e: self_obj
+  0x3330: push int 125
+  0x3336: obj_carrying_pid_obj
+  0x3338: push int 26
+  0x333e: store_global
+  0x3340: self_obj
+  0x3342: push int 26
+  0x3348: fetch_global
+  0x334a: rm_obj_from_inven
+  0x334c: push int 125
+  0x3352: push int 0
+  0x3358: push int 0
+  0x335e: push int 1
+  0x3364: negate
+  0x3366: create_object
+  0x3368: push int 27
+  0x336e: store_global
+  0x3370: opGetDude
+  0x3372: push int 27
+  0x3378: fetch_global
+  0x337a: add_obj_to_inven
+  0x337c: push int 74
+  0x3382: push int 210
+  0x3388: gsay_reply   <== [int:27 | int:27 | int:74 | int:210]
+  0x338a: push int 3
+  0x3390: negate
+  0x3392: push int 74
+  0x3398: push int 181
+  0x339e: push int 30
+  0x33a4: push int 50
+  0x33aa: giq_option  msg=181 -> target proc[30]=Node009 react=50   [int:74 | int:181 | int:30 | int:50]
+  0x33ac: push int 0
+  0x33b2: d_to_a
+  0x33b4: swapa
+  0x33b6: pop_to_base
+  0x33b8: pop_base
+  0x33ba: a_to_d
+  0x33bc: pop_return
+  0x33be: pop_to_base
+  0x33c0: pop_base
+  0x33c2: pop_return
+
+--- proc 33 Node012  [0x33c4,0x3464) ---
+  0x33c4: push_base
+  0x33c6: push int 74
+  0x33cc: push int 220
+  0x33d2: gsay_reply   <== [int:74 | int:220]
+  0x33d4: push int 4
+  0x33da: push int 74
+  0x33e0: push int 221
+  0x33e6: push int 34
+  0x33ec: push int 50
+  0x33f2: giq_option  msg=221 -> target proc[34]=Node013 react=50   [int:4 | int:74 | int:221 | int:34 | int:50]
+  0x33f4: push int 4
+  0x33fa: push int 74
+  0x3400: push int 222
+  0x3406: push int 24
+  0x340c: push int 50
+  0x3412: giq_option  msg=222 -> target proc[24]=Node003 react=50   [int:4 | int:74 | int:222 | int:24 | int:50]
+  0x3414: push int 13388
+  0x341a: push int 12
+  0x3420: get_local_var
+  0x3422: push int 0
+  0x3428: equal
+  0x342a: if
+  0x342c: push int 4
+  0x3432: push int 74
+  0x3438: push int 223
+  0x343e: push int 35
+  0x3444: push int 50
+  0x344a: giq_option  msg=223 -> target proc[35]=Node014 react=50   [int:4 | int:74 | int:223 | int:35 | int:50]
+  0x344c: push int 0
+  0x3452: d_to_a
+  0x3454: swapa
+  0x3456: pop_to_base
+  0x3458: pop_base
+  0x345a: a_to_d
+  0x345c: pop_return
+  0x345e: pop_to_base
+  0x3460: pop_base
+  0x3462: pop_return
+
+--- proc 34 Node013  [0x3464,0x34fc) ---
+  0x3464: push_base
+  0x3466: push int 458
+  0x346c: game_time
+  0x346e: push int 10
+  0x3474: push int 60
+  0x347a: mul
+  0x347c: push int 60
+  0x3482: mul
+  0x3484: div
+  0x3486: set_global_var   <== []
+  0x3488: push int 198
+  0x348e: push int 1
+  0x3494: set_global_var   <== [int:198 | int:1]
+  0x3496: push int 74
+  0x349c: push int 230
+  0x34a2: gsay_reply   <== [int:74 | int:230]
+  0x34a4: push int 4
+  0x34aa: push int 74
+  0x34b0: push int 231
+  0x34b6: push int 21
+  0x34bc: push int 50
+  0x34c2: giq_option  msg=231 -> target proc[21]=Node999 react=50   [int:4 | int:74 | int:231 | int:21 | int:50]
+  0x34c4: push int 4
+  0x34ca: push int 74
+  0x34d0: push int 232
+  0x34d6: push int 40
+  0x34dc: push int 50
+  0x34e2: giq_option  msg=232 -> target proc[40]=Node019 react=50   [int:4 | int:74 | int:232 | int:40 | int:50]
+  0x34e4: push int 0
+  0x34ea: d_to_a
+  0x34ec: swapa
+  0x34ee: pop_to_base
+  0x34f0: pop_base
+  0x34f2: a_to_d
+  0x34f4: pop_return
+  0x34f6: pop_to_base
+  0x34f8: pop_base
+  0x34fa: pop_return
+
+--- proc 35 Node014  [0x34fc,0x35b0) ---
+  0x34fc: push_base
+  0x34fe: push int 12
+  0x3504: push int 1
+  0x350a: set_local_var   <== [int:12 | int:1]
+  0x350c: push int 13642
+  0x3512: opGetDude
+  0x3514: push int 15
+  0x351a: push int 0
+  0x3520: roll_vs_skill
+  0x3522: success
+  0x3524: if
+  0x3526: push int 11
+  0x352c: push int 1
+  0x3532: set_local_var   <== [int:11 | int:1]
+  0x3534: push int 74
+  0x353a: push int 240
+  0x3540: gsay_reply   <== [int:74 | int:240]
+  0x3542: push int 13656
+  0x3548: jump
+  0x354a: push int 74
+  0x3550: push int 241
+  0x3556: gsay_reply   <== [int:74 | int:241]
+  0x3558: push int 4
+  0x355e: push int 74
+  0x3564: push int 242
+  0x356a: push int 33
+  0x3570: push int 50
+  0x3576: giq_option  msg=242 -> target proc[33]=Node012 react=50   [int:4 | int:74 | int:242 | int:33 | int:50]
+  0x3578: push int 4
+  0x357e: push int 74
+  0x3584: push int 243
+  0x358a: push int 24
+  0x3590: push int 50
+  0x3596: giq_option  msg=243 -> target proc[24]=Node003 react=50   [int:4 | int:74 | int:243 | int:24 | int:50]
+  0x3598: push int 0
+  0x359e: d_to_a
+  0x35a0: swapa
+  0x35a2: pop_to_base
+  0x35a4: pop_base
+  0x35a6: a_to_d
+  0x35a8: pop_return
+  0x35aa: pop_to_base
+  0x35ac: pop_base
+  0x35ae: pop_return
+
+--- proc 36 Node015  [0x35b0,0x3648) ---
+  0x35b0: push_base
+  0x35b2: push int 13794
+  0x35b8: opGetDude
+  0x35ba: push int 34
+  0x35c0: get_critter_stat
+  0x35c2: push int 0
+  0x35c8: equal
+  0x35ca: if
+  0x35cc: push int 74
+  0x35d2: push int 250
+  0x35d8: gsay_reply   <== [int:74 | int:250]
+  0x35da: push int 13808
+  0x35e0: jump
+  0x35e2: push int 74
+  0x35e8: push int 251
+  0x35ee: gsay_reply   <== [int:74 | int:251]
+  0x35f0: push int 4
+  0x35f6: push int 74
+  0x35fc: push int 252
+  0x3602: push int 27
+  0x3608: push int 50
+  0x360e: giq_option  msg=252 -> target proc[27]=Node006 react=50   [int:4 | int:74 | int:252 | int:27 | int:50]
+  0x3610: push int 4
+  0x3616: push int 74
+  0x361c: push int 253
+  0x3622: push int 24
+  0x3628: push int 50
+  0x362e: giq_option  msg=253 -> target proc[24]=Node003 react=50   [int:4 | int:74 | int:253 | int:24 | int:50]
+  0x3630: push int 0
+  0x3636: d_to_a
+  0x3638: swapa
+  0x363a: pop_to_base
+  0x363c: pop_base
+  0x363e: a_to_d
+  0x3640: pop_return
+  0x3642: pop_to_base
+  0x3644: pop_base
+  0x3646: pop_return
+
+--- proc 37 Node016  [0x3648,0x3676) ---
+  0x3648: push_base
+  0x364a: push int 74
+  0x3650: push int 260
+  0x3656: push int 50
+  0x365c: gsay_message   <== [int:74 | int:260 | int:50]
+  0x365e: push int 0
+  0x3664: d_to_a
+  0x3666: swapa
+  0x3668: pop_to_base
+  0x366a: pop_base
+  0x366c: a_to_d
+  0x366e: pop_return
+  0x3670: pop_to_base
+  0x3672: pop_base
+  0x3674: pop_return
+
+--- proc 38 Node017  [0x3676,0x36a4) ---
+  0x3676: push_base
+  0x3678: push int 74
+  0x367e: push int 270
+  0x3684: push int 50
+  0x368a: gsay_message   <== [int:74 | int:270 | int:50]
+  0x368c: push int 0
+  0x3692: d_to_a
+  0x3694: swapa
+  0x3696: pop_to_base
+  0x3698: pop_base
+  0x369a: a_to_d
+  0x369c: pop_return
+  0x369e: pop_to_base
+  0x36a0: pop_base
+  0x36a2: pop_return
+
+--- proc 39 Node018  [0x36a4,0x39de) ---
+  0x36a4: push_base
+  0x36a6: push int 0
+  0x36ac: push int 0
+  0x36b2: get_global_var
+  0x36b4: push int 15
+  0x36ba: add
+  0x36bc: set_global_var   <== []
+  0x36be: push sstr "@320"
+  0x36c4: push int 15
+  0x36ca: add
+  0x36cc: push sstr "@336"
+  0x36d2: add
+  0x36d4: debug_msg
+  0x36d6: push int 37
+  0x36dc: push int 0
+  0x36e2: set_global_var   <== [int:37 | int:0]
+  0x36e4: push int 38
+  0x36ea: push int 0
+  0x36f0: set_global_var   <== [int:38 | int:0]
+  0x36f2: push int 39
+  0x36f8: push int 0
+  0x36fe: set_global_var   <== [int:39 | int:0]
+  0x3700: push int 40
+  0x3706: push int 0
+  0x370c: set_global_var   <== [int:40 | int:0]
+  0x370e: push int 41
+  0x3714: push int 0
+  0x371a: set_global_var   <== [int:41 | int:0]
+  0x371c: push int 42
+  0x3722: push int 0
+  0x3728: set_global_var   <== [int:42 | int:0]
+  0x372a: push int 43
+  0x3730: push int 0
+  0x3736: set_global_var   <== [int:43 | int:0]
+  0x3738: push int 44
+  0x373e: push int 0
+  0x3744: set_global_var   <== [int:44 | int:0]
+  0x3746: push int 45
+  0x374c: push int 0
+  0x3752: set_global_var   <== [int:45 | int:0]
+  0x3754: push int 14210
+  0x375a: push int 0
+  0x3760: get_global_var
+  0x3762: push int 1000
+  0x3768: greater_than_equal
+  0x376a: if
+  0x376c: push int 37
+  0x3772: push int 1
+  0x3778: set_global_var   <== [int:37 | int:1]
+  0x377a: push int 14554
+  0x3780: jump
+  0x3782: push int 14256
+  0x3788: push int 0
+  0x378e: get_global_var
+  0x3790: push int 750
+  0x3796: greater_than_equal
+  0x3798: if
+  0x379a: push int 38
+  0x37a0: push int 1
+  0x37a6: set_global_var   <== [int:38 | int:1]
+  0x37a8: push int 14554
+  0x37ae: jump
+  0x37b0: push int 14302
+  0x37b6: push int 0
+  0x37bc: get_global_var
+  0x37be: push int 500
+  0x37c4: greater_than_equal
+  0x37c6: if
+  0x37c8: push int 39
+  0x37ce: push int 1
+  0x37d4: set_global_var   <== [int:39 | int:1]
+  0x37d6: push int 14554
+  0x37dc: jump
+  0x37de: push int 14348
+  0x37e4: push int 0
+  0x37ea: get_global_var
+  0x37ec: push int 250
+  0x37f2: greater_than_equal
+  0x37f4: if
+  0x37f6: push int 40
+  0x37fc: push int 1
+  0x3802: set_global_var   <== [int:40 | int:1]
+  0x3804: push int 14554
+  0x380a: jump
+  0x380c: push int 14396
+  0x3812: push int 0
+  0x3818: get_global_var
+  0x381a: push int 250
+  0x3820: negate
+  0x3822: greater_than
+  0x3824: if
+  0x3826: push int 41
+  0x382c: push int 1
+  0x3832: set_global_var   <== [int:41 | int:1]
+  0x3834: push int 14554
+  0x383a: jump
+  0x383c: push int 14444
+  0x3842: push int 0
+  0x3848: get_global_var
+  0x384a: push int 500
+  0x3850: negate
+  0x3852: greater_than
+  0x3854: if
+  0x3856: push int 42
+  0x385c: push int 1
+  0x3862: set_global_var   <== [int:42 | int:1]
+  0x3864: push int 14554
+  0x386a: jump
+  0x386c: push int 14492
+  0x3872: push int 0
+  0x3878: get_global_var
+  0x387a: push int 750
+  0x3880: negate
+  0x3882: greater_than
+  0x3884: if
+  0x3886: push int 43
+  0x388c: push int 1
+  0x3892: set_global_var   <== [int:43 | int:1]
+  0x3894: push int 14554
+  0x389a: jump
+  0x389c: push int 14540
+  0x38a2: push int 0
+  0x38a8: get_global_var
+  0x38aa: push int 1000
+  0x38b0: negate
+  0x38b2: greater_than
+  0x38b4: if
+  0x38b6: push int 44
+  0x38bc: push int 1
+  0x38c2: set_global_var   <== [int:44 | int:1]
+  0x38c4: push int 14554
+  0x38ca: jump
+  0x38cc: push int 45
+  0x38d2: push int 1
+  0x38d8: set_global_var   <== [int:45 | int:1]
+  0x38da: push int 14688
+  0x38e0: push int 11
+  0x38e6: get_local_var
+  0x38e8: push int 1
+  0x38ee: equal
+  0x38f0: if
+  0x38f2: push int 14600
+  0x38f8: d_to_a
+  0x38fa: push int 0
+  0x3900: push int 16
+  0x3906: call
+  0x3908: pop
+  0x390a: push int 74
+  0x3910: push int 281
+  0x3916: gsay_reply   <== [int:74 | int:281]
+  0x3918: push int 4
+  0x391e: push int 74
+  0x3924: push int 282
+  0x392a: push int 40
+  0x3930: push int 50
+  0x3936: giq_option  msg=282 -> target proc[40]=Node019 react=50   [int:4 | int:74 | int:282 | int:40 | int:50]
+  0x3938: push int 4
+  0x393e: push int 74
+  0x3944: push int 283
+  0x394a: push int 24
+  0x3950: push int 50
+  0x3956: giq_option  msg=283 -> target proc[24]=Node003 react=50   [int:4 | int:74 | int:283 | int:24 | int:50]
+  0x3958: push int 14790
+  0x395e: jump
+  0x3960: push int 14710
+  0x3966: d_to_a
+  0x3968: push int 0
+  0x396e: push int 15
+  0x3974: call
+  0x3976: pop
+  0x3978: push int 74
+  0x397e: push int 280
+  0x3984: gsay_reply   <== [int:74 | int:280]
+  0x3986: push int 4
+  0x398c: push int 74
+  0x3992: push int 282
+  0x3998: push int 40
+  0x399e: push int 50
+  0x39a4: giq_option  msg=282 -> target proc[40]=Node019 react=50   [int:4 | int:74 | int:282 | int:40 | int:50]
+  0x39a6: push int 4
+  0x39ac: push int 74
+  0x39b2: push int 283
+  0x39b8: push int 24
+  0x39be: push int 50
+  0x39c4: giq_option  msg=283 -> target proc[24]=Node003 react=50   [int:4 | int:74 | int:283 | int:24 | int:50]
+  0x39c6: push int 0
+  0x39cc: d_to_a
+  0x39ce: swapa
+  0x39d0: pop_to_base
+  0x39d2: pop_base
+  0x39d4: a_to_d
+  0x39d6: pop_return
+  0x39d8: pop_to_base
+  0x39da: pop_base
+  0x39dc: pop_return
+
+--- proc 40 Node019  [0x39de,0x3ae6) ---
+  0x39de: push_base
+  0x39e0: push int 74
+  0x39e6: push int 290
+  0x39ec: gsay_reply   <== [int:74 | int:290]
+  0x39ee: push int 4
+  0x39f4: push int 74
+  0x39fa: push int 291
+  0x3a00: push int 42
+  0x3a06: push int 50
+  0x3a0c: giq_option  msg=291 -> target proc[42]=Node021 react=50   [int:4 | int:74 | int:291 | int:42 | int:50]
+  0x3a0e: push int 4
+  0x3a14: push int 74
+  0x3a1a: push int 292
+  0x3a20: push int 44
+  0x3a26: push int 50
+  0x3a2c: giq_option  msg=292 -> target proc[44]=Node023 react=50   [int:4 | int:74 | int:292 | int:44 | int:50]
+  0x3a2e: push int 4
+  0x3a34: push int 74
+  0x3a3a: push int 293
+  0x3a40: push int 45
+  0x3a46: push int 50
+  0x3a4c: giq_option  msg=293 -> target proc[45]=Node024 react=50   [int:4 | int:74 | int:293 | int:45 | int:50]
+  0x3a4e: push int 4
+  0x3a54: push int 74
+  0x3a5a: push int 294
+  0x3a60: push int 46
+  0x3a66: push int 50
+  0x3a6c: giq_option  msg=294 -> target proc[46]=Node025 react=50   [int:4 | int:74 | int:294 | int:46 | int:50]
+  0x3a6e: push int 4
+  0x3a74: push int 74
+  0x3a7a: push int 295
+  0x3a80: push int 47
+  0x3a86: push int 50
+  0x3a8c: giq_option  msg=295 -> target proc[47]=Node026 react=50   [int:4 | int:74 | int:295 | int:47 | int:50]
+  0x3a8e: push int 4
+  0x3a94: push int 74
+  0x3a9a: push int 296
+  0x3aa0: push int 52
+  0x3aa6: push int 50
+  0x3aac: giq_option  msg=296 -> target proc[52]=Node031 react=50   [int:4 | int:74 | int:296 | int:52 | int:50]
+  0x3aae: push int 4
+  0x3ab4: push int 74
+  0x3aba: push int 297
+  0x3ac0: push int 24
+  0x3ac6: push int 50
+  0x3acc: giq_option  msg=297 -> target proc[24]=Node003 react=50   [int:4 | int:74 | int:297 | int:24 | int:50]
+  0x3ace: push int 0
+  0x3ad4: d_to_a
+  0x3ad6: swapa
+  0x3ad8: pop_to_base
+  0x3ada: pop_base
+  0x3adc: a_to_d
+  0x3ade: pop_return
+  0x3ae0: pop_to_base
+  0x3ae2: pop_base
+  0x3ae4: pop_return
+
+--- proc 41 Node020  [0x3ae6,0x3b4e) ---
+  0x3ae6: push_base
+  0x3ae8: push int 74
+  0x3aee: push int 310
+  0x3af4: gsay_reply   <== [int:74 | int:310]
+  0x3af6: push int 4
+  0x3afc: push int 74
+  0x3b02: push int 311
+  0x3b08: push int 27
+  0x3b0e: push int 50
+  0x3b14: giq_option  msg=311 -> target proc[27]=Node006 react=50   [int:4 | int:74 | int:311 | int:27 | int:50]
+  0x3b16: push int 4
+  0x3b1c: push int 74
+  0x3b22: push int 312
+  0x3b28: push int 24
+  0x3b2e: push int 50
+  0x3b34: giq_option  msg=312 -> target proc[24]=Node003 react=50   [int:4 | int:74 | int:312 | int:24 | int:50]
+  0x3b36: push int 0
+  0x3b3c: d_to_a
+  0x3b3e: swapa
+  0x3b40: pop_to_base
+  0x3b42: pop_base
+  0x3b44: a_to_d
+  0x3b46: pop_return
+  0x3b48: pop_to_base
+  0x3b4a: pop_base
+  0x3b4c: pop_return
+
+--- proc 42 Node021  [0x3b4e,0x3b96) ---
+  0x3b4e: push_base
+  0x3b50: push int 74
+  0x3b56: push int 320
+  0x3b5c: gsay_reply   <== [int:74 | int:320]
+  0x3b5e: push int 4
+  0x3b64: push int 74
+  0x3b6a: push int 321
+  0x3b70: push int 43
+  0x3b76: push int 50
+  0x3b7c: giq_option  msg=321 -> target proc[43]=Node022 react=50   [int:4 | int:74 | int:321 | int:43 | int:50]
+  0x3b7e: push int 0
+  0x3b84: d_to_a
+  0x3b86: swapa
+  0x3b88: pop_to_base
+  0x3b8a: pop_base
+  0x3b8c: a_to_d
+  0x3b8e: pop_return
+  0x3b90: pop_to_base
+  0x3b92: pop_base
+  0x3b94: pop_return
+
+--- proc 43 Node022  [0x3b96,0x3bfe) ---
+  0x3b96: push_base
+  0x3b98: push int 74
+  0x3b9e: push int 330
+  0x3ba4: gsay_reply   <== [int:74 | int:330]
+  0x3ba6: push int 4
+  0x3bac: push int 74
+  0x3bb2: push int 331
+  0x3bb8: push int 40
+  0x3bbe: push int 50
+  0x3bc4: giq_option  msg=331 -> target proc[40]=Node019 react=50   [int:4 | int:74 | int:331 | int:40 | int:50]
+  0x3bc6: push int 4
+  0x3bcc: push int 74
+  0x3bd2: push int 332
+  0x3bd8: push int 24
+  0x3bde: push int 50
+  0x3be4: giq_option  msg=332 -> target proc[24]=Node003 react=50   [int:4 | int:74 | int:332 | int:24 | int:50]
+  0x3be6: push int 0
+  0x3bec: d_to_a
+  0x3bee: swapa
+  0x3bf0: pop_to_base
+  0x3bf2: pop_base
+  0x3bf4: a_to_d
+  0x3bf6: pop_return
+  0x3bf8: pop_to_base
+  0x3bfa: pop_base
+  0x3bfc: pop_return
+
+--- proc 44 Node023  [0x3bfe,0x3c66) ---
+  0x3bfe: push_base
+  0x3c00: push int 74
+  0x3c06: push int 340
+  0x3c0c: gsay_reply   <== [int:74 | int:340]
+  0x3c0e: push int 4
+  0x3c14: push int 74
+  0x3c1a: push int 341
+  0x3c20: push int 40
+  0x3c26: push int 50
+  0x3c2c: giq_option  msg=341 -> target proc[40]=Node019 react=50   [int:4 | int:74 | int:341 | int:40 | int:50]
+  0x3c2e: push int 4
+  0x3c34: push int 74
+  0x3c3a: push int 342
+  0x3c40: push int 24
+  0x3c46: push int 50
+  0x3c4c: giq_option  msg=342 -> target proc[24]=Node003 react=50   [int:4 | int:74 | int:342 | int:24 | int:50]
+  0x3c4e: push int 0
+  0x3c54: d_to_a
+  0x3c56: swapa
+  0x3c58: pop_to_base
+  0x3c5a: pop_base
+  0x3c5c: a_to_d
+  0x3c5e: pop_return
+  0x3c60: pop_to_base
+  0x3c62: pop_base
+  0x3c64: pop_return
+
+--- proc 45 Node024  [0x3c66,0x3cce) ---
+  0x3c66: push_base
+  0x3c68: push int 74
+  0x3c6e: push int 350
+  0x3c74: gsay_reply   <== [int:74 | int:350]
+  0x3c76: push int 4
+  0x3c7c: push int 74
+  0x3c82: push int 351
+  0x3c88: push int 40
+  0x3c8e: push int 50
+  0x3c94: giq_option  msg=351 -> target proc[40]=Node019 react=50   [int:4 | int:74 | int:351 | int:40 | int:50]
+  0x3c96: push int 4
+  0x3c9c: push int 74
+  0x3ca2: push int 352
+  0x3ca8: push int 24
+  0x3cae: push int 50
+  0x3cb4: giq_option  msg=352 -> target proc[24]=Node003 react=50   [int:4 | int:74 | int:352 | int:24 | int:50]
+  0x3cb6: push int 0
+  0x3cbc: d_to_a
+  0x3cbe: swapa
+  0x3cc0: pop_to_base
+  0x3cc2: pop_base
+  0x3cc4: a_to_d
+  0x3cc6: pop_return
+  0x3cc8: pop_to_base
+  0x3cca: pop_base
+  0x3ccc: pop_return
+
+--- proc 46 Node025  [0x3cce,0x3d80) ---
+  0x3cce: push_base
+  0x3cd0: push int 15642
+  0x3cd6: push int 17
+  0x3cdc: push int 1
+  0x3ce2: metarule
+  0x3ce4: push int 0
+  0x3cea: equal
+  0x3cec: if
+  0x3cee: push sstr "@380"
+  0x3cf4: push int 1
+  0x3cfa: add
+  0x3cfc: push sstr "@398"
+  0x3d02: add
+  0x3d04: debug_msg
+  0x3d06: push int 0
+  0x3d0c: push int 1
+  0x3d12: push int 1
+  0x3d18: mark_area_known
+  0x3d1a: push int 74
+  0x3d20: push int 360
+  0x3d26: gsay_reply   <== [int:0 | int:1 | int:1 | int:74 | int:360]
+  0x3d28: push int 4
+  0x3d2e: push int 74
+  0x3d34: push int 361
+  0x3d3a: push int 40
+  0x3d40: push int 50
+  0x3d46: giq_option  msg=361 -> target proc[40]=Node019 react=50   [int:4 | int:74 | int:361 | int:40 | int:50]
+  0x3d48: push int 4
+  0x3d4e: push int 74
+  0x3d54: push int 362
+  0x3d5a: push int 24
+  0x3d60: push int 50
+  0x3d66: giq_option  msg=362 -> target proc[24]=Node003 react=50   [int:4 | int:74 | int:362 | int:24 | int:50]
+  0x3d68: push int 0
+  0x3d6e: d_to_a
+  0x3d70: swapa
+  0x3d72: pop_to_base
+  0x3d74: pop_base
+  0x3d76: a_to_d
+  0x3d78: pop_return
+  0x3d7a: pop_to_base
+  0x3d7c: pop_base
+  0x3d7e: pop_return
+
+--- proc 47 Node026  [0x3d80,0x3e28) ---
+  0x3d80: push_base
+  0x3d82: push int 74
+  0x3d88: push int 370
+  0x3d8e: gsay_reply   <== [int:74 | int:370]
+  0x3d90: push int 4
+  0x3d96: push int 74
+  0x3d9c: push int 371
+  0x3da2: push int 48
+  0x3da8: push int 50
+  0x3dae: giq_option  msg=371 -> target proc[48]=Node027 react=50   [int:4 | int:74 | int:371 | int:48 | int:50]
+  0x3db0: push int 4
+  0x3db6: push int 74
+  0x3dbc: push int 372
+  0x3dc2: push int 49
+  0x3dc8: push int 50
+  0x3dce: giq_option  msg=372 -> target proc[49]=Node028 react=50   [int:4 | int:74 | int:372 | int:49 | int:50]
+  0x3dd0: push int 4
+  0x3dd6: push int 74
+  0x3ddc: push int 373
+  0x3de2: push int 40
+  0x3de8: push int 50
+  0x3dee: giq_option  msg=373 -> target proc[40]=Node019 react=50   [int:4 | int:74 | int:373 | int:40 | int:50]
+  0x3df0: push int 4
+  0x3df6: push int 74
+  0x3dfc: push int 374
+  0x3e02: push int 24
+  0x3e08: push int 50
+  0x3e0e: giq_option  msg=374 -> target proc[24]=Node003 react=50   [int:4 | int:74 | int:374 | int:24 | int:50]
+  0x3e10: push int 0
+  0x3e16: d_to_a
+  0x3e18: swapa
+  0x3e1a: pop_to_base
+  0x3e1c: pop_base
+  0x3e1e: a_to_d
+  0x3e20: pop_return
+  0x3e22: pop_to_base
+  0x3e24: pop_base
+  0x3e26: pop_return
+
+--- proc 48 Node027  [0x3e28,0x3eb0) ---
+  0x3e28: push_base
+  0x3e2a: push int 74
+  0x3e30: push int 380
+  0x3e36: gsay_reply   <== [int:74 | int:380]
+  0x3e38: push int 4
+  0x3e3e: push int 74
+  0x3e44: push int 381
+  0x3e4a: push int 49
+  0x3e50: push int 50
+  0x3e56: giq_option  msg=381 -> target proc[49]=Node028 react=50   [int:4 | int:74 | int:381 | int:49 | int:50]
+  0x3e58: push int 4
+  0x3e5e: push int 74
+  0x3e64: push int 382
+  0x3e6a: push int 40
+  0x3e70: push int 50
+  0x3e76: giq_option  msg=382 -> target proc[40]=Node019 react=50   [int:4 | int:74 | int:382 | int:40 | int:50]
+  0x3e78: push int 4
+  0x3e7e: push int 74
+  0x3e84: push int 383
+  0x3e8a: push int 24
+  0x3e90: push int 50
+  0x3e96: giq_option  msg=383 -> target proc[24]=Node003 react=50   [int:4 | int:74 | int:383 | int:24 | int:50]
+  0x3e98: push int 0
+  0x3e9e: d_to_a
+  0x3ea0: swapa
+  0x3ea2: pop_to_base
+  0x3ea4: pop_base
+  0x3ea6: a_to_d
+  0x3ea8: pop_return
+  0x3eaa: pop_to_base
+  0x3eac: pop_base
+  0x3eae: pop_return
+
+--- proc 49 Node028  [0x3eb0,0x3f38) ---
+  0x3eb0: push_base
+  0x3eb2: push int 74
+  0x3eb8: push int 390
+  0x3ebe: gsay_reply   <== [int:74 | int:390]
+  0x3ec0: push int 4
+  0x3ec6: push int 74
+  0x3ecc: push int 391
+  0x3ed2: push int 48
+  0x3ed8: push int 50
+  0x3ede: giq_option  msg=391 -> target proc[48]=Node027 react=50   [int:4 | int:74 | int:391 | int:48 | int:50]
+  0x3ee0: push int 4
+  0x3ee6: push int 74
+  0x3eec: push int 392
+  0x3ef2: push int 40
+  0x3ef8: push int 50
+  0x3efe: giq_option  msg=392 -> target proc[40]=Node019 react=50   [int:4 | int:74 | int:392 | int:40 | int:50]
+  0x3f00: push int 4
+  0x3f06: push int 74
+  0x3f0c: push int 393
+  0x3f12: push int 24
+  0x3f18: push int 50
+  0x3f1e: giq_option  msg=393 -> target proc[24]=Node003 react=50   [int:4 | int:74 | int:393 | int:24 | int:50]
+  0x3f20: push int 0
+  0x3f26: d_to_a
+  0x3f28: swapa
+  0x3f2a: pop_to_base
+  0x3f2c: pop_base
+  0x3f2e: a_to_d
+  0x3f30: pop_return
+  0x3f32: pop_to_base
+  0x3f34: pop_base
+  0x3f36: pop_return
+
+--- proc 50 Node029  [0x3f38,0x3fe0) ---
+  0x3f38: push_base
+  0x3f3a: push int 74
+  0x3f40: push int 400
+  0x3f46: gsay_reply   <== [int:74 | int:400]
+  0x3f48: push int 4
+  0x3f4e: push int 74
+  0x3f54: push int 401
+  0x3f5a: push int 51
+  0x3f60: push int 50
+  0x3f66: giq_option  msg=401 -> target proc[51]=Node030 react=50   [int:4 | int:74 | int:401 | int:51 | int:50]
+  0x3f68: push int 4
+  0x3f6e: push int 74
+  0x3f74: push int 402
+  0x3f7a: push int 51
+  0x3f80: push int 50
+  0x3f86: giq_option  msg=402 -> target proc[51]=Node030 react=50   [int:4 | int:74 | int:402 | int:51 | int:50]
+  0x3f88: push int 4
+  0x3f8e: push int 74
+  0x3f94: push int 403
+  0x3f9a: push int 21
+  0x3fa0: push int 50
+  0x3fa6: giq_option  msg=403 -> target proc[21]=Node999 react=50   [int:4 | int:74 | int:403 | int:21 | int:50]
+  0x3fa8: push int 7
+  0x3fae: push int 74
+  0x3fb4: push int 404
+  0x3fba: push int 51
+  0x3fc0: push int 50
+  0x3fc6: giq_option  msg=404 -> target proc[51]=Node030 react=50   [int:7 | int:74 | int:404 | int:51 | int:50]
+  0x3fc8: push int 0
+  0x3fce: d_to_a
+  0x3fd0: swapa
+  0x3fd2: pop_to_base
+  0x3fd4: pop_base
+  0x3fd6: a_to_d
+  0x3fd8: pop_return
+  0x3fda: pop_to_base
+  0x3fdc: pop_base
+  0x3fde: pop_return
+
+--- proc 51 Node030  [0x3fe0,0x400e) ---
+  0x3fe0: push_base
+  0x3fe2: push int 74
+  0x3fe8: push int 410
+  0x3fee: push int 50
+  0x3ff4: gsay_message   <== [int:74 | int:410 | int:50]
+  0x3ff6: push int 0
+  0x3ffc: d_to_a
+  0x3ffe: swapa
+  0x4000: pop_to_base
+  0x4002: pop_base
+  0x4004: a_to_d
+  0x4006: pop_return
+  0x4008: pop_to_base
+  0x400a: pop_base
+  0x400c: pop_return
+
+--- proc 52 Node031  [0x400e,0x4056) ---
+  0x400e: push_base
+  0x4010: push int 74
+  0x4016: push int 420
+  0x401c: gsay_reply   <== [int:74 | int:420]
+  0x401e: push int 4
+  0x4024: push int 74
+  0x402a: push int 421
+  0x4030: push int 53
+  0x4036: push int 50
+  0x403c: giq_option  msg=421 -> target proc[53]=Node032 react=50   [int:4 | int:74 | int:421 | int:53 | int:50]
+  0x403e: push int 0
+  0x4044: d_to_a
+  0x4046: swapa
+  0x4048: pop_to_base
+  0x404a: pop_base
+  0x404c: a_to_d
+  0x404e: pop_return
+  0x4050: pop_to_base
+  0x4052: pop_base
+  0x4054: pop_return
+
+--- proc 53 Node032  [0x4056,0x40be) ---
+  0x4056: push_base
+  0x4058: push int 74
+  0x405e: push int 430
+  0x4064: gsay_reply   <== [int:74 | int:430]
+  0x4066: push int 4
+  0x406c: push int 74
+  0x4072: push int 431
+  0x4078: push int 40
+  0x407e: push int 50
+  0x4084: giq_option  msg=431 -> target proc[40]=Node019 react=50   [int:4 | int:74 | int:431 | int:40 | int:50]
+  0x4086: push int 4
+  0x408c: push int 74
+  0x4092: push int 432
+  0x4098: push int 24
+  0x409e: push int 50
+  0x40a4: giq_option  msg=432 -> target proc[24]=Node003 react=50   [int:4 | int:74 | int:432 | int:24 | int:50]
+  0x40a6: push int 0
+  0x40ac: d_to_a
+  0x40ae: swapa
+  0x40b0: pop_to_base
+  0x40b2: pop_base
+  0x40b4: a_to_d
+  0x40b6: pop_return
+  0x40b8: pop_to_base
+  0x40ba: pop_base
+  0x40bc: pop_return
+
+--- proc 54 Node040  [0x40be,0x4126) ---
+  0x40be: push_base
+  0x40c0: push int 74
+  0x40c6: push int 500
+  0x40cc: gsay_reply   <== [int:74 | int:500]
+  0x40ce: push int 4
+  0x40d4: push int 74
+  0x40da: push int 501
+  0x40e0: push int 40
+  0x40e6: push int 50
+  0x40ec: giq_option  msg=501 -> target proc[40]=Node019 react=50   [int:4 | int:74 | int:501 | int:40 | int:50]
+  0x40ee: push int 4
+  0x40f4: push int 74
+  0x40fa: push int 502
+  0x4100: push int 21
+  0x4106: push int 50
+  0x410c: giq_option  msg=502 -> target proc[21]=Node999 react=50   [int:4 | int:74 | int:502 | int:21 | int:50]
+  0x410e: push int 0
+  0x4114: d_to_a
+  0x4116: swapa
+  0x4118: pop_to_base
+  0x411a: pop_base
+  0x411c: a_to_d
+  0x411e: pop_return
+  0x4120: pop_to_base
+  0x4122: pop_base
+  0x4124: pop_return

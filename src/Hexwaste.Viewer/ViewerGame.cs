@@ -612,6 +612,9 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
         public sealed record TalkChoose(int Hex, int[] Choices) : StartupAction;
         /// <summary>Test plumbing: force a global var (probe GVAR-gated dialog branches).</summary>
         public sealed record SetGlobal(int Id, int Value) : StartupAction;
+        /// <summary>P105 (test aid): set the local var [Index]=Value on the scripted object at Hex (e.g. an
+        /// escort NPC's follow flag), so a later map_exit_p_proc reads it.</summary>
+        public sealed record SetLocal(int Hex, int Index, int Value) : StartupAction;
         /// <summary>Print party size + dude caps as a state-only transcript line (no
         /// dialog text) — the assertion target for the legitimate-recruit fixture.</summary>
         public sealed record PartyCount : StartupAction;
@@ -1453,6 +1456,13 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
         // delta — it is regenerated, not remembered.
         if (captureOutgoing && _map is not null && !_currentMapTransient)
         {
+            // P105: fire the leaving map's map_exit_p_proc scripts BEFORE party extraction — this is how
+            // escort quests complete (the escort NPC's map_exit_p_proc = its leave_player procedure sets the
+            // quest GVAR when the dude walks the follower out of the map). ported from fallout2-ce
+            // scripts.cc scriptsExecMapExitScripts (SCRIPT_PROC_MAP_EXIT).
+            IEnumerable<MapObject> exitScripted = _map.Elevations.Where(e => e is not null)
+                .SelectMany(e => e!.Objects).Where(o => o.Sid != -1 && o != _dude?.Dude);
+            _scriptHost?.RunMapExit(_map, exitScripted, _dude?.Dude);
             ExtractPartyFromMap();
             ExtractDismissedFromMap(); // persist this map's dismissed bodies, pull them off it
             CaptureMapDelta();
