@@ -68,24 +68,34 @@ var procUsage = new Dictionary<string, List<string>>();
 foreach (var procName in procInfo.Keys)
     procUsage[procName] = new List<string>();
 
+// P100 (Point 2) — the silent quest-gap detector: the FULL external surface the map's scripts
+// reference (statically, beyond what map_enter/map_update actually fire), split wired vs stubbed.
+var referencedExternals = new SortedSet<int>();
+var definedProcs = new SortedSet<string>();
+
 foreach (int idx in allScriptIndices)
 {
     string? path = scriptList.GetScriptPath(idx);
     if (path is null) continue;
-    
+
     string scriptName = scriptList.GetName(idx) ?? $"script_{idx}";
-    
+
     try
     {
         using Stream s = vfs.OpenRead(path);
         IntProgram prog = IntProgram.Load(s);
-        
+
         foreach (var (procName, _) in procInfo)
         {
             int procPos = prog.FindProcedure(procName);
             if (procPos >= 0)
                 procUsage[procName].Add($"{idx}:{scriptName}");
         }
+
+        foreach (var proc in prog.Procedures)
+            definedProcs.Add(proc.Name);
+        foreach (int ext in prog.ReferencedExternals())
+            referencedExternals.Add(ext);
     }
     catch { }
 }
@@ -104,4 +114,14 @@ foreach (var (procName, scripts) in procUsage.OrderBy(x => x.Key))
 
 var usedProcs = procUsage.Where(x => x.Value.Count > 0).ToList();
 Console.WriteLine($"\nSummary: {usedProcs.Count} proc types used");
+
+// Machine-readable census line (stable, sorted) — the gap detector's headline output.
+var wiredRefs = referencedExternals.Where(IntVm.WiredExternals.Contains).ToList();
+var stubbedRefs = referencedExternals.Where(e => !IntVm.WiredExternals.Contains(e)).ToList();
+string mapId = Path.GetFileNameWithoutExtension(mapName);
+Console.WriteLine($"\nprocanalyze: map={mapId} scripts={allScriptIndices.Count} defined-procs={definedProcs.Count}"
+    + $" externals={referencedExternals.Count} wired={wiredRefs.Count} stubbed={stubbedRefs.Count}");
+if (stubbedRefs.Count > 0)
+    Console.WriteLine("  stubbed: " + string.Join(" ",
+        stubbedRefs.Select(e => $"{ExternalArity.Table[e].Name}(0x{e:X4})")));
 return 0;

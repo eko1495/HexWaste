@@ -1,0 +1,1 @@
+procanalyze: map=argarden scripts=5 defined-procs=11 externals=44 wired=44 stubbed=0

@@ -1,0 +1,2 @@
+procanalyze: map=arcaves scripts=27 defined-procs=63 externals=88 wired=81 stubbed=7
+  stubbed: play_sfx(0x80A3) proto_data(0x8104) game_ui_disable(0x8133) game_ui_enable(0x8134) gfade_out(0x8136) gfade_in(0x8137) art_anim(0x814A)

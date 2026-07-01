@@ -1,0 +1,1 @@
+procanalyze: map=artemple scripts=3 defined-procs=24 externals=40 wired=40 stubbed=0

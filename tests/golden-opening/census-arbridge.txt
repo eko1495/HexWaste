@@ -1,0 +1,2 @@
+procanalyze: map=arbridge scripts=3 defined-procs=58 externals=53 wired=50 stubbed=3
+  stubbed: tile_is_visible(0x80F8) gfade_out(0x8136) gfade_in(0x8137)

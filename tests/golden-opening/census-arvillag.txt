@@ -1,0 +1,2 @@
+procanalyze: map=arvillag scripts=17 defined-procs=134 externals=99 wired=97 stubbed=2
+  stubbed: gfade_out(0x8136) gfade_in(0x8137)

@@ -1,0 +1,1 @@
+map-update: map=arvillag.map ran=1 lightCalls=1 levels=[100] objLightCalls=0 ambient=65536->65536 fixed=1->1 newStubbedExternals=0[]

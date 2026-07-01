@@ -129,6 +129,38 @@ public sealed class IntProgram
         return ReadCString(Data, position);
     }
 
+    /// <summary>
+    /// Statically collect every external opcode referenced anywhere in this program's bytecode, by
+    /// linear-decoding the whole code section (from the first procedure body to the end of the file).
+    /// mirrors IntVm.Execute dispatch — ported from fallout2-ce src/interpreter.cc _interpret(): each
+    /// opcode is a 2-byte big-endian word; push (low-10-bits == 1) consumes 4 inline operand bytes and is
+    /// the only opcode that does; an external is any word whose <c>0x8000 | (op &amp; 0x3FF)</c> key is in
+    /// <see cref="ExternalArity"/>.Table. Used by the census gap-detector (referenced \ IntVm.WiredExternals
+    /// = the map's unwired-external demand).
+    /// </summary>
+    public IReadOnlySet<int> ReferencedExternals()
+    {
+        var result = new HashSet<int>();
+        if (Procedures.Count == 0)
+            return result;
+        int ip = Procedures.Min(p => p.BodyOffset); // bodies are contiguous to EOF; scan the whole code span
+        while (ip + 2 <= Data.Length)
+        {
+            ushort word = (ushort)ReadCode16(ip);
+            ip += 2;
+            int low = word & 0x3FF;
+            if (low == 1) // push — skip its 4-byte inline operand (the only opcode with operand bytes)
+            {
+                ip += 4;
+                continue;
+            }
+            int key = 0x8000 | low;
+            if (ExternalArity.Table.ContainsKey(key))
+                result.Add(key);
+        }
+        return result;
+    }
+
     internal short ReadCode16(int offset)
     {
         if (offset < 0 || offset + 2 > Data.Length)
