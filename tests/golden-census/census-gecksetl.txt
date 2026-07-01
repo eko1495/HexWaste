@@ -1,0 +1,2 @@
+procanalyze: map=gecksetl scripts=8 defined-procs=169 externals=94 wired=91 stubbed=3
+  stubbed: item_subtype(0x80C9) gfade_out(0x8136) gfade_in(0x8137)

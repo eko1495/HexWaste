@@ -1,0 +1,2 @@
+procanalyze: map=sfchina scripts=16 defined-procs=117 externals=99 wired=94 stubbed=5
+  stubbed: item_subtype(0x80C9) gfade_out(0x8136) gfade_in(0x8137) reg_anim_play_sfx(0x813B) sfx_build_char_name(0x813D)

@@ -1,0 +1,2 @@
+procanalyze: map=reddown scripts=27 defined-procs=153 externals=107 wired=102 stubbed=5
+  stubbed: play_sfx(0x80A3) item_subtype(0x80C9) radiation_dec(0x80FE) gfade_out(0x8136) gfade_in(0x8137)

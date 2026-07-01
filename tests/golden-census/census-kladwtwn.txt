@@ -1,0 +1,2 @@
+procanalyze: map=kladwtwn scripts=31 defined-procs=246 externals=104 wired=101 stubbed=3
+  stubbed: item_subtype(0x80C9) gfade_out(0x8136) gfade_in(0x8137)

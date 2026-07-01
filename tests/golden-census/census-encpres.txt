@@ -1,0 +1,2 @@
+procanalyze: map=encpres scripts=15 defined-procs=116 externals=65 wired=63 stubbed=2
+  stubbed: gfade_out(0x8136) gfade_in(0x8137)

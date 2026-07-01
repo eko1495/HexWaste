@@ -1,0 +1,2 @@
+procanalyze: map=encdock scripts=1 defined-procs=5 externals=11 wired=10 stubbed=1
+  stubbed: gfade_in(0x8137)

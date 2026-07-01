@@ -1,0 +1,2 @@
+procanalyze: map=vault13 scripts=22 defined-procs=135 externals=101 wired=96 stubbed=5
+  stubbed: radiation_dec(0x80FE) gfade_out(0x8136) gfade_in(0x8137) reg_anim_play_sfx(0x813B) sfx_build_char_name(0x813D)

@@ -1,0 +1,2 @@
+procanalyze: map=mbase12 scripts=9 defined-procs=21 externals=44 wired=43 stubbed=1
+  stubbed: radiation_inc(0x80FD)

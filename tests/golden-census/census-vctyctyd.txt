@@ -1,0 +1,2 @@
+procanalyze: map=vctyctyd scripts=34 defined-procs=157 externals=113 wired=110 stubbed=3
+  stubbed: item_subtype(0x80C9) gfade_out(0x8136) gfade_in(0x8137)
