@@ -1456,6 +1456,15 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
         // delta — it is regenerated, not remembered.
         if (captureOutgoing && _map is not null && !_currentMapTransient)
         {
+            // P107 follow-movement: followers ride OUT with the dude — reposition each non-waiting party
+            // member to the dude's exit tile so an escort's map_exit position gate (checkPartyMembersNearDoor:
+            // a party member within N tiles of the exit door) sees them at the exit, exactly as if they had
+            // walked the follower out. Party members travel OUTSIDE map deltas, so this is delta-safe.
+            if (_dude is not null && _scriptHost is not null)
+                foreach (MapObject follower in _scriptHost.PartyMembers)
+                    if (!_waitingCompanions.Contains(follower))
+                        follower.HexTile = _dude.Dude.HexTile;
+
             // P105: fire the leaving map's map_exit_p_proc scripts BEFORE party extraction — this is how
             // escort quests complete (the escort NPC's map_exit_p_proc = its leave_player procedure sets the
             // quest GVAR when the dude walks the follower out of the map). ported from fallout2-ce

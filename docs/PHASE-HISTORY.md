@@ -885,3 +885,17 @@ follower being near the exit grid, and the headless harness does not simulate th
 exit (no follow-movement/pathing). In LIVE play (the follower walks out with the dude) the escort quests now
 complete. Not faked into a passing test. Wiring the follow-movement simulation (temporary escort follower that
 paths to the dude + reaches the exit) is the remaining piece for a headless escort golden.
+---
+
+Phase 107 (DONE — "Escort follow-movement"): the follow-movement half of the escort-completion feature.
+On map-LEAVE (LoadMap), each non-waiting party-member follower is repositioned to the dude's exit tile
+BEFORE RunMapExit — so they "ride out" with the dude, exactly as if they had walked the follower out. This
+is what lets an escort's map_exit position gate (checkPartyMembersNearDoor: a party member within N tiles of
+the exit door — decompiled from the escort script) see the follower at the exit. Party members travel OUTSIDE
+map deltas, so the reposition is delta-safe; all 16 combat + 185 encounter + opening + quest goldens
+byte-identical. Together with P106 (map_exit_p_proc), escort quests now COMPLETE IN LIVE PLAY (walk the
+follower to the exit → the quest resolves). HONEST LIMIT (unchanged): a fully-automated HEADLESS escort
+GOLDEN still needs three per-quest specifics decompiled from each escort script — establishing the follow via
+its stat-gated dialogue, the escort being a trackable follower, and driving the dude to the exact exit-door
+tile the position gate checks — which is per-quest navigation with low value-for-effort (live play already
+works). Not built into a faked test; documented as the remaining per-quest QA work.
