@@ -195,6 +195,24 @@ for (int i = 0; i < args.Length; i++)
             // P83-M1: dump the authentic main-menu button layout (rects + misc.msg labels + hit round-trip).
             actions.Add(new ViewerGame.StartupAction.MenuProbe());
             break;
+        case "--endgame-probe":
+            // P100: dump the victory-slide selection (endgame.txt). Optional "<gvar> <value>" forces one GVAR
+            // so a slide can be exercised on a fresh game (content-gated: no map fires endgame_slideshow yet).
+            if (i + 2 < args.Length && int.TryParse(args[i + 1], out int egGvar) && int.TryParse(args[i + 2], out int egVal))
+            {
+                actions.Add(new ViewerGame.StartupAction.EndgameProbe(egGvar, egVal));
+                i += 2;
+            }
+            else
+            {
+                actions.Add(new ViewerGame.StartupAction.EndgameProbe(null, null));
+            }
+            break;
+        case "--death-ending-probe" when i + 2 < args.Length:
+            // P100: dump the death-ending narration for a reason (0=death, 2=timeout) + RNG seed (enddeath.txt).
+            actions.Add(new ViewerGame.StartupAction.DeathEndingProbe(int.Parse(args[i + 1]), int.Parse(args[i + 2])));
+            i += 2;
+            break;
         case "--rest-for" when i + 1 < args.Length:
             // --rest-for <minutes> (or -1 healed / -2,-3 until morning,evening): Pip-Boy rest.
             actions.Add(new ViewerGame.StartupAction.RestFor(int.Parse(args[++i])));

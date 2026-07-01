@@ -1,0 +1,2 @@
+  slide: gvar=408 value=1 art=440 frm=EG_ARO01.FRM pal=1 acm=1 subs=1 base=nar_ar1
+endgame-probe: records=52 shown=1

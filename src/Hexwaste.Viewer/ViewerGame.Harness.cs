@@ -924,6 +924,48 @@ public sealed partial class ViewerGame
                     Console.WriteLine($"get-global: GVAR{ggId} = {_scriptHost?.GlobalVars.GetValueOrDefault(ggId, 0) ?? 0}");
                     break;
                 }
+                case StartupAction.EndgameProbe(var egGvar, var egVal):
+                {
+                    // P100: parse endgame.txt + report the slides selected by the live/forced GVARs (gvar==value),
+                    // proving the content-gated victory slideshow works without reaching the Enclave finale.
+                    if (egGvar is { } g && egVal is { } v)
+                        _scriptHost!.GlobalVars[g] = v;
+                    const string cfg = @"data\endgame.txt";
+                    var recs = _vfs.Exists(cfg)
+                        ? Formats.Endgame.EndgameEndingFile.Parse(_vfs.ReadAllBytes(cfg))
+                        : [];
+                    int shown = 0;
+                    foreach (Formats.Endgame.EndgameEnding r in recs)
+                    {
+                        if (_scriptHost!.GlobalVars.GetValueOrDefault(r.Gvar, 0) != r.Value)
+                            continue;
+                        shown++;
+                        string frm = _artIndex.GetFrmPath(Formats.Fid.Build(Formats.ObjectType.Interface, r.ArtNum));
+                        string pal = frm[..frm.LastIndexOf('.')] + ".pal";
+                        string frmName = frm[(frm.LastIndexOfAny(['\\', '/']) + 1)..]; // Path.GetFileName won't split '\' on Linux
+                        Console.WriteLine($"  slide: gvar={r.Gvar} value={r.Value} art={r.ArtNum} frm={frmName}"
+                            + $" pal={(_vfs.Exists(pal) ? 1 : 0)} acm={(_vfs.Exists($@"sound\speech\narrator\{r.VoiceOverBaseName}.acm") ? 1 : 0)}"
+                            + $" subs={(_vfs.Exists($@"text\english\cuts\{r.VoiceOverBaseName}.txt") ? 1 : 0)} base={r.VoiceOverBaseName}");
+                    }
+                    Console.WriteLine($"endgame-probe: records={recs.Count} shown={shown}");
+                    break;
+                }
+                case StartupAction.DeathEndingProbe(var deReason, var deSeed):
+                {
+                    // P100: parse enddeath.txt + report the death narration selected for a reason + seed.
+                    // areaKnown is conservatively false (worldmap-known plumbing is the M8 live-death concern).
+                    const string cfg = @"data\enddeath.txt";
+                    var recs = _vfs.Exists(cfg)
+                        ? Formats.Endgame.EndgameDeathEndingFile.Parse(_vfs.ReadAllBytes(cfg))
+                        : [];
+                    var rng = new Random(deSeed);
+                    string pick = Formats.Endgame.EndgameDeathEndingFile.Select(
+                        recs, (Formats.Endgame.EndgameDeathReason)deReason,
+                        g => _scriptHost!.GlobalVars.GetValueOrDefault(g, 0),
+                        _ => false, _dudeLevel, (lo, hi) => rng.Next(lo, hi + 1));
+                    Console.WriteLine($"death-ending-probe: reason={deReason} seed={deSeed} records={recs.Count} pick={pick}");
+                    break;
+                }
                 case StartupAction.PartyProbe(var ppPid):
                 {
                     // Is this critter PID a data\party.txt recruitable companion? (Vic-pattern feasible

@@ -156,7 +156,7 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
     /// <summary>P83: optional shell state to boot straight into ("pick" / "create"), for screenshots.</summary>
     public string? MenuStartState { get; set; }
 
-    private enum MenuState { None, Title, CharacterPick, CreateStats, CreateTraits, CreateTags, Credits }
+    private enum MenuState { None, Title, CharacterPick, CreateStats, CreateTraits, CreateTags, Credits, Endgame }
 
     private MenuState _menu = MenuState.None;
     private int _menuIndex;
@@ -668,6 +668,12 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
         public sealed record SetKarma(int Karma, int Reputation) : StartupAction;
         /// <summary>Read a global var (P32-M1; verifies vault13.gam seeding after a new game).</summary>
         public sealed record GetGlobal(int Id) : StartupAction;
+
+        // P100 (Point 1): print the victory-slide selection for the current/forced GVARs (endgame.txt).
+        public sealed record EndgameProbe(int? Gvar, int? Value) : StartupAction;
+
+        // P100 (Point 1): print the death-ending narration selected for a reason + RNG seed (enddeath.txt).
+        public sealed record DeathEndingProbe(int Reason, int Seed) : StartupAction;
         /// <summary>Report whether a critter PID is a data\party.txt recruitable companion (and its
         /// level_minimum) — verifies a recruitment is the Vic-pattern (feasible) vs needs custom content.</summary>
         public sealed record PartyProbe(int Pid) : StartupAction;
@@ -1212,6 +1218,8 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
                 ExpAwarded = amount => AwardXp(amount),
                 MapStartOverridden = (tile, elevation, rotation) => OverrideDudeStart(tile, elevation, rotation),
                 MoviePlayed = movieId => ShowMovieCard(movieId),
+                EndgameSlideshowRequested = ShowEndgameSlideshow,
+                EndgameMovieRequested = ShowEndgameMovie,
                 CritterDamaged = (victim, amount, bypassArmor) => OnScriptDamage(victim, amount, bypassArmor),
                 PartyChanged = (critter, joined) => OnPartyChanged(critter, joined),
                 AnimBusyResolver = obj => _animator.TryGetState(obj, out _)
@@ -1275,6 +1283,8 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
                 case "create": EnterCreation(); break;
                 case "credits": _menu = MenuState.Credits; _creditsScroll = 320; break; // mid-scroll for the screenshot
                 case "death": _menu = MenuState.None; _debugDeathScreen = true; break;
+                case "endgame": _scriptHost.GlobalVars[408] = 1; ShowEndgameSlideshow(); break; // Arroyo victory slide, for a screenshot
+
             }
         }
         if (StartOnWorldmap)
@@ -1646,6 +1656,8 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
             _audio?.PlayMusic("07desert");
             if (_menu == MenuState.Credits)
                 UpdateCredits(gameTime.ElapsedGameTime.TotalMilliseconds, keyboard, mouse);
+            else if (_menu == MenuState.Endgame)
+                UpdateEndgame(gameTime.ElapsedGameTime.TotalMilliseconds, keyboard, mouse);
             else
             {
                 HandleMenuInput(keyboard);

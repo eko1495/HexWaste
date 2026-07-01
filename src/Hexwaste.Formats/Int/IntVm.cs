@@ -195,6 +195,13 @@ public interface IVmExternals
     /// <summary>play_gmovie (opPlayGameMovie): the host shows a caption card.</summary>
     void PlayMovie(int movieId) { }
 
+    /// <summary>endgame_slideshow (opEndgameSlideshow): the host runs the victory-ending slideshow
+    /// (endgame.txt, gvar==value slides) then the endgame "movie" (credits) — the win condition.</summary>
+    void EndgameSlideshow() { }
+
+    /// <summary>endgame_movie (opEndgameMovie): the host runs the endgame "movie" (credits scroll) directly.</summary>
+    void EndgameMovie() { }
+
     /// <summary>critter_damage (opCritterDamage → actionDamage): flag 0x100 =
     /// bypass armor, 0x200 = no animation; low bits = damage type.</summary>
     void CritterDamage(int objectHandle, int amount, int damageTypeWithFlags) { }
@@ -1355,6 +1362,12 @@ public sealed class IntVm
                 break;
             case 0x8115: // play_gmovie
                 _externals.PlayMovie(PopInt());
+                break;
+            case 0x8146: // endgame_slideshow — ported from fallout2-ce src/interpreter_extra.cc opEndgameSlideshow
+                _externals.EndgameSlideshow();
+                break;
+            case 0x8148: // endgame_movie — ported from fallout2-ce src/interpreter_extra.cc opEndgameMovie
+                _externals.EndgameMovie();
                 break;
             case 0x8124: // party_add
                 _externals.PartyAdd(PopInt());

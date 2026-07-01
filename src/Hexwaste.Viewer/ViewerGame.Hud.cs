@@ -437,6 +437,7 @@ public sealed partial class ViewerGame
                 _spriteBatch.Draw(_panelPixel,
                     new Rectangle(0, 0, GraphicsDevice.Viewport.Width, GraphicsDevice.Viewport.Height),
                     new Color(0, 0, 0, 170));
+            DrawDeathNarration(); // P100 M8: the enddeath.txt-selected narration subtitle
             var center = new Vector2(GraphicsDevice.Viewport.Width / 2f, GraphicsDevice.Viewport.Height / 2f);
             string[] lines =
             [
@@ -482,6 +483,10 @@ public sealed partial class ViewerGame
         if (_menu == MenuState.Credits)
         {
             DrawCredits();
+        }
+        else if (_menu == MenuState.Endgame)
+        {
+            DrawEndgame();
         }
         else if (_menu == MenuState.Title && DrawAuthenticMainMenu())
         {

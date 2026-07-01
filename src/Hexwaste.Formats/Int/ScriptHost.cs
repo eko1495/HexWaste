@@ -183,6 +183,13 @@ public sealed class ScriptHost(GameFileSystem vfs, ScriptList scripts, Hexwaste.
     /// environmental blast (script trap, reactor meltdown, etc.) on that tile/elevation.</summary>
     public Action<int, int, int, int>? ExplosionRequested { get; set; }
 
+    /// <summary>P100 (Point 1): endgame_slideshow — the host runs the victory-ending slideshow + credits
+    /// (the win condition). Null until the viewer wires it.</summary>
+    public Action? EndgameSlideshowRequested { get; set; }
+
+    /// <summary>P100 (Point 1): endgame_movie — the host runs the endgame "movie" (credits) directly.</summary>
+    public Action? EndgameMovieRequested { get; set; }
+
     /// <summary>P57: set_exit_grids(elevation, destMap, destElevation, destTile) — the host retargets
     /// the exit-grid objects on an elevation.</summary>
     public Action<int, int, int, int>? SetExitGridsRequested { get; set; }
@@ -1597,6 +1604,10 @@ public sealed class ScriptHost(GameFileSystem vfs, ScriptList scripts, Hexwaste.
         public void GiveExpPoints(int amount) => _host.ExpAwarded?.Invoke(amount);
 
         public void PlayMovie(int movieId) => _host.MoviePlayed?.Invoke(movieId);
+
+        public void EndgameSlideshow() => _host.EndgameSlideshowRequested?.Invoke();
+
+        public void EndgameMovie() => _host.EndgameMovieRequested?.Invoke();
 
         public void PartyAdd(int objectHandle)
         {

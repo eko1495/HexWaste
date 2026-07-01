@@ -85,6 +85,43 @@ public sealed class AudioManager : IDisposable
         }
     }
 
+    /// <summary>P100 (Point 1): play endgame narrator speech supplied as raw ACM bytes (the narrator ACMs
+    /// live INSIDE the DAT under sound\speech\narrator\, not loose), and return its duration in ms (or 0 if
+    /// audio is off / the decode failed → the caller falls back to the 0.08 s/char subtitle timing, exactly
+    /// as endgame.cc does when speechLoad fails).</summary>
+    public double PlaySpeechData(byte[] acmData)
+    {
+        if (!_enabled)
+            return 0;
+        try
+        {
+            AcmAudio audio;
+            try { audio = AcmDecoder.Decode(acmData); }
+            catch (InvalidDataException) { return 0; }
+            SoundEffect? effect = CreateEffect(acmData);
+            if (effect is null)
+                return 0;
+            _speech?.Stop();
+            _speech?.Dispose();
+            _speech = effect.CreateInstance();
+            _speech.Play();
+            int channels = audio.Channels >= 2 ? 2 : 1;
+            return (double)(audio.Samples.Length / channels) / audio.SampleRate * 1000.0;
+        }
+        catch (Exception ex) when (ex is NoAudioHardwareException or InvalidOperationException)
+        {
+            Console.Error.WriteLine($"audio disabled: {ex.Message}");
+            _enabled = false;
+            return 0;
+        }
+    }
+
+    /// <summary>Stop any playing speech (e.g. when a slide is skipped early).</summary>
+    public void StopSpeech()
+    {
+        _speech?.Stop();
+    }
+
     /// <summary>Switches the looping music track (maps.txt music= name, e.g. "07desert").</summary>
     public void PlayMusic(string? track)
     {

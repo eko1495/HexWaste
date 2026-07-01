@@ -1,0 +1,2 @@
+  slide: gvar=410 value=3 art=442 frm=EG_DEN01.FRM pal=1 acm=1 subs=1 base=nar_de3
+endgame-probe: records=52 shown=1
