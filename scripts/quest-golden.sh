@@ -38,6 +38,11 @@ SCENARIOS=(
   # Torr's guard-the-brahmin (Klamath, GVAR 182) — ACCEPT: agreeing to guard Torr's brahmin activates the
   # quest 0→1 (completion is at the grazing fields). Asserts the quest goes active.
   "quest-torr-brahmin|$CREATE --goto-map kladwtwn.map --get-global 182 --talk-seq 24291 1,1 --get-global 182 --quest-probe --rng-seed 1"
+  # KILL quest — Rat God (Klamath, GVAR 390): killing Keeng Ra'at (hex 25486, elev 2) fires its
+  # destroy_p_proc which unconditionally sets 390=2 (completed). --kill drives the REAL death path
+  # (CombatEngine.Kill → destroy_p_proc) deterministically — the quest logic is real, only the cause of
+  # death is a debug shortcut (a fresh test char can't win the boss fight). FULL lifecycle 0→2.
+  "quest-kill-ratgod|$CREATE --goto-map klaratcv.map:25486:2 --get-global 390 --kill 25486 --get-global 390 --quest-probe --rng-seed 1"
 )
 
 dotnet build src/Hexwaste.Viewer -c Debug >/dev/null || { echo "build failed"; exit 2; }

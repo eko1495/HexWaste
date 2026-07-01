@@ -647,6 +647,18 @@ public sealed partial class ViewerGame
                         + $"areaAttack={eff.AreaAttack} bestWeapon={eff.WeaponPref}");
                     break;
                 }
+                case StartupAction.KillCritterAt(var killHex):
+                {
+                    // P104: kill the critter through the real death path (CombatEngine.Kill → KillCritter →
+                    // RunDestroyProc → its destroy_p_proc), so a kill-quest GVAR fires deterministically
+                    // without winning a fair boss fight. The QUEST logic (destroy_p_proc → set_global_var)
+                    // is real; only the cause of death is a debug shortcut.
+                    MapObject? victim = CritterAt(killHex, includeFlat: true);
+                    if (victim is null) { Console.Error.WriteLine($"kill: no critter at {killHex}"); break; }
+                    _combat.Kill(victim, _dude?.Dude);
+                    Console.WriteLine($"kill: pid=0x{victim.Pid:X}@{killHex} dead={(victim.IsDead ? 1 : 0)}");
+                    break;
+                }
                 case StartupAction.CombatProcProbe(var cpHex):
                 {
                     // P35: run the critter's per-turn combat_p_proc (fp=4) and report whether it DEFINES

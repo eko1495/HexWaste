@@ -851,3 +851,18 @@ hidden→active→completed). Captured lines are STATE/ID only — never the cop
 Additive → all combat/encounter/opening goldens byte-identical. The remaining Klamath+Den quests are
 authorable on the same template (kill/escort/item-gated need stronger chars / more harness plumbing —
 documented): Rat God 390 (hard kill), Rescue Torr/Smiley 391/197 (escort), Refuel Still 198 (item-on-object).
+---
+
+Phase 105 (DONE — "Kill quest + escort finding"): added a KILL quest to the e2e suite + a --kill harness.
+scripts/quest-golden.sh gains quest-kill-ratgod (Klamath GVAR 390): killing Keeng Ra'at (klaratcv elev 2,
+hex 25486) fires its destroy_p_proc which unconditionally sets 390=2 (FULL 0→2 lifecycle). New --kill <hex>
+harness drives the REAL death path (CombatEngine.Kill → KillCritter → RunDestroyProc → destroy_p_proc)
+deterministically — a fresh test char can't win the boss fight, so the debug kill is the cause of death but
+the QUEST logic (destroy_p_proc → set_global_var) is real. Additive (new StartupAction + flag) → all 16
+combat goldens byte-identical. The suite is now 4 quests (Free Vic full / Smitty accept / Torr-brahmin accept
+/ Rat God kill). ESCORT quests (Rescue Torr 391, Rescue Smiley 197) — CONFIRMED BLOCKED: their completion
+fires via leave_player when the escorted follower reaches an exit grid, and that mechanism is UNWIRED in
+Hexwaste (grep found no leave_player / escort-exit handling anywhere; no talk path flips 391/197). This is a
+genuine engine gap, not a test gap — a faithful escort e2e needs the follower-on-exit-grid → leave_player
+mechanism wired first (a real feature: temporary escort follower + exit-grid crossing detection + the
+leave_player proc). Not faked.

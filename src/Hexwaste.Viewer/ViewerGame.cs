@@ -766,6 +766,9 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
         /// <summary>Run the critter@Hex's per-turn combat_p_proc (fp=4) and report whether it defines the
         /// proc + whether it script_overrides the turn (P35).</summary>
         public sealed record CombatProcProbe(int Hex) : StartupAction;
+        /// <summary>P104: kill the critter at Hex through the real death path (KillCritter → destroy_p_proc),
+        /// so a kill-quest's GVAR fires without needing to win a fair boss fight. A test/debug aid.</summary>
+        public sealed record KillCritterAt(int Hex) : StartupAction;
         /// <summary>P100 (Point 3): run the MAP script's combat_p_proc "combat over" hook (fixedParam = a
         /// KO'er team) and report whether the map defines it + script_overrides — proves the prizefight
         /// caught-KO seam (_scr_end_combat) without needing a live fight.</summary>
