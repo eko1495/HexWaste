@@ -806,3 +806,20 @@ suites (bar two reviewed, sane re-records). See [[p100-endgame-qa-prizefight-car
   METARULE_ELEVATOR(15) (additive, needs a table port + probe), egg-mask per-pixel wall transparency (cosmetic,
   re-records rendering goldens). The combat LOW tier (perk range mults) is inert on the slice (no slice weapon
   carries perk 58/64) → pure forward-looking infra, not built.
+---
+
+Phase 102 (DONE — "Zero Stubs"): a full-game census sweep (ProcAnalyze over all 155 maps) found 87 maps
+referencing ≥1 unwired external, dominated by cosmetics (gfade ×58, item_subtype ×43, play_sfx ×16). Wired
+ALL ~16 remaining externals; result: 0 of 155 maps reference an unwired external. Arities/returns
+adversarially verified against fo2ce interpreter_extra.cc + ExternalArity.cs (zero mismatches — a wrong pop
+corrupts the VM data stack). ALL 16 combat + 185 encounter goldens BYTE-IDENTICAL — the wired externals fire
+only in dialogue/use/timer branches the goldens don't drive, and the map_enter paths that run don't query
+them; only the static-census fixtures re-record (stub counts → 0). Tiers: A cosmetic (play_sfx,
+animate_stand_obj, gfade_out/in, reg_anim_play_sfx, art_anim bit-op, sfx_build_char/weapon_name→PushString);
+B queries (item_subtype→ITEM_TYPE, proto_data→universal+item members, tile_is_visible→camera-proximity);
+C object/inv (inven_cmds cmd13, inven_unwield, use_obj→use_p_proc, drop_obj, scr_return store-only); D
+radiation counter (dude-only, resistance, clamp — mirrors the P35 poison model). Deferred layers: proto_data
+NAME/DESC strings, the scr_return use_obj_on gate flip, the radiation delayed-damage band model. KEY: the
+campaign's entire STATIC external-demand surface is now covered — what remains to "finish the campaign" is
+per-quest playtest QA + the deferred content (prizefight ladder, car acquisition, rad band effects), not
+engine wiring.
