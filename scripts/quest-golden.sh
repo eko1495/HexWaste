@@ -20,11 +20,24 @@ mkdir -p "$FIX"
 
 CREATE="--create 5,5,5,5,5,5,5:0,4,5:0"
 
-# name | harness args. The "Free Vic" quest (Arroyo GVAR 619 FIND_VIC): new-game seeds it to 1 (active);
-# buying Vic's freedom from Metzger (give 2000 caps + his radio, then the 3-NPC dialogue) drives 619→2
-# (completed) + Vic joins. The two get-global 619 (before the dialogue = 1, after = 2) bracket the lifecycle.
+# The Klamath + Den quest suite. Each scenario drives a real quest via the dialogue VM (set_global_var —
+# NOT --set-global faking) + asserts the lifecycle: --get-global (before→after) + --quest-probe (the Pip-Boy
+# quest flips hidden→active, and →completed where the quest completes in one interaction). GVARs/hexes are
+# from the discovery workflow (verified via MapDump/ProcAnalyze); dialogue option paths nailed with --talk-seq.
+# Captured lines are STATE/ID only — never the copyrighted dialogue text.
+#
+# name | harness args
 SCENARIOS=(
-  "quest-free-vic|$CREATE --goto-map denbus2.map --give 41:2000 --give 266:1 --get-global 619 --talk-seq 17070 1,1,1 --talk-seq 15278 2,2,1,1 --talk-seq 17070 2,1 --get-global 619 --quest-probe --party-count --rng-seed 1"
+  # Free Vic (Den) — FULL lifecycle: new-game seeds 619=1 (active); buying Vic's freedom from Metzger
+  # (2000 caps + his radio, then the 3-NPC dialogue) drives 619→2 AND the Den companion quest 100 0→1→2
+  # (both completed) + Vic joins. The get-global pairs bracket each quest's before/after.
+  "quest-free-vic|$CREATE --goto-map denbus2.map --give 41:2000 --give 266:1 --get-global 619 --get-global 100 --talk-seq 17070 1,1,1 --talk-seq 15278 2,2,1,1 --talk-seq 17070 2,1 --get-global 619 --get-global 100 --quest-probe --party-count --rng-seed 1"
+  # Smitty's car part (Den, GVAR 550) — ACCEPT: the car-part dialogue branch activates the quest 0→1
+  # (completion is item-gated: bring Smitty the fuel-cell controller). Asserts the quest goes active.
+  "quest-smitty-carpart|$CREATE --goto-map denbus1.map --get-global 550 --talk-seq 22137 1,1,1,1,1 --get-global 550 --quest-probe --rng-seed 1"
+  # Torr's guard-the-brahmin (Klamath, GVAR 182) — ACCEPT: agreeing to guard Torr's brahmin activates the
+  # quest 0→1 (completion is at the grazing fields). Asserts the quest goes active.
+  "quest-torr-brahmin|$CREATE --goto-map kladwtwn.map --get-global 182 --talk-seq 24291 1,1 --get-global 182 --quest-probe --rng-seed 1"
 )
 
 dotnet build src/Hexwaste.Viewer -c Debug >/dev/null || { echo "build failed"; exit 2; }

@@ -836,3 +836,18 @@ STATE/ID only (get-global/quest-item/quest-probe/party) — never the copyrighte
 quest = author its scenario (discover its GVAR + dialogue option path, assert the lifecycle) — the per-quest
 QA is now automatable, not purely manual. LIMITS: dialogue/combat quests are the sweet spot; fetch/timing/
 multi-map quests need more harness plumbing or stay manual.
+---
+
+Phase 104 (DONE — "Klamath + Den quest suite"): extended the P103 e2e PoC into a real Klamath + Den quest
+regression net. A headless discovery workflow (MapDump/ProcAnalyze/DatDump + decompile, adversarially
+verified) mapped each region's quests to GVAR + giver hex + script (location codes are INVERTED vs the
+brief: 1501=Den, 1502=Klamath). The dialogue OPTION paths (bytecode emission order != keypress order) were
+nailed dynamically with --talk-seq. scripts/quest-golden.sh now drives 3 quests via the real dialogue VM
+(set_global_var, not --set-global): quest-free-vic (Den, FULL lifecycle — 619 FIND_VIC 1→2 + 100
+QUEST_VIC_DEVICE 0→2, both completed, Vic joins); quest-smitty-carpart (Den, GVAR 550 accept 0→1 via
+--talk-seq 22137 1,1,1,1,1); quest-torr-brahmin (Klamath, GVAR 182 accept 0→1 via --talk-seq 24291 1,1).
+Asserts each lifecycle via --get-global (before/after) + --quest-probe (the Pip-Boy quest flips
+hidden→active→completed). Captured lines are STATE/ID only — never the copyrighted dialogue text.
+Additive → all combat/encounter/opening goldens byte-identical. The remaining Klamath+Den quests are
+authorable on the same template (kill/escort/item-gated need stronger chars / more harness plumbing —
+documented): Rat God 390 (hard kill), Rescue Torr/Smiley 391/197 (escort), Refuel Still 198 (item-on-object).
