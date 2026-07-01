@@ -92,16 +92,18 @@ public static class WorldmapTravel
         return false;
     }
 
-    /// <summary>Pick the encounter's transient map: the entry's <c>Map</c> override, else
-    /// a random map from the table's pool, falling back to <c>desert1.map</c> — only ever
-    /// a <c>saved=No</c> map (phase-10 M3, wmRndEncounterPick map selection, simplified).</summary>
+    /// <summary>Pick the encounter's map: the entry's <c>Map</c> override, else a random map from the
+    /// table's pool, falling back to <c>desert1.map</c> (phase-10 M3, wmRndEncounterPick map selection).
+    /// ported from fallout2-ce src/worldmap.cc:3640 wmRndEncounterPick — the map is <c>encounterTableEntry
+    /// -&gt;map</c> UNCONDITIONALLY; <c>saved=</c> never gates the choice. P101 (bucket 3): the earlier
+    /// <c>IsTransient</c> filter wrongly rejected the 6 saved=Yes SPECIAL-encounter maps (crashed whale,
+    /// Cafe of Broken Dreams, …), silently degrading them to random terrain — dropped.</summary>
     public static string ResolveEncounterMap(MapList mapList, EncounterResult enc, ICombatRng rng)
     {
         string? Resolve(string lookup)
         {
             int idx = mapList.FindByLookupName(lookup);
-            string? file = idx >= 0 ? mapList.GetMapFileName(idx) : null;
-            return file is not null && mapList.IsTransient(file) ? file : null;
+            return idx >= 0 ? mapList.GetMapFileName(idx) : null;
         }
 
         if (enc.Entry.Map is { Length: > 0 } m && Resolve(m) is { } mapped)

@@ -1340,6 +1340,7 @@ public sealed class CombatEngine
         ApplyCritStatus(attack.Target, attack.CritFlags, attack.Attacker); // P14: knockout / lose-turn / crippled / blind
         ApplyKnockback(attack);
         RunOnHitCombatProc(attack.Attacker, attack.Target); // P35: fp=2 on-hit hook (e.g. scorpion poison)
+        RegisterHit(attack.Target, attack.Attacker); // P101 (bucket 3): the struck critter remembers its attacker
     }
 
     /// <summary>
@@ -1480,6 +1481,16 @@ public sealed class CombatEngine
     // ====================================================================
 
     private static bool IsKnockedOut(MapObject c) => (c.CombatResults & CriticalTables.DamKnockedOut) != 0;
+
+    /// <summary>Record who last hit a critter (whoHitMe), team-gated + last-hitter-wins — ported from
+    /// fallout2-ce combat.cc:4707 + critter.cc:1285 _critter_set_who_hit_me. Drives AI retaliation in
+    /// TryEnemyAction. DOCUMENTED DIVERGENCE: last-hitter-wins; we don't port _combatai_rating's
+    /// "keep targeting the scarier attacker".</summary>
+    private static void RegisterHit(MapObject target, MapObject attacker)
+    {
+        if (!target.IsDead && attacker != target && attacker.Team != target.Team)
+            target.WhoHitMe = attacker;
+    }
 
     /// <summary>True if the critter may take its turn (not knocked out, not on a
     /// lose-turn, not dead) — ports critterIsActive (critter.cc:942).</summary>
@@ -1666,6 +1677,7 @@ public sealed class CombatEngine
             {
                 _hostiles.Add(c);
                 c.WhoHitMeCid = -1;
+                c.WhoHitMe = null; // P101 (bucket 3): fresh retaliation state per fight
             }
         if (!dudeSpectator && _host.GetCritterState(dude) is { } stats)
             ResetDudeAp(stats);
@@ -2290,6 +2302,13 @@ public sealed class CombatEngine
                 defenderObj = other;
             }
         }
+
+        // P101 (bucket 3): RETALIATION — prefer whoever last hit this critter over the nearest target,
+        // when that attacker is still a live cross-team combatant (combat_ai.cc _ai_danger_source returns
+        // whoHitMe first). Byte-identical in a lone-dude duel (whoHitMe == the dude == nearest).
+        if (enemy.WhoHitMe is { IsDead: false } avenger && avenger.Team != enemy.Team
+            && (avenger == _host.Dude || _hostiles.Contains(avenger) || _host.PartyMembers.Contains(avenger)))
+            defenderObj = avenger;
 
         if (defenderObj is null) // P73: a spectator-brawl critter with no cross-team target left → pass
             return false;

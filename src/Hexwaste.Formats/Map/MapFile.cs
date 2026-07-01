@@ -106,6 +106,11 @@ public sealed class MapObject
     public int Team { get; set; }
     public int WhoHitMeCid { get; set; }
 
+    /// <summary>P101 (bucket 3): the live object that last hit this critter in combat (transient — NOT
+    /// serialized; WhoHitMeCid stays the save proxy). Drives retaliation target-preference in the AI
+    /// (combat_ai.cc _ai_danger_source). Cleared at combat end + on Reset.</summary>
+    public MapObject? WhoHitMe { get; set; }
+
     /// <summary>Per-instance current HP (denbus1 critters carry individual values).</summary>
     public int CurrentHp { get; set; }
     public int Radiation { get; set; }
