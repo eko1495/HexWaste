@@ -742,6 +742,10 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
         /// <summary>Run the critter@Hex's per-turn combat_p_proc (fp=4) and report whether it defines the
         /// proc + whether it script_overrides the turn (P35).</summary>
         public sealed record CombatProcProbe(int Hex) : StartupAction;
+        /// <summary>P100 (Point 3): run the MAP script's combat_p_proc "combat over" hook (fixedParam = a
+        /// KO'er team) and report whether the map defines it + script_overrides — proves the prizefight
+        /// caught-KO seam (_scr_end_combat) without needing a live fight.</summary>
+        public sealed record CombatOverProbe(int Team) : StartupAction;
         /// <summary>Fire the critter@Hex's ON-HIT combat_p_proc (fp=2, target = the dude) and report the
         /// dude's poison delta — proves the scorpion's sting poisons whom it struck (P35 fp=2).</summary>
         public sealed record CombatProcHit(int AttackerHex) : StartupAction;

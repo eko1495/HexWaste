@@ -814,6 +814,23 @@ public sealed class ScriptHost(GameFileSystem vfs, ScriptList scripts, Hexwaste.
             RunObjectProc(obj, map, dude, 0, -1, "map_update_p_proc");
     }
 
+    /// <summary>
+    /// P100 (Point 3): the map-script combat_p_proc "combat over" hook, ported from fallout2-ce
+    /// src/scripts.cc:2848 _scr_end_combat(): when the dude is knocked out (not killed) in combat, run the
+    /// MAP script's combat_p_proc with fixedParam = the team that KO'd the dude, and report whether it
+    /// script_overrides (New Reno's prizefight ring uses this to "catch" the KO + score the bout instead of
+    /// leaving the dude unconscious). Returns null when there is no map script (matches RunProc's contract);
+    /// Overridden mirrors the engine's <c>after-&gt;scriptOverrides != 0</c>.
+    /// </summary>
+    public ScriptRunResult? RunMapCombatOver(MapFile map, MapObject? dude, int team)
+    {
+        if (map.Header.ScriptIndex <= 0)
+            return null;
+        var record = new MapScriptRecord(map.Header.ScriptIndex - 1, -1, 0);
+        return RunProc(record.ScriptListIndex, map, sid: -2, record, SynthMapScriptOwner(), dude,
+            fixedParam: team, -1, ["combat_p_proc"]);
+    }
+
     /// <summary>Revisit tracking: metarule 14 FIRST_RUN consults this.</summary>
     private readonly Dictionary<string, bool> _firstRunByMap = [];
 

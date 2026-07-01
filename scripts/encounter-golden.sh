@@ -276,6 +276,10 @@ SCENARIOS=(
   # (script 906) defines no combat_p_proc (hasProc=False).
   "combat-proc-scorpion|--map arcaves.map --combat-proc 20529 --rng-seed 1"
   "combat-proc-slave|--map denbus2.map --combat-proc 11670 --rng-seed 1"
+  # P100 (Point 3): the map-script "combat over / dude KO'd" hook (_scr_end_combat). Probes the New Reno
+  # Boxing Arena map script — it defines no map-script combat_p_proc, so hasProc=false (the hook is a
+  # faithful engine port; driving it live needs the prizefight content — the dynamically-spawned boxers).
+  "combat-over-newrba|--map newrba.map --combat-over 1 --rng-seed 1"
   # P35 fp=2 on-hit hook: the arcaves scorpion's combat_p_proc (fixed_param==2) poisons whom it stings,
   # via the now-dispatched poison(0x8122) + target_obj=defender plumbing (combat.cc:4729). Deterministic
   # under --rng-seed (the script's do_check uses the seeded _scriptHost.Rng): seed 2 applies +1 poison to
@@ -608,7 +612,7 @@ SCENARIOS=(
 
 # Keep only the deterministic transcript lines (drop map-load / animate / stub /
 # dialog-text noise — NEVER capture REPLY/OPTION game-asset strings).
-FILTER='^(encounter|travel-from|companion|dismiss-persist|trade:|party:|party-count:|set-global:|hud-click:|use-skill:|has-skill:|steal:|maxhp:|hurt:|rest:|automap:|reveal:|taunt:|weapon-mode:|panel-click:|menu-click:|travel-resume:|travel-step:|travel-save-mid:|worldmap-fog:|weight:|iq-probe:|death-probe:|trait-probe:|perk-probe:|perk-pick:|combat-walk:|light:|map-update:|map-update-heartbeat:|drag-equip:|save-slot:|load-slot:|slots:|aim-click:|tactics:|reg-anim:|encounter-fight:|brawl:|brawl-watch:|sneak-probe:|sneak-roll:|backstab-probe:|detect-probe:|karma-probe:|set-karma:|rep-title:|town-rep:|karma-titles:|get-global:|place-probe:|reg-anim-move:|critter-state:|hurt-too-much:|run-probe:|outline:|ac-dodge:|sfx-probe:|reaction-probe:|combat-proc:|combat-proc-hit:|poison-tick:|multihex-probe:|drug-probe:|addict-probe:|kills-probe:|book:|ammo-select:|unload:|ai-heal-probe:|ai-drug-probe:|ai-weapon-probe:|swap-hand:|weapon-switch:|float-text:|speech-probe:|smoke:|scenery-use@|party-probe:|awareness-probe:|action-menu@|  spawn|  flat|  wait:|  follow:|  dismiss:|  rejoin:)'
+FILTER='^(encounter|travel-from|companion|dismiss-persist|trade:|party:|party-count:|set-global:|hud-click:|use-skill:|has-skill:|steal:|maxhp:|hurt:|rest:|automap:|reveal:|taunt:|weapon-mode:|panel-click:|menu-click:|travel-resume:|travel-step:|travel-save-mid:|worldmap-fog:|weight:|iq-probe:|death-probe:|trait-probe:|perk-probe:|perk-pick:|combat-walk:|light:|map-update:|map-update-heartbeat:|drag-equip:|save-slot:|load-slot:|slots:|aim-click:|tactics:|reg-anim:|encounter-fight:|brawl:|brawl-watch:|sneak-probe:|sneak-roll:|backstab-probe:|detect-probe:|karma-probe:|set-karma:|rep-title:|town-rep:|karma-titles:|get-global:|place-probe:|reg-anim-move:|critter-state:|hurt-too-much:|run-probe:|outline:|ac-dodge:|sfx-probe:|reaction-probe:|combat-proc:|combat-proc-hit:|combat-over:|poison-tick:|multihex-probe:|drug-probe:|addict-probe:|kills-probe:|book:|ammo-select:|unload:|ai-heal-probe:|ai-drug-probe:|ai-weapon-probe:|swap-hand:|weapon-switch:|float-text:|speech-probe:|smoke:|scenery-use@|party-probe:|awareness-probe:|action-menu@|  spawn|  flat|  wait:|  follow:|  dismiss:|  rejoin:)'
 
 echo "Building viewer..."
 dotnet build src/Hexwaste.Viewer -c Debug >/dev/null || { echo "build failed"; exit 2; }

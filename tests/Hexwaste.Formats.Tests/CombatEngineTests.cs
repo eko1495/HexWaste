@@ -991,6 +991,59 @@ public class CombatEngineTests
     }
 
     [Fact]
+    public void DudeKnockedOutRunsTheMapCombatOverHookWithTheKoerTeam()
+    {
+        // P100 (Point 3): when the dude is knocked out (not killed), the engine runs the MAP script's
+        // combat_p_proc "combat over" hook with fixedParam = the KO'er's team (fo2ce _scr_end_combat).
+        var host = new FakeCombatHost();
+        MapObject dude = host.SetDude(NewCritter(tile: 20100, hp: 30, ap: 10));
+        MapObject boxer = host.AddCritter(NewCritter(tile: HexGrid.TileInDirection(20100, 0), hp: 30, ap: 10));
+        boxer.Team = 3;
+        var engine = new CombatEngine(host, new MinRng());
+        engine.BeginScriptAggro(boxer, dude); // open combat
+
+        engine.KnockOut(dude, boxer); // the boxer knocks the dude out
+
+        Assert.Contains(3, host.MapCombatOverTeams); // the hook ran with the boxer's team
+    }
+
+    [Fact]
+    public void CaughtKnockoutEndsCombatInsteadOfLeavingTheDudeDown()
+    {
+        // The ring "catches" the KO: the map-script combat_p_proc script_overrides → combat ends at the
+        // turn boundary (no game-over), the faithful prizefight-defeat path.
+        var host = new FakeCombatHost { MapCombatOverReturns = true };
+        MapObject dude = host.SetDude(NewCritter(tile: 20100, hp: 30, ap: 10));
+        MapObject boxer = host.AddCritter(NewCritter(tile: HexGrid.TileInDirection(20100, 0), hp: 30, ap: 10));
+        boxer.Team = 3;
+        var engine = new CombatEngine(host, new MinRng());
+        engine.BeginScriptAggro(boxer, dude);
+
+        engine.KnockOut(dude, boxer);      // caught KO → RequestTerminateCombat
+        for (int i = 0; i < 4 && engine.Phase != CombatPhase.Idle; i++)
+            engine.Step();
+
+        Assert.Equal(CombatPhase.Idle, engine.Phase); // the bout ended, dude alive
+        Assert.False(dude.IsDead);
+    }
+
+    [Fact]
+    public void DudeKnockoutWithoutAnOverridingMapScriptDoesNotEndCombat()
+    {
+        // The default (no map-script combat_p_proc / no override): a dude KO does NOT end combat — the
+        // hook is inert, so ordinary fights are unaffected (byte-identical to pre-P100 behaviour).
+        var host = new FakeCombatHost { MapCombatOverReturns = false };
+        MapObject dude = host.SetDude(NewCritter(tile: 20100, hp: 30, ap: 10));
+        MapObject enemy = host.AddCritter(NewCritter(tile: HexGrid.TileInDirection(20100, 0), hp: 30, ap: 10));
+        var engine = new CombatEngine(host, new MinRng());
+        engine.BeginScriptAggro(enemy, dude);
+
+        engine.KnockOut(dude, enemy);
+
+        Assert.NotEqual(CombatPhase.Idle, engine.Phase); // combat did NOT terminate from the KO
+    }
+
+    [Fact]
     public void CriticalsStayOffUntilEnabled()
     {
         // Same MinRng, criticals disabled: a plain swing, no crit tag, base damage.
@@ -2221,6 +2274,15 @@ public class CombatEngineTests
             CombatProcCalls.Add((critter, fixedParam, target));
             OnCombatProc?.Invoke(critter, fixedParam);
             return ([], CombatProcOverride);
+        }
+        // P100 (Point 3): the map-script "combat over / dude KO'd" hook. MapCombatOverReturns toggles
+        // script_overrides; MapCombatOverTeams records the KO'er team the engine passed.
+        public bool MapCombatOverReturns { get; set; }
+        public List<int> MapCombatOverTeams { get; } = [];
+        public bool RunMapCombatOver(int knockedOutByTeam)
+        {
+            MapCombatOverTeams.Add(knockedOutByTeam);
+            return MapCombatOverReturns;
         }
         public int PickDeathAnim(MapObject critter, int desiredAnim) => 20;
         public bool StartDeathFall(MapObject critter, int deathAnim) => false; // no fall art → corpse now

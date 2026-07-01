@@ -809,7 +809,7 @@ public sealed class CombatEngine
             }
             else
             {
-                ApplyCritStatus(t.Target, t.CritFlags); // P14
+                ApplyCritStatus(t.Target, t.CritFlags, t.Thrower); // P14
             }
         }
         else
@@ -1337,7 +1337,7 @@ public sealed class CombatEngine
             // instead of a hit-react). DamKnockedDown is read before ApplyKnockback consumes it below.
             _host.OnTargetHit(attack.Target, attack.Attacker, (attack.CritFlags & CriticalTables.DamKnockedDown) != 0);
 
-        ApplyCritStatus(attack.Target, attack.CritFlags); // P14: knockout / lose-turn / crippled / blind
+        ApplyCritStatus(attack.Target, attack.CritFlags, attack.Attacker); // P14: knockout / lose-turn / crippled / blind
         ApplyKnockback(attack);
         RunOnHitCombatProc(attack.Attacker, attack.Target); // P35: fp=2 on-hit hook (e.g. scorpion poison)
     }
@@ -1488,7 +1488,7 @@ public sealed class CombatEngine
 
     /// <summary>Knock a critter unconscious + queue its wake (combat.cc:4799-4805) —
     /// public so the crit path, a script external, or a test can drive it.</summary>
-    public void KnockOut(MapObject critter)
+    public void KnockOut(MapObject critter, MapObject? knockedOutBy = null)
     {
         if (critter.IsDead || IsKnockedOut(critter))
             return;
@@ -1497,12 +1497,20 @@ public sealed class CombatEngine
         _events.Schedule(_combatTick, 10 * (35 - 3 * en), critter, EventQueue.EventType.Knockout);
         _host.Log($"The {_host.ObjectName(critter)} is knocked out!");
         _host.Transcript($"knockout: {_host.ObjectName(critter)}@{critter.HexTile}");
+
+        // P100 (Point 3): fo2ce combat.cc:5370 _scr_end_combat — a dude knocked out (not killed) hands the
+        // MAP script's combat_p_proc first refusal (fixedParam = KO'er team, combat.cc:5944
+        // _combat_player_knocked_out_by). If it script_overrides, the ring "caught" the KO → end the fight at
+        // the turn boundary (no game-over), instead of leaving the dude unconscious among enemies. No slice
+        // map's map-script overrides here, so this is inert outside a prizefight arena (proven by fake host).
+        if (critter == _host.Dude && knockedOutBy is not null && _host.RunMapCombatOver(knockedOutBy.Team))
+            RequestTerminateCombat();
     }
 
     /// <summary>Apply a crit's honored status flags to the target (P14-M2/M3): knockout
     /// queues a wake; lose-turn/crippled-limb/blind are recorded on CombatResults
     /// (consumed by the turn loop / CritterState).</summary>
-    private void ApplyCritStatus(MapObject target, int critFlags)
+    private void ApplyCritStatus(MapObject target, int critFlags, MapObject? attacker = null)
     {
         int status = critFlags & StatusFlags;
         if (status == 0 || target.IsDead)
@@ -1511,7 +1519,7 @@ public sealed class CombatEngine
         if ((status & CriticalTables.DamCripLimbs) != 0 || (status & CriticalTables.DamBlind) != 0)
             _host.Transcript($"crippled: {_host.ObjectName(target)}@{target.HexTile} flags=0x{status:X}");
         if ((status & CriticalTables.DamKnockedOut) != 0)
-            KnockOut(target);
+            KnockOut(target, attacker); // P100 (Point 3): the KO'er drives the map-script "combat over" hook
     }
 
     /// <summary>Knockout-wake handler (queue.cc → critter.cc:1247 knockoutEventProcess):

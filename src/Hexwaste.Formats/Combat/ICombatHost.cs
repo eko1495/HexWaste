@@ -163,6 +163,11 @@ public interface ICombatHost
     /// — on the per-turn hook that forfeits the critter's default turn. Default ([], false) so the fake
     /// test host needs no override (P35).</summary>
     (IReadOnlyList<string> Lines, bool Overridden) RunCombatProc(MapObject critter, int fixedParam, MapObject? target = null) => ([], false);
+    /// <summary>P100 (Point 3): the "combat over / dude knocked out" hook, ported from fallout2-ce
+    /// src/scripts.cc:2848 _scr_end_combat(): run the MAP script's combat_p_proc with fixedParam =
+    /// <paramref name="knockedOutByTeam"/> and return whether it script_overrides (the ring catches the KO
+    /// → end combat instead of a game-over). Default false so the fake test host is unaffected.</summary>
+    bool RunMapCombatOver(int knockedOutByTeam) => false;
     /// <summary>Drop a fallen follower from the party (PartyMembers + script index + log). :2541</summary>
     void RemovePartyMember(MapObject critter);
     /// <summary>Living party members (for ally turns + nearest-target choice). _scriptHost.PartyMembers.</summary>

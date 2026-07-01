@@ -424,6 +424,10 @@ for (int i = 0; i < args.Length; i++)
         case "--combat-proc" when i + 1 < args.Length:
             actions.Add(new ViewerGame.StartupAction.CombatProcProbe(int.Parse(args[++i])));
             break;
+        case "--combat-over" when i + 1 < args.Length:
+            // P100: run the map-script combat_p_proc "combat over" hook with a KO'er team (proves the seam).
+            actions.Add(new ViewerGame.StartupAction.CombatOverProbe(int.Parse(args[++i])));
+            break;
         case "--combat-proc-hit" when i + 1 < args.Length:
             actions.Add(new ViewerGame.StartupAction.CombatProcHit(int.Parse(args[++i])));
             break;

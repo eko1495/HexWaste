@@ -612,6 +612,16 @@ public sealed partial class ViewerGame
                         + $"hasProc={r is not null} overridden={r?.Overridden ?? false} fp=4");
                     break;
                 }
+                case StartupAction.CombatOverProbe(var coTeam):
+                {
+                    // P100 (Point 3): run the MAP script's combat_p_proc "combat over" hook (fixedParam = a
+                    // KO'er team) and report whether the map defines it + script_overrides. hasProc null =
+                    // no map script / no combat_p_proc; overridden = the ring would catch the KO.
+                    var r = _scriptHost?.RunMapCombatOver(_map, _dude?.Dude, coTeam);
+                    Console.WriteLine($"combat-over: map={_currentMapName} mapScript={_map?.Header.ScriptIndex ?? 0}"
+                        + $" team={coTeam} hasProc={r is not null} overridden={r?.Overridden ?? false}");
+                    break;
+                }
                 case StartupAction.CombatProcHit(var atkHex) when _dude is not null:
                 {
                     // P35 fp=2: fire the attacker's on-hit combat_p_proc with target = the dude and report

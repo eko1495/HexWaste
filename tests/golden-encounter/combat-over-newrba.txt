@@ -1,0 +1,1 @@
+combat-over: map=newrba.map mapScript=360 team=1 hasProc=False overridden=False
