@@ -162,6 +162,9 @@ SCENARIOS=(
   # dimmed ambient; map-update-arcaves is the diagnostic (levels=[50], 1 light call, no new stubs).
   "light-arcaves|--map arcaves.map --light-probe --rng-seed 1"
   "map-update-arcaves|--map arcaves.map --map-update-probe --rng-seed 1"
+  # P1-M2: the recurring 600-tick map_update heartbeat (scripts.cc:517 mapUpdateEventProcess). Deterministic
+  # cadence — half an interval fires 0, each full 600-tick interval fires exactly once (beats=3 -> 3 fires).
+  "map-update-heartbeat|--map denbus2.map --map-update-beats 3 --rng-seed 1"
   # P47 inventory drag-and-drop equip (inventory.cc _switch_hand): --drag-equip <fromRow> <slot>
   # drives the real drag-to-slot equip path. slot 0=weapon / 2=armor / -1=drop. Reports pid +
   # equipped flag + AC/DT/DR (state-only). weapon equips in-hand; armor applies its AC/DT/DR bonus;
@@ -605,7 +608,7 @@ SCENARIOS=(
 
 # Keep only the deterministic transcript lines (drop map-load / animate / stub /
 # dialog-text noise — NEVER capture REPLY/OPTION game-asset strings).
-FILTER='^(encounter|travel-from|companion|dismiss-persist|trade:|party:|party-count:|set-global:|hud-click:|use-skill:|has-skill:|steal:|maxhp:|hurt:|rest:|automap:|reveal:|taunt:|weapon-mode:|panel-click:|menu-click:|travel-resume:|travel-step:|travel-save-mid:|worldmap-fog:|weight:|iq-probe:|death-probe:|trait-probe:|perk-probe:|perk-pick:|combat-walk:|light:|map-update:|drag-equip:|save-slot:|load-slot:|slots:|aim-click:|tactics:|reg-anim:|encounter-fight:|brawl:|brawl-watch:|sneak-probe:|sneak-roll:|backstab-probe:|detect-probe:|karma-probe:|set-karma:|rep-title:|town-rep:|karma-titles:|get-global:|place-probe:|reg-anim-move:|critter-state:|hurt-too-much:|run-probe:|outline:|ac-dodge:|sfx-probe:|reaction-probe:|combat-proc:|combat-proc-hit:|poison-tick:|multihex-probe:|drug-probe:|addict-probe:|kills-probe:|book:|ammo-select:|unload:|ai-heal-probe:|ai-drug-probe:|ai-weapon-probe:|swap-hand:|weapon-switch:|float-text:|speech-probe:|smoke:|scenery-use@|party-probe:|awareness-probe:|action-menu@|  spawn|  flat|  wait:|  follow:|  dismiss:|  rejoin:)'
+FILTER='^(encounter|travel-from|companion|dismiss-persist|trade:|party:|party-count:|set-global:|hud-click:|use-skill:|has-skill:|steal:|maxhp:|hurt:|rest:|automap:|reveal:|taunt:|weapon-mode:|panel-click:|menu-click:|travel-resume:|travel-step:|travel-save-mid:|worldmap-fog:|weight:|iq-probe:|death-probe:|trait-probe:|perk-probe:|perk-pick:|combat-walk:|light:|map-update:|map-update-heartbeat:|drag-equip:|save-slot:|load-slot:|slots:|aim-click:|tactics:|reg-anim:|encounter-fight:|brawl:|brawl-watch:|sneak-probe:|sneak-roll:|backstab-probe:|detect-probe:|karma-probe:|set-karma:|rep-title:|town-rep:|karma-titles:|get-global:|place-probe:|reg-anim-move:|critter-state:|hurt-too-much:|run-probe:|outline:|ac-dodge:|sfx-probe:|reaction-probe:|combat-proc:|combat-proc-hit:|poison-tick:|multihex-probe:|drug-probe:|addict-probe:|kills-probe:|book:|ammo-select:|unload:|ai-heal-probe:|ai-drug-probe:|ai-weapon-probe:|swap-hand:|weapon-switch:|float-text:|speech-probe:|smoke:|scenery-use@|party-probe:|awareness-probe:|action-menu@|  spawn|  flat|  wait:|  follow:|  dismiss:|  rejoin:)'
 
 echo "Building viewer..."
 dotnet build src/Hexwaste.Viewer -c Debug >/dev/null || { echo "build failed"; exit 2; }

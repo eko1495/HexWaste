@@ -143,6 +143,13 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
     private double _critterProcTimerMs;
     private int _critterProcIndex;
 
+    /// <summary>P1-M2: the recurring map_update heartbeat clock. The engine re-fires SCRIPT_PROC_MAP_UPDATE
+    /// for every script every 600 game ticks (scripts.cc:517 mapUpdateEventProcess → queueAddEvent(600));
+    /// at Hexwaste's 1-tick=100ms script clock that is 60000 ms. Reset on map load (map_update already runs
+    /// once there).</summary>
+    private double _mapUpdateClockMs;
+    private const double MapUpdateIntervalMs = 600 * 100.0; // 600 game ticks
+
     /// <summary>Main-menu front door (v0.6): Title → character pick → play.
     /// Headless/test flags skip it entirely.</summary>
     public bool StartInMenu { get; set; }
@@ -706,6 +713,10 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
         /// SCRIPT_PROC 23) once and report its observable side effects — lighting calls, the ambient
         /// before/after, and any NEW stubbed externals. STATE-only (counts/ids), no game strings.</summary>
         public sealed record MapUpdateProbe : StartupAction;
+        /// <summary>P1-M2 diagnostic: drive the recurring map_update heartbeat directly. Pump half an
+        /// interval (must NOT fire) then Beats full 600-tick intervals (each fires once), and report the
+        /// counts — a deterministic, headless proof of the heartbeat cadence. STATE-only.</summary>
+        public sealed record MapUpdateHeartbeatProbe(int Beats) : StartupAction;
         /// <summary>Per-map content-coverage smoke scan: census the loaded map (critters / containers /
         /// doors / scripted objects) and report the FULL set of stubbed (unwired) externals its scripts
         /// fired (map_enter on load + a map_update pass) — a NEW city's silent-quest-gap detector.
@@ -1516,9 +1527,10 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
             // payload is a one-shot set_light_level (the M0 diagnostic): arcaves dims to the
             // "cavern" level 50 (62.5%) that map_enter left at max; the other slice maps re-set
             // the same max (inert). `scripted` is re-evaluated, so map_enter-created objects are
-            // included (faithful). The periodic 600-tick re-run is DEFERRED — the diagnostic
-            // found no time-varying map_update content on the slice, so once-on-load suffices.
+            // included (faithful). P1-M2 adds the recurring 600-tick re-run (mapUpdateEventProcess)
+            // in Update; the clock resets here so the first heartbeat lands 600 ticks after load.
             _scriptHost.RunMapUpdate(_map, scripted, _dude?.Dude);
+            _mapUpdateClockMs = 0;
         }
 
         foreach ((MapObject obj, int ordinal) in _objectOrdinals)
@@ -2269,6 +2281,7 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
         // earlier in Update, matching the engine's _gdialogActive() gate.
         _scriptHost?.PumpTimers(gameTime.ElapsedGameTime.TotalMilliseconds, _dude?.Dude);
         PumpCritterProcs(gameTime.ElapsedGameTime.TotalMilliseconds);
+        PumpMapUpdate(gameTime.ElapsedGameTime.TotalMilliseconds); // P1-M2: recurring 600-tick map_update
 
         // Map transitions are queued by exit grids/stairs and applied here,
         // never while DudeController.Update is still on the stack.

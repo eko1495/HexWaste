@@ -379,6 +379,36 @@ public sealed partial class ViewerGame
                 Log($"{ObjectName(critter)}: {line}");
     }
 
+    /// <summary>P1-M2: the recurring map_update heartbeat — ported from fallout2-ce scripts.cc:507
+    /// mapUpdateEventProcess: every 600 game ticks re-run SCRIPT_PROC_MAP_UPDATE for the map script and
+    /// every scripted object, then reschedule. This is what lets quests that POLL state in map_update_p_proc
+    /// (klagraz KCTorr's brahmin defense, the Den gang-war escalation) re-evaluate over time instead of only
+    /// once on load. Gated to normal map play (same as PumpCritterProcs): not during combat, dialog, loot,
+    /// the companion hub, the worldmap, or game-over.</summary>
+    private void PumpMapUpdate(double elapsedMs)
+    {
+        if (_scriptHost is null || _map is null || _combat.Phase != Formats.Combat.CombatPhase.Idle
+            || _combat.IsGameOver || _dialog is not null || _companionHub is not null
+            || _lootContainer is not null || _worldmapOpen)
+            return;
+
+        _mapUpdateClockMs += elapsedMs;
+        if (_mapUpdateClockMs < MapUpdateIntervalMs)
+            return;
+        _mapUpdateClockMs -= MapUpdateIntervalMs;
+        _mapUpdateFires++;
+
+        // Re-evaluate the scripted set each fire (map_enter/earlier updates may have created objects).
+        IEnumerable<MapObject> scripted = _map.Elevations
+            .Where(e => e is not null)
+            .SelectMany(e => e!.Objects)
+            .Where(o => o.Sid != -1 && o != _dude?.Dude);
+        _scriptHost.RunMapUpdate(_map, scripted, _dude?.Dude);
+    }
+
+    /// <summary>P1-M2 diagnostic: how many times the recurring map_update heartbeat has fired.</summary>
+    private int _mapUpdateFires;
+
     /// <summary>pcAddExperience: add XP, level up while thresholds pass —
     /// <summary>The dude's kill tally per KILL_TYPE (gKillsByType, critter.cc:152; 19 types). Incremented
     /// on a dude/team kill, read by metarule3 GET_KILL_COUNT + the char-sheet display (P38).</summary>

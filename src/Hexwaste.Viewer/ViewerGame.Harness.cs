@@ -470,6 +470,20 @@ public sealed partial class ViewerGame
                         + $"crit={Hex(CombatFloatColors.Critical)} miss={Hex(CombatFloatColors.Miss)}");
                     break;
                 }
+                case StartupAction.MapUpdateHeartbeatProbe(var beats) when _map is not null && _scriptHost is not null:
+                {
+                    // P1-M2: prove the recurring 600-tick map_update heartbeat's cadence deterministically.
+                    // Half an interval must NOT fire; each full interval fires exactly once. No RNG/UI.
+                    int start = _mapUpdateFires;
+                    PumpMapUpdate(MapUpdateIntervalMs / 2);
+                    int halfIntervalFires = _mapUpdateFires - start;
+                    for (int i = 0; i < beats; i++)
+                        PumpMapUpdate(MapUpdateIntervalMs);
+                    int totalFires = _mapUpdateFires - start;
+                    Console.WriteLine($"map-update-heartbeat: beats={beats} "
+                        + $"halfIntervalFires={halfIntervalFires} totalFires={totalFires}");
+                    break;
+                }
                 case StartupAction.MapUpdateProbe when _map is not null && _scriptHost is not null:
                 {
                     // M0 diagnostic: run map_update_p_proc (the map script + every scripted object —

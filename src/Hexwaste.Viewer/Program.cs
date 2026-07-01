@@ -387,6 +387,10 @@ for (int i = 0; i < args.Length; i++)
         case "--map-update-probe":
             actions.Add(new ViewerGame.StartupAction.MapUpdateProbe());
             break;
+        case "--map-update-beats" when i + 1 < args.Length:
+            // P1-M2: exercise the recurring 600-tick map_update heartbeat N times (deterministic cadence).
+            actions.Add(new ViewerGame.StartupAction.MapUpdateHeartbeatProbe(int.Parse(args[++i])));
+            break;
         case "--smoke":
             // per-map content+stub coverage census (helps adding new cities): --map <m> --smoke
             actions.Add(new ViewerGame.StartupAction.SmokeScan());
