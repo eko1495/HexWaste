@@ -664,6 +664,74 @@ public sealed class ScriptHost(GameFileSystem vfs, ScriptList scripts, Hexwaste.
         }
     }
 
+    /// <summary>The map script has no real owner object; synthesize one (shared by the
+    /// start/map_enter/map_update passes).</summary>
+    private static MapObject SynthMapScriptOwner() => new()
+    {
+        Id = -2,
+        HexTile = 1,
+        X = 0,
+        Y = 0,
+        Frame = 0,
+        Rotation = 0,
+        Fid = Fid.Build(ObjectType.Misc, 12),
+        Flags = 0,
+        Pid = 0x05000010,
+        Sid = -1,
+    };
+
+    // ported from fallout2-ce src/interpreter.cc runScript() (via scriptExecProc, scripts.cc:1322-1338):
+    // the FIRST time a script's program executes, its global-init prologue runs (offset 0) — that is where
+    // exported variables are declared (export_variable) and any global-scope values assigned. We run only
+    // that prologue, not the optional SCRIPT_PROC_START body: declaring the exports is what publishes them
+    // for fetch_external, and skipping the rarely-defined start body avoids re-firing its side effects every
+    // load (the PoC re-creates a program per proc run, so a start body would run more often than the engine's
+    // once-per-map). Verified: this publishes denbus1/denbus2's gang_2_member_* from dcLara/dcTyler's prologue.
+    private void RunStart(int scriptListIndex, MapFile map, int sid, MapScriptRecord record, MapObject self, MapObject? dude)
+    {
+        string? path = scripts.GetScriptPath(scriptListIndex);
+        if (path is null)
+            return;
+        try
+        {
+            IntProgram? program = GetProgram(path);
+            if (program is null)
+                return;
+            var externals = new ScriptContext(this, map, sid, record, self: self, source: dude, dude: dude)
+            {
+                FixedParamValue = 0,
+                ActionBeingUsedValue = -1,
+            };
+            new IntVm(program, externals, OnStubbedExternal, ExternalVars).RunGlobalInit();
+        }
+        catch (Exception ex) when (ex is InvalidDataException or FileNotFoundException or NotSupportedException)
+        {
+            Console.Error.WriteLine($"script {path}: {ex.Message}");
+        }
+    }
+
+    /// <summary>
+    /// Runs the SCRIPT_PROC_START pass like fallout2-ce src/map.cc:1006 scriptsExecStartProc():
+    /// the MAP script's start then every scripted object's, BEFORE map_enter. Its real job is the
+    /// side effect of a script's first execution — the global-init prologue that exports its
+    /// cross-script variables — so a combat-only script (only critter_p_proc/combat_p_proc, e.g.
+    /// the Den gang war's dcLara/dcTyler) still publishes gang_2_member_* for other scripts to
+    /// fetch_external. Without this pass those imports resolve to 0. Call once, immediately before
+    /// <see cref="RunMapEnter"/>, to preserve the engine's start -> map_enter -> map_update order.
+    /// </summary>
+    public void RunStartProcs(MapFile map, IEnumerable<MapObject> objects, MapObject? dude)
+    {
+        if (map.Header.ScriptIndex > 0)
+        {
+            var record = new MapScriptRecord(map.Header.ScriptIndex - 1, -1, 0);
+            RunStart(record.ScriptListIndex, map, sid: -2, record, SynthMapScriptOwner(), dude);
+        }
+
+        foreach (MapObject obj in objects.ToList())
+            if (obj.Sid != -1 && map.ScriptsBySid.TryGetValue(obj.Sid, out MapScriptRecord? record))
+                RunStart(record.ScriptListIndex, map, obj.Sid, record, obj, dude);
+    }
+
     /// <summary>
     /// Runs map-entry scripts like fallout2-ce map.cc:952-975 +
     /// scripts.cc scriptExecMapEnterScripts(): the MAP script first

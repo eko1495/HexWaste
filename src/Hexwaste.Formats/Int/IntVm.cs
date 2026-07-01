@@ -472,6 +472,10 @@ public sealed class ExternalVariables
 
     public void Clear() => Ints.Clear();
     public int Count => Ints.Count;
+
+    /// <summary>True once a script has exported (declared) this variable into the shared store —
+    /// i.e. a fetch_external of it resolves to a real value instead of the undefined-&gt;0 fallback.</summary>
+    public bool IsDefined(string name) => Ints.ContainsKey(name);
 }
 
 public sealed class IntVm
@@ -622,6 +626,16 @@ public sealed class IntVm
         _flags &= ~FlagProcReturned;
         return true;
     }
+
+    /// <summary>
+    /// Forces the global-init prologue to run now, even when no procedure is executed.
+    /// The prologue is where a script declares and assigns its exported variables
+    /// (export_variable/store_external) into the shared store — combat-only scripts
+    /// (only critter_p_proc/combat_p_proc) would otherwise never export at map enter,
+    /// since TryRunProcedure skips EnsureInitialized when the named proc is absent.
+    /// Idempotent: a no-op once the VM has initialized.
+    /// </summary>
+    public void RunGlobalInit() => EnsureInitialized();
 
     /// <summary>
     /// Runs the global-init prologue, ported from runScript(): a fresh

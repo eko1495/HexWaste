@@ -1498,6 +1498,11 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
                 .SelectMany(e => e!.Objects)
                 .Where(o => o.Sid != -1 && o != _dude?.Dude);
             _scriptHost.SpatialsEnabled = false; // _scr_SpatialsEnabled gate (map.cc:973)
+            // P1: the engine's start pass (map.cc:1006 scriptsExecStartProc) runs BEFORE map_enter so
+            // every script's first execution (its global-init prologue) publishes its exported variables —
+            // a combat-only script (dcLara/dcTyler) otherwise never exports gang_2_member_* and importers
+            // resolve them to 0. Snapshotted before map_enter creates stocking objects (engine order).
+            _scriptHost.RunStartProcs(_map, scripted, _dude?.Dude);
             // Guard #3: a transient map is pristine every visit — force firstRun=1
             // (the engine always treats a saved=No map as first-run), overriding the
             // run-once cache. Real maps keep the delta/cache behaviour.

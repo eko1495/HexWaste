@@ -93,6 +93,37 @@ public class OpeningMapsSmokeTests
     }
 }
 
+public class StartProcGlobalInitTests
+{
+    [GameDataFact]
+    public void MapEnterStartPassPublishesCombatOnlyScriptExports()
+    {
+        // P1-M1: the Den gang war's dcLara/dcTyler are combat-only (no map_enter_p_proc), so before the
+        // start pass their global-init prologue never ran at map enter and their exported gang_2_member_*
+        // resolved to undefined->0 for same-map importers (dcG2Grd). RunStartProcs runs every scripted
+        // object's global-init (ported from map.cc:1006 scriptsExecStartProc), publishing those exports.
+        using var vfs = GameFileSystem.Open(GameData.RequiredDir);
+        var protos = new ProtoDatabase(vfs);
+        var host = new ScriptHost(vfs, ScriptList.Load(vfs), protos);
+
+        using Stream stream = vfs.OpenRead(@"maps\denbus2.map");
+        MapFile map = MapFile.Load(stream, protos);
+        IEnumerable<MapObject> scripted = map.Elevations
+            .Where(e => e is not null)
+            .SelectMany(e => e!.Objects)
+            .Where(o => o.Sid != -1);
+
+        // Nothing has executed yet: the export is undefined.
+        Assert.False(host.ExternalVars.IsDefined("gang_2_member_2"));
+
+        host.RunStartProcs(map, scripted, dude: null);
+
+        // The combat-only exporters' prologues ran → their cross-script variables are published.
+        Assert.True(host.ExternalVars.IsDefined("gang_2_member_2"));
+        Assert.True(host.ExternalVars.IsDefined("gang_2_member_5"));
+    }
+}
+
 public class SpatialScriptTests
 {
     [GameDataFact]
