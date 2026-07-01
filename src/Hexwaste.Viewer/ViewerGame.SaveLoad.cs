@@ -338,6 +338,9 @@ public sealed partial class ViewerGame
             WorldPosX = _worldPosX,
             WorldPosY = _worldPosY,
             CurrentAreaId = _currentAreaId,
+            CarInCar = _scriptHost?.Car.InCar ?? false, // P100 (bucket 1): the Highwayman car state
+            CarFuel = _scriptHost?.Car.Fuel ?? Formats.CarState.FuelMax,
+            CarAreaId = _scriptHost?.Car.CurrentAreaId ?? -1,
             TravelDestinationAreaId = _activeTravel?.Dest.Index ?? -1, // in-flight leg target (P17-M4)
             // _worldmap (not Worldmap): only export if worldmap.txt was actually
             // touched this session — never force-parse it just to save.
@@ -399,6 +402,12 @@ public sealed partial class ViewerGame
         _worldPosX = state.WorldPosX;
         _worldPosY = state.WorldPosY;
         _currentAreaId = state.CurrentAreaId;
+        if (_scriptHost is not null) // P100 (bucket 1): restore the Highwayman car state
+        {
+            _scriptHost.Car.InCar = state.CarInCar;
+            _scriptHost.Car.Fuel = state.CarFuel;
+            _scriptHost.Car.CurrentAreaId = state.CarAreaId;
+        }
         _worldmap = null;
         _worldFog = null; // re-create against the freshly parsed worldmap, then import the save
         if (state.EncounterCounters.Count > 0)

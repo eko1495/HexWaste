@@ -39,7 +39,8 @@ public static class WorldmapTravel
         int FinalWorldY,
         long ClockTicksAdded,
         EncounterResult? Encounter,
-        string? EncounterMap);
+        string? EncounterMap,
+        bool OutOfGas = false);
 
     /// <summary>
     /// Walk the Bresenham line from (<paramref name="startX"/>,<paramref name="startY"/>)
@@ -54,7 +55,7 @@ public static class WorldmapTravel
         int startX, int startY, int destX, int destY, long startClockTicks,
         ICombatRng rng, Func<int, int> getGlobal,
         int dudeLevel, int luck, int outdoorsman, GameDifficulty difficulty,
-        WorldmapFog? fog = null)
+        WorldmapFog? fog = null, CarState? car = null)
     {
         // Phase-17 M0: the whole-leg walk is now a DRAIN of the stepwise TravelLeg — one
         // Step() == one old loop iteration, in the same RNG draw order, so this stays
@@ -62,12 +63,14 @@ public static class WorldmapTravel
         // The optional fog reveals subtiles along the path (phase-22) — pure position math,
         // no RNG, so passing it never perturbs the encounter stream.
         var leg = new TravelLeg(worldmap, areas, mapList, startX, startY, destX, destY,
-            startClockTicks, rng, getGlobal, dudeLevel, luck, outdoorsman, difficulty, fog);
+            startClockTicks, rng, getGlobal, dudeLevel, luck, outdoorsman, difficulty, fog, car);
         while (true)
         {
             TravelStep s = leg.Step();
             if (s.Encounter is not null)
-                return new LegOutcome(s.X, s.Y, leg.TicksAdded, s.Encounter, s.EncounterMap);
+                return new LegOutcome(s.X, s.Y, leg.TicksAdded, s.Encounter, s.EncounterMap, s.OutOfGas);
+            if (s.OutOfGas) // the car ran dry mid-leg (worldmap.cc:3054) — stop here, the caller drops the party
+                return new LegOutcome(s.X, s.Y, leg.TicksAdded, null, null, true);
             if (s.Arrived)
                 return new LegOutcome(s.X, s.Y, leg.TicksAdded, null, null);
         }
@@ -116,7 +119,7 @@ public static class WorldmapTravel
 /// the encounter that fired on it (null = none), its transient map, and whether the leg has
 /// reached the destination.</summary>
 public readonly record struct TravelStep(int X, int Y, EncounterResult? Encounter,
-    string? EncounterMap, bool Arrived);
+    string? EncounterMap, bool Arrived, bool OutOfGas = false);
 
 /// <summary>
 /// A worldmap travel leg walked ONE Bresenham pixel-step at a time (phase-17 M0). Holds the
@@ -137,6 +140,8 @@ public sealed class TravelLeg
     private readonly long _startClockTicks;
     private readonly GameDifficulty _difficulty;
     private readonly int _dx, _dy, _sx, _sy;
+    private readonly CarState? _car;
+    private readonly int _carStride;
     private int _x, _y, _err, _guard;
 
     public int X => _x;
@@ -151,8 +156,16 @@ public sealed class TravelLeg
         int startX, int startY, int destX, int destY, long startClockTicks,
         ICombatRng rng, Func<int, int> getGlobal,
         int dudeLevel, int luck, int outdoorsman, GameDifficulty difficulty,
-        WorldmapFog? fog = null)
+        WorldmapFog? fog = null, CarState? car = null)
     {
+        _car = car;
+        // Driving covers several pixels per step (worldmap.cc:3025-3051): base foot 1 + 3 in-car + blower(1)
+        // + Reno upgrade(1) + super-car(3). Foot / no-car keeps stride 1 → the encounter stream is unchanged.
+        _carStride = car?.InCar == true
+            ? 4 + (getGlobal(CarState.GvarBlower) != 0 ? 1 : 0)
+                + (getGlobal(CarState.GvarRenoUpgrade) != 0 ? 1 : 0)
+                + (getGlobal(CarState.GvarSuperCar) != 0 ? 3 : 0)
+            : 1;
         _enc = new WorldEncounters(worldmap, rng, startX, startY);
         _areas = areas;
         _mapList = mapList;
@@ -185,11 +198,18 @@ public sealed class TravelLeg
             return new TravelStep(_x, _y, null, null, true);
 
         _guard++;
-        int e2 = 2 * _err;
-        if (e2 > -_dy) { _err -= _dy; _x += _sx; }
-        if (e2 < _dx) { _err += _dx; _y += _sy; }
+        // A car covers _carStride pixels per Step but rolls/ticks/burns exactly ONCE (worldmap.cc:3025-3083);
+        // on foot _carStride == 1, so the advance→roll→tick order + RNG draws are byte-identical.
+        for (int i = 0; i < _carStride && !Arrived; i++)
+            AdvanceOnePixel();
         TicksAdded += WorldmapTravel.TicksPerStep;
-        _fog?.MarkRadiusVisited(_x, _y); // reveal the new pixel's neighbourhood (phase-22)
+
+        bool outOfGas = false;
+        if (_car?.InCar == true)
+        {
+            _car.UseGas(100, _getGlobal); // wmCarUseGas(100) per driving step (worldmap.cc:3052)
+            outOfGas = _car.IsOutOfGas;    // ran dry → the caller drops the party (worldmap.cc:3054)
+        }
 
         if (!WorldmapTravel.IsNearKnownArea(_areas, _x, _y)) // worldmap.cc:3340-3343
         {
@@ -198,9 +218,19 @@ public sealed class TravelLeg
                 _dudeLevel, GameClock.DayAt(nowTicks), _luck, _outdoorsman, _difficulty);
             if (r is not null)
                 return new TravelStep(_x, _y, r,
-                    WorldmapTravel.ResolveEncounterMap(_mapList, r, _rng), Arrived);
+                    WorldmapTravel.ResolveEncounterMap(_mapList, r, _rng), Arrived, outOfGas);
         }
-        return new TravelStep(_x, _y, null, null, Arrived);
+        return new TravelStep(_x, _y, null, null, Arrived, outOfGas);
+    }
+
+    /// <summary>One Bresenham pixel toward the destination (+ fog reveal). The car calls this several times
+    /// per Step; foot calls it once.</summary>
+    private void AdvanceOnePixel()
+    {
+        int e2 = 2 * _err;
+        if (e2 > -_dy) { _err -= _dy; _x += _sx; }
+        if (e2 < _dx) { _err += _dx; _y += _sy; }
+        _fog?.MarkRadiusVisited(_x, _y); // reveal the new pixel's neighbourhood (phase-22)
     }
 }
 

@@ -148,6 +148,13 @@ public sealed class SaveState
     /// constructed fog on load (WorldmapFog.Import).</summary>
     public Dictionary<int, int> RevealedSubtiles { get; set; } = [];
 
+    /// <summary>P100 (bucket 1): the Highwayman car state (worldmap.cc isInCar/carFuel/currentCarAreaId).
+    /// Additive within V2 — absent in a pre-car save → the CarState defaults (not owned, full tank,
+    /// no parked area). No version bump: the JSON keys are optional + defaulted, so old saves still load.</summary>
+    public bool CarInCar { get; set; }
+    public int CarFuel { get; set; } = CarState.FuelMax;
+    public int CarAreaId { get; set; } = -1;
+
     /// <summary>Flags carries the equip bits (in-hand 0x3000000, worn 0x4000000).
     /// Ammo sentinels: -1 = derive from the prototype on load (V2).</summary>
     public sealed record SavedItem(int Pid, int Count, int Flags = 0,

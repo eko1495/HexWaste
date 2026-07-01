@@ -983,6 +983,27 @@ public sealed partial class ViewerGame
                         + $" added={added} boardFull={(boardFull ? 1 : 0)} inCar={(car.InCar ? 1 : 0)} fuel={car.Fuel} outOfGas={(car.IsOutOfGas ? 1 : 0)}");
                     break;
                 }
+                case StartupAction.CarAcquire(var cx, var cy, var carea, var cfuel):
+                {
+                    // P100 (bucket 1): board the fuelled car at (cx,cy) and drive to the area, proving the
+                    // worldmap car payoff — stride>1 (fewer legs), fuel drain per step, arrival parks the car,
+                    // out-of-gas (small starting fuel) strands the party on cardesrt.
+                    var car = _scriptHost!.Car;
+                    car.Fuel = 0;
+                    car.FillGas(cfuel < 0 ? Formats.CarState.FuelMax : cfuel);
+                    car.GiveToParty(); // InCar = true (fuelled)
+                    int fuelStart = car.Fuel;
+                    _autoEncounterAnswer ??= true;
+                    _animateTravel = false; // synchronous drain
+                    _worldPosX = cx; _worldPosY = cy;
+                    WorldArea? dest = _cities.Areas.FirstOrDefault(a => a.Index == carea);
+                    if (dest is null) { Console.WriteLine($"car-travel: no area {carea}"); break; }
+                    TravelTo(dest);
+                    string outcome = _currentMapTransient ? "encounter" : (car.InCar ? "arrived" : "outofgas");
+                    Console.WriteLine($"car-travel: ({cx},{cy})->area{carea} outcome={outcome} inCar={(car.InCar ? 1 : 0)}"
+                        + $" fuelStart={fuelStart} fuelEnd={car.Fuel} drained={fuelStart - car.Fuel} parkedArea={car.CurrentAreaId}");
+                    break;
+                }
                 case StartupAction.EndgameProbe(var egGvar, var egVal):
                 {
                     // P100: parse endgame.txt + report the slides selected by the live/forced GVARs (gvar==value),

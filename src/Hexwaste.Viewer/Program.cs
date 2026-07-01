@@ -204,6 +204,13 @@ for (int i = 0; i < args.Length; i++)
         case "--car-probe": // P100 (Point 4): exercise the Highwayman car fuel model
             actions.Add(new ViewerGame.StartupAction.CarProbe());
             break;
+        case "--car-acquire" when i + 3 < args.Length: // P100 (bucket 1): drive the car from (x,y) to an area
+            // optional 4th arg = starting fuel (default -1 = full tank)
+            int carFuel = i + 4 < args.Length && int.TryParse(args[i + 4], out int cf) ? cf : -1;
+            actions.Add(new ViewerGame.StartupAction.CarAcquire(
+                int.Parse(args[i + 1]), int.Parse(args[i + 2]), int.Parse(args[i + 3]), carFuel));
+            i += carFuel >= 0 ? 4 : 3;
+            break;
         case "--endgame-probe":
             // P100: dump the victory-slide selection (endgame.txt). Optional "<gvar> <value>" forces one GVAR
             // so a slide can be exercised on a fresh game (content-gated: no map fires endgame_slideshow yet).

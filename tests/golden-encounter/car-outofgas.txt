@@ -1,0 +1,2 @@
+car-outofgas: x=204 y=143 map=cardesrt
+car-travel: (184,133)->area1 outcome=outofgas inCar=0 fuelStart=500 fuelEnd=0 drained=500 parkedArea=-1

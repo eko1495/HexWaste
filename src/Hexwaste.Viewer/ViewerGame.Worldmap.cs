@@ -99,7 +99,7 @@ public sealed partial class ViewerGame
             {
                 _activeTravel = (new Formats.Map.TravelLeg(Worldmap, _cities.Areas, _mapList,
                     _worldPosX, _worldPosY, area.WorldX, area.WorldY, _clock.Ticks, _wmRng,
-                    getGlobal, _dudeLevel, luck, outdoorsman, Difficulty, WorldFog), area);
+                    getGlobal, _dudeLevel, luck, outdoorsman, Difficulty, WorldFog, _scriptHost?.Car), area);
                 _travelCadence = new Formats.Map.TerrainCadence();
                 _travelStepAccumMs = 0;
                 _worldmapOpen = true;
@@ -108,7 +108,7 @@ public sealed partial class ViewerGame
 
             Formats.Map.WorldmapTravel.LegOutcome leg = Formats.Map.WorldmapTravel.ResolveLeg(
                 Worldmap, _cities.Areas, _mapList, _worldPosX, _worldPosY, area.WorldX, area.WorldY,
-                _clock.Ticks, _wmRng, getGlobal, _dudeLevel, luck, outdoorsman, Difficulty, WorldFog);
+                _clock.Ticks, _wmRng, getGlobal, _dudeLevel, luck, outdoorsman, Difficulty, WorldFog, _scriptHost?.Car);
 
             _clock.Ticks += Formats.Map.WorldmapTravel.PathfinderTicks(leg.ClockTicksAdded,
                 DudePerkRank(Formats.Perks.PerkId.Pathfinder)); // P79: Pathfinder shaves rank×25% off travel time
@@ -117,6 +117,11 @@ public sealed partial class ViewerGame
             if (leg.Encounter is { } r)
             {
                 HandleLegEncounter(r, leg.EncounterMap!, area);
+                return;
+            }
+            if (leg.OutOfGas) // the car ran dry mid-leg → strand the party (worldmap.cc:3054-3079)
+            {
+                DropCarOutOfGas();
                 return;
             }
         }
@@ -152,6 +157,12 @@ public sealed partial class ViewerGame
                 HandleLegEncounter(r, s.EncounterMap!, active.Dest);
                 return;
             }
+            if (s.OutOfGas) // the car ran dry mid-leg (worldmap.cc:3054)
+            {
+                _activeTravel = null;
+                DropCarOutOfGas();
+                return;
+            }
             if (s.Arrived)
             {
                 _activeTravel = null;
@@ -159,6 +170,21 @@ public sealed partial class ViewerGame
                 return;
             }
         }
+    }
+
+    /// <summary>The Highwayman car ran out of fuel mid-leg: dismount and strand the party on the
+    /// "Car: Desert" out-of-gas map. ported from fallout2-ce src/worldmap.cc:3054-3079 (CITY_CAR_OUT_OF_GAS
+    /// → cardesrt). The car keeps its parked area so it can be re-fuelled + re-boarded (content-gated).</summary>
+    private void DropCarOutOfGas()
+    {
+        if (_scriptHost is not null)
+            _scriptHost.Car.InCar = false;
+        _worldmapOpen = false;
+        Log("The car sputters and dies — out of fuel.");
+        Console.WriteLine($"car-outofgas: x={_worldPosX} y={_worldPosY} map=cardesrt");
+        int idx = _mapList.FindByLookupName("Car Out of Gas");
+        string? mapFile = idx >= 0 ? _mapList.GetMapFileName(idx) : "cardesrt.map";
+        LoadMap(mapFile ?? "cardesrt.map", null);
     }
 
     /// <summary>Handle an encounter that fired mid-leg (shared by the synchronous resolve
@@ -221,6 +247,8 @@ public sealed partial class ViewerGame
         // Record the dude's worldmap whereabouts so a save round-trips it
         // (phase-10 M2); a reload drops you back on the worldmap here.
         _currentAreaId = area.Index;
+        if (_scriptHost?.Car.InCar == true) // park the car here so car_current_town(30) reports it (worldmap.cc:3162)
+            _scriptHost.Car.CurrentAreaId = area.Index;
         _worldPosX = area.WorldX;
         _worldPosY = area.WorldY;
         WorldFog.MarkRadiusVisited(area.WorldX, area.WorldY); // reveal the destination (P22; covers the roll-less first travel that has no leg)

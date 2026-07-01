@@ -16,6 +16,7 @@ public sealed class CarState
     public const int GvarSuperCar = 456;          // GVAR_NEW_RENO_SUPER_CAR
     public const int GvarRenoUpgrade = 455;       // GVAR_NEW_RENO_CAR_UPGRADE
     public const int GvarFuelCellRegulator = 453; // GVAR_CAR_UPGRADE_FUEL_CELL_REGULATOR
+    public const int GvarBlower = 439;            // GVAR_CAR_BLOWER (speed-only, not a fuel discount)
 
     public bool InCar { get; set; }
     // fo2ce inits carFuel = CAR_FUEL_MAX even before the car is owned (worldmap.cc:919); isInCar gates
