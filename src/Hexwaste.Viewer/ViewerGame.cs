@@ -1452,29 +1452,28 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
         // Remember what the player changed on the map being left, so a
         // revisit can replay it over the pristine file (engine: SAVE.DAT
         // serializes whole visited maps; the PoC keeps deltas instead).
-        // Guard #2 (transient persistence): a transient map being LEFT writes no
-        // delta — it is regenerated, not remembered.
-        if (captureOutgoing && _map is not null && !_currentMapTransient)
+        if (captureOutgoing && _map is not null)
         {
-            // P107 follow-movement: followers ride OUT with the dude — reposition each non-waiting party
-            // member to the dude's exit tile so an escort's map_exit position gate (checkPartyMembersNearDoor:
-            // a party member within N tiles of the exit door) sees them at the exit, exactly as if they had
-            // walked the follower out. Party members travel OUTSIDE map deltas, so this is delta-safe.
-            if (_dude is not null && _scriptHost is not null)
-                foreach (MapObject follower in _scriptHost.PartyMembers)
-                    if (!_waitingCompanions.Contains(follower))
-                        follower.HexTile = _dude.Dude.HexTile;
-
-            // P105: fire the leaving map's map_exit_p_proc scripts BEFORE party extraction — this is how
-            // escort quests complete (the escort NPC's map_exit_p_proc = its leave_player procedure sets the
-            // quest GVAR when the dude walks the follower out of the map). ported from fallout2-ce
-            // scripts.cc scriptsExecMapExitScripts (SCRIPT_PROC_MAP_EXIT).
+            // Fire the leaving map's map_exit_p_proc scripts. fo2ce runs these UNCONDITIONALLY on leave —
+            // transient encounter maps included (map.cc:1440; the saveable check at :1456 gates only the
+            // .SAV write, not the procs). Party members are excluded: the engine removes their scripts
+            // (_partyMemberPrepLoad, map.cc:1438) BEFORE the exit procs run, so a party member's own
+            // map_exit_p_proc never fires; their objects stay on the map at their followed positions.
+            // ported from fallout2-ce scripts.cc scriptsExecMapExitProc →
+            // scriptsExecMapUpdateScripts(SCRIPT_PROC_MAP_EXIT).
             IEnumerable<MapObject> exitScripted = _map.Elevations.Where(e => e is not null)
-                .SelectMany(e => e!.Objects).Where(o => o.Sid != -1 && o != _dude?.Dude);
+                .SelectMany(e => e!.Objects).Where(o => o.Sid != -1 && o != _dude?.Dude
+                    && _scriptHost?.PartyMembers.Contains(o) != true);
             _scriptHost?.RunMapExit(_map, exitScripted, _dude?.Dude);
-            ExtractPartyFromMap();
-            ExtractDismissedFromMap(); // persist this map's dismissed bodies, pull them off it
-            CaptureMapDelta();
+
+            // Guard #2 (transient persistence): a transient map being LEFT writes no delta —
+            // it is regenerated, not remembered.
+            if (!_currentMapTransient)
+            {
+                ExtractPartyFromMap();
+                ExtractDismissedFromMap(); // persist this map's dismissed bodies, pull them off it
+                CaptureMapDelta();
+            }
         }
         _dismissedCompanions.Clear(); // live dismissed set is rebuilt per map (transient ones vanish)
         _currentMapTransient = transient;

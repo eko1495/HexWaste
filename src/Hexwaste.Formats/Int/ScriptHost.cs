@@ -306,6 +306,38 @@ public sealed class ScriptHost(GameFileSystem vfs, ScriptList scripts, Hexwaste.
         while (map.ScriptsBySid.ContainsKey(sid))
             sid++;
         map.ScriptsBySid[sid] = new MapScriptRecord(scriptIndex, -1, 0);
+        // P108: the MapFile (and its ScriptsBySid) is re-parsed on every map load, so this scan
+        // restarts and RECYCLES synthetic sids across visits — but _localVarSlices persists per map
+        // NAME. Clear any stale slice a previous visit left under this key, or the new holder
+        // inherits another object's local vars (fo2ce frees LVAR blocks on scriptRemove).
+        _localVarSlices.Remove((map.Header.Name, sid));
+        return sid;
+    }
+
+    /// <summary>P108: party-member local vars survive map transitions, keyed by the member object.
+    /// fo2ce copies each member's LVAR slice out of gMapLocalVars on leave (_partyMemberPrepLoadInstance,
+    /// party_member.cc:595-608) and copies it back into the new map's array on arrival
+    /// (_partyMemberRecoverLoadInstance, party_member.cc:704-708).</summary>
+    private readonly Dictionary<MapObject, int[]> _partyLocalVars = [];
+
+    /// <summary>P108 (copy-out half): snapshot every party member's local-var slice before the member
+    /// is pulled off the map being left. Call from party extraction, while members still hold their
+    /// old-map sids.</summary>
+    public void PreservePartyLocalVars(MapFile map)
+    {
+        foreach (MapObject member in PartyMembers)
+            if (member.Sid != -1 && map.ScriptsBySid.TryGetValue(member.Sid, out MapScriptRecord? record))
+                _partyLocalVars[member] = GetLocalVarSlice(map, member.Sid, record);
+    }
+
+    /// <summary>P108 (copy-in half): bind a party member's script on the map being entered — a fresh
+    /// synthetic sid whose local-var slice is the member's preserved one, so follower scripts keep
+    /// their latched state (hired/mood/follow flags) across transitions like fo2ce.</summary>
+    public int BindPartyScript(MapFile map, MapObject member, int scriptIndex)
+    {
+        int sid = AllocateSid(map, scriptIndex);
+        if (_partyLocalVars.TryGetValue(member, out int[]? vars))
+            _localVarSlices[(map.Header.Name, sid)] = vars;
         return sid;
     }
 
@@ -847,11 +879,14 @@ public sealed class ScriptHost(GameFileSystem vfs, ScriptList scripts, Hexwaste.
     }
 
     /// <summary>
-    /// P105: run map-EXIT scripts like fallout2-ce scripts.cc scriptsExecMapExitScripts()
-    /// (SCRIPT_PROC_MAP_EXIT = 16): the MAP script's map_exit_p_proc first, then every scripted
-    /// object's, when the dude LEAVES the map. This is how escort quests complete — the escort NPC's
-    /// map_exit_p_proc (its leave_player procedure) fires when the dude walks the follower out, setting the
-    /// quest GVAR (Rescue Smiley 197, Rescue Torr 391). Mirrors RunMapUpdate; map_exit takes no fixed param.
+    /// P105: run map-EXIT scripts like fallout2-ce scripts.cc scriptsExecMapExitProc() →
+    /// scriptsExecMapUpdateScripts(SCRIPT_PROC_MAP_EXIT = 16): the MAP script's map_exit_p_proc first,
+    /// then every remaining scripted object's, when the dude LEAVES the map. The caller must exclude
+    /// party members — the engine removes their scripts (_partyMemberPrepLoad, map.cc:1438) before the
+    /// exit procs run (map.cc:1440), so their own map_exit procs never fire. Mirrors RunMapUpdate;
+    /// map_exit sets no fixed param (scripts.cc:2608-2610 does so only for MAP_ENTER). NOTE (P108
+    /// review): escort quests do NOT complete here — their leave_player fires from the critter_p_proc
+    /// heartbeat via fixed-tile proximity; map_exit is general engine fidelity (e.g. brahmin bookkeeping).
     /// </summary>
     public void RunMapExit(MapFile map, IEnumerable<MapObject> objects, MapObject? dude)
     {

@@ -57,6 +57,9 @@ public sealed partial class ViewerGame
     {
         if (_scriptHost is null)
             return;
+        // P108: snapshot member local vars while they still hold their old-map sids — fo2ce carries
+        // party LVARs across every transition (party_member.cc:595-608 copy-out, :704-708 copy-in).
+        _scriptHost.PreservePartyLocalVars(_map);
         foreach (MapObject member in _scriptHost.PartyMembers)
         {
             foreach (MapElevation? elev in _map.Elevations)
@@ -89,10 +92,11 @@ public sealed partial class ViewerGame
             }
 
             member.HexTile = spawn;
-            // Fresh script binding on this map so the follow critter_p_proc
-            // keeps running (sids are per-map).
+            // Fresh script binding on this map so the follow critter_p_proc keeps running (sids are
+            // per-map); the member's preserved local-var slice rides along (P108 — fo2ce restores
+            // party LVARs into the new map, party_member.cc:704-708).
             if (_partyScriptIndex.TryGetValue(member, out int scriptIndex) && scriptIndex >= 0)
-                member.Sid = _scriptHost.AllocateSid(_map, scriptIndex);
+                member.Sid = _scriptHost.BindPartyScript(_map, member, scriptIndex);
             elev.Objects.Add(member);
             if (!_solidObjects[_elevation].Contains(member))
                 InsertSorted(_solidObjects[_elevation], member);

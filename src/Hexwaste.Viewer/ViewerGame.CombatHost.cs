@@ -302,6 +302,17 @@ public sealed partial class ViewerGame
         {
             if (deathFrame == 0)
             {
+                // P108: fo2ce routes deathFrame==0 through objectDestroy → _obj_remove, which fires
+                // destroy_p_proc BEFORE removal (object.cc:3904; no scriptSetObjects, so source is
+                // null) — a victim's GVAR side effects must not be silently dropped. No XP (that is
+                // the combat death path, not this one).
+                if (obj.Sid != -1)
+                {
+                    (IReadOnlyList<string> destroyLines, _) = RunDestroyProc(obj, null);
+                    foreach (string line in destroyLines)
+                        Log(line);
+                    obj.Sid = -1;
+                }
                 _animator.Remove(obj);
                 for (int elevation = 0; elevation < MapFile.ElevationCount; elevation++)
                 {

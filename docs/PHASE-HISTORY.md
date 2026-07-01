@@ -868,34 +868,59 @@ mechanism wired first (a real feature: temporary escort follower + exit-grid cro
 leave_player proc). Not faked.
 ---
 
-Phase 106 (DONE — "Escort-completion mechanism"): wired map_exit_p_proc (SCRIPT_PROC_MAP_EXIT=16), the
-engine hook escort quests complete through. ScriptHost.RunMapExit (mirrors RunMapUpdate — the map script's
-map_exit_p_proc then every scripted object's) is now called on map-LEAVE in LoadMap (before party extraction,
-so an escorting NPC's proc runs while it's still on the map); ported from fallout2-ce scripts.cc
-scriptsExecMapExitScripts. Previously unwired (a documented engine-wide residual). GROUNDED by disassembling
-KCSmiley (Rescue Smiley, GVAR 197): its map_exit_p_proc (proc 46) conditionally calls leave_player (proc 14,
-sets 197=2) ONLY when a checkPartyMembersNearDoor tile-proximity test passes — i.e. the escorted follower is
-positioned at an exit grid. So the escort completion is faithfully POSITION-GATED. Verified: entering+leaving
-klatoxcv without the escort does NOT fire 197 (the gate holds); all 16 combat + opening + quest goldens
-byte-identical (map_exit procs on transitioned maps are gated/inert). Also added --set-local <hex> <index>
-<value> (ScriptHost.SetObjectLocalVar) — a test aid to set a scripted object's local var (e.g. an escort
-follow flag), and the cross-elevation critter search it needs.
-HONEST LIMIT: a full headless escort e2e GOLDEN is not achievable — map_exit_p_proc position-gates on the
-follower being near the exit grid, and the headless harness does not simulate the follower's live walk to the
-exit (no follow-movement/pathing). In LIVE play (the follower walks out with the dude) the escort quests now
-complete. Not faked into a passing test. Wiring the follow-movement simulation (temporary escort follower that
-paths to the dude + reaches the exit) is the remaining piece for a headless escort golden.
+Phase 106 (DONE — "map_exit_p_proc wired") [GROUNDING CORRECTED by P108 — read that entry too]: wired
+map_exit_p_proc (SCRIPT_PROC_MAP_EXIT=16). ScriptHost.RunMapExit (mirrors RunMapUpdate — the map script's
+map_exit_p_proc then every scripted object's) is now called on map-LEAVE in LoadMap; ported from fallout2-ce
+scripts.cc scriptsExecMapExitProc → scriptsExecMapUpdateScripts(SCRIPT_PROC_MAP_EXIT), called from
+_map_save_in_game (map.cc:1440). Previously unwired (a documented engine-wide residual). All 16 combat +
+opening + quest goldens byte-identical. Also added --set-local <hex> <index> <value>
+(ScriptHost.SetObjectLocalVar) — a test aid to set a scripted object's local var — and the cross-elevation
+critter search it needs. CORRECTION (P108 review): this phase's original rationale — "escort quests complete
+through map_exit_p_proc via a checkPartyMembersNearDoor exit-grid gate" — was WRONG. KCSmiley's
+map_exit_p_proc is EMPTY (bare return); checkPartyMembersNearDoor is dead code (never called); leave_player
+(GVAR 197=2) fires from the critter_p_proc HEARTBEAT gated on the follow flag + tile_distance(self, 18335) < 7
++ elevation 0 (Torr: dude within 14 of tile 19450) — i.e. during play on the map, not at exit. The map_exit
+wiring itself remains correct, needed engine fidelity (KCTorr's map_exit does brahmin bookkeeping; fo2ce runs
+these procs on every leave) — but it is not the escort mechanism.
 ---
 
-Phase 107 (DONE — "Escort follow-movement"): the follow-movement half of the escort-completion feature.
-On map-LEAVE (LoadMap), each non-waiting party-member follower is repositioned to the dude's exit tile
-BEFORE RunMapExit — so they "ride out" with the dude, exactly as if they had walked the follower out. This
-is what lets an escort's map_exit position gate (checkPartyMembersNearDoor: a party member within N tiles of
-the exit door — decompiled from the escort script) see the follower at the exit. Party members travel OUTSIDE
-map deltas, so the reposition is delta-safe; all 16 combat + 185 encounter + opening + quest goldens
-byte-identical. Together with P106 (map_exit_p_proc), escort quests now COMPLETE IN LIVE PLAY (walk the
-follower to the exit → the quest resolves). HONEST LIMIT (unchanged): a fully-automated HEADLESS escort
-GOLDEN still needs three per-quest specifics decompiled from each escort script — establishing the follow via
-its stat-gated dialogue, the escort being a trackable follower, and driving the dude to the exact exit-door
-tile the position gate checks — which is per-quest navigation with low value-for-effort (live play already
-works). Not built into a faked test; documented as the remaining per-quest QA work.
+Phase 107 (SUPERSEDED by P108 — "follower exit-teleport", removed): repositioned party-member followers to
+the dude's exit tile before RunMapExit, on the (wrong, see P106 correction) theory that an escort's
+map_exit_p_proc position-gates on the follower being at the exit. The P108 review showed it was a no-op for
+the escorts it was built for (KCSmiley/KCTorr never party_add — they are script-followers, not party
+members, so the loop never touched them) AND a deviation for real party members (fo2ce removes party
+scripts before map_exit — map.cc:1438 vs :1440 — and never repositions members on leave). Removed in P108.
+The --kill harness + quest-kill-ratgod golden from this phase's commit remain valid and shipped.
+---
+
+Phase 108 (DONE — "fo2ce consistency review + fixes"): a three-reviewer fidelity audit of the P103-P107
+surface against fallout2-ce sources, then the fixes in severity order. FINDINGS→FIXES:
+(1) P106's escort grounding was WRONG (see corrected P106/P107 entries): escorts complete via the
+critter_p_proc heartbeat (fixed-tile proximity), not map_exit. Docs corrected; the P107 follower
+exit-teleport removed (no-op for script-follower escorts, deviation for party members). Silver lining: a
+headless escort golden IS feasible via the real mechanism (set the follow flag, drive the dude near the
+trigger tile — Smiley's critter_p_proc self-teleports to the dude when >5 tiles away — let heartbeats run).
+(2) Party members excluded from RunMapExit: fo2ce removes every party member's script (dude =
+gPartyMembers[0]) in _partyMemberPrepLoad (map.cc:1438) BEFORE map_exit procs run (map.cc:1440), so a party
+member's own map_exit_p_proc never fires; ours ran them. Now excluded at the LoadMap call site.
+(3) Party LVAR continuity across transitions: fo2ce copies each member's local vars out on leave
+(party_member.cc:595-608) and restores them on the new map (704-708); ours re-bound a fresh synthetic sid
+with a ZEROED slice each transition (follower latched state silently reset). Now
+ScriptHost.PreservePartyLocalVars (copy-out, called from ExtractPartyFromMap) + BindPartyScript (copy-in,
+used by InjectPartyMembers) carry the slice. Also fixed the stale-slice recycling hazard: AllocateSid
+recycles synthetic sids across map visits (MapFile re-parsed per load) while _localVarSlices persists per
+map NAME — a recycled sid inherited a previous visit's slice; AllocateSid now clears the stale key.
+(4) map_exit now runs on TRANSIENT (encounter) maps too — fo2ce fires it unconditionally (map.cc:1440);
+only the .SAV write is gated by saveability (:1456). Delta capture stays transient-guarded.
+(5) Kill-path deltas vs combat.cc:4850-4882 + object.cc:3904: (a) out-of-combat CombatEngine.Kill now
+flushes _xpPending immediately (was stranded until an unrelated combat's end paid a windfall); (b)
+kill_critter_type deathFrame==0 now fires destroy_p_proc before removal (fo2ce routes it through
+objectDestroy → _obj_remove, which runs SCRIPT_PROC_DESTROY with no source; ours silently deleted — GVAR
+side effects were dropped); (c) DAM_DEAD is set BEFORE destroy_p_proc (fo2ce's _set_new_results precedes
+the destroy block, so critter_is_dead(self) reads true in destroy procs); (d) XP guarded against
+victim==dude (combat.cc:4860 gates on a1 != gDude).
+DEFERRED (documented, low-value): itemDestroyAllHidden on death; RunMapExit iterates map objects (ownerless
+spatial/timer scripts' map_exit procs missed; object-order vs fo2ce's type-order); scripts.lst-vs-map
+LocalVarsCount preference edge (fo2ce re-derives from scripts.lst on pristine maps); map_exit fires at next
+LoadMap rather than at the worldmap-exit moment (a script reading game time in map_exit sees a later clock).
+All 793 Formats tests + 16 combat + 185 encounter + opening + quest goldens verified after the fixes.

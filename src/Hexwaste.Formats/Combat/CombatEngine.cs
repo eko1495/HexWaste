@@ -1594,6 +1594,12 @@ public sealed class CombatEngine
     private void KillCritter(MapObject critter, MapObject? killer = null,
         int damage = 0, int damageType = 0, int attackerAnim = DeathAnims.FallBack)
     {
+        // The victim is already flagged DAM_DEAD when destroy_p_proc runs in the engine
+        // (_set_new_results precedes _damage_object's destroy block, combat.cc:~4790) — set it first
+        // so a destroy_p_proc that tests critter_is_dead(self) sees "dead" (P108).
+        critter.CombatResults |= 0x80; // DAM_DEAD
+        critter.CombatResults &= ~(CriticalTables.DamKnockedOut | CriticalTables.DamLoseTurn); // dead, not unconscious
+
         // Engine death order (combat.cc:4850-4876): destroy_p_proc with source =
         // killer, then proto XP accrues for the dude's kills unless the script
         // called script_overrides, then the script is removed.
@@ -1606,9 +1612,11 @@ public sealed class CombatEngine
             xpOverridden = overridden;
         }
 
-        // Engine: kills by the dude OR his team accrue XP (combat.cc:4860).
+        // Engine: kills by the dude OR his team accrue XP — never for the dude's own death
+        // (combat.cc:4860 gates on victim != gDude).
         bool dudeTeamKill = killer == _host.Dude || (killer is not null && killer.Team == 0);
-        if (!xpOverridden && dudeTeamKill && _host.GetCritterState(critter) is { } stats)
+        if (!xpOverridden && dudeTeamKill && critter != _host.Dude
+            && _host.GetCritterState(critter) is { } stats)
         {
             _xpPending += stats.Proto.Experience;
             _host.RecordKill(critter); // killsIncByType(critterGetKillType(victim)), combat.cc:4870
@@ -1616,8 +1624,6 @@ public sealed class CombatEngine
 
         _host.RemovePartyMember(critter);
 
-        critter.CombatResults |= 0x80; // DAM_DEAD
-        critter.CombatResults &= ~(CriticalTables.DamKnockedOut | CriticalTables.DamLoseTurn); // dead, not unconscious
         critter.Sid = -1; // the engine removes the script on death (combat.cc:4876)
         _knockedDown.Remove(critter);
         _events.Remove(critter); // no pending wake for the dead (queue.cc:271)
@@ -1910,7 +1916,17 @@ public sealed class CombatEngine
 
     /// <summary>Kill a critter outside the combat loop (script/trap damage),
     /// running the same death path (destroy proc, XP accrual, corpse).</summary>
-    public void Kill(MapObject critter, MapObject? killer = null) => KillCritter(critter, killer);
+    public void Kill(MapObject critter, MapObject? killer = null)
+    {
+        KillCritter(critter, killer);
+        // P108: an out-of-combat scripted/harness kill pays its XP now — otherwise _xpPending
+        // strands until an unrelated combat ends and pays a windfall (mirrors the blast path).
+        if (_xpPending > 0 && _phase == CombatPhase.Idle)
+        {
+            _host.AwardXp(_xpPending);
+            _xpPending = 0;
+        }
+    }
 
     // ====================================================================
     //  Turn stepping
