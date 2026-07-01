@@ -1,0 +1,8 @@
+get-global: GVAR619 = 1
+party: Vic joined (script 49)
+get-global: GVAR619 = 2
+quest-item: gvar=480 val=0 display=0 completed=0 loc=1500 desc=130
+quest-item: gvar=619 val=2 display=1 completed=1 loc=1500 desc=140
+quest-item: gvar=100 val=2 display=1 completed=1 loc=1501 desc=200
+quest-probe: quests=110 shown=3
+party-count: members=2 caps=1000 [Vic(70/70)]

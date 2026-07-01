@@ -823,3 +823,16 @@ NAME/DESC strings, the scr_return use_obj_on gate flip, the radiation delayed-da
 campaign's entire STATIC external-demand surface is now covered — what remains to "finish the campaign" is
 per-quest playtest QA + the deferred content (prizefight ladder, car acquisition, rad band effects), not
 engine wiring.
+---
+
+Phase 103 (DONE — "Quest E2E PoC"): a proof-of-concept end-to-end QUEST test driver, proving the ~150-quest
+manual QA can be turned into repeatable goldens. scripts/quest-golden.sh drives the "Free Vic" quest (Arroyo
+GVAR 619 FIND_VIC) to completion through the REAL game logic — a fresh game seeds 619=1 (active); buying Vic's
+freedom from Metzger (give 2000 caps + his radio, then the 3-NPC --talk-seq dialogue) drives 619→2 via the
+dialogue VM's set_global_var (NOT --set-global faking); asserts the lifecycle via --get-global (1→2) +
+--quest-probe (the Pip-Boy "Find Vic" quest flips completed=1) + --party-count (Vic joins). Captured lines are
+STATE/ID only (get-global/quest-item/quest-probe/party) — never the copyrighted dialogue text. Deterministic
+(--rng-seed). Additive (new script + tests/golden-quest/) → all goldens byte-identical. TEMPLATE: each further
+quest = author its scenario (discover its GVAR + dialogue option path, assert the lifecycle) — the per-quest
+QA is now automatable, not purely manual. LIMITS: dialogue/combat quests are the sweet spot; fetch/timing/
+multi-map quests need more harness plumbing or stay manual.
