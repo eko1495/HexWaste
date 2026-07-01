@@ -204,6 +204,10 @@ for (int i = 0; i < args.Length; i++)
         case "--car-probe": // P100 (Point 4): exercise the Highwayman car fuel model
             actions.Add(new ViewerGame.StartupAction.CarProbe());
             break;
+        case "--lip-probe" when i + 2 < args.Length: // P101 (bucket 1c): dump a .lip phoneme→frame chain
+            actions.Add(new ViewerGame.StartupAction.LipProbe(args[i + 1], args[i + 2]));
+            i += 2;
+            break;
         case "--car-acquire" when i + 3 < args.Length: // P100 (bucket 1): drive the car from (x,y) to an area
             // optional 4th arg = starting fuel (default -1 = full tank)
             int carFuel = i + 4 < args.Length && int.TryParse(args[i + 4], out int cf) ? cf : -1;

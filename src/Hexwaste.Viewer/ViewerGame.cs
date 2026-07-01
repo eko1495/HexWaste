@@ -684,6 +684,8 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
         public sealed record HolodiskProbe : StartupAction;
         // P100 (Point 4): exercise the Highwayman car fuel model (give_car_to_party/give_car_gas/use_gas).
         public sealed record CarProbe : StartupAction;
+        // P101 (bucket 1c): load a per-head .lip from the DAT + print the phoneme→frame chain at sample marks.
+        public sealed record LipProbe(string Head, string Audio) : StartupAction;
         // P100 (bucket 1): acquire+board the car at worldmap (X,Y), drive to Area, report fuel drained/arrival.
         // Fuel < 0 fills to max; a small Fuel exercises the out-of-gas drop.
         public sealed record CarAcquire(int X, int Y, int Area, int Fuel) : StartupAction;

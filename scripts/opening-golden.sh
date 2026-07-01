@@ -29,6 +29,8 @@ SCENARIOS=(
   # P101 (bucket 1b): New Reno — locks the prizefight-adjacent wired-external count (game_ui_disable/enable
   # now wired → stubbed dropped 11→9). Regression net for New Reno's remaining (cosmetic) stub surface.
   "census-newr2|census|--map Newr2.map"
+  # P101 (bucket 1c): the .lip lip-sync data chain on the real Arroyo Elder assets (parse → phoneme → frame).
+  "lip-elder|viewer|--map artemple.map --lip-probe ELDER aeld1"
   "mapupdate-artemple|viewer|--map artemple.map --map-update-probe --rng-seed 1"
   "mapupdate-arvillag|viewer|--map arvillag.map --map-update-probe --rng-seed 1"
   "chain-opening|viewer|--map artemple.map --goto-map arcaves.map --goto-map arvillag.map --goto-map argarden.map --goto-map arbridge.map --rng-seed 1"
@@ -48,7 +50,7 @@ run() {
     timeout 120 env DISPLAY="${DISPLAY:-:0}" FALLOUT2_DIR="$GAME" \
       dotnet run --project src/Hexwaste.Viewer -c Debug --no-build -- \
       --game-dir "$GAME" --no-audio $args 2>/dev/null \
-      | grep -E "transit:|map-update:|light:|get-global:"
+      | grep -E "transit:|map-update:|light:|get-global:|lip-probe:"
   fi
 }
 

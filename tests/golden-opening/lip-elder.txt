@@ -1,0 +1,1 @@
+lip-probe: head=ELDER audio=aeld1 present=1 phonemes=64 markers=65 acm=1 frame@0=0 frame@mid=2 frame@end=0

@@ -983,6 +983,26 @@ public sealed partial class ViewerGame
                         + $" added={added} boardFull={(boardFull ? 1 : 0)} inCar={(car.InCar ? 1 : 0)} fuel={car.Fuel} outOfGas={(car.IsOutOfGas ? 1 : 0)}");
                     break;
                 }
+                case StartupAction.LipProbe(var lipHead, var lipAudio):
+                {
+                    // P101 (bucket 1c): parse a real per-head .lip + report the phoneme→frame chain at
+                    // sample marks — proves the full lips.cc pipeline (parse → PhonemeAt → PhonemeFrame).
+                    string lipPath = $@"sound\speech\{lipHead}\{lipAudio}.lip";
+                    if (!_vfs.Exists(lipPath))
+                    {
+                        Console.WriteLine($"lip-probe: head={lipHead} audio={lipAudio} present=0");
+                        break;
+                    }
+                    var lip = Formats.Sound.LipData.Parse(_vfs.ReadAllBytes(lipPath));
+                    int last = lip.Markers.Count > 0 ? lip.Markers[^1].Position : 0;
+                    int f0 = Formats.Sound.LipData.FrameForPhoneme(lip.PhonemeAt(0));
+                    int fMid = Formats.Sound.LipData.FrameForPhoneme(lip.PhonemeAt(last / 2));
+                    int fEnd = Formats.Sound.LipData.FrameForPhoneme(lip.PhonemeAt(last));
+                    bool acm = _vfs.Exists($@"sound\speech\{lipHead}\{lipAudio}.acm");
+                    Console.WriteLine($"lip-probe: head={lipHead} audio={lipAudio} present=1 phonemes={lip.Phonemes.Count}"
+                        + $" markers={lip.Markers.Count} acm={(acm ? 1 : 0)} frame@0={f0} frame@mid={fMid} frame@end={fEnd}");
+                    break;
+                }
                 case StartupAction.CarAcquire(var cx, var cy, var carea, var cfuel):
                 {
                     // P100 (bucket 1): board the fuelled car at (cx,cy) and drive to the area, proving the
