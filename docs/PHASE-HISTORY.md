@@ -765,3 +765,44 @@ deferred as content/presentation). HolodiskLog (holodisk.txt) + a Pip-Boy Archiv
 DAT — the "no speech assets" premise was loose-files-only) but CONTENT-GATED on the Arroyo→Den slice (no
 voiced lines) → deferred; the P87/P89 head fidget already ships, only .lip phoneme timing + reaching a voiced
 map remain.
+---
+
+Phase 101 (DONE — "The Last Mile"): three buckets past the P100 completion — content wiring that P100's
+hooks unblocked, QA tooling to make the ~150-quest manual QA tractable, and discrete engine gap-fills. Each
+grounded + adversarially verified against fallout2-ce before coding; all committed with byte-identical golden
+suites (bar two reviewed, sane re-records). See [[p100-endgame-qa-prizefight-car]].
+
+**BUCKET 1 — content wiring (car / prizefight / lip-sync):**
+- CAR gameplay payoff: WorldmapTravel.TravelLeg drives _carStride pixels/step (4 + blower + Reno + 3×super,
+  worldmap.cc:3025) but rolls/ticks/burns once; CarState.UseGas drains 100/step; out-of-gas strands the party
+  on cardesrt (worldmap.cc:3054). ArriveAt parks the car (car_current_town). Persisted (additive V2). Foot
+  travel stride 1 → byte-identical. --car-acquire harness + car-travel/car-outofgas goldens.
+- PRIZEFIGHT: the FSM is content fo2ce can't source (no .ssl); its engine hooks already exist (P35 critter
+  combat_p_proc + P100 combat-over). Wired game_ui_disable/enable(0x8133/0x8134) — the round-cutscene input
+  lock used New-Reno-wide (census: Newr2 11→9, arcaves 7→5, sane re-records). Full ladder deferred as content.
+- LIP-SYNC: the "no speech assets" premise was FALSE — 1029 per-head .lip + ACMs are in master.dat. LipData
+  parses the v2 .lip (big-endian, verified vs ELDER\AELD1.LIP: 64 phonemes/65 markers) + the 42-int
+  PhonemeFrame table (game_dialog.cc:320) + anim ids 9/10/11 (art.h, correcting the brief's 10/11/12).
+  PlayDialogVoice loads the per-head ACM+.lip from the DAT + DrawTalkingHead animates the mouth to the
+  phonemes over playback position. Live on the Arroyo Elder (voiced + reachable). --lip-probe golden.
+
+**BUCKET 2 — QA tooling:**
+- census-sweep.sh: a VM-free ProcAnalyze census over 16 maps (one per story region) locking each map's
+  wired/stubbed external counts — a game-wide "silent quest-gap" regression net. Zero load failures.
+- dynamic --census: drives the arg-free interactive procs (use_p_proc/description/critter_p_proc + DFS every
+  talk_p_proc dialog branch) → the CONFIRMED-EXECUTED stub set. Invariant verified: dynamic ⊆ static. Arg-
+  taking procs (use_obj_on/use_skill_on) left to the static superset (documented scope cut). Normalizes the
+  descriptive _stubbedExternals keys + filters the fetch_external/store_external forms.
+
+**BUCKET 3 — engine gap-fills (byte-identical/sane-rerecord wins; HIGH-risk deferred):**
+- SPECIAL-ENCOUNTER FIX (byte-identical): dropped the IsTransient filter that wrongly rejected the 6 saved=Yes
+  special maps (crashed whale, Cafe of Broken Dreams, …), silently degrading them to random desert
+  (worldmap.cc:3640 wmRndEncounterPick — the map is chosen unconditionally, saved= never gates it).
+- whoHitMe RETALIATION: a struck critter remembers its attacker (MapObject.WhoHitMe, transient, team-gated)
+  and TryEnemyAction prefers that avenger over nearest when it's a live cross-team combatant (combat_ai.cc
+  _ai_danger_source). Combat goldens byte-identical (lone-dude duels: whoHitMe == nearest). Lone re-record:
+  brawl-watch (2v2) now retaliation-targets → team 2 wins (was 1) — a reviewed, faithful behavioral change.
+- DEFERRED: combat hit/damage HIGH tier (darkness/LONG_RANGE/SCOPE/stray-shot — forces ~all combat re-records),
+  METARULE_ELEVATOR(15) (additive, needs a table port + probe), egg-mask per-pixel wall transparency (cosmetic,
+  re-records rendering goldens). The combat LOW tier (perk range mults) is inert on the slice (no slice weapon
+  carries perk 58/64) → pure forward-looking infra, not built.
