@@ -433,6 +433,10 @@ for (int i = 0; i < args.Length; i++)
             // per-map content+stub coverage census (helps adding new cities): --map <m> --smoke
             actions.Add(new ViewerGame.StartupAction.SmokeScan());
             break;
+        case "--census":
+            // P101 (bucket 2): dynamic census — drive arg-free interactive procs + DFS dialog trees
+            actions.Add(new ViewerGame.StartupAction.CensusScan());
+            break;
         case "--drag-equip" when i + 2 < args.Length:
             actions.Add(new ViewerGame.StartupAction.DragEquip(int.Parse(args[i + 1]), int.Parse(args[i + 2])));
             i += 2;

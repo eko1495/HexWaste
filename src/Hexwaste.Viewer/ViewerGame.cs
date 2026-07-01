@@ -749,6 +749,9 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
         /// fired (map_enter on load + a map_update pass) — a NEW city's silent-quest-gap detector.
         /// STATE-only (counts + external NAMES), deterministic + headless, no walking / UI / RNG.</summary>
         public sealed record SmokeScan : StartupAction;
+        // P101 (bucket 2): dynamic census — drive the arg-free interactive procs (+ DFS dialog trees) that
+        // --smoke skips, reporting the CONFIRMED-EXECUTED stub set (⊆ the static ProcAnalyze superset).
+        public sealed record CensusScan : StartupAction;
         /// <summary>Drive the real drag-to-equip path (P47): drag the inventory item at FromRow onto a
         /// slot — Slot 0=weapon, 2=armor, -1=drop. Reports pid + equipped flag + AC/DT/DR. STATE-only
         /// (pid + ints), never the item's name/message text.</summary>

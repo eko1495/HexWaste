@@ -991,6 +991,10 @@ public sealed class ScriptHost(GameFileSystem vfs, ScriptList scripts, Hexwaste.
         /// <see cref="Options"/> — the Empathy perk tints each option by this (game_dialog.cc:2118).</summary>
         public IReadOnlyList<int> OptionReactions => _context.DialogOptions.Select(o => o.Reaction).ToList();
 
+        /// <summary>The procedure index each option jumps to (parallel to <see cref="Options"/>) — the
+        /// dynamic census DFS's these to drive every dialog branch (P101 bucket 2).</summary>
+        public IReadOnlyList<int> OptionProcedures => _context.DialogOptions.Select(o => o.ProcedureIndex).ToList();
+
         public bool Active { get; private set; } = true;
 
         /// <summary>P87: the talking-head index the script's start_gdialog supplied (heads.lst index), or

@@ -517,6 +517,54 @@ public sealed partial class ViewerGame
                         + $"newStubbedExternals={newStubs.Count}[{string.Join(",", newStubs)}]");
                     break;
                 }
+                case StartupAction.CensusScan when _map is not null && _scriptHost is not null:
+                {
+                    // P101 (bucket 2): the DYNAMIC census — drive the interactive procs --smoke skips
+                    // (use_p_proc, description/look_at, critter_p_proc + every talk_p_proc dialog branch),
+                    // reporting the CONFIRMED-EXECUTED stub set. Only ARG-FREE procs are driven (use_obj_on/
+                    // use_skill_on need a synthetic item/skill → left to the static ProcAnalyze superset; the
+                    // dynamic set is ⊆ that). Deterministic NAME set only (a random-gated branch may/may not
+                    // fire, so counts/order aren't stable but the name set is). Column-0 output (anchored FILTER).
+                    var scriptedObjs = _map.Elevations.Where(e => e is not null).SelectMany(e => e!.Objects)
+                        .Where(o => o.Sid != -1 && o != _dude?.Dude).ToList();
+                    foreach (MapObject o in scriptedObjs)
+                    {
+                        _scriptHost.RunObjectProc(o, _map, _dude?.Dude, 0, -1, "use_p_proc");
+                        _scriptHost.GetScriptedDescription(o, _map, _dude?.Dude);
+                        _scriptHost.RunObjectProc(o, _map, _dude?.Dude, 0, -1, "critter_p_proc");
+                        // DFS every dialog branch: fresh session per pass, lowest-unvisited proc index first.
+                        var visited = new HashSet<int>();
+                        for (bool added = true; added;)
+                        {
+                            added = false;
+                            if (_scriptHost.StartDialog(o, _map, _dude?.Dude, out _) is not { } session)
+                                break;
+                            while (session.Active)
+                            {
+                                var procs = session.OptionProcedures;
+                                int pick = -1;
+                                for (int k = 0; k < procs.Count; k++)
+                                    if (!visited.Contains(procs[k])) { pick = k; break; }
+                                if (pick < 0) break;
+                                visited.Add(procs[pick]);
+                                added = true;
+                                session.Choose(pick);
+                            }
+                        }
+                    }
+                    // Normalize each stub key ("stubbed external <Name> (0xXXXX): popped N") to <Name>(0xXXXX);
+                    // drop the fetch_external/store_external variable-access forms (not externals).
+                    var names = new SortedSet<string>(StringComparer.Ordinal);
+                    foreach (string key in _stubbedExternals.Keys)
+                    {
+                        var m = System.Text.RegularExpressions.Regex.Match(key, @"^stubbed external (\S+) \((0x[0-9A-Fa-f]+)\)");
+                        if (m.Success)
+                            names.Add($"{m.Groups[1].Value}({m.Groups[2].Value})");
+                    }
+                    Console.WriteLine($"census: map={_currentMapName} scripted={scriptedObjs.Count} "
+                        + $"executed-stubs={names.Count}[{string.Join(",", names)}]");
+                    break;
+                }
                 case StartupAction.SmokeScan when _map is not null && _scriptHost is not null:
                 {
                     // A per-map content-coverage smoke scan: census the map + run its map_update pass

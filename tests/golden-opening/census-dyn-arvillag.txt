@@ -1,0 +1,1 @@
+census: map=arvillag.map scripted=142 executed-stubs=2[gfade_in(0x8137),gfade_out(0x8136)]

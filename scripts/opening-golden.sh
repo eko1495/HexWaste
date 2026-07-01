@@ -31,6 +31,9 @@ SCENARIOS=(
   "census-newr2|census|--map Newr2.map"
   # P101 (bucket 1c): the .lip lip-sync data chain on the real Arroyo Elder assets (parse → phoneme → frame).
   "lip-elder|viewer|--map artemple.map --lip-probe ELDER aeld1"
+  # P101 (bucket 2 M2): the DYNAMIC census — arvillag's scripts fire the gfade stubs when their dialog/use
+  # procs are actually driven (⊆ the static ProcAnalyze superset). Confirmed-executed, not just referenced.
+  "census-dyn-arvillag|viewer|--map arvillag.map --census --rng-seed 1"
   "mapupdate-artemple|viewer|--map artemple.map --map-update-probe --rng-seed 1"
   "mapupdate-arvillag|viewer|--map arvillag.map --map-update-probe --rng-seed 1"
   "chain-opening|viewer|--map artemple.map --goto-map arcaves.map --goto-map arvillag.map --goto-map argarden.map --goto-map arbridge.map --rng-seed 1"
@@ -50,7 +53,7 @@ run() {
     timeout 120 env DISPLAY="${DISPLAY:-:0}" FALLOUT2_DIR="$GAME" \
       dotnet run --project src/Hexwaste.Viewer -c Debug --no-build -- \
       --game-dir "$GAME" --no-audio $args 2>/dev/null \
-      | grep -E "transit:|map-update:|light:|get-global:|lip-probe:"
+      | grep -E "transit:|map-update:|light:|get-global:|lip-probe:|census:"
   fi
 }
 
