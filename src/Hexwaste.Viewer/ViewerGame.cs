@@ -1671,8 +1671,14 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
         {
             _headFrameTimerMs += gameTime.ElapsedGameTime.TotalMilliseconds;
             while (_headFrameTimerMs >= HeadFrameMs) { _headFrameTimerMs -= HeadFrameMs; _headFrame++; }
+            if (_activeLip is not null) // P101: advance lip-sync playback; drop back to fidget when the ACM ends
+            {
+                _lipElapsedMs += gameTime.ElapsedGameTime.TotalMilliseconds;
+                if (_lipElapsedMs >= _lipDurationMs)
+                    _activeLip = null;
+            }
         }
-        else { _headFrame = 0; _headFrameTimerMs = 0; }
+        else { _headFrame = 0; _headFrameTimerMs = 0; _activeLip = null; }
 
         // Main menu / character creation: the world idles underneath. The menu/creation flow plays the
         // engine's menu music (mainmenu.cc → 07desert); PlayMusic de-dups so calling each frame is a no-op.
@@ -4809,9 +4815,47 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
     /// true — Hexwaste renders no talking head, so the engine's head-FID gate (scripts.cc:2746) cannot apply.</summary>
     private void PlayDialogVoice(int messageListId, int messageId)
     {
-        if (_scriptHost?.LookupAudio(messageListId, messageId) is { } audio
-            && Formats.Sound.SpeechName.ShouldSpeak(isReply: true, headIsValid: true, audio))
-            _audio?.PlaySpeech(audio);
+        if (_scriptHost?.LookupAudio(messageListId, messageId) is not { } audio
+            || !Formats.Sound.SpeechName.ShouldSpeak(isReply: true, headIsValid: true, audio))
+            return;
+
+        // P101 (bucket 1c): a voiced head plays its per-head ACM from the DAT + drives the mouth from the
+        // sibling .lip (fo2ce lips.cc: sound\speech\<head>\<audio>.acm/.lip). Fall back to the flat loose-file
+        // path (the P53 legacy) when there is no head / no per-head asset.
+        _activeLip = null;
+        int headId = EffectiveHeadId();
+        string? subdir = headId >= 0 ? HeadFrmName(headId) : null;
+        if (subdir is not null && _vfs.Exists($@"sound\speech\{subdir}\{audio}.acm"))
+        {
+            string lipPath = $@"sound\speech\{subdir}\{audio}.lip";
+            if (_vfs.Exists(lipPath))
+                _activeLip = Formats.Sound.LipData.Parse(_vfs.ReadAllBytes(lipPath));
+            _lipElapsedMs = 0;
+            _lipDurationMs = _audio?.PlaySpeechData(_vfs.ReadAllBytes($@"sound\speech\{subdir}\{audio}.acm")) ?? 0;
+            _lipAnim = Formats.Sound.LipData.AnimNeutralPhonemes; // good/bad tinting by reaction is a refinement
+            if (_lipDurationMs <= 0)
+                _activeLip = null; // audio off / decode failed → the fidget path
+            return;
+        }
+        _audio?.PlaySpeech(audio); // legacy flat loose-file path
+    }
+
+    /// <summary>The head FRM base name for a dialog head id (the per-head speech subdir, e.g. "elder" →
+    /// sound\speech\ELDER\). Resolved via the head FID's art path (art\heads\&lt;name&gt;.frm).</summary>
+    private string? HeadFrmName(int headId)
+    {
+        try
+        {
+            string path = _artIndex.GetFrmPath(Formats.Fid.Build(Formats.ObjectType.Head, headId));
+            int slash = path.LastIndexOfAny(['\\', '/']);
+            string file = slash >= 0 ? path[(slash + 1)..] : path;
+            int dot = file.LastIndexOf('.');
+            return dot >= 0 ? file[..dot] : file;
+        }
+        catch (Exception ex) when (ex is FileNotFoundException or InvalidDataException or NotSupportedException)
+        {
+            return null;
+        }
     }
 
     /// <summary>Text dialog panel: reply on top, numbered options below (keys 1-9 or click).</summary>
@@ -4834,6 +4878,11 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
     // a documented presentation choice (no .lip phoneme lip-sync; the .lip timing files aren't shipped).
     private int _headFrame;
     private double _headFrameTimerMs;
+    // P101 (bucket 1c): the active lip-sync playback — the loaded .lip, elapsed playback ms + the ACM
+    // duration, and the phoneme-anim id (9/10/11) chosen by the reply's reaction. Null = fidget.
+    private Formats.Sound.LipData? _activeLip;
+    private double _lipElapsedMs, _lipDurationMs;
+    private int _lipAnim = Formats.Sound.LipData.AnimNeutralPhonemes;
     private const double HeadFrameMs = 1000.0 / 8; // heads.lst fps ~8
 
     /// <summary>P87/P89: render the dialogue talking head in the upper area of the centred 640x480 dialog
@@ -4844,12 +4893,21 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
     /// local (126,14), gameDialogRenderTalkingHead).</summary>
     private void DrawTalkingHead(int headId, int frameX, int frameY)
     {
-        int fid = Formats.Fid.Build(Formats.ObjectType.Head, headId, animType: 4, weaponCode: 1);
+        // P101 (bucket 1c): while a voiced line plays, lip-sync — pick the phoneme-anim FRM (9/10/11) and
+        // the frame the current phoneme maps to (fo2ce game_dialog.cc:2847). Otherwise the P87 fidget (anim 4).
+        int animType = 4, requestedFrame = _headFrame;
+        if (_activeLip is { } lip && _lipDurationMs > 0)
+        {
+            animType = _lipAnim;
+            int samplePos = (int)(_lipElapsedMs / 1000.0 * lip.SampleRate);
+            requestedFrame = Formats.Sound.LipData.FrameForPhoneme(lip.PhonemeAt(samplePos));
+        }
+        int fid = Formats.Fid.Build(Formats.ObjectType.Head, headId, animType, weaponCode: 1);
         Texture2D head;
         try
         {
             int frames = _frmCache.FrameCount(fid);
-            head = _frmCache.GetTexture(fid, frames > 0 ? _headFrame % frames : 0);
+            head = _frmCache.GetTexture(fid, frames > 0 ? requestedFrame % frames : 0);
         }
         catch (Exception ex) when (ex is FileNotFoundException or InvalidDataException or NotSupportedException)
         {

@@ -36,10 +36,14 @@ public sealed class LipData
     /// <summary>(marker, sample-position) pairs; marker[0] is {0|1, 0}.</summary>
     public IReadOnlyList<(int Marker, int Position)> Markers { get; }
 
-    private LipData(byte[] phonemes, (int, int)[] markers)
+    /// <summary>The speech sample rate (field_4, e.g. 22528) — converts elapsed ms → sample position.</summary>
+    public int SampleRate { get; }
+
+    private LipData(byte[] phonemes, (int, int)[] markers, int sampleRate)
     {
         Phonemes = phonemes;
         Markers = markers;
+        SampleRate = sampleRate;
     }
 
     /// <summary>Parse a v2 <c>.lip</c> file. Throws <see cref="InvalidDataException"/> on a bad version/size.</summary>
@@ -52,6 +56,7 @@ public sealed class LipData
         int version = Int32At(0);
         if (version != 2)
             throw new InvalidDataException($".lip version {version} unsupported (only v2).");
+        int sampleRate = Int32At(1 * 4);    // field_4 — the speech sample rate (e.g. 22528)
         int phonemeCount = Int32At(5 * 4);  // field_24 — the 6th int32
         int markerCount = Int32At(7 * 4);   // field_2C — the 8th int32
         int phonemesOffset = 44;            // header: 8 int32 (32) + file_name[8] + tag[4]
@@ -68,7 +73,7 @@ public sealed class LipData
             int o = markersOffset + i * 8;
             markers[i] = (Int32At(o), Int32At(o + 4));
         }
-        return new LipData(phonemes, markers);
+        return new LipData(phonemes, markers, sampleRate);
     }
 
     /// <summary>The phoneme index active at a given decoded-sound sample position — ported from
