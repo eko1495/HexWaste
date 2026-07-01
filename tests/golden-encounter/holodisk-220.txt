@@ -1,0 +1,3 @@
+set-global: GVAR220 = 1
+holodisk-item: gvar=220 val=1 name=401 desc=2000
+holodisk-probe: holodisks=20 shown=1

@@ -235,6 +235,11 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
     private bool _questsTried;
     private Formats.Text.MessageFile? _questsMsg, _mapMsg;
     private bool _questsMsgTried, _mapMsgTried;
+    // P100 (Point 4): data\holodisk.txt + pipboy.msg (holodisk names), lazy-loaded.
+    private IReadOnlyList<Formats.Holodisk>? _holodisks;
+    private bool _holodisksTried;
+    private Formats.Text.MessageFile? _pipboyMsg;
+    private bool _pipboyMsgTried;
 
     /// <summary>Skilldex authentic art (P13 follow-up): SKLDXBOX background + SKLDXOFF/
     /// SKLDXON button states (skilldex.cc). Null if the art is missing → text fallback.</summary>
@@ -668,6 +673,13 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
         public sealed record SetKarma(int Karma, int Reputation) : StartupAction;
         /// <summary>Read a global var (P32-M1; verifies vault13.gam seeding after a new game).</summary>
         public sealed record GetGlobal(int Id) : StartupAction;
+
+        // P100 (Point 4): print the Pip-Boy Archives quest list under the current/forced GVARs (quests.txt).
+        public sealed record QuestProbe : StartupAction;
+        // P100 (Point 4): print the holodisks unlocked under the current/forced GVARs (holodisk.txt).
+        public sealed record HolodiskProbe : StartupAction;
+        // P100 (Point 4): exercise the Highwayman car fuel model (give_car_to_party/give_car_gas/use_gas).
+        public sealed record CarProbe : StartupAction;
 
         // P100 (Point 1): print the victory-slide selection for the current/forced GVARs (endgame.txt).
         public sealed record EndgameProbe(int? Gvar, int? Value) : StartupAction;

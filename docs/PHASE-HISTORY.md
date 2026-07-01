@@ -717,3 +717,51 @@ dimmed scene + top head + lower panel read as the FO2 dialog screen.
 
 Phase 10 (DONE — "The Wasteland Bites Back"; trailing duplicate in this range, full text in CLAUDE.md): M0-M5 worldmap encounters + companion lifecycle. **Durable CORRECTION: the phase-10 research notes' "partymbr.msg list-14" claim was UNVERIFIED and WRONG — partymbr.msg does not exist in the game data, "partymbr" appears nowhere in fallout2-ce, and message list 14 resolves to Generic.int/generic.msg.** The engine has NO dedicated wait/follow/dismiss UI: recruit/dismiss are plain party_add/party_remove (interpreter_extra.cc:3943/3956 → party_member.cc:375/426) called from a companion's own talk_p_proc reply procedure (game_dialog.cc:2080); the hub reproduces those side effects. The only dedicated party UI is the AI-disposition combat-control window (game_dialog.cc:3354) — SUPERSEDED, shipped in P50. **GOTCHA: companions travel OUTSIDE map deltas — exclude PartyMembers from EVERY CaptureMapDelta loop or an F5 duplicates them on load.** v1 cuts now SUPERSEDED (wait/dismiss persistence #2/#3, per-member If()/Distance [P10 + P16-M4 lowercase-if fix], X-FIGHTING-Y [P16-M3], projectile tween [#11] all shipped); lone residual = Vic's radio ITEM has no in-slice source (one --give).
 
+---
+
+Phase 100 (DONE — "Finish the Game"): the four-point closeout, each grounded + adversarially verified
+against fallout2-ce before a line was written, all committed to main with byte-identical golden suites.
+
+**Point 1 — Victory endgame slideshow + death-ending narration (the win condition).** Ported from
+src/endgame.cc. KARMA DECISION (grounded + verified): the engine NEVER auto-awards karma/town-rep/ending
+GVARs — scripts set them via set_global_var (already in the VM) — so this is purely a SELECTION CONSUMER,
+not an invented karma system (combat untouched). Formats parsers EndgameEnding (endgame.txt, 52 active
+rows, C-atoi field parse incl. the inline-# → direction-0 quirk) + EndgameDeathEnding (enddeath.txt +
+faithful %-weighted selector, Modoc-shitty-death forces record 12). Wired endgame_slideshow (0x8146) +
+endgame_movie (0x8148) externals. MenuState.Endgame slideshow: keeps every slide whose GVAR == value,
+renders each FRM with its sibling palette over black + narrator ACM voice-over (from the DAT, subtitle
+timing scaled to the real speech duration) + word-wrapped subtitles; hands off to the credits scroll. Death
+screen shows the enddeath.txt-selected narration (display-only → combat game-over transcripts unchanged).
+--endgame-probe / --death-ending-probe + scripts/endgame-golden.sh. DP.FRM desert-pan (art 327) is
+dead-in-vanilla (commented rows only) → static blit, full pan deferred.
+
+**Point 2 — Silent quest-gap census + opening-spine golden (QA tooling).** Per-quest QA across ~150 quests
+is a manual marathon; this makes it tractable without editing --smoke (golden-locked). IntProgram.
+ReferencedExternals() statically linear-decodes a script's bytecode (mirrors IntVm.Execute: push consumes
+4 operand bytes; external = 0x8000|(op&0x3FF) in ExternalArity.Table) to surface externals in dialog/use
+branches --smoke can't see. IntVm.WiredExternals (140 opcodes, kept adjacent to ExecuteExternal). tools/
+ProcAnalyze emits "procanalyze: map=… externals=… wired=… stubbed=[…]" — on the opening spine it finds
+gfade_out/gfade_in + tile_is_visible, invisible to --smoke (invariant: smoke stubs ⊆ census stubbed).
+scripts/opening-golden.sh locks artemple→arcaves→arvillag→argarden→arbridge (census + map-update + the
+--goto-map chain). Dynamic --census (drive talk/use procs) deferred — the static scan is the authoritative
+superset.
+
+**Point 3 — Map-script combat-over hook (New Reno prizefight).** GROUNDING CORRECTION: combat_is_starting/
+combat_is_over (SCRIPT_PROC 26/27) are VESTIGIAL — never scriptExecProc'd; porting them would DIVERGE from
+vanilla. The real mechanism is _scr_end_combat (scripts.cc:2848): on a NON-LETHAL dude knockout, run the MAP
+script's combat_p_proc with fixedParam = the KO'er team, and if it script_overrides, end the bout gracefully
+(the ring caught the KO) instead of a game-over. ScriptHost.RunMapCombatOver + ICombatHost seam + CombatEngine.
+KnockOut(critter, knockedOutBy) → RequestTerminateCombat on override. --combat-over probe + combat-over-newrba
+golden (the Boxing Arena map script defines no combat_p_proc → hasProc=false, documenting that a LIVE fight
+needs the dynamically-spawned-boxer content — content-gated, not guessed). Inert by default → byte-identical.
+
+**Point 4 — Optional authenticity (car, holodisks, quest-log).** CarState ports worldmap.cc fuel math
+(wmCarUseGas discount tiers / wmCarFillGas / wmCarIsOutOfGas), wiring the previously-silent-no-op metarule
+car externals give_car_to_party(31)/give_car_gas(32)/car_current_town(30) + metarule3 110; Fuel defaults to
+CAR_FUEL_MAX (fo2ce) so metarule3(110) stays 0 → byte-identical (acquisition + worldmap travel-speed/UI
+deferred as content/presentation). HolodiskLog (holodisk.txt) + a Pip-Boy Archives holodisk-list section
+(gvar != 0 gate). Quest log confirmed to populate from set_global_var (GECK quest, displayThreshold 0).
+--quest-probe / --holodisk-probe / --car-probe. Lip-sync verdict: BUILDABLE (the narrator ACMs ARE in the
+DAT — the "no speech assets" premise was loose-files-only) but CONTENT-GATED on the Arroyo→Den slice (no
+voiced lines) → deferred; the P87/P89 head fidget already ships, only .lip phoneme timing + reaching a voiced
+map remain.

@@ -536,6 +536,10 @@ public sealed class ScriptHost(GameFileSystem vfs, ScriptList scripts, Hexwaste.
     /// <summary>Session GVARs, exposed for save/load.</summary>
     public Dictionary<int, int> GlobalVars => _globalVars;
 
+    /// <summary>P100 (Point 4): the Highwayman car fuel/state, driven by the metarule car externals
+    /// (give_car_to_party/give_car_gas/car_current_town) + metarule3 110 (out of gas). Exposed for save/load.</summary>
+    public CarState Car { get; } = new();
+
     /// <summary>
     /// Runs the object's description_p_proc (falling back to look_at_p_proc).
     /// Returns the display_msg lines when the script overrides the default
@@ -1185,6 +1189,11 @@ public sealed class ScriptHost(GameFileSystem vfs, ScriptList scripts, Hexwaste.
             16 => PartyMemberCount(_host.PartyMembers),
             49 => _host.ObjectOf(argument) is { } o
                   && o.Fid == Fid.Build(ObjectType.Misc, 10, 0, 0) ? 6 /* DAMAGE_TYPE_EXPLOSION */ : 0,
+            // P100 (Point 4): the Highwayman car metarules — previously silent no-ops (fell through _ => 0).
+            // ported from fallout2-ce src/interpreter_extra.cc opMetarule (:3234) + src/worldmap.cc.
+            30 => _host.Car.CurrentAreaId,                  // METARULE_CAR_CURRENT_TOWN (wmCarCurrentArea)
+            31 => _host.Car.GiveToParty() ? 1 : -1,         // METARULE_GIVE_CAR_TO_PARTY (wmCarGiveToParty)
+            32 => _host.Car.FillGas(argument),              // METARULE_GIVE_CAR_GAS (wmCarFillGas → overflow)
             _ => 0,
         };
 
@@ -1573,6 +1582,8 @@ public sealed class ScriptHost(GameFileSystem vfs, ScriptList scripts, Hexwaste.
 
         public int GetPcStat(int stat) => _host.PcStatProvider?.Invoke(stat) ?? 0;
         public int GetKillCount(int killType) => _host.KillCountProvider?.Invoke(killType) ?? 0;
+
+        public bool CarIsOutOfGas() => _host.Car.IsOutOfGas; // P100 (Point 4): metarule3 110
 
         // ported from fallout2-ce interpreter_extra.cc opCritterAddTrait():
         // kind 1 = object traits; perks (kind 0) are out of PoC scope.

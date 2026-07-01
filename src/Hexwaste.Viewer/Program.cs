@@ -195,6 +195,15 @@ for (int i = 0; i < args.Length; i++)
             // P83-M1: dump the authentic main-menu button layout (rects + misc.msg labels + hit round-trip).
             actions.Add(new ViewerGame.StartupAction.MenuProbe());
             break;
+        case "--quest-probe": // P100 (Point 4): dump the Pip-Boy Archives quest list under the current GVARs
+            actions.Add(new ViewerGame.StartupAction.QuestProbe());
+            break;
+        case "--holodisk-probe": // P100 (Point 4): dump the holodisks unlocked under the current GVARs
+            actions.Add(new ViewerGame.StartupAction.HolodiskProbe());
+            break;
+        case "--car-probe": // P100 (Point 4): exercise the Highwayman car fuel model
+            actions.Add(new ViewerGame.StartupAction.CarProbe());
+            break;
         case "--endgame-probe":
             // P100: dump the victory-slide selection (endgame.txt). Optional "<gvar> <value>" forces one GVAR
             // so a slide can be exercised on a fresh game (content-gated: no map fires endgame_slideshow yet).

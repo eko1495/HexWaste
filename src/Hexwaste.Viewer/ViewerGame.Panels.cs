@@ -867,6 +867,21 @@ public sealed partial class ViewerGame
         return _quests ?? [];
     }
 
+    /// <summary>data\holodisk.txt, lazy-loaded (P100 Point 4). Empty if absent.</summary>
+    private IReadOnlyList<Formats.Holodisk> Holodisks()
+    {
+        if (!_holodisksTried)
+        {
+            _holodisksTried = true;
+            if (_vfs.Exists(@"data\holodisk.txt"))
+            {
+                using Stream s = _vfs.OpenRead(@"data\holodisk.txt");
+                _holodisks = Formats.HolodiskLog.Parse(s);
+            }
+        }
+        return _holodisks ?? [];
+    }
+
     /// <summary>P88: the Pip-Boy ARCHIVES quest log. Each quest shows once its global var reaches the
     /// quests.txt displayThreshold (so the displayThreshold-0 quests like "Retrieve the GECK" show from
     /// the start), grouped under its town name (map.msg), numbered per town, dimmed + "(done)" once the
@@ -912,6 +927,25 @@ public sealed partial class ViewerGame
 
         if (shown == 0)
             _fontRenderer.Draw(_spriteBatch, "(no current quests)", new Vector2(cx, ty), dim);
+
+        // P100 (Point 4): the HOLODISKS section — each unlocked disk (its gvar is non-zero) listed by name.
+        // ported from fallout2-ce src/pipboy.cc (the Archives holodisk list, gvar != 0 gate, :894-946).
+        var disks = Holodisks().Where(h => (_scriptHost?.GlobalVars.GetValueOrDefault(h.Gvar) ?? 0) != 0).ToList();
+        if (disks.Count > 0 && ty <= bottomLimit - lh * 2)
+        {
+            ty += lh + 4;
+            _fontRenderer.Draw(_spriteBatch, "HOLODISKS", new Vector2(cx, ty), green);
+            ty += lh;
+            foreach (Formats.Holodisk h in disks)
+            {
+                if (ty > bottomLimit - lh)
+                    break;
+                string name = LazyMsg(@"text\english\game\pipboy.msg", ref _pipboyMsgTried, ref _pipboyMsg)?.GetText(h.Name)
+                              ?? $"holodisk {h.Name}";
+                _fontRenderer.Draw(_spriteBatch, name, new Vector2(cx + 6, ty), green);
+                ty += lh;
+            }
+        }
     }
 
     /// <summary>The automap dot colour for an object by FID type, shared by the full-window

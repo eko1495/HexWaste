@@ -934,6 +934,55 @@ public sealed partial class ViewerGame
                     Console.WriteLine($"get-global: GVAR{ggId} = {_scriptHost?.GlobalVars.GetValueOrDefault(ggId, 0) ?? 0}");
                     break;
                 }
+                case StartupAction.QuestProbe:
+                {
+                    // P100 (Point 4): walk the quest table applying the exact Archives display gate — proves
+                    // the quest log populates from the (already-wired) set_global_var GVAR store. IDs only.
+                    int qshown = 0;
+                    foreach (Formats.Quest q in Quests())
+                    {
+                        int gv = _scriptHost?.GlobalVars.GetValueOrDefault(q.Gvar) ?? 0;
+                        if (gv < q.DisplayThreshold)
+                            continue;
+                        qshown++;
+                        Console.WriteLine($"quest-item: gvar={q.Gvar} val={gv} display={q.DisplayThreshold}"
+                            + $" completed={(gv >= q.CompletedThreshold ? 1 : 0)} loc={q.Location} desc={q.Description}");
+                    }
+                    Console.WriteLine($"quest-probe: quests={Quests().Count} shown={qshown}");
+                    break;
+                }
+                case StartupAction.HolodiskProbe:
+                {
+                    // P100 (Point 4): the holodisks unlocked under the current GVARs (gvar != 0). IDs only.
+                    int hshown = 0;
+                    foreach (Formats.Holodisk h in Holodisks())
+                    {
+                        int gv = _scriptHost?.GlobalVars.GetValueOrDefault(h.Gvar) ?? 0;
+                        if (gv == 0)
+                            continue;
+                        hshown++;
+                        Console.WriteLine($"holodisk-item: gvar={h.Gvar} val={gv} name={h.Name} desc={h.Description}");
+                    }
+                    Console.WriteLine($"holodisk-probe: holodisks={Holodisks().Count} shown={hshown}");
+                    break;
+                }
+                case StartupAction.CarProbe:
+                {
+                    // P100 (Point 4): exercise the ported car fuel model (worldmap.cc) — board-when-empty
+                    // fails, fill tops up to max, board succeeds, use burns fuel, out-of-gas flips.
+                    var car = _scriptHost!.Car;
+                    int Gv(int g) => _scriptHost.GlobalVars.GetValueOrDefault(g, 0);
+                    int fuel0 = car.Fuel;                              // FuelMax at start (fo2ce inits carFuel=max)
+                    bool inCar0 = car.InCar;                           // false — not owned until give_car_to_party
+                    car.UseGas(Formats.CarState.FuelMax, Gv);          // drain to empty
+                    bool boardEmpty = car.GiveToParty();               // false — out of gas
+                    int added = car.FillGas(50000);                    // refuel; returns amount added (50000)
+                    bool boardFull = car.GiveToParty();                // true — fueled → board
+                    car.UseGas(30000, Gv);                             // burn 30000 (no upgrades → full amount)
+                    Console.WriteLine($"car-probe: fuel0={fuel0} inCar0={(inCar0 ? 1 : 0)} boardEmpty={(boardEmpty ? 1 : 0)}"
+                        + $" added={added} boardFull={(boardFull ? 1 : 0)} inCar={(car.InCar ? 1 : 0)} fuel={car.Fuel} outOfGas={(car.IsOutOfGas ? 1 : 0)}");
+                    break;
+                }
                 case StartupAction.EndgameProbe(var egGvar, var egVal):
                 {
                     // P100: parse endgame.txt + report the slides selected by the live/forced GVARs (gvar==value),

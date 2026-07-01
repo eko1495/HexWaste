@@ -85,6 +85,10 @@ public interface IVmExternals
     /// KILL_TYPE (P38). 0 by default → inert.</summary>
     int GetKillCount(int killType) => 0;
 
+    /// <summary>metarule3 rule 110 (interpreter_extra.cc:2052 wmCarIsOutOfGas): the Highwayman car is empty.
+    /// Default false so hosts without a car model are unaffected (P100 Point 4).</summary>
+    bool CarIsOutOfGas() => false;
+
     /// <summary>critter_add_trait (opCritterAddTrait): kind 1 sets object
     /// traits (5=aiPacket, 6=team); perks (kind 0) are out of PoC scope.</summary>
     void CritterAddTrait(int objectHandle, int kind, int param, int value) { }
@@ -1540,6 +1544,8 @@ public sealed class IntVm
                     _externals.RemoveTimerEventsWithParam(p1.Raw, p2.Raw);
                 else if (rule == 103 && p1.Tag == TypeInt) // GET_KILL_COUNT (interpreter_extra.cc:1989)
                     metaResult = _externals.GetKillCount(p1.Raw);
+                else if (rule == 110) // METARULE3_110 car-out-of-gas (interpreter_extra.cc:2052 wmCarIsOutOfGas)
+                    metaResult = _externals.CarIsOutOfGas() ? 1 : 0;
                 PushInt(metaResult);
                 break;
             }

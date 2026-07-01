@@ -1,0 +1,1 @@
+car-probe: fuel0=80000 inCar0=0 boardEmpty=0 added=0 boardFull=1 inCar=1 fuel=20000 outOfGas=0
