@@ -1060,3 +1060,33 @@ was gate-proven) BYTE-IDENTICAL across all 16 combat + 187 encounter + opening +
 Unit tests: P113FidelityTests (radiation bands + penalty indexing, elevator Klamath row + button clamp, the
 scope/long-range range term). 807 Formats tests pass. Plan + adversarial-verify persisted at
 memory/p113-plan-design.md + p113-plan-verify.md.
+---
+
+Phase 113 (part 2 — Stage 4, the transcript-changing combat items): each landed in its own commit with an
+attributable golden re-record (the plan's discipline), all grounded vs fallout2-ce.
+- 4.1 COMBAT DOOR PATHING: the three CombatEngine FindPath sites (enemy approach, flee, ally approach) pass
+  IsPassableClosedDoor so combat movers route through closed usable doors (StartNpcWalk opens them on
+  contact, P110). Golden: only denbus2-fight-flee changed (fleeing slaves path through the door to farther
+  retreat tiles); encounter byte-identical (fights run on doorless desert1). Shove + snipe-back stay
+  door-blind (documented).
+- 4.2 DARKNESS TO-HIT: ComputeToHit + the throw path gain the fo2ce penalty (combat.cc:4446-4463) — DUDE
+  only, defender-tile light ≤26214/39321/52428 → −40/−25/−10, Night Sight weapon = full bright, ground
+  throw (light 0) = −40. Golden: all 13 arcaves-* combat fixtures re-recorded (the dark caves' ambient
+  40960 → −10 on every dude chance line + RNG cascade) + one encounter fixture (kill-counter, an arcaves
+  --fight, now lethal that seed); daylight maps byte-identical.
+- 4.3 COMBAT AI PERCEPTION (item 2): TryEnemyAction's nearest-target pick + WantToJoin's join gate use
+  isWithinPerception (combat_ai.cc:1693/3632) instead of the flat 20-hex radius; the whoHitMe / script-aggro
+  target is exempt (ungated, combat_ai.cc:1655), and BeginScriptAggro seeds the ambusher's whoHitMe = dude.
+  Golden: 3 combat fixtures re-recorded — all `joins:` set membership (distant/rear-facing town villagers
+  hold off; a far Radscorpion no longer joins); attack/chance lines unchanged; ENCOUNTER BYTE-IDENTICAL (its
+  brawls start with adjacent combatants → within perception → the planned pre-seed proved unnecessary). The
+  perception disengage (site 3, _combatai_want_to_stop) is DEFERRED to the flat sight-range drop — a fled
+  hostile keeps its whoHitMe danger source, so a naive perception prune neither drops genuine fleers nor
+  spares a blind adjacent enemy its flee turn.
+- 4.4 BURST spray-fidelity deltas: DEFERRED (opt-in per the plan — the current cone is already exact on
+  round-split/pivot/6-cap/no-knockback; the remaining deltas only shift RNG draw order).
+CAVEAT (item 5): the Klamath-toxic-caves elevator (kcLvatr, script 1201) is a bespoke script that does not
+appear to use the standard metarule(15) path, and there is a separate harness elevation-spawn wrinkle, so
+the live end-to-end elevator ride was not validated on-slice. The metarule(15) mechanism itself (parse →
+PendingElevator → panel scan → picker → ApplyTransition teleport) is wired and the tables + CurrentButton are
+unit-tested (P113FidelityTests). 807 Formats tests + all combat/encounter/opening/quest goldens pass.
