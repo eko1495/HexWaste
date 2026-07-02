@@ -16,6 +16,10 @@ public static class ExternalArity
     public static readonly IReadOnlyDictionary<int, (string Name, int Args, bool Returns)> Table =
         new Dictionary<int, (string Name, int Args, bool Returns)>
     {
+        // P114: display (opDisplay, interpreter_LIB.cc:391 — pops one filename string, UI-only). The only
+        // opcode from interpreter_lib.cc referenced by a bound script (gcfestus); an arity stub (NOT in
+        // WiredExternals) balances the stack + lets the census count it. display_msg (0x80B8) is separate.
+        [0x806B] = ("display", 1, false),
         [0x80A1] = ("give_exp_points", 1, false),
         [0x80A2] = ("scr_return", 1, false),
         [0x80A3] = ("play_sfx", 1, false),

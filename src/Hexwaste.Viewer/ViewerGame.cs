@@ -1230,6 +1230,7 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
                     ProcessDrugs();
                     ProcessWithdrawals();
                     ProcessRads(); // P113 (item 7c)
+                    _scriptHost?.PumpTimers(_dude?.Dude); // P114: timers due within the jump fire
                 },
                 // P63 (Sierra Army Depot): tile_contains_obj_pid scans every object at (tile, elevation) for
                 // the pid (the engine's objectFindFirstAtLocation loop). ported from opTileContainsObjectWithPid.
@@ -1530,6 +1531,17 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
         {
             using Stream stream = _vfs.OpenRead($@"maps\{mapName}");
             _map = MapFile.Load(stream, _protos);
+
+            // P114: a FRESH map's MAP_GLOBAL_VARS come from maps\<name>.gam, which OVERRIDES the count +
+            // values baked into the .map stream (map.cc:932-947 — the .map array is only the saved seed).
+            // Fixes maps whose .map header undercounts (e.g. Sierra depolv1: 1 vs .gam's 16).
+            if ((_map.Header.Flags & 1) == 0)
+            {
+                string gam = @"maps\" + System.IO.Path.ChangeExtension(_map.Header.Name, ".gam");
+                if (_vfs.Exists(gam))
+                    _map.GlobalVariables = [.. Formats.Int.GameGlobalVars.Parse(
+                        System.Text.Encoding.Latin1.GetString(_vfs.ReadAllBytes(gam)), "MAP_GLOBAL_VARS:")];
+            }
         }
         catch (Exception ex) when (ex is FileNotFoundException or InvalidDataException
             or NotSupportedException or EndOfStreamException)
@@ -1558,6 +1570,8 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
         _regAnimForever.Clear(); // reg_anim record resets per map (P21-M1)
         AmbientFixed = false; // each map re-pins its own ambient via its scripts' set_light_level (P46)
         _regAnimMoves.Clear(); // reg_anim_func batch record resets per map (P33-M1)
+        _regAnimSeq = null; // P114: drop any in-flight reg_anim sequence
+        _regAnimBlockOn = null;
         _npcWalkers.Clear();
         _homeTiles.Clear();
         _projectiles.Clear();
@@ -2440,9 +2454,8 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
         TickAmbientSfx(gameTime.ElapsedGameTime.TotalMilliseconds); // P34-M5 ambient sfx
         _floatText.Tick(gameTime.ElapsedGameTime.TotalMilliseconds); // P45 floating combat text
 
-        // Script timers: pumped only here — dialog/loot/worldmap modes return
-        // earlier in Update, matching the engine's _gdialogActive() gate.
-        _scriptHost?.PumpTimers(gameTime.ElapsedGameTime.TotalMilliseconds, _dude?.Dude);
+        // P114: script timers now pump inside UpdateClock (below, after the clock advances) — keyed on
+        // game ticks so a clock jump fires due timers. dialog/loot/worldmap modes return earlier in Update.
         PumpCritterProcs(gameTime.ElapsedGameTime.TotalMilliseconds);
         ConsumePendingElevator(); // P113 (item 5): catch a use_p_proc / critter-proc metarule(15)
         PumpMapUpdate(gameTime.ElapsedGameTime.TotalMilliseconds); // P1-M2: recurring 600-tick map_update
@@ -2886,6 +2899,8 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
         if (finished is not null)
             foreach (MapObject npc in finished)
                 _npcWalkers.Remove(npc);
+
+        AdvanceRegAnimQueue(elapsedMs); // P114: dispatch the next queued reg_anim action once its blocker finished
 
         // No wandering or fidgeting while combat owns the choreography.
         if (_combat.Phase != Formats.Combat.CombatPhase.Idle)
@@ -3685,7 +3700,10 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
         // Stock lives in the shop box once the talk epilogue has run; loose
         // merchants (no box choreography) trade from their own pockets.
         _barterStock = _dialog?.StockBox ?? npc;
-        _barterModifier = modifier;
+        // P114: the merchant's reaction shifts prices on top of the script mod (inventory.cc:5124):
+        // GOOD (>10) −15, NEUTRAL (>−10) 0, BAD +25 (reaction.cc:18). Defaults NEUTRAL (LVAR[0] unset).
+        int reaction = _scriptHost?.ReactionValue(_map, npc) ?? -1;
+        _barterModifier = modifier + (reaction > 10 ? -15 : reaction > -10 ? 0 : 25);
         PrewarmItemTextures(_barterStock.Inventory);
         PrewarmItemTextures(_dudeInventory);
         Console.WriteLine($"barter: open with {ObjectName(npc)} (mod {modifier},"
@@ -3734,7 +3752,8 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
         // box's fill + container contents, not just the raw proto cost. SafeProto → 0 on a missing proto.
         int cost = Formats.Map.ItemCost.For(item, SafeProto);
         return Formats.Combat.BarterMath.BuyPrice(cost, _barterModifier,
-            _barterNpc is { } npc ? NpcBarterSkill(npc) : 0, DudeBarterSkill());
+            _barterNpc is { } npc ? NpcBarterSkill(npc) : 0, DudeBarterSkill(),
+            masterTrader: DudePerkRank(Formats.Perks.PerkId.MasterTrader) > 0); // P114
     }
 
     private int BarterSellPrice(MapObject item)
@@ -5410,6 +5429,7 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
         ProcessDrugs(); // P37: scheduled drug stat reversals fire on game time (same catch-up after jumps)
         ProcessWithdrawals(); // P38: withdrawal onset/recovery fire on game time (drain-loop for clock jumps)
         ProcessRads(); // P113 (item 7c): the radiation band model — midnight checks + delayed damage/heal
+        _scriptHost?.PumpTimers(_dude?.Dude); // P114: script timers fire on game time (catch-up after jumps)
 
         int hour = _clock.Hour / 100;
         if (hour == _lastAmbientHour)

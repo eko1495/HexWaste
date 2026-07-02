@@ -533,17 +533,19 @@ public sealed class ScriptHost(GameFileSystem vfs, ScriptList scripts, Hexwaste.
     // of any accelerated day/night clock. The engine drops all script timers
     // on map exit (_queue_leaving_map) — call ClearTimers() on transitions.
 
-    private sealed record TimerEntry(double DueMs, MapFile Map, MapObject Owner, int Param);
+    private sealed record TimerEntry(long DueTick, MapFile Map, MapObject Owner, int Param);
 
     private readonly List<TimerEntry> _timers = [];
-    private double _timerClockMs;
 
     public int PendingTimerCount => _timers.Count;
 
+    // P114: timers are keyed on GAME time (ClockTicks), not a private wall-clock. delayTicks is raw game
+    // ticks (queue.cc:245 node->time = gameTimeGetTime()+delay), so a clock JUMP (game_time_advance / rest /
+    // travel) fires due timers — exactly like poison/rads. 302400 = the game-start tick when no clock wired.
     public void AddTimer(MapFile map, MapObject owner, int delayTicks, int param)
     {
-        double due = _timerClockMs + Math.Max(delayTicks, 0) * 100.0;
-        int index = _timers.FindIndex(t => t.DueMs > due); // insert after equal times
+        long due = (ClockTicks?.Invoke() ?? 302400) + Math.Max(delayTicks, 0);
+        int index = _timers.FindIndex(t => t.DueTick > due); // insert after equal times (FIFO for ties)
         var entry = new TimerEntry(due, map, owner, param);
         if (index < 0)
             _timers.Add(entry);
@@ -625,10 +627,10 @@ public sealed class ScriptHost(GameFileSystem vfs, ScriptList scripts, Hexwaste.
     /// gates this like the engine does (not during dialog/loot — scripts arm
     /// timers mid-conversation expecting them to fire after it closes).
     /// </summary>
-    public void PumpTimers(double elapsedMs, MapObject? dude)
+    public void PumpTimers(MapObject? dude)
     {
-        _timerClockMs += elapsedMs;
-        while (_timers.Count > 0 && _timers[0].DueMs <= _timerClockMs)
+        long now = ClockTicks?.Invoke() ?? 302400;
+        while (_timers.Count > 0 && _timers[0].DueTick <= now)
         {
             TimerEntry entry = _timers[0];
             _timers.RemoveAt(0);
@@ -1115,6 +1117,16 @@ public sealed class ScriptHost(GameFileSystem vfs, ScriptList scripts, Hexwaste.
             return false;
         slice[index] = value;
         return true;
+    }
+
+    /// <summary>P114: reactionGetValue (reaction.cc) — the barterer's reaction, stored in its script's
+    /// LVAR[0]; −1 (NEUTRAL) when unset. Feeds the barter reaction price modifier (inventory.cc:5093).</summary>
+    public int ReactionValue(MapFile map, MapObject npc)
+    {
+        if (npc.Sid == -1 || !map.ScriptsBySid.TryGetValue(npc.Sid, out MapScriptRecord? record))
+            return -1;
+        int[] slice = GetLocalVarSlice(map, npc.Sid, record);
+        return slice.Length > 0 ? slice[0] : -1;
     }
 
     /// <summary>Clears the object handle table — call on map transitions
@@ -2038,7 +2050,11 @@ public sealed class ScriptHost(GameFileSystem vfs, ScriptList scripts, Hexwaste.
         // ported from fallout2-ce interpreter_extra.cc _op_giq_option: the dude's real
         // STAT_INTELLIGENCE gates dumb/smart dialogue options (P25). The Smooth Talker perk
         // bonus is out of scope (no perk system). Null dude → 5 (the pre-P25 neutral default).
-        public int DialogIntelligence() => _dude is { } d ? _host.CritterStatValue(d, 4) : 5;
+        // P114: Smooth Talker raises the effective INT for giq/intelligence-gated dialogue options by
+        // +1 per rank (interpreter_extra.cc _op_giq_option:3866-3867, before the sign test). Inert at rank 0.
+        public int DialogIntelligence() => _dude is { } d
+            ? _host.CritterStatValue(d, 4) + (_host.PerkRankProvider?.Invoke(Perks.PerkId.SmoothTalker) ?? 0)
+            : 5;
 
         // ported from fallout2-ce interpreter_extra.cc opUsingSkill (0x454634): only
         // using_skill(dude, SKILL_SNEAK=8) is meaningful — it returns the SNEAKING FLAG

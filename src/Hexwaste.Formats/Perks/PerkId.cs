@@ -68,4 +68,6 @@ public static class PerkId
     public const int GainLuck = 90;         // +1 LK
     public const int BonusMove = 3;         // 2 free movement AP/rank, drained before combat AP (combat.cc:3237)
     public const int Lifegiver = 28;        // +4 max HP per rank, per level-up (stat.cc:771)
+    public const int MasterTrader = 17;     // -25% merchant buy price (inventory.cc:4685)
+    public const int SmoothTalker = 49;     // +1 effective INT/rank for giq dialogue gates (interpreter_extra.cc:3867)
 }

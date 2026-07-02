@@ -958,6 +958,18 @@ public sealed class CombatEngine
             }
         }
 
+        // P114: Enhanced Knockout weapon perk (combat.cc:3798 attackComputeEnhancedKnockout, called :3925;
+        // + the unconditional forced-KO on a crit, :4146). On a perk-117 hit: a crit forces KO; a normal hit
+        // rolls d100 and KOs if <= STRENGTH-8. Draws exactly ONE d100 per perk hit, ZERO for other weapons
+        // (WeaponPerk -1) — inert in vanilla (no shipped weapon carries perk 117), faithful for a modded one.
+        if (hit && weaponProto?.Weapon is { WeaponPerk: WeaponProtoStats.PerkEnhancedKnockout })
+        {
+            int koRoll = _rng.Next(1, 101); // drawn on EVERY perk hit (combat.cc:3802)
+            if ((critFlags & CriticalTables.DamCritical) != 0
+                || koRoll <= attacker.Stat(CritterStat.Strength) - 8)
+                critFlags |= CriticalTables.DamKnockedOut;
+        }
+
         // P30 A-M1: Silent Death backstab (combat.cc:3870-3875 on-hit / 3913-3921 on-crit). A melee/
         // unarmed dude striking from BEHIND while the sneaking FLAG is set, against a target it hasn't
         // engaged yet (WhoHitMeCid != -1 — our proxy for the engine's whoHitMe != gDude, since Hexwaste

@@ -193,7 +193,7 @@ public sealed class MapFile
     public const int ElevationCount = 3;
 
     public required MapHeader Header { get; init; }
-    public required int[] GlobalVariables { get; init; }
+    public required int[] GlobalVariables { get; set; } // P114: settable so a fresh map's .gam MVARs override
     public required int[] LocalVariables { get; init; }
 
     /// <summary>Script id → record from the scripts section (scripts.lst index + LVAR slice).</summary>

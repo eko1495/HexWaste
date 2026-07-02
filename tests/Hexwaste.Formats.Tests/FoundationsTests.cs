@@ -134,14 +134,30 @@ public class CapsAndTimerTests
                 && o.HexTile == 16862);
         Assert.NotNull(door);
 
-        host.AddTimer(map, door, delayTicks: 10, param: 1); // 1 game-second
+        // P114: timers key on GAME ticks (ClockTicks), not real ms. Drive a controllable clock.
+        long now = 100_000;
+        host.ClockTicks = () => now;
+
+        host.AddTimer(map, door, delayTicks: 100, param: 1); // due at now+100
         Assert.Equal(1, host.PendingTimerCount);
 
-        host.PumpTimers(500, null); // 0.5s — not due yet
+        now = 100_050; // 50 ticks in — not due yet
+        host.PumpTimers(null);
         Assert.Equal(1, host.PendingTimerCount);
 
-        host.PumpTimers(600, null); // past due — fires (the proc may re-arm)
+        now = 100_100; // exactly due (<=) — fires (the proc may re-arm)
+        host.PumpTimers(null);
         Assert.True(host.PendingTimerCount <= 1, "timer fired at most once and may re-arm");
+
+        // JUMP proof: a far-future timer fires on a single large clock jump (real-ms keying would leave
+        // it stuck). Arm it a game-hour out, confirm it's pending, jump two days, one pump drains it.
+        host.ClearTimers();
+        host.AddTimer(map, door, delayTicks: GameClock.TicksPerHour, param: 2);
+        host.PumpTimers(null);
+        Assert.Equal(1, host.PendingTimerCount); // not due at `now`
+        now += 2L * GameClock.TicksPerDay;        // jump past it
+        host.PumpTimers(null);
+        Assert.True(host.PendingTimerCount <= 1, "the clock jump fired the due timer (not stuck)");
 
         host.ClearTimers();
         Assert.Equal(0, host.PendingTimerCount);

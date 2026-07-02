@@ -2152,8 +2152,7 @@ public sealed partial class ViewerGame
             _dude?.Update(10);
             PumpPendingInteraction(); // P109: approach-then-interact fires headlessly too
             UpdateAmbientLife(10);
-            UpdateClock(10);
-            _scriptHost?.PumpTimers(10, _dude?.Dude);
+            UpdateClock(10); // P114: pumps script timers internally (after the clock advances)
             PumpCritterProcs(10);
             ConsumePendingElevator(); // P113 (item 5): harness --elevator-pick services it here
             if (_pendingTransition is { } transition)

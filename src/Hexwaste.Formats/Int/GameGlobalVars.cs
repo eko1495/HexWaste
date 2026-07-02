@@ -11,8 +11,10 @@ namespace Hexwaste.Formats.Int;
 public static class GameGlobalVars
 {
     /// <summary>The positional seed values from the GAME_GLOBAL_VARS section (index i = the i-th var).</summary>
-    public static IReadOnlyList<int> Parse(string text)
+    public static IReadOnlyList<int> Parse(string text, string section = "GAME_GLOBAL_VARS:")
     {
+        // P114: `section` selects the block — "GAME_GLOBAL_VARS:" (vault13.gam) or "MAP_GLOBAL_VARS:"
+        // (a per-map .gam, map.cc:945). Same positional line-parse for both (game.cc:1044).
         var values = new List<int>();
         bool inSection = false;
         foreach (string raw in text.Split('\n'))
@@ -20,7 +22,7 @@ public static class GameGlobalVars
             string line = raw.TrimEnd('\r');
             if (!inSection)
             {
-                if (line.StartsWith("GAME_GLOBAL_VARS:", StringComparison.Ordinal))
+                if (line.StartsWith(section, StringComparison.Ordinal))
                     inSection = true;
                 continue;
             }

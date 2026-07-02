@@ -875,51 +875,85 @@ public sealed partial class ViewerGame
     /// shippable map fires the move/animate ops at map_enter (only animate_forever for
     /// scenery, P21), so this is forward-looking — it lights up when content uses it.
     /// </summary>
+    private Formats.Int.RegAnimSequencer? _regAnimSeq;
+    private MapObject? _regAnimBlockOn; // the async action the queue is waiting to finish
+
     private void ExecuteRegAnim(IReadOnlyList<Formats.Int.RegAnimAction> actions)
     {
         if (_combat.Phase != Formats.Combat.CombatPhase.Idle)
             return;
 
-        foreach (Formats.Int.RegAnimAction a in actions)
+        // P114: dispatch sequentially — start only the head now; AdvanceRegAnimQueue (in UpdateAmbientLife)
+        // starts each following action once the prior one completes + its delay elapses. A single-action
+        // batch is identical to the old all-at-once foreach (the head fires immediately).
+        _regAnimSeq = new Formats.Int.RegAnimSequencer(actions);
+        _regAnimBlockOn = null;
+        if (_regAnimSeq.Begin() is { } head)
+            StartRegAnimAction(head);
+    }
+
+    /// <summary>P114: advance the sequential reg_anim queue — dispatch the next action once the current
+    /// async action (a walk) has finished and its delay counted down. Called each frame from ambient life.</summary>
+    private void AdvanceRegAnimQueue(double elapsedMs)
+    {
+        if (_regAnimSeq is not { } seq)
+            return;
+        bool blockerActive = _regAnimBlockOn is { } b && _npcWalkers.ContainsKey(b);
+        if (seq.Advance(blockerActive, elapsedMs) is { } next)
+            StartRegAnimAction(next);
+        // The batch is fully done once every action dispatched AND the last mover finished.
+        if (seq.Done && (_regAnimBlockOn is not { } last || !_npcWalkers.ContainsKey(last)))
         {
-            switch (a.Kind)
+            _regAnimSeq = null;
+            _regAnimBlockOn = null;
+        }
+    }
+
+    /// <summary>Start ONE reg_anim action (walk / animate) + emit its ordered status line. Sets the queue's
+    /// block target to the walker for a move action (the queue waits for it), null for a fire-and-continue
+    /// animate.</summary>
+    private void StartRegAnimAction(Formats.Int.RegAnimAction a)
+    {
+        switch (a.Kind)
+        {
+            case Formats.Int.RegAnimKind.MoveToTile:
+            case Formats.Int.RegAnimKind.RunToTile:
             {
-                case Formats.Int.RegAnimKind.MoveToTile:
-                case Formats.Int.RegAnimKind.RunToTile:
-                {
-                    bool started = StartNpcWalk(a.Object, a.Tile);
-                    _regAnimMoves.Add(
-                        $"{ObjectName(a.Object)}@{a.Object.HexTile}->{a.Tile}:"
-                        + $"{(a.Kind == Formats.Int.RegAnimKind.RunToTile ? "run" : "walk")}:{(started ? "ok" : "no")}");
-                    break;
-                }
-                case Formats.Int.RegAnimKind.MoveToObject:
-                case Formats.Int.RegAnimKind.RunToObject:
-                {
-                    // The engine walks to the destination object's tile; if that tile is
-                    // blocked, settle on a free neighbour (the Placement port, P33-M0).
-                    int dest = a.Dest is null
-                        ? -1
-                        : Formats.Map.Placement.FreeTileNear(a.Dest.HexTile, t => _blockedTiles.Contains(t));
-                    bool started = dest >= 0 && StartNpcWalk(a.Object, dest);
-                    _regAnimMoves.Add(
-                        $"{ObjectName(a.Object)}@{a.Object.HexTile}->obj@{dest}:"
-                        + $"{(a.Kind == Formats.Int.RegAnimKind.RunToObject ? "run" : "walk")}:{(started ? "ok" : "no")}");
-                    break;
-                }
-                case Formats.Int.RegAnimKind.Animate:
-                case Formats.Int.RegAnimKind.AnimateReverse:
-                {
-                    if (Fid.Type(a.Object.Fid) is ObjectType.Critter)
-                        _animator.SetCritterAnimation(a.Object, Fid.Build(ObjectType.Critter,
-                            Fid.Index(a.Object.Fid), a.Anim, Fid.WeaponCode(a.Object.Fid), a.Object.Rotation));
-                    else
-                        _animator.AddLooping(a.Object);
-                    _regAnimMoves.Add(
-                        $"{ObjectName(a.Object)}@{a.Object.HexTile}:anim{a.Anim}"
-                        + (a.Kind == Formats.Int.RegAnimKind.AnimateReverse ? "rev" : string.Empty));
-                    break;
-                }
+                bool started = StartNpcWalk(a.Object, a.Tile);
+                _regAnimMoves.Add(
+                    $"{ObjectName(a.Object)}@{a.Object.HexTile}->{a.Tile}:"
+                    + $"{(a.Kind == Formats.Int.RegAnimKind.RunToTile ? "run" : "walk")}:{(started ? "ok" : "no")}");
+                _regAnimBlockOn = started ? a.Object : null;
+                break;
+            }
+            case Formats.Int.RegAnimKind.MoveToObject:
+            case Formats.Int.RegAnimKind.RunToObject:
+            {
+                // The engine walks to the destination object's tile; if that tile is
+                // blocked, settle on a free neighbour (the Placement port, P33-M0).
+                int dest = a.Dest is null
+                    ? -1
+                    : Formats.Map.Placement.FreeTileNear(a.Dest.HexTile, t => _blockedTiles.Contains(t));
+                bool started = dest >= 0 && StartNpcWalk(a.Object, dest);
+                _regAnimMoves.Add(
+                    $"{ObjectName(a.Object)}@{a.Object.HexTile}->obj@{dest}:"
+                    + $"{(a.Kind == Formats.Int.RegAnimKind.RunToObject ? "run" : "walk")}:{(started ? "ok" : "no")}");
+                _regAnimBlockOn = started ? a.Object : null;
+                break;
+            }
+            case Formats.Int.RegAnimKind.Animate:
+            case Formats.Int.RegAnimKind.AnimateReverse:
+            {
+                if (Fid.Type(a.Object.Fid) is ObjectType.Critter)
+                    _animator.SetCritterAnimation(a.Object, Fid.Build(ObjectType.Critter,
+                        Fid.Index(a.Object.Fid), a.Anim, Fid.WeaponCode(a.Object.Fid), a.Object.Rotation));
+                else
+                    _animator.AddLooping(a.Object);
+                _regAnimMoves.Add(
+                    $"{ObjectName(a.Object)}@{a.Object.HexTile}:anim{a.Anim}"
+                    + (a.Kind == Formats.Int.RegAnimKind.AnimateReverse ? "rev" : string.Empty));
+                _regAnimBlockOn = null; // looping/instant animate → don't block the queue
+                break;
             }
         }
     }

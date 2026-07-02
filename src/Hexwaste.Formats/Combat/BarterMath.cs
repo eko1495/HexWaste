@@ -15,12 +15,15 @@ public static class BarterMath
     /// <summary>What the NPC demands for an item:
     /// cost × 2 × (mod+100)/100 × (160+npcBarter)/(160+dudeBarter).
     /// (Master Trader and the reaction modifier are out of PoC scope.)</summary>
-    public static int BuyPrice(int cost, int modifier, int npcBarter, int dudeBarter)
+    public static int BuyPrice(int cost, int modifier, int npcBarter, int dudeBarter, bool masterTrader = false)
     {
-        double price = cost * 2.0
-            * (modifier + 100.0) / 100.0
-            * (160.0 + npcBarter) / (160.0 + dudeBarter);
-        return Math.Max((int)price, 0);
+        // ported from fallout2-ce src/inventory.cc _barter_compute_value (:4683-4701) — eval order kept exact.
+        double perkBonus = masterTrader ? 25.0 : 0.0;                 // Master Trader: -25% merchant buy price
+        double barterModMult = (modifier + 100.0 - perkBonus) * 0.01;
+        double balancedCost = (160.0 + npcBarter) / (160.0 + dudeBarter) * (cost * 2.0);
+        if (barterModMult < 0)
+            barterModMult = 0.0099999998;                             // inventory.cc:4697 (NOT 0)
+        return (int)(barterModMult * balancedCost);
     }
 
     /// <summary>Player goods credit at plain cost (inventory.cc:4742).</summary>

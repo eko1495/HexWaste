@@ -72,6 +72,7 @@ public sealed record WeaponProtoStats(
     public const int PerkLongRange = 58;  // PE range multiplier 4 instead of 2 (combat.cc:4359-4363)
     public const int PerkScopeRange = 64; // PE multiplier 5, min effective range 8 (combat.cc:4364-4372)
     public const int PerkNightSight = 66; // darkness to-hit penalty suppressed (combat.cc:4448-4450)
+    public const int PerkEnhancedKnockout = 117; // crit forces KO; normal hit KOs if d100 <= STR-8 (combat.cc:3798/4146)
 
     /// <summary>Guns have a fire attack anim (item.cc _attack_anim index ≥ 6).
     /// Throwers (index 5) stay on the melee path until rung (a) lands —
