@@ -554,6 +554,9 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
     /// move-to-object + queued action (_action_use_an_object); ours re-runs InteractWith once
     /// the walk ends, which re-checks range.</summary>
     private MapObject? _pendingInteraction;
+
+    /// <summary>P110 QA: the NPC driven by --npc-walk, for the post-advance arrival report.</summary>
+    private (MapObject Npc, int Target)? _npcWalkProbe;
     private bool _inventoryOpen;
     /// <summary>The dude's bag. Aliased to the dude MapObject's Inventory at
     /// spawn so script externals (item_caps_*, inventory checks) see the same
@@ -783,6 +786,9 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
         public sealed record Approach(int Hex) : StartupAction;
         /// <summary>P109 QA: dump the live blocked-set status of Hex + its 6 neighbors.</summary>
         public sealed record BlockedProbe(int Hex) : StartupAction;
+        /// <summary>P110 QA: start a scripted NPC walk (StartNpcWalk) from the critter at NpcHex to
+        /// TargetHex — e2e-drives NPC door pathing headlessly with --advance-ms.</summary>
+        public sealed record NpcWalk(int NpcHex, int TargetHex) : StartupAction;
         /// <summary>P100 (Point 3): run the MAP script's combat_p_proc "combat over" hook (fixedParam = a
         /// KO'er team) and report whether the map defines it + script_overrides — proves the prizefight
         /// caught-KO seam (_scr_end_combat) without needing a live fight.</summary>
@@ -2916,7 +2922,15 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
         if (target == npc.HexTile || _blockedTiles.Contains(target))
             return false;
 
-        var walker = new DudeController(npc, _frmCache, tile => _blockedTiles.Contains(tile));
+        // P110: NPCs path through closed usable doors and open them on contact, like fo2ce
+        // (canUseDoor has no walk-thru gate for non-dude critters — townsfolk enter buildings).
+        var walker = new DudeController(npc, _frmCache, tile => _blockedTiles.Contains(tile),
+            isUsableClosedDoor: t => NpcUsableClosedDoorAt(npc, t) is not null,
+            openDoorAt: t =>
+            {
+                if (NpcUsableClosedDoorAt(npc, t) is { } blockingDoor)
+                    ToggleDoor(blockingDoor);
+            });
         int previousTile = npc.HexTile;
         walker.TileChanged += tile =>
         {
@@ -2959,7 +2973,15 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
             if (target == npc.HexTile || _blockedTiles.Contains(target))
                 continue;
 
-            var walker = new DudeController(npc, _frmCache, tile => _blockedTiles.Contains(tile));
+            // P110: wanderers get the same door pathing (fo2ce ambient moves share _make_path +
+            // canUseDoor) — a wander target inside an unlocked building is walked to, door opened.
+            var walker = new DudeController(npc, _frmCache, tile => _blockedTiles.Contains(tile),
+                isUsableClosedDoor: t => NpcUsableClosedDoorAt(npc, t) is not null,
+                openDoorAt: t =>
+                {
+                    if (NpcUsableClosedDoorAt(npc, t) is { } blockingDoor)
+                        ToggleDoor(blockingDoor);
+                });
             int previousTile = npc.HexTile;
             walker.TileChanged += tile =>
             {
@@ -3426,6 +3448,30 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
         {
             return null;
         }
+    }
+
+    /// <summary>P110: the closed, unlocked door at a tile that THIS critter may path through and
+    /// auto-open — fo2ce canUseDoor for non-dude critters (animation.cc:1675-1703): an unlocked
+    /// scenery door, walker body BIPED/ROBOTIC, kill type not GECKO. No walk-thru requirement —
+    /// that extra gate (which no vanilla door passes) applies to the dude only.</summary>
+    private MapObject? NpcUsableClosedDoorAt(MapObject npc, int tile)
+    {
+        MapObject? door = _solidObjects[_elevation].FirstOrDefault(o => o.HexTile == tile && IsDoor(o));
+        if (door is null || _openDoors.Contains(door) || door.IsLockedState)
+            return null;
+        try
+        {
+            const int bodyBiped = 0, bodyRobotic = 2, killTypeGecko = 15;
+            if (_protos.Get(npc.Pid).Critter is not { } critter
+                || (critter.BodyType != bodyBiped && critter.BodyType != bodyRobotic)
+                || critter.KillType == killTypeGecko)
+                return null;
+        }
+        catch (Exception ex) when (ex is FileNotFoundException or InvalidDataException)
+        {
+            return null;
+        }
+        return door;
     }
 
     private bool IsDoor(MapObject obj)

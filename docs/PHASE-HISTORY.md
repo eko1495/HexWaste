@@ -956,3 +956,23 @@ the classic Fallout doorway-blocker, now mitigated by the mid-walk re-path.
 New QA aids: --approach <hex> (click simulation), --blocked-probe <hex> (live blocked-set truth around a
 tile), goto: arrival print for --goto. DoorProbe scratch flood-fill quantified the stakes: 2,481 (kladwtwn)
 / 1,367 (denbus1) / 1,629 (vctycocl) tiles are behind closed doors.
+---
+
+Phase 110 (DONE — "NPC door-aware pathing"): NPCs now path through closed usable doors and auto-open them
+on contact, like fo2ce — the canUseDoor non-dude branch (animation.cc:1675-1703): an UNLOCKED scenery door,
+walker body BIPED/ROBOTIC, kill type not GECKO — with NO walk-thru gate (that extra requirement, which no
+vanilla door passes, is dude-only). Wired NpcUsableClosedDoorAt into both walker sites: StartNpcWalk
+(script-driven moves: MoveRequested/animate externals + the harness) and TryStartWander (ambient wander —
+fo2ce ambient moves share _make_path + canUseDoor, so townsfolk legitimately wander into buildings).
+E2E-PROVEN on denbus1: --npc-walk 18266 17493 → the NPC paths through CLOSED unlocked door 17880,
+"door opens" fires mid-walk, target REACHED. The negative gates verified too: script-LOCKED door 16862
+(locked at runtime by its script — the map file says unlocked; only a live probe sees it) is correctly
+refused, stranding its +11-tile room until unlocked — faithful.
+New QA aids: --npc-walk <npcHex> <target> (drives StartNpcWalk headlessly, arrival report), blocked-probe
+now shows door locked/open state. Investigation notes: map topology is a minefield for test-pair selection
+(per-spawn components differ; scripts relocate scenery + lock doors after load — static map dumps LIE about
+live state; always confirm with --blocked-probe). One denbus1 critter (hex 18081, script 39) halts its own
+scripted walk at the first step — per-script heartbeat interference, benign, not chased.
+DEFERRED: combat-time door pathing (CombatEngine's 3 FindPath sites stay door-blind; fo2ce exempts there
+too via the shared pathfinder — wiring it needs mover-aware IsBlocked in ICombatHost + door-opening during
+combat moves, and risks combat-golden churn for a rare scenario: fights around closed doors).

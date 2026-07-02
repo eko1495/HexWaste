@@ -463,6 +463,10 @@ for (int i = 0; i < args.Length; i++)
         case "--blocked-probe" when i + 1 < args.Length: // P109 QA: live blocked status of <hex> + neighbors
             actions.Add(new ViewerGame.StartupAction.BlockedProbe(int.Parse(args[++i])));
             break;
+        case "--npc-walk" when i + 2 < args.Length: // P110 QA: walk the NPC at <hex> to <target>
+            actions.Add(new ViewerGame.StartupAction.NpcWalk(int.Parse(args[i + 1]), int.Parse(args[i + 2])));
+            i += 2;
+            break;
         case "--combat-over" when i + 1 < args.Length:
             // P100: run the map-script combat_p_proc "combat over" hook with a KO'er team (proves the seam).
             actions.Add(new ViewerGame.StartupAction.CombatOverProbe(int.Parse(args[++i])));

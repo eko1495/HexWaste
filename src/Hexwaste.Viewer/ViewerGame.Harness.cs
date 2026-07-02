@@ -659,6 +659,21 @@ public sealed partial class ViewerGame
                     Console.WriteLine($"kill: pid=0x{victim.Pid:X}@{killHex} dead={(victim.IsDead ? 1 : 0)}");
                     break;
                 }
+                // _npcWalkProbe (field below) carries the walked NPC to the post-advance report.
+                case StartupAction.NpcWalk(var nwHex, var nwTarget):
+                {
+                    // P110: e2e for NPC door pathing — the walk runs in the advance loop; assert the
+                    // end position with a later blocked-probe / the npc-walk line.
+                    MapObject? nwNpc = CritterAt(nwHex, aliveOnly: true);
+                    if (nwNpc is null) { Console.Error.WriteLine($"npc-walk: no critter at {nwHex}"); break; }
+                    bool nwStarted = StartNpcWalk(nwNpc, nwTarget);
+                    int nwWalkFid = Fid.Build(ObjectType.Critter, Fid.Index(nwNpc.Fid), 1, Fid.WeaponCode(nwNpc.Fid));
+                    Console.WriteLine($"npc-walk: from {nwHex} to {nwTarget} started={(nwStarted ? 1 : 0)}"
+                        + $" fid=0x{nwNpc.Fid:X} walkFid=0x{nwWalkFid:X} art={( _vfs.Exists(_artIndex.GetFrmPath(nwWalkFid)) ? 1 : 0)}");
+                    if (nwStarted)
+                        _npcWalkProbe = (nwNpc, nwTarget);
+                    break;
+                }
                 case StartupAction.BlockedProbe(var bpHex):
                 {
                     // P109 QA: the live blocked-set truth around a tile — each neighbor's blocked
@@ -670,9 +685,12 @@ public sealed partial class ViewerGame
                             .FirstOrDefault(o => o.HexTile == bpT && o != _dude?.Dude
                                 && (o.Flags & 0x11) == 0
                                 && Fid.Type(o.Fid) is ObjectType.Critter or ObjectType.Scenery or ObjectType.Wall);
+                        string bpDoor = occ is not null && IsDoor(occ)
+                            ? $" door locked={(occ.IsLockedState ? 1 : 0)} open={(_openDoors.Contains(occ) ? 1 : 0)}"
+                            : "";
                         Console.WriteLine($"blocked-probe: tile {bpT}{(bpR < 0 ? " (center)" : "")} "
                             + $"blocked={(_blockedTiles.Contains(bpT) ? 1 : 0)}"
-                            + (occ is not null ? $" occupant pid=0x{occ.Pid:X} type={Fid.Type(occ.Fid)}" : ""));
+                            + (occ is not null ? $" occupant pid=0x{occ.Pid:X} type={Fid.Type(occ.Fid)}" : "") + bpDoor);
                     }
                     break;
                 }
@@ -2134,6 +2152,11 @@ public sealed partial class ViewerGame
         if (WalkToTile is { } gotoTarget && _dude is not null)
             Console.WriteLine($"goto: dude at {_dude.Dude.HexTile} target {gotoTarget}"
                 + (_dude.Dude.HexTile == gotoTarget ? " REACHED" : _dude.Moving ? " (still walking)" : " STOPPED"));
+        // P110: same arrival proof for --npc-walk.
+        if (_npcWalkProbe is { } np)
+            Console.WriteLine($"npc-walk: npc at {np.Npc.HexTile} target {np.Target}"
+                + (np.Npc.HexTile == np.Target ? " REACHED"
+                    : _npcWalkers.ContainsKey(np.Npc) ? " (still walking)" : " STOPPED"));
         _frmCache.OnPaletteChanged(_palette);
 
         // Headless transcript runs (--fight/--attack/… with no screenshot or
