@@ -44,14 +44,17 @@ public sealed class DudeController(MapObject dude, FrmCache frmCache, Func<int, 
         ? Fid.Build(ObjectType.Critter, Fid.Index(Dude.Fid), _movementAnimCode(), Fid.WeaponCode(Dude.Fid))
         : Dude.Fid;
 
-    public bool WalkTo(int targetTile)
+    /// <param name="allowBlockedGoal">P111: the engine's click-to-move registers the walk with a5=0
+    /// (_dude_move → animationRegisterMoveToTile → _anim_move, animation.cc:2994/2407) — a blocked goal
+    /// is NOT refused up-front; the walk proceeds and the final blocked step fails its a5=1 re-path
+    /// (animation.cc:2582), leaving the dude standing NEXT TO the target. Clicking furniture/a critter's
+    /// tile walks you over instead of doing nothing. False = the strict a5=1 semantics (NPC walks).</param>
+    public bool WalkTo(int targetTile, bool allowBlockedGoal = false)
     {
-        // Player movement never paths to a BLOCKED destination. The pathfinder deliberately exempts the
-        // goal tile from its blocking check (so AI can path adjacent to a target, and Reachable() works),
-        // but the engine's click-to-move passes _make_path(..., a5=1) which refuses a blocked goal
-        // (game_mouse.cc:807 → animation.cc:1718-1722). Without this guard the dude steps ONTO a wall, and
-        // clicking into it repeatedly re-paths from that blocked tile and walks him straight through.
-        if (isBlocked(targetTile))
+        // The pathfinder deliberately exempts the goal tile from its blocking check (so paths can end
+        // at an occupied target); strict callers refuse a blocked goal like _make_path(..., a5=1)
+        // (animation.cc:1718-1722) — without the guard an NPC walk would step ONTO the blocker.
+        if (!allowBlockedGoal && isBlocked(targetTile))
             return false;
 
         // P109: closed-but-usable doors are passable — the engine's pathfinder routes through
@@ -140,18 +143,22 @@ public sealed class DudeController(MapObject dude, FrmCache frmCache, Func<int, 
                 continue;
 
             int nextTile = HexGrid.TileInDirection(Dude.HexTile, rotation);
-            if (isBlocked(nextTile) && _step < _rotations.Length - 1)
+            if (isBlocked(nextTile))
             {
-                // ported from _object_move (animation.cc:2578-2600): a usable closed door in the
-                // way is auto-opened and the walk continues; any other obstacle triggers a re-path
-                // to the original destination, and only a failed re-path stops the walk.
+                // ported from _object_move (animation.cc:2578-2600): EVERY step is obstacle-checked.
+                // A usable closed door in the way is auto-opened and the walk continues; any other
+                // obstacle triggers a re-path to the original destination with the strict a5=1
+                // semantics (a blocked goal fails, animation.cc:2582) — so a walk aimed AT a blocked
+                // tile (allowBlockedGoal click) ends here, standing next to the target, like the engine.
                 if (isUsableClosedDoor?.Invoke(nextTile) == true && openDoorAt is not null)
                 {
                     openDoorAt(nextTile); // the host opens it + unblocks the tile; keep walking
                 }
                 else
                 {
-                    byte[]? repath = Pathfinder.FindPath(Dude.HexTile, _targetTile, isBlocked, isUsableClosedDoor);
+                    byte[]? repath = isBlocked(_targetTile)
+                        ? null // a5=1 re-path refuses a blocked goal (animation.cc:1718-1722)
+                        : Pathfinder.FindPath(Dude.HexTile, _targetTile, isBlocked, isUsableClosedDoor);
                     if (repath is null)
                     {
                         Stop();

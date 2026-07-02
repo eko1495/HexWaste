@@ -976,3 +976,25 @@ scripted walk at the first step — per-script heartbeat interference, benign, n
 DEFERRED: combat-time door pathing (CombatEngine's 3 FindPath sites stay door-blind; fo2ce exempts there
 too via the shared pathfinder — wiring it needs mover-aware IsBlocked in ICombatHost + door-opening during
 combat moves, and risks combat-golden churn for a rare scenario: fights around closed doors).
+---
+
+Phase 111 (DONE — "Live-play UX triad: loot DONE, walk-near, hand-approach"): three user-reported issues
+from live play, each root-caused against fo2ce:
+(1) LOOT DONE BUTTON: loot.frm ships with only the baked "DONE" plate — the engine overlays a separate
+little-red-button FRM (interface FID 8/9) at window-local (476,331) 15x16 firing KEY_ESCAPE
+(inventory.cc:1052-1066). Hexwaste drew the plate but never the button and had no click region → looked
+missing and was unclickable. Now: LootDoneRect (padded hit-test, closes the loot) + lilredup.frm drawn on
+the loot window. Headless fallback boxes unchanged → panel goldens byte-identical. Screenshot-verified.
+(2) "CAN'T WALK WHERE I SEE": fo2ce registers click-to-move with a5=0 (_dude_move →
+animationRegisterMoveToTile → _anim_move, animation.cc:2994/2407) — a BLOCKED destination is not refused;
+the walk proceeds and the final blocked step fails its a5=1 re-path (animation.cc:2582), leaving the dude
+standing NEXT TO the target. Hexwaste refused up-front ("You cannot get there from here") — so clicking
+furniture/critter tiles/multihex halos did nothing. Now WalkTo(target, allowBlockedGoal) implements a5=0
+for the click + --goto; DudeController.Update obstacle-checks EVERY step (was: all but the last — fo2ce
+checks all, animation.cc:2578) and its re-path refuses a blocked goal (the a5=1 semantics), ending the
+walk adjacent. E2E: --goto onto a wall tile walks the dude from 13292 to 13298, adjacent. Genuine no-path
+(the shared 2000-node cap) still logs the message.
+(3) HAND-CURSOR DOOR USE: the action menu's Use/Talk dispatched straight to InteractWith, bypassing the
+P109 walk-to-then-interact — using the hand on a distant door said "too far" instead of walking over.
+Extracted InteractOrApproach (approach + queued interaction, in-range → immediate) and routed BOTH the
+left-click site and DispatchActionMenu (+ the --approach harness action) through it.

@@ -2121,6 +2121,13 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
                 _inventoryOpen = false;
                 _stealTarget = null;
             }
+            // P111: the LOOT window's DONE button (fo2ce inventory.cc:1052-1066 — fires KEY_ESCAPE).
+            else if (clickPress && _lootContainer is not null
+                && LootDoneRect() is { } lootDone && lootDone.Contains(mouse.X, mouse.Y))
+            {
+                _lootContainer = null;
+                _stealTarget = null;
+            }
             else if (_inventoryOpen && _lootContainer is null && _tradePartner is null)
                 HandleInventoryDrag(mouse, shiftHeld);
             else if (clickPress)
@@ -2501,17 +2508,7 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
             else if (_pendingUseItem is { } useItem && _hoveredObject is not null && _hoveredObject != _dude?.Dude)
                 UseItemOn(useItem, _hoveredObject);
             else if (_hoveredObject is not null && _hoveredObject != _dude?.Dude)
-            {
-                // P109: fo2ce walks the dude to an out-of-range object and THEN uses it
-                // (_action_use_an_object: move-to-object + the queued action) — clicking a
-                // distant door/container/NPC approaches instead of failing with "too far".
-                // Out of combat only; in combat the range gates behave as before.
-                if (_dude is not null && _combat.Phase == Formats.Combat.CombatPhase.Idle
-                    && !WithinInteractRange(_hoveredObject) && _dude.WalkToward(_hoveredObject.HexTile))
-                    _pendingInteraction = _hoveredObject;
-                else
-                    InteractWith(_hoveredObject);
-            }
+                InteractOrApproach(_hoveredObject);
             else if (_dude is not null)
             {
                 _pendingInteraction = null; // a ground click supersedes the queued interaction
@@ -2522,7 +2519,9 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
                     && GetCritterState(_dude.Dude) is { } walkStats
                     && _combat.DudeAp + _combat.DudeFreeMove < Formats.Combat.CritterState.MovePointCost(_dude.Dude.CombatResults))
                     Log("Not enough action points to move.");
-                else if (target >= 0 && !_dude.WalkTo(target))
+                // P111: fo2ce click-to-move semantics (a5=0) — a blocked destination is walked
+                // TOWARD (the dude ends adjacent) instead of refused with a message.
+                else if (target >= 0 && !_dude.WalkTo(target, allowBlockedGoal: true))
                     Log("You cannot get there from here. (Try clicking closer.)");
             }
         }
@@ -4034,6 +4033,19 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
             + $"(hour {_clock.Hour / 100:00}, day {_clock.Day})");
     }
 
+
+    /// <summary>P109: fo2ce walks the dude to an out-of-range object and THEN uses it
+    /// (_action_use_an_object: move-to-object + the queued action) — clicking a distant
+    /// door/container/NPC (or picking Use/Talk from the action menu, P111) approaches instead of
+    /// failing with "too far". Out of combat only; in combat the range gates behave as before.</summary>
+    private void InteractOrApproach(MapObject obj)
+    {
+        if (_dude is not null && _combat.Phase == Formats.Combat.CombatPhase.Idle
+            && !WithinInteractRange(obj) && _dude.WalkToward(obj.HexTile))
+            _pendingInteraction = obj;
+        else
+            InteractWith(obj);
+    }
 
     /// <summary>P109: is the object close enough to interact right now? Mirrors InteractWith's
     /// per-type gates: a live critter talks from ~5 hexes; everything else needs adjacency.</summary>

@@ -97,7 +97,9 @@ public sealed partial class ViewerGame
                 break;
             case ActionMenuItem.Talk:
             case ActionMenuItem.Use: // talk/loot/open/use_p_proc — InteractWith routes by object type
-                InteractWith(obj);
+                // P111: the hand/talk icons approach an out-of-range target first (walk-to-then-
+                // interact), same as a plain left click — the user shouldn't have to walk manually.
+                InteractOrApproach(obj);
                 break;
             case ActionMenuItem.UseSkill:
                 _actionSkillTarget = obj;

@@ -701,11 +701,7 @@ public sealed partial class ViewerGame
                     MapObject? apObj = _solidObjects[_elevation].Concat(_flatObjects[_elevation])
                         .FirstOrDefault(o => o.HexTile == apHex && o != _dude?.Dude);
                     if (apObj is null) { Console.Error.WriteLine($"approach: nothing at {apHex}"); break; }
-                    if (_dude is not null && _combat.Phase == Formats.Combat.CombatPhase.Idle
-                        && !WithinInteractRange(apObj) && _dude.WalkToward(apObj.HexTile))
-                        _pendingInteraction = apObj;
-                    else
-                        InteractWith(apObj);
+                    InteractOrApproach(apObj); // the click flow verbatim (shared with the action menu, P111)
                     Console.WriteLine($"approach: target {apHex} pending={(_pendingInteraction is not null ? 1 : 0)}");
                     break;
                 }
@@ -2126,7 +2122,8 @@ public sealed partial class ViewerGame
                 Console.Error.WriteLine($"no door at hex {doorTile}");
         }
 
-        if (WalkToTile is { } walkTarget && _dude is not null && !_dude.WalkTo(walkTarget))
+        // P111: --goto mirrors the click (a5=0) — a blocked goal is walked toward, not refused.
+        if (WalkToTile is { } walkTarget && _dude is not null && !_dude.WalkTo(walkTarget, allowBlockedGoal: true))
             Console.Error.WriteLine($"no path to hex {walkTarget}");
 
         // Step cycling/animations in small increments so pre-advancing N ms

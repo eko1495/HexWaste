@@ -1591,6 +1591,14 @@ public sealed partial class ViewerGame
     // Only meaningful when the INVBOX art is up — the fallback boxes layout has no DONE button.
     private Rectangle? InvBoxDoneRect() => InvBoxOrigin() is { } o ? new Rectangle(o.X + 432, o.Y + 324, 26, 24) : null;
 
+    /// <summary>P111: the LOOT window's DONE button — fo2ce creates it window-local at (476,331) 15x16
+    /// (inventory.cc:1052-1066, fires KEY_ESCAPE); padded for an easier click like InvBoxDoneRect.
+    /// Null when the loot art is absent (headless fallback boxes have no DONE button).</summary>
+    private Rectangle? LootDoneRect() =>
+        _lootContainer is not null && ItemWindowArt() is { Strip: false } w
+            ? new Rectangle(w.Origin.X + 473, w.Origin.Y + 328, 22, 22)
+            : null;
+
     // ====================================================================
     //  P86: authentic LOOT / BARTER / TRADE window art (FID 114/111/420)
     // ====================================================================
@@ -1926,7 +1934,24 @@ public sealed partial class ViewerGame
         int wide = w.Strip ? TradeStripW : LootBoxW;
         int high = w.Strip ? TradeStripH : LootBoxH;
         _spriteBatch.Draw(w.Tex, new Rectangle(w.Origin.X, w.Origin.Y, wide, high), Color.White);
+
+        // P111: the LOOT window's DONE button is a separate little-red-button FRM the engine overlays
+        // at (476,331) next to the baked-in DONE plate (inventory.cc:1052-1066 with interface FID 8) —
+        // loot.frm itself ships without the button, which is why it looked missing.
+        if (!w.Strip && _lootContainer is not null)
+        {
+            if (!_lilRedTried)
+            {
+                _lilRedTried = true;
+                _lilRedUp = InterfaceBar.LoadFrm(GraphicsDevice, _vfs, _palette, @"art\intrface\lilredup.frm");
+            }
+            if (_lilRedUp is not null)
+                _spriteBatch.Draw(_lilRedUp, new Vector2(w.Origin.X + 476, w.Origin.Y + 331), Color.White);
+        }
     }
+
+    private Texture2D? _lilRedUp;
+    private bool _lilRedTried;
 
     private int DrawItemList(string title, List<MapObject> items, int x,
         Func<MapObject, int>? price = null)
