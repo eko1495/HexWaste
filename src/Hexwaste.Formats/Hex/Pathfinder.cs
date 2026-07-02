@@ -14,7 +14,13 @@ public static class Pathfinder
     private const int StepCost = 50;
     private const int TurnPenalty = 10;
 
-    public static byte[]? FindPath(int from, int to, Func<int, bool> isBlocked)
+    /// <param name="isPassableDoor">P109: a blocked tile the walker may nonetheless path through —
+    /// a closed, usable door. The engine's pathfinder exempts tiles whose blocker passes canUseDoor
+    /// (animation.cc:1802-1808: unlocked scenery door; walk-thru additionally required for the dude);
+    /// the walker then auto-opens the door on contact (_object_move, animation.cc:2599). Null = no
+    /// exemption (combat AI and NPC ambient walkers keep their current behavior).</param>
+    public static byte[]? FindPath(int from, int to, Func<int, bool> isBlocked,
+        Func<int, bool>? isPassableDoor = null)
     {
         if (!HexGrid.IsValid(from) || !HexGrid.IsValid(to) || from == to)
             return null;
@@ -39,7 +45,7 @@ public static class Pathfinder
                 if (!processed.Add(neighbor))
                     continue;
 
-                if (neighbor != to && isBlocked(neighbor))
+                if (neighbor != to && isBlocked(neighbor) && !(isPassableDoor?.Invoke(neighbor) ?? false))
                     continue;
 
                 int cost = current.Cost + StepCost;

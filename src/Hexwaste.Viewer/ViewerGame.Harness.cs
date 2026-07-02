@@ -659,6 +659,38 @@ public sealed partial class ViewerGame
                     Console.WriteLine($"kill: pid=0x{victim.Pid:X}@{killHex} dead={(victim.IsDead ? 1 : 0)}");
                     break;
                 }
+                case StartupAction.BlockedProbe(var bpHex):
+                {
+                    // P109 QA: the live blocked-set truth around a tile — each neighbor's blocked
+                    // status + occupant (diagnoses doorway squatters the static map dump can't see).
+                    for (int bpR = -1; bpR < 6; bpR++)
+                    {
+                        int bpT = bpR < 0 ? bpHex : Formats.Hex.HexGrid.TileInDirection(bpHex, bpR);
+                        MapObject? occ = _solidObjects[_elevation].Concat(_flatObjects[_elevation])
+                            .FirstOrDefault(o => o.HexTile == bpT && o != _dude?.Dude
+                                && (o.Flags & 0x11) == 0
+                                && Fid.Type(o.Fid) is ObjectType.Critter or ObjectType.Scenery or ObjectType.Wall);
+                        Console.WriteLine($"blocked-probe: tile {bpT}{(bpR < 0 ? " (center)" : "")} "
+                            + $"blocked={(_blockedTiles.Contains(bpT) ? 1 : 0)}"
+                            + (occ is not null ? $" occupant pid=0x{occ.Pid:X} type={Fid.Type(occ.Fid)}" : ""));
+                    }
+                    break;
+                }
+                case StartupAction.Approach(var apHex):
+                {
+                    // P109: the click flow verbatim — out-of-range targets get an approach walk with the
+                    // interaction queued; in-range (or unreachable) targets interact immediately.
+                    MapObject? apObj = _solidObjects[_elevation].Concat(_flatObjects[_elevation])
+                        .FirstOrDefault(o => o.HexTile == apHex && o != _dude?.Dude);
+                    if (apObj is null) { Console.Error.WriteLine($"approach: nothing at {apHex}"); break; }
+                    if (_dude is not null && _combat.Phase == Formats.Combat.CombatPhase.Idle
+                        && !WithinInteractRange(apObj) && _dude.WalkToward(apObj.HexTile))
+                        _pendingInteraction = apObj;
+                    else
+                        InteractWith(apObj);
+                    Console.WriteLine($"approach: target {apHex} pending={(_pendingInteraction is not null ? 1 : 0)}");
+                    break;
+                }
                 case StartupAction.CombatProcProbe(var cpHex):
                 {
                     // P35: run the critter's per-turn combat_p_proc (fp=4) and report whether it DEFINES
@@ -2087,6 +2119,7 @@ public sealed partial class ViewerGame
             _animator.Update(10);
             _combat.Step();
             _dude?.Update(10);
+            PumpPendingInteraction(); // P109: approach-then-interact fires headlessly too
             UpdateAmbientLife(10);
             UpdateClock(10);
             _scriptHost?.PumpTimers(10, _dude?.Dude);
@@ -2097,6 +2130,10 @@ public sealed partial class ViewerGame
                 ApplyTransition(transition);
             }
         }
+        // P109: report where the --goto walk ended (arrival proof for door-pathing e2e tests).
+        if (WalkToTile is { } gotoTarget && _dude is not null)
+            Console.WriteLine($"goto: dude at {_dude.Dude.HexTile} target {gotoTarget}"
+                + (_dude.Dude.HexTile == gotoTarget ? " REACHED" : _dude.Moving ? " (still walking)" : " STOPPED"));
         _frmCache.OnPaletteChanged(_palette);
 
         // Headless transcript runs (--fight/--attack/… with no screenshot or

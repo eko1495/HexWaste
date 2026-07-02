@@ -548,6 +548,12 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
     /// override, else -1 (no head).</summary>
     private int EffectiveHeadId() => _dialog is null ? -1 : (_dialog.HeadId >= 0 ? _dialog.HeadId : ForceHeadId);
     private MapObject? _lootContainer;
+
+    /// <summary>P109: the object a click queued an interaction with — the dude is walking over
+    /// (WalkToward) and the interaction fires on arrival. fo2ce's use/talk/pickup actions are
+    /// move-to-object + queued action (_action_use_an_object); ours re-runs InteractWith once
+    /// the walk ends, which re-checks range.</summary>
+    private MapObject? _pendingInteraction;
     private bool _inventoryOpen;
     /// <summary>The dude's bag. Aliased to the dude MapObject's Inventory at
     /// spawn so script externals (item_caps_*, inventory checks) see the same
@@ -772,6 +778,11 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
         /// <summary>P104: kill the critter at Hex through the real death path (KillCritter → destroy_p_proc),
         /// so a kill-quest's GVAR fires without needing to win a fair boss fight. A test/debug aid.</summary>
         public sealed record KillCritterAt(int Hex) : StartupAction;
+        /// <summary>P109: simulate clicking the object at Hex — the walk-to-then-interact flow
+        /// (WalkToward + pending interaction), e2e-testable headlessly with --advance-ms.</summary>
+        public sealed record Approach(int Hex) : StartupAction;
+        /// <summary>P109 QA: dump the live blocked-set status of Hex + its 6 neighbors.</summary>
+        public sealed record BlockedProbe(int Hex) : StartupAction;
         /// <summary>P100 (Point 3): run the MAP script's combat_p_proc "combat over" hook (fixedParam = a
         /// KO'er team) and report whether the map defines it + script_overrides — proves the prizefight
         /// caught-KO seam (_scr_end_combat) without needing a live fight.</summary>
@@ -1476,6 +1487,7 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
             }
         }
         _dismissedCompanions.Clear(); // live dismissed set is rebuilt per map (transient ones vanish)
+        _pendingInteraction = null; // P109: a queued approach-interaction dies with the map it targeted
         _currentMapTransient = transient;
 
         if (_stubbedExternals.Count > 0)
@@ -2380,6 +2392,7 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
         if (_npcDrugBonus.Count > 0 && _combat.Phase == Formats.Combat.CombatPhase.Idle)
             _npcDrugBonus.Clear();
         _dude?.Update(gameTime.ElapsedGameTime.TotalMilliseconds);
+        PumpPendingInteraction();
         UpdateAmbientLife(gameTime.ElapsedGameTime.TotalMilliseconds);
         TickAmbientSfx(gameTime.ElapsedGameTime.TotalMilliseconds); // P34-M5 ambient sfx
         _floatText.Tick(gameTime.ElapsedGameTime.TotalMilliseconds); // P45 floating combat text
@@ -2482,9 +2495,20 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
             else if (_pendingUseItem is { } useItem && _hoveredObject is not null && _hoveredObject != _dude?.Dude)
                 UseItemOn(useItem, _hoveredObject);
             else if (_hoveredObject is not null && _hoveredObject != _dude?.Dude)
-                InteractWith(_hoveredObject);
+            {
+                // P109: fo2ce walks the dude to an out-of-range object and THEN uses it
+                // (_action_use_an_object: move-to-object + the queued action) — clicking a
+                // distant door/container/NPC approaches instead of failing with "too far".
+                // Out of combat only; in combat the range gates behave as before.
+                if (_dude is not null && _combat.Phase == Formats.Combat.CombatPhase.Idle
+                    && !WithinInteractRange(_hoveredObject) && _dude.WalkToward(_hoveredObject.HexTile))
+                    _pendingInteraction = _hoveredObject;
+                else
+                    InteractWith(_hoveredObject);
+            }
             else if (_dude is not null)
             {
+                _pendingInteraction = null; // a ground click supersedes the queued interaction
                 int target = PickHex(mouse.X, mouse.Y); // P85: zoom-correct click-to-move
                 // Phase-18 M0: in combat a move needs AP for at least the first hex (P74-M4: the Bonus
                 // Move free-move pool counts toward affording the hex).
@@ -2599,7 +2623,16 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
 
         RebuildBlockedTiles(dude);
         _dude = new DudeController(dude, _frmCache, tile => _blockedTiles.Contains(tile),
-            () => DudeMovementAnimCode(dude)); // P34-M3: run by default (the 3 engine guards), NPC walkers keep walking
+            () => DudeMovementAnimCode(dude), // P34-M3: run by default (the 3 engine guards), NPC walkers keep walking
+            // P109: the dude paths through closed usable doors and auto-opens them on contact
+            // (canUseDoor + _obj_use_door) — without this, every building interior is
+            // single-click unreachable (2,481 stranded tiles on kladwtwn alone).
+            isUsableClosedDoor: tile => UsableClosedDoorAt(tile) is not null,
+            openDoorAt: tile =>
+            {
+                if (UsableClosedDoorAt(tile) is { } blockingDoor)
+                    ToggleDoor(blockingDoor);
+            });
         _dude.TileChanged += tile =>
         {
             // Keep hex z-order: re-insert at the new tile's sorted position.
@@ -3376,6 +3409,25 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
         bonus[Formats.Combat.CritterStat.DamageResistance] += sign * armor.DamageResistance[0];
     }
 
+    /// <summary>P109: the closed, unlocked, walk-thru door at a tile — one the dude may path
+    /// through and auto-opens on contact. ported from fallout2-ce animation.cc canUseDoor
+    /// (unlocked scenery door) + object.cc _obj_portal_is_walk_thru (door.openFlags bit 0x04;
+    /// the walk-thru requirement applies to the dude specifically, animation.cc:1669-1673).</summary>
+    private MapObject? UsableClosedDoorAt(int tile)
+    {
+        MapObject? door = _solidObjects[_elevation].FirstOrDefault(o => o.HexTile == tile && IsDoor(o));
+        if (door is null || _openDoors.Contains(door) || door.IsLockedState)
+            return null;
+        try
+        {
+            return (_protos.Get(door.Pid).SceneryData0 & 0x04) != 0 ? door : null;
+        }
+        catch (Exception ex) when (ex is FileNotFoundException or InvalidDataException)
+        {
+            return null;
+        }
+    }
+
     private bool IsDoor(MapObject obj)
     {
         if (Fid.Type(obj.Fid) is not ObjectType.Scenery || Fid.PidType(obj.Pid) != (int)ObjectType.Scenery)
@@ -3936,6 +3988,28 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
             + $"(hour {_clock.Hour / 100:00}, day {_clock.Day})");
     }
 
+
+    /// <summary>P109: is the object close enough to interact right now? Mirrors InteractWith's
+    /// per-type gates: a live critter talks from ~5 hexes; everything else needs adjacency.</summary>
+    private bool WithinInteractRange(MapObject obj)
+    {
+        if (_dude is null)
+            return false;
+        if (Fid.Type(obj.Fid) is ObjectType.Critter && !obj.IsDead)
+            return Formats.Hex.HexGrid.ScreenDistance(_dude.Dude.HexTile, obj.HexTile) <= 5 * 32;
+        return IsAdjacentToDude(obj);
+    }
+
+    /// <summary>P109: fire the queued interaction once the approach walk ends. InteractWith
+    /// re-checks range, so an interrupted/short walk degrades to the usual "Too far away."</summary>
+    private void PumpPendingInteraction()
+    {
+        if (_pendingInteraction is not { } target || _dude is null || _dude.Moving)
+            return;
+        _pendingInteraction = null;
+        if (!target.IsHidden)
+            InteractWith(target);
+    }
 
     private void InteractWith(MapObject obj)
     {

@@ -31,7 +31,11 @@ public sealed record ProtoInfo(
     int Weight = 0,
     /// <summary>Item size class (proto.item.size, the int after material); the steal penalty is
     /// −4%/size without Pickpocket (skill.cc:1042, P78). 0 for non-items.</summary>
-    int Size = 0)
+    int Size = 0,
+    /// <summary>First dword of the scenery subtype data (proto.scenery.data.generic.field_0;
+    /// for doors this is door.openFlags). Bit 0x04 = walk-thru — _obj_portal_is_walk_thru
+    /// (object.cc:2056) gates whether the DUDE may path through the closed door. 0 for non-scenery.</summary>
+    int SceneryData0 = 0)
 {
     /// <summary>The object's translucency class from its flag bits 0xFC000 (P23) — the engine
     /// sets one OBJECT_TRANS_* from the proto at instantiation (object.cc:943).</summary>
@@ -178,6 +182,7 @@ public sealed class ProtoDatabase(GameFileSystem vfs)
         int extendedFlags;
         int subType = -1;
         byte soundId = 0;
+        int sceneryData0 = 0;
         int inventoryFid = -1;
         int cost = 0;
         int weight = 0;
@@ -216,6 +221,10 @@ public sealed class ProtoDatabase(GameFileSystem vfs)
                 {
                     reader.Skip(4); // field_2C
                     soundId = reader.ReadByte();
+                    // ported from fallout2-ce proto.cc protoSceneryDataRead: every scenery subtype
+                    // stores ≥1 data dword right after field_34; the first is door.openFlags /
+                    // generic.field_0 — the walk-thru bit lives here (object.cc:2056).
+                    sceneryData0 = reader.ReadInt32();
                 }
                 else if ((ObjectType)type is ObjectType.Item)
                 {
@@ -312,7 +321,7 @@ public sealed class ProtoDatabase(GameFileSystem vfs)
                 throw new InvalidDataException($"PID 0x{pid:X8}: unexpected type {type}.");
         }
 
-        return new ProtoInfo(filePid, messageId, fid, flags, extendedFlags, subType, soundId, inventoryFid, critter, cost, weapon, armor, drug, ammo, weight, size);
+        return new ProtoInfo(filePid, messageId, fid, flags, extendedFlags, subType, soundId, inventoryFid, critter, cost, weapon, armor, drug, ammo, weight, size, sceneryData0);
     }
 
     private string[] GetList(int type)

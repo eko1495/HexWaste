@@ -457,6 +457,12 @@ for (int i = 0; i < args.Length; i++)
         case "--kill" when i + 1 < args.Length: // P104: kill the critter at <hex> (fires its destroy_p_proc)
             actions.Add(new ViewerGame.StartupAction.KillCritterAt(int.Parse(args[++i])));
             break;
+        case "--approach" when i + 1 < args.Length: // P109: click-simulate the object at <hex> (walk-to-then-interact)
+            actions.Add(new ViewerGame.StartupAction.Approach(int.Parse(args[++i])));
+            break;
+        case "--blocked-probe" when i + 1 < args.Length: // P109 QA: live blocked status of <hex> + neighbors
+            actions.Add(new ViewerGame.StartupAction.BlockedProbe(int.Parse(args[++i])));
+            break;
         case "--combat-over" when i + 1 < args.Length:
             // P100: run the map-script combat_p_proc "combat over" hook with a KO'er team (proves the seam).
             actions.Add(new ViewerGame.StartupAction.CombatOverProbe(int.Parse(args[++i])));

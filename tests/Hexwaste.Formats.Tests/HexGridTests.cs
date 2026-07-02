@@ -133,6 +133,29 @@ public class PathfinderTests
     }
 
     [Fact]
+    public void PassableDoorTunnelsThroughAWalledRing()
+    {
+        // P109 (canUseDoor, animation.cc:1802-1808): a blocked tile flagged as a passable door
+        // is routed through; without the exemption the same layout is unreachable.
+        int from = Tile(100, 100);
+        var ring = Enumerable.Range(0, 6).Select(r => HexGrid.TileInDirection(from, r)).ToHashSet();
+        int door = HexGrid.TileInDirection(from, 2);
+        int to = Tile(120, 120);
+
+        Assert.Null(Pathfinder.FindPath(from, to, ring.Contains));
+        byte[]? path = Pathfinder.FindPath(from, to, ring.Contains, tile => tile == door);
+
+        Assert.NotNull(path);
+        int current = from;
+        foreach (byte rotation in path)
+        {
+            current = HexGrid.TileInDirection(current, rotation);
+            Assert.True(!ring.Contains(current) || current == door, "must cross the ring only at the door");
+        }
+        Assert.Equal(to, current);
+    }
+
+    [Fact]
     public void GoalTileIsNotBlockingChecked()
     {
         int from = Tile(100, 100);

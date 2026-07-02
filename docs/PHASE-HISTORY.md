@@ -924,3 +924,35 @@ spatial/timer scripts' map_exit procs missed; object-order vs fo2ce's type-order
 LocalVarsCount preference edge (fo2ce re-derives from scripts.lst on pristine maps); map_exit fires at next
 LoadMap rather than at the worldmap-exit moment (a script reading game time in map_exit sees a later clock).
 All 793 Formats tests + 16 combat + 185 encounter + opening + quest goldens verified after the fixes.
+---
+
+Phase 109 (DONE — "Movement into buildings: walk-to-then-interact + door pathing"): investigated the
+user-reported "moving is difficult when the destination is behind a wall". Root-cause chain (each step
+verified against fo2ce source + game data):
+(1) FIRST HYPOTHESIS PARTLY WRONG: fo2ce's pathfinder does route through blocked tiles whose blocker passes
+canUseDoor (animation.cc:1802-1808) and auto-opens the door on contact (_obj_use_door, :2599) — but for the
+DUDE canUseDoor additionally requires the door's WALK-THRU proto flag (_obj_portal_is_walk_thru:
+scenery.data door.openFlags bit 0x04, object.cc:2056), and a game-wide census (raw .pro hexdump-verified)
+shows 0/98 vanilla door protos set it. So the original dude NEVER paths through closed doors — "click the
+door first" is authentic. The door exemption matters for NPCs (no walk-thru requirement).
+(2) THE REAL GAP: fo2ce walks the dude TO an out-of-range object and then uses it
+(_action_use_an_object: move-to-object + queued action); Hexwaste required being already adjacent ("too far
+from the door") — THAT is what made buildings feel unreachable. Built walk-to-then-interact: clicking a
+distant door/container/item/NPC out of combat now paths the dude there (DudeController.WalkToward — path to
+the object's tile, goal exempt from blocking, stop one step short) and fires the interaction on arrival
+(_pendingInteraction + PumpPendingInteraction; re-checks range, cleared on ground-click/map-change).
+E2E-proven: --approach 17880 on denbus1 → dude walks ~25 hexes, "door opens".
+(3) Ported the fo2ce mid-walk obstacle handling (_object_move, animation.cc:2578-2600): a usable closed
+door in the way is auto-opened and the walk continues; any other obstacle RE-PATHS to the original
+destination (was: dead Stop()); only a failed re-path stops.
+(4) Pathfinder.FindPath gains the optional isPassableDoor exemption (unit-tested: a walled ring is
+tunneled only through the flagged door tile); ProtoDatabase now reads the first scenery-data dword
+(SceneryData0 = door.openFlags, layout verified against protoRead/protoSceneryDataRead + raw 49-byte door
+.pro) — the walk-thru bit lives there.
+AUTHENTIC LIMITS CONFIRMED (not bugs): the 2000-node A* cap (identical in fo2ce, animation.cc:1791) fails
+clicks beyond ~40-50 hexes (verified: flood-connected goal, pure A* NULL); NPCs standing in 1-wide doorways
+block entry until they wander (blocked-probe caught pid 0x1000033 squatting inside the denbus1 doorway) —
+the classic Fallout doorway-blocker, now mitigated by the mid-walk re-path.
+New QA aids: --approach <hex> (click simulation), --blocked-probe <hex> (live blocked-set truth around a
+tile), goto: arrival print for --goto. DoorProbe scratch flood-fill quantified the stakes: 2,481 (kladwtwn)
+/ 1,367 (denbus1) / 1,629 (vctycocl) tiles are behind closed doors.

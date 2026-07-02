@@ -14,7 +14,8 @@ namespace Hexwaste.Viewer;
 /// remainder carries over, so walking speed comes entirely from the FRM data.
 /// </summary>
 public sealed class DudeController(MapObject dude, FrmCache frmCache, Func<int, bool> isBlocked,
-    Func<int>? movementAnimCode = null)
+    Func<int>? movementAnimCode = null,
+    Func<int, bool>? isUsableClosedDoor = null, Action<int>? openDoorAt = null)
 {
     private const int AnimWalk = 1;
 
@@ -36,6 +37,7 @@ public sealed class DudeController(MapObject dude, FrmCache frmCache, Func<int, 
 
     private byte[]? _rotations;
     private int _step;
+    private int _targetTile = -1; // the walk's destination — re-paths aim here (sad->field_24)
     private double _accumulatorMs;
 
     public int CurrentFid => Moving
@@ -52,10 +54,13 @@ public sealed class DudeController(MapObject dude, FrmCache frmCache, Func<int, 
         if (isBlocked(targetTile))
             return false;
 
-        byte[]? rotations = Pathfinder.FindPath(Dude.HexTile, targetTile, isBlocked);
+        // P109: closed-but-usable doors are passable — the engine's pathfinder routes through
+        // them (canUseDoor, animation.cc:1802-1808) and the walker opens them on contact.
+        byte[]? rotations = Pathfinder.FindPath(Dude.HexTile, targetTile, isBlocked, isUsableClosedDoor);
         if (rotations is null)
             return false;
 
+        _targetTile = targetTile;
         _rotations = rotations;
         _step = 0;
         Frame = 0;
@@ -63,6 +68,32 @@ public sealed class DudeController(MapObject dude, FrmCache frmCache, Func<int, 
         OffsetY = 0;
         _accumulatorMs = 0;
         Dude.Rotation = rotations[0];
+        return true;
+    }
+
+    /// <summary>P109: walk ADJACENT to a (possibly blocked) target tile — the interaction approach.
+    /// fo2ce's use/talk/pickup actions path to the object's tile (the pathfinder exempts the goal
+    /// tile from blocking) and stop one step short (_action_use_an_object → move-to-object).
+    /// Returns false when there is no path or the dude is already adjacent.</summary>
+    public bool WalkToward(int targetTile)
+    {
+        byte[]? rotations = Pathfinder.FindPath(Dude.HexTile, targetTile, isBlocked, isUsableClosedDoor);
+        if (rotations is null || rotations.Length < 2)
+            return false;
+
+        byte[] trimmed = rotations[..^1];
+        int dest = Dude.HexTile;
+        foreach (byte r in trimmed)
+            dest = HexGrid.TileInDirection(dest, r);
+
+        _targetTile = dest; // mid-walk re-paths aim at the adjacent stop, not the occupied tile
+        _rotations = trimmed;
+        _step = 0;
+        Frame = 0;
+        OffsetX = 0;
+        OffsetY = 0;
+        _accumulatorMs = 0;
+        Dude.Rotation = trimmed[0];
         return true;
     }
 
@@ -111,10 +142,30 @@ public sealed class DudeController(MapObject dude, FrmCache frmCache, Func<int, 
             int nextTile = HexGrid.TileInDirection(Dude.HexTile, rotation);
             if (isBlocked(nextTile) && _step < _rotations.Length - 1)
             {
-                // Something moved in the way mid-walk; the engine re-paths, the
-                // PoC simply stops.
-                Stop();
-                return;
+                // ported from _object_move (animation.cc:2578-2600): a usable closed door in the
+                // way is auto-opened and the walk continues; any other obstacle triggers a re-path
+                // to the original destination, and only a failed re-path stops the walk.
+                if (isUsableClosedDoor?.Invoke(nextTile) == true && openDoorAt is not null)
+                {
+                    openDoorAt(nextTile); // the host opens it + unblocks the tile; keep walking
+                }
+                else
+                {
+                    byte[]? repath = Pathfinder.FindPath(Dude.HexTile, _targetTile, isBlocked, isUsableClosedDoor);
+                    if (repath is null)
+                    {
+                        Stop();
+                        return;
+                    }
+                    // Snap to the current tile and restart on the new path (animation.cc:2584-2593).
+                    _rotations = repath;
+                    _step = 0;
+                    Frame = 0;
+                    OffsetX = 0;
+                    OffsetY = 0;
+                    Dude.Rotation = repath[0];
+                    return;
+                }
             }
 
             OffsetX -= hexX;
