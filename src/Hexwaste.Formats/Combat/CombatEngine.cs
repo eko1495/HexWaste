@@ -743,6 +743,10 @@ public sealed class CombatEngine
             attacker.Stat(CritterStat.Perception), attackerIsDude: true,
             defenderAc, 0, weaponProto.Weapon.MinStrength, strength, crittersInPath: 0);
 
+        // P113 (4.2): throws bypass ComputeToHit — apply the same darkness penalty; a ground throw
+        // (no target critter) sees light 0 → −40 (combat.cc:4451).
+        chance += DarknessToHit(weaponProto, targetCritter is null ? 0 : _host.LightIntensityAt(targetCritter));
+
         int delta = chance - _rng.Next(1, 101);
         bool hit = delta >= 0;
 
@@ -1261,11 +1265,25 @@ public sealed class CombatEngine
         if ((defender.Critter.Flags & OBJECT_MULTIHEX) != 0)
             toHit += 15;
 
+        // P113 (4.2): darkness to-hit penalty (combat.cc:4446-4463) — DUDE only, all attack types, keyed
+        // on the DEFENDER's tile light (0..65536). A Night Sight-perk weapon treats it as full bright.
+        if (attackerIsDude)
+            toHit += DarknessToHit(weaponProto, _host.LightIntensityAt(defender.Critter));
+
         // P74-M2: the Accurate weapon perk adds +20 to hit, for ANY attacker (combat.cc:4423 — no dude
         // gate, it's a weapon property). Inert for a perk-less weapon (WeaponPerk -1) → byte-identical.
         if (weaponProto?.Weapon is { WeaponPerk: WeaponProtoStats.PerkAccurate })
             toHit += 20;
         return toHit; // callers clamp to [0,95]
+    }
+
+    /// <summary>P113 (4.2): the darkness to-hit modifier (combat.cc:4448-4463). Night Sight-perk weapons
+    /// see full brightness; otherwise the defender's tile light picks a penalty band. lightIntensity is
+    /// 0..65536 (a null/ground target passes 0 → −40).</summary>
+    private static int DarknessToHit(ProtoInfo? weaponProto, int lightIntensity)
+    {
+        int li = weaponProto?.Weapon is { WeaponPerk: WeaponProtoStats.PerkNightSight } ? 65536 : lightIntensity;
+        return li <= 26214 ? -40 : li <= 39321 ? -25 : li <= 52428 ? -10 : 0;
     }
 
     /// <summary>Damage-on-completion + corpse conversion, polled every frame
