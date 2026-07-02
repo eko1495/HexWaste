@@ -1090,3 +1090,19 @@ appear to use the standard metarule(15) path, and there is a separate harness el
 the live end-to-end elevator ride was not validated on-slice. The metarule(15) mechanism itself (parse →
 PendingElevator → panel scan → picker → ApplyTransition teleport) is wired and the tables + CurrentButton are
 unit-tested (P113FidelityTests). 807 Formats tests + all combat/encounter/opening/quest goldens pass.
+---
+
+Phase 113 (part 3 — "elevator live trigger fixed"): the P113-part-2 caveat (elevator not validated
+on-slice) is RESOLVED. Two things were wrong: (1) the trigger is the ZSElev01 SPATIAL (script 167) the dude
+walks onto (klatoxcv tiles 15652@elev1 / 14080@elev2, beside the pid-0x200050D panels), NOT the kcLvatr
+door — kcLvatr is a lock script with no metarule; ZSElev01's spatial_p_proc calls metarule(15), which my
+PendingElevator → panel-scan → picker → ApplyTransition path already services. (2) A REAL FIDELITY BUG blocked
+testing + would misfire in play: klatoxcv's map_enter calls override_map_start(…, elev 0), which was
+UNCONDITIONALLY repositioning the dude — so an explicit elev-1/2 arrival (stairway/elevator/harness transit)
+got clobbered to elev 0. fo2ce uses the map's gMapEntrance only when the entry has NO explicit destination
+(map.cc mapLoad); fixed with _mapEntryHasExplicitSpawn (set when spawnAt has a real tile) gating
+OverrideDudeStart. Byte-identical: the goldens' opening chain enters via --goto-map WITHOUT a tile (spawnAt
+null → override still fires); all 16 combat + 187 encounter + opening + 4 quest goldens pass, 807 tests pass.
+E2E-VERIFIED: walking onto the elev-2 trigger opens the "ELEVATOR [1]Level 1 [2]Level 2" picker (screenshot);
+--elevator-pick 0 teleports map 12 elev 2 → elev 1 tile 16052 (Descriptions[13][0]). The override_map_start
+fix also corrects any stairway/ladder that lands the dude on a non-entrance elevation on a map that overrides.

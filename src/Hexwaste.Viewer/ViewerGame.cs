@@ -1464,6 +1464,12 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
     /// (phase-10 M0; the engine erases its .SAV — map.cc:1456).</summary>
     private bool _currentMapTransient;
 
+    /// <summary>P113: this map was entered with an EXPLICIT spawn tile (a stairway/elevator/harness
+    /// transition), so override_map_start must NOT reposition the dude — fo2ce uses gMapEntrance only
+    /// when the entry has no explicit destination (map.cc mapLoad). Without this, klatoxcv's map_enter
+    /// override_map_start(…, elev 0) clobbers an explicit elev-1/2 arrival.</summary>
+    private bool _mapEntryHasExplicitSpawn;
+
     /// <summary>True only while LoadGame replays the restored map's scripts (map_enter/
     /// map_update). Mirrors the engine's _isLoadingGame() (interpreter_extra.cc:2384) —
     /// gates kill_critter_type so a save-restore never re-destroys critters.</summary>
@@ -1565,6 +1571,9 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
         _elevation = spawnAt is { Elevation: >= 0 } ? spawnAt.Elevation : _map.Header.EnteringElevation;
         if (_elevation is < 0 or >= MapFile.ElevationCount || _map.Elevations[_elevation] is null)
             _elevation = Array.FindIndex(_map.Elevations, e => e is not null);
+        // P113: an explicit destination tile (stairway/elevator/harness transit) beats the map's
+        // override_map_start default entrance (fo2ce mapLoad uses gMapEntrance only without one).
+        _mapEntryHasExplicitSpawn = spawnAt is { Tile: > 0 };
 
         // ported from fallout2-ce src/object.cc _obj_render_pre_roof(): flat
         // objects draw first, then non-flat, both in hex tile order (the order
@@ -5592,6 +5601,10 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
     private void OverrideDudeStart(int tile, int elevation, int rotation)
     {
         if (_dude is null)
+            return;
+        // P113: an explicit transition destination (stairway/elevator/harness) already placed the
+        // dude — the map's default entrance must not override it (fo2ce: gMapEntrance is the fallback).
+        if (_mapEntryHasExplicitSpawn)
             return;
         if (elevation is >= 0 and < MapFile.ElevationCount && _map.Elevations[elevation] is not null
             && elevation != _elevation)
