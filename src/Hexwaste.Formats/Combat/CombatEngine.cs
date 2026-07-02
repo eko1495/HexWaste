@@ -2487,7 +2487,10 @@ public sealed class CombatEngine
 
         if (_actingEnemyAp < 1)
             return false;
-        byte[]? path = Pathfinder.FindPath(enemy.HexTile, dudeTile, tile => _host.IsBlocked(tile));
+        // P113 (Stage 4.1): combat approach paths route through closed usable doors and open them on
+        // contact, like fo2ce (canUseDoor exempts them in _make_path for AI moves too, animation.cc:1802).
+        byte[]? path = Pathfinder.FindPath(enemy.HexTile, dudeTile,
+            tile => _host.IsBlocked(tile), t => _host.IsPassableClosedDoor(enemy, t));
         if (path is null || path.Length <= 1)
             return false;
 
@@ -2525,7 +2528,8 @@ public sealed class CombatEngine
             foreach (int dir in (ReadOnlySpan<int>)[rotation, (rotation + 1) % 6, (rotation + 5) % 6])
             {
                 int dest = HexGrid.TileInDirection(fromTile, dir, dist);
-                if (dest != fromTile && Pathfinder.FindPath(fromTile, dest, _host.IsBlocked) is not null)
+                if (dest != fromTile && Pathfinder.FindPath(fromTile, dest, _host.IsBlocked,
+                        t => _host.IsPassableClosedDoor(critter, t)) is not null) // P113 (4.1): flee through doors
                 {
                     target = dest;
                     break;
@@ -2680,7 +2684,8 @@ public sealed class CombatEngine
 
         if (_actingAllyAp < 1)
             return false;
-        byte[]? path = Pathfinder.FindPath(ally.HexTile, moveTo, tile => _host.IsBlocked(tile));
+        byte[]? path = Pathfinder.FindPath(ally.HexTile, moveTo,
+            tile => _host.IsBlocked(tile), t => _host.IsPassableClosedDoor(ally, t)); // P113 (4.1)
         if (path is null || path.Length <= 1)
             return false;
         int steps = Math.Min(path.Length - 1, _actingAllyAp);

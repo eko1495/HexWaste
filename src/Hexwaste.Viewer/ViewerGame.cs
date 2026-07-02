@@ -2942,7 +2942,10 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
                 return false;
         }
 
-        if (target == npc.HexTile || _blockedTiles.Contains(target))
+        // P113 (4.1): a target that's a usable closed door is allowed (the walk opens it on contact) —
+        // a combat approach path truncated by AP can legitimately end on a door tile.
+        if (target == npc.HexTile
+            || (_blockedTiles.Contains(target) && NpcUsableClosedDoorAt(npc, target) is null))
             return false;
 
         // P110: NPCs path through closed usable doors and open them on contact, like fo2ce
