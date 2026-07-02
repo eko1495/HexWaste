@@ -998,3 +998,18 @@ walk adjacent. E2E: --goto onto a wall tile walks the dude from 13292 to 13298, 
 P109 walk-to-then-interact — using the hand on a distant door said "too far" instead of walking over.
 Extracted InteractOrApproach (approach + queued interaction, in-range → immediate) and routed BOTH the
 left-click site and DispatchActionMenu (+ the --approach harness action) through it.
+---
+
+Phase 112 (DONE — "Click-transparent walls/inert scenery"): the remaining "can't walk to the visible path
+behind a wall" — ROOT CAUSE: fo2ce has TWO cursor modes (game_mouse.cc): MOVE (the DEFAULT hex cursor —
+a click walks to the tile under the mouse, sprites NEVER intercept) and ARROW (right-click-toggled; clicks
+interact, and a wall at most gets an examine, game_mouse.cc:990-994). Hexwaste's merged single-click UI
+let ANY pixel-hit object win — so a tall wall sprite (or tree/pillar/rock) covering the floor behind it
+ATE every movement click over that area. FIX: IsClickTransparent — WALLS and inert scenery (not a door,
+no Destination, not a container, Sid == -1 i.e. unscripted) pass the left click through to the ground
+branch (PickHex → walk, with the P111 a5=0 semantics); critters/items/doors/stairs/containers/scripted
+scenery keep click priority. The right-click action menu keeps the FULL pick, so walls/trees stay
+examinable there (better than fo2ce's mode juggling). Pathfinder itself was ruled OUT first: our
+ScreenEmbedding is the true tileToScreenXY pixel formula (heuristic parity with _idist), the 2000-node cap
+matches fo2ce (and we lack their 2000 open-list cap — strict superset), so reachability was never worse
+than the original; the clicks were simply never reaching the movement branch.

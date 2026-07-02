@@ -2507,7 +2507,8 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
             }
             else if (_pendingUseItem is { } useItem && _hoveredObject is not null && _hoveredObject != _dude?.Dude)
                 UseItemOn(useItem, _hoveredObject);
-            else if (_hoveredObject is not null && _hoveredObject != _dude?.Dude)
+            else if (_hoveredObject is not null && _hoveredObject != _dude?.Dude
+                && !IsClickTransparent(_hoveredObject))
                 InteractOrApproach(_hoveredObject);
             else if (_dude is not null)
             {
@@ -4033,6 +4034,21 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
             + $"(hour {_clock.Hour / 100:00}, day {_clock.Day})");
     }
 
+
+    /// <summary>P112: should a left click pass THROUGH this object and walk instead? fo2ce's
+    /// DEFAULT cursor is MOVE — clicks walk to the hex under the mouse and sprites never intercept;
+    /// interaction is a separate toggled ARROW mode (game_mouse.cc GAME_MOUSE_MODE_MOVE/ARROW, the
+    /// right-click cycles modes). Our merged single-click UI approximates that split: objects with a
+    /// real click action (critters, items, doors, stairs/ladders, containers, scripted scenery) take
+    /// the click; inert art — WALLS and unscripted plain scenery (trees, pillars, rocks, fences),
+    /// whose tall sprites cover big swaths of walkable floor behind them — is click-transparent so
+    /// the click walks there instead. Examine stays on the right-click action menu (full pick).</summary>
+    private bool IsClickTransparent(MapObject obj) => Fid.Type(obj.Fid) switch
+    {
+        ObjectType.Wall => true,
+        ObjectType.Scenery => !IsDoor(obj) && obj.Destination is null && !IsContainer(obj) && obj.Sid == -1,
+        _ => false,
+    };
 
     /// <summary>P109: fo2ce walks the dude to an out-of-range object and THEN uses it
     /// (_action_use_an_object: move-to-object + the queued action) — clicking a distant
