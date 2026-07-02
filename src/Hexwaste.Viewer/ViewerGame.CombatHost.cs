@@ -512,10 +512,9 @@ public sealed partial class ViewerGame
     /// engine also shows a misc.msg monitor line ("You have been poisoned!") — we apply silently to keep a
     /// copyrighted game string out of the goldens.
     /// </summary>
-    /// <summary>P101 (Tier D): radiation_inc/dec — the dude's radiation counter, ported from fallout2-ce
-    /// src/critter.cc:412 critterAdjustRadiation: DUDE-ONLY, resistance reduces the +amount, clamp ≥0.
-    /// COUNTER-ONLY (makes get_critter_stat(dude,37) + rad-gated dialogue correct); the delayed rad-damage
-    /// band model (thresholds + stat penalties + midnight check) is a documented deferred layer.</summary>
+    /// <summary>P101 (Tier D) + P113 (item 7c): radiation_inc/dec — the dude's radiation counter, ported
+    /// from fallout2-ce src/critter.cc critterAdjustRadiation: DUDE-ONLY, resistance reduces the +amount,
+    /// clamp ≥0, and a positive gain sets CRITTER_RADIATED so the next midnight runs the band model.</summary>
     private void ApplyRadiation(MapObject obj, int amount)
     {
         if (_dude is null || obj != _dude.Dude)
@@ -524,8 +523,113 @@ public sealed partial class ViewerGame
         {
             int resist = GetCritterState(obj)?.Stat(31) ?? 0; // STAT_RADIATION_RESISTANCE
             amount -= amount * resist / 100;
+            if (amount > 0)
+                _dudeRadiated = true; // CRITTER_RADIATED — the midnight check will process it
         }
         obj.Radiation = Math.Max(0, obj.Radiation + amount);
+    }
+
+    // P113 (item 7c): the radiation band model, ported from fallout2-ce critter.cc:487-643. State
+    // persists on the game clock like the poison model (the counter itself rides on MapObject.Radiation,
+    // which the delta save already carries; the transient pending events + applied bonus are session-only,
+    // a documented simplification vs a full save/restore). Goldens never irradiate ≥100 → byte-identical.
+    private bool _dudeRadiated;            // CRITTER_RADIATED — a dose is pending a midnight check
+    private int _lastRadCheckDay = -1;     // the last day boundary the midnight check ran for
+    private readonly List<(long FireTick, int Level, bool IsHealing)> _radEvents = []; // pending damage/heal
+    private readonly int[] _radBonus = new int[35]; // the currently-applied rad penalty (for reference/undo)
+
+    /// <summary>Driven from every clock advance (like ProcessPoison): run the midnight radiation check for
+    /// each crossed day boundary, then fire any due damage/heal events. Robust to clock JUMPS (rest/travel).</summary>
+    private void ProcessRads()
+    {
+        if (_dude is null)
+            return;
+        int day = _clock.Day;
+        if (_lastRadCheckDay < 0)
+            _lastRadCheckDay = day;
+        while (_lastRadCheckDay < day)
+        {
+            _lastRadCheckDay++;
+            RadMidnightCheck(); // early-returns unless _dudeRadiated (the flag clears after one check)
+        }
+
+        // Fire due events in fire-tick order (a jump can make several due at once).
+        while (true)
+        {
+            int idx = -1;
+            long best = long.MaxValue;
+            for (int i = 0; i < _radEvents.Count; i++)
+                if (_radEvents[i].FireTick <= _clock.Ticks && _radEvents[i].FireTick < best)
+                    (best, idx) = (_radEvents[i].FireTick, i);
+            if (idx < 0)
+                break;
+            (long _, int level, bool isHealing) = _radEvents[idx];
+            _radEvents.RemoveAt(idx);
+            // A damage event schedules its own reversal 7 days out (critter.cc:634-637), then applies.
+            if (!isHealing)
+                _radEvents.Add((_clock.Ticks + 7L * Formats.GameClock.TicksPerDay, level, true));
+            ApplyRadEffect(level, isHealing);
+        }
+    }
+
+    /// <summary>_critter_check_rads (critter.cc:487): the once-per-midnight check. Reads the counter's band,
+    /// an END save can bump it one harder, and if it exceeds any pending event's level a damage event is
+    /// queued 4–18 game-hours out. Consumes the CRITTER_RADIATED flag.</summary>
+    private void RadMidnightCheck()
+    {
+        if (_dude is not { } d || !_dudeRadiated)
+            return;
+        int oldLevel = _radEvents.Count > 0 ? _radEvents[^1].Level : 0; // _old_rad_level (last-traversed)
+        int level = Formats.Combat.RadiationTables.CounterToLevel(d.Dude.Radiation);
+        int end = GetCritterState(d.Dude)?.Stat(2) ?? 5; // STAT_ENDURANCE
+        // statRoll <= ROLL_FAILURE ⇔ randomBetween(1,10) > END + modifier[level] (stat.cc:708).
+        if (_combatRng.Next(1, 11) > end + Formats.Combat.RadiationTables.EnduranceModifiers[level])
+            level++;
+        if (level > oldLevel)
+            _radEvents.Add((_clock.Ticks + (long)_combatRng.Next(4, 19) * Formats.GameClock.TicksPerHour,
+                level, false));
+        _dudeRadiated = false; // proto flag consumed (critter.cc:536)
+    }
+
+    /// <summary>_process_rads (critter.cc:566): apply (or, when healing, undo) the level's stat-penalty
+    /// band to the dude's BONUS stats + current HP, then the primary-stat death check.</summary>
+    private void ApplyRadEffect(int level, bool isHealing)
+    {
+        if (_dude is not { } d || _dudeGcd is null || level == 0)
+            return;
+        int idx = level - 1; // critter.cc:574
+        if (idx < 0 || idx >= Formats.Combat.RadiationTables.EffectPenalties.Length)
+            return;
+        int modifier = isHealing ? -1 : 1;
+        int[] penalties = Formats.Combat.RadiationTables.EffectPenalties[idx];
+        int[] stats = Formats.Combat.RadiationTables.EffectStats;
+        for (int e = 0; e < stats.Length; e++)
+        {
+            int delta = modifier * penalties[e];
+            if (delta == 0)
+                continue;
+            int stat = stats[e];
+            if (stat == 35) // CURRENT_HIT_POINTS
+            {
+                int max = GetCritterState(d.Dude)?.MaxHp ?? d.Dude.CurrentHp;
+                d.Dude.CurrentHp = Math.Clamp(d.Dude.CurrentHp + delta, 0, max);
+            }
+            else if (stat <= 34)
+            {
+                _dudeGcd.Stats.BonusStats[stat] += delta;
+                _radBonus[stat] += delta;
+            }
+        }
+
+        // Death check (critter.cc:599): not on heal; any of the first 6 primaries base+bonus < 1.
+        if (isHealing || _combat.IsGameOver)
+            return;
+        for (int e = 0; e < Formats.Combat.RadiationTables.PrimaryStatCount; e++)
+            if ((GetCritterState(d.Dude)?.Stat(stats[e]) ?? 5) < 1)
+            {
+                GameOver();
+                return;
+            }
     }
 
     private void ApplyPoison(MapObject obj, int amount)
@@ -657,6 +761,27 @@ public sealed partial class ViewerGame
     }
 
     public bool IsBlocked(int tile) => _blockedTiles.Contains(tile);
+
+    // --- P113 (Stage 0): perception/light/door/hidden-item host data ---
+    public int DudeSneakSkill => DudeSkillValue(8); // SKILL_SNEAK
+    public bool DudeIsActivelySneaking => _sneak.IsSneaking;
+    public bool DudeHasSneakFlag => _sneak.FlagSet;
+    /// <summary>objectGetLightIntensity (object.cc:1748) — max(tile, ambient) clamp lives inside
+    /// LightGrid.GetTileIntensity; the darkness modifier only ever queries non-dude defenders, so the
+    /// dude-self-light subtraction (dude-only in fo2ce) is not needed here.</summary>
+    public int LightIntensityAt(MapObject critter) => _lightGrid.GetTileIntensity(critter.HexTile);
+    /// <summary>The pathfinder canUseDoor exemption for combat movers (animation.cc:1802-1808) —
+    /// same non-dude rules as NPC walkers (unlocked scenery door, biped/robotic, non-gecko).</summary>
+    public bool IsPassableClosedDoor(MapObject mover, int tile) => NpcUsableClosedDoorAt(mover, tile) is not null;
+    /// <summary>ITEM_HIDDEN (proto item extendedFlags 0x08000000; item.cc:1133).</summary>
+    public bool ItemIsHidden(MapObject item)
+    {
+        if (Fid.PidType(item.Pid) != (int)ObjectType.Item)
+            return false;
+        try { return (_protos.Get(item.Pid).ExtendedFlags & 0x08000000) != 0; }
+        catch (Exception ex) when (ex is FileNotFoundException or InvalidDataException) { return false; }
+    }
+
     public bool IsAnimating(MapObject critter) => _animator.TryGetState(critter, out _);
     public bool IsFallInProgress(MapObject critter) =>
         _animator.TryGetState(critter, out AnimationState state) && !state.Finished;

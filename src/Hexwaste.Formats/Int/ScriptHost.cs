@@ -107,6 +107,11 @@ public sealed class ScriptHost(GameFileSystem vfs, ScriptList scripts, Hexwaste.
     /// <summary>The prototype database (item icons, fids for created objects).</summary>
     public Hexwaste.Formats.Proto.ProtoDatabase Protos => protos;
 
+    /// <summary>P113 (item 7b): lazy proto name/description text (pro_*.msg) for the proto_data
+    /// STRING members.</summary>
+    public Text.ProtoMessages ProtoText => _protoText ??= new Text.ProtoMessages(vfs, protos);
+    private Text.ProtoMessages? _protoText;
+
     /// <summary>Game clock backing the game_time externals (host-provided).</summary>
     public Func<long>? ClockTicks { get; set; }
 
@@ -261,6 +266,23 @@ public sealed class ScriptHost(GameFileSystem vfs, ScriptList scripts, Hexwaste.
     /// The host starts/joins combat (opAttackComplex → scriptsRequestCombat).</summary>
     public Action<MapObject, MapObject>? AttackRequested { get; set; }
 
+    /// <summary>P113 (Stage 3): obj_can_see_obj — the host answers with isWithinPerception + a clear
+    /// sight path (the viewer owns positions/facing/light). Null (headless tools) → the flat-20
+    /// fallback, so DatDump/ProcAnalyze/--census stay identical.</summary>
+    public Func<MapObject, MapObject, bool>? ObjCanSeeResolver { get; set; }
+    /// <summary>P113 (Stage 3): obj_can_hear_obj — isWithinPerception only (no sight path).</summary>
+    public Func<MapObject, MapObject, bool>? ObjCanHearResolver { get; set; }
+
+    /// <summary>P113 (item 5): a script requested an elevator via metarule(15) — (the requesting
+    /// object's tile, the script-supplied elevator type). The viewer consumes it after the pump: it
+    /// scans for an elevator-stub scenery near the tile (which overrides type+level) and opens the
+    /// level picker. Null when idle.</summary>
+    public (int SelfTile, int RequestedType)? PendingElevator { get; set; }
+
+    /// <summary>P113 (item 5): the party's current worldmap area id (wmGetPartyCurArea) for
+    /// metarule(46). Null → 0 (the direct-map/harness default).</summary>
+    public Func<int>? CurrentTownProvider { get; set; }
+
     /// <summary>critter_attempt_placement: relocate (obj, tile, elevation) to that tile (or a free tile
     /// near it), re-sorting the host's draw lists + blocking. Returns true on success. (P32 reg-anim/
     /// placement.)</summary>
@@ -367,29 +389,54 @@ public sealed class ScriptHost(GameFileSystem vfs, ScriptList scripts, Hexwaste.
             if (!hit)
                 continue;
 
-            if (!_spatialSelves.TryGetValue((map.Header.Name, spatial.Sid), out MapObject? self))
-            {
-                self = new MapObject
-                {
-                    Id = -5,
-                    HexTile = spatial.Tile,
-                    X = 0,
-                    Y = 0,
-                    Frame = 0,
-                    Rotation = 0,
-                    Fid = Fid.Build(ObjectType.Misc, 12),
-                    Flags = 0x01, // hidden
-                    Pid = 0x05000010,
-                    Sid = spatial.Sid,
-                };
-                _spatialSelves[(map.Header.Name, spatial.Sid)] = self;
-            }
-
-            if (!map.ScriptsBySid.ContainsKey(spatial.Sid))
-                map.ScriptsBySid[spatial.Sid] = new MapScriptRecord(spatial.ScriptListIndex, -1, 0);
+            MapObject self = GetSpatialSelf(map, spatial);
 
             ScriptRunResult? result = RunProc(spatial.ScriptListIndex, map, spatial.Sid,
                 map.ScriptsBySid[spatial.Sid], self, mover, 0, -1, ["spatial_p_proc"]);
+            if (result is not null)
+                foreach (string line in result.Messages)
+                    OnScriptMessage?.Invoke(line);
+        }
+    }
+
+    /// <summary>P113 (item 7e): the lazily-synthesized hidden self object for a SPATIAL script —
+    /// shared by spatial triggers and the map procs (spatial scripts get map_enter/update/exit too:
+    /// scriptsExecMapUpdateScripts iterates every registered script TYPE, scripts.cc:2601-2674).</summary>
+    private MapObject GetSpatialSelf(MapFile map, MapFile.SpatialScript spatial)
+    {
+        if (!_spatialSelves.TryGetValue((map.Header.Name, spatial.Sid), out MapObject? self))
+        {
+            self = new MapObject
+            {
+                Id = -5,
+                HexTile = spatial.Tile,
+                X = 0,
+                Y = 0,
+                Frame = 0,
+                Rotation = 0,
+                Fid = Fid.Build(ObjectType.Misc, 12),
+                Flags = 0x01, // hidden
+                Pid = 0x05000010,
+                Sid = spatial.Sid,
+            };
+            _spatialSelves[(map.Header.Name, spatial.Sid)] = self;
+        }
+
+        if (!map.ScriptsBySid.ContainsKey(spatial.Sid))
+            map.ScriptsBySid[spatial.Sid] = new MapScriptRecord(spatial.ScriptListIndex, -1, 0);
+        return self;
+    }
+
+    /// <summary>P113 (item 7e): run one map proc on every SPATIAL script that defines it — the
+    /// ownerless half scriptsExecMapUpdateScripts covers via the script type lists
+    /// (scripts.cc:2636-2648); our object loops only reach scripts with map-object owners.</summary>
+    private void RunSpatialMapProc(MapFile map, MapObject? dude, int fixedParam, string procName)
+    {
+        foreach (MapFile.SpatialScript spatial in map.SpatialScripts)
+        {
+            MapObject self = GetSpatialSelf(map, spatial);
+            ScriptRunResult? result = RunProc(spatial.ScriptListIndex, map, spatial.Sid,
+                map.ScriptsBySid[spatial.Sid], self, dude, fixedParam, -1, [procName]);
             if (result is not null)
                 foreach (string line in result.Messages)
                     OnScriptMessage?.Invoke(line);
@@ -842,6 +889,10 @@ public sealed class ScriptHost(GameFileSystem vfs, ScriptList scripts, Hexwaste.
         // mutating the underlying lists mid-iteration.
         foreach (MapObject obj in objects.ToList())
             RunObjectProc(obj, map, dude, firstRun, -1, "map_enter_p_proc");
+
+        // P113 (item 7e): spatial scripts get map_enter too (scriptsExecMapUpdateScripts iterates
+        // every script TYPE list, scripts.cc:2601-2674; MAP_ENTER carries firstRun, :2608-2610).
+        RunSpatialMapProc(map, dude, firstRun, "map_enter_p_proc");
     }
 
     /// <summary>
@@ -876,6 +927,8 @@ public sealed class ScriptHost(GameFileSystem vfs, ScriptList scripts, Hexwaste.
 
         foreach (MapObject obj in objects.ToList())
             RunObjectProc(obj, map, dude, 0, -1, "map_update_p_proc");
+
+        RunSpatialMapProc(map, dude, 0, "map_update_p_proc"); // P113 (item 7e)
     }
 
     /// <summary>
@@ -899,6 +952,8 @@ public sealed class ScriptHost(GameFileSystem vfs, ScriptList scripts, Hexwaste.
 
         foreach (MapObject obj in objects.ToList())
             RunObjectProc(obj, map, dude, 0, -1, "map_exit_p_proc");
+
+        RunSpatialMapProc(map, dude, 0, "map_exit_p_proc"); // P113 (item 7e)
     }
 
     /// <summary>
@@ -957,6 +1012,30 @@ public sealed class ScriptHost(GameFileSystem vfs, ScriptList scripts, Hexwaste.
         {
             Console.Error.WriteLine($"script {path}: {ex.Message}");
             return null;
+        }
+    }
+
+    /// <summary>P113 (item 6): scriptHasProc — does this object's bound script DEFINE the procedure?
+    /// Gates the Push action-menu verb (actionCheckPush, actions.cc:2018). Static procedure-table
+    /// lookup, no execution.</summary>
+    public bool ObjectHasProc(MapObject obj, MapFile map, string procName)
+    {
+        if (obj.Sid == -1 || !map.ScriptsBySid.TryGetValue(obj.Sid, out MapScriptRecord? record))
+            return false;
+        string? path = scripts.GetScriptPath(record.ScriptListIndex);
+        if (path is null)
+            return false;
+        try
+        {
+            // procs[proc] > 0 in the engine = locally DEFINED — an imported forward declaration
+            // (no body here) must not count (the MapDump map_update census draws the same line).
+            return GetProgram(path) is { } program
+                && program.FindProcedure(procName) is int idx and >= 0
+                && !program.Procedures[idx].IsImported;
+        }
+        catch (Exception ex) when (ex is InvalidDataException or FileNotFoundException or NotSupportedException)
+        {
+            return false;
         }
     }
 
@@ -1295,8 +1374,21 @@ public sealed class ScriptHost(GameFileSystem vfs, ScriptList scripts, Hexwaste.
             30 => _host.Car.CurrentAreaId,                  // METARULE_CAR_CURRENT_TOWN (wmCarCurrentArea)
             31 => _host.Car.GiveToParty() ? 1 : -1,         // METARULE_GIVE_CAR_TO_PARTY (wmCarGiveToParty)
             32 => _host.Car.FillGas(argument),              // METARULE_GIVE_CAR_GAS (wmCarFillGas → overflow)
+            // P113 (item 5): METARULE_ELEVATOR (15) — scriptsRequestElevator(self, type)
+            // (interpreter_extra.cc:3215): record the request; the host services it on the next pump.
+            15 => RequestElevator(argument),
+            // METARULE_PARTY_COUNT is 16; METARULE_CURRENT_TOWN (46) — wmGetPartyCurArea
+            // (interpreter_extra.cc:3286). The <0→0 clamp keeps direct-map/harness runs (area id −1
+            // before any worldmap travel) returning today's 0.
+            46 => Math.Max(0, _host.CurrentTownProvider?.Invoke() ?? 0),
             _ => 0,
         };
+
+        private int RequestElevator(int elevatorType)
+        {
+            _host.PendingElevator = (_self.HexTile, elevatorType);
+            return 0;
+        }
 
         public int GameTime() => (int)(_host.ClockTicks?.Invoke() ?? 302400);
 
@@ -1570,7 +1662,29 @@ public sealed class ScriptHost(GameFileSystem vfs, ScriptList scripts, Hexwaste.
                     case 15: return p.InventoryFid;    // INVENTORY_FID
                     case 555: return p.Weapon?.MaxRange1 ?? 0; // WEAPON_RANGE
                 }
-            return 0; // NAME/DESC strings + type-specific/unimplemented members → 0 (documented cut)
+            // P113 (item 7b): CRITTER_DATA_MEMBER_BODY_TYPE (11) — proto.cc:1200-1202. (The item
+            // member 11 = MATERIAL stays 0, documented.)
+            if (Fid.PidType(pid) == 1 /* OBJ_TYPE_CRITTER */ && member == 11)
+                return p.Critter?.BodyType ?? 0;
+            return 0; // player-pid special case + remaining type-specific members → 0 (documented cut)
+        }
+
+        /// <summary>P113 (item 7b): the STRING proto_data members — NAME (1) / DESCRIPTION (2),
+        /// proto.cc protoGetDataMember; the engine falls back to proto.msg entry 10 ("&lt;None&gt;").</summary>
+        public string? ProtoDataString(int pid, int member)
+        {
+            if (member is not (1 or 2))
+                return null;
+            string? text;
+            try
+            {
+                text = member == 1 ? _host.ProtoText.GetName(pid) : _host.ProtoText.GetDescription(pid);
+            }
+            catch (Exception ex) when (ex is FileNotFoundException or InvalidDataException)
+            {
+                text = null;
+            }
+            return text ?? "<None>";
         }
 
         public int TileIsVisible(int tile)
@@ -1645,9 +1759,22 @@ public sealed class ScriptHost(GameFileSystem vfs, ScriptList scripts, Hexwaste.
         {
             MapObject? source = _host.ObjectOf(objectHandle);
             MapObject? target = _host.ObjectOf(targetHandle);
-            if (source is null || target is null)
-                return false;
-            return Hex.HexGrid.Distance(source.HexTile, target.HexTile) <= 20;
+            if (source is null || target is null || source.HexTile == -1 || target.HexTile == -1)
+                return false; // interpreter_extra.cc:1790-1794 (null / off-map → false)
+            return _host.ObjCanSeeResolver is { } r
+                ? r(source, target)
+                : Hex.HexGrid.Distance(source.HexTile, target.HexTile) <= 20; // headless fallback
+        }
+
+        public bool ObjCanHear(int objectHandle, int targetHandle)
+        {
+            MapObject? source = _host.ObjectOf(objectHandle);
+            MapObject? target = _host.ObjectOf(targetHandle);
+            if (source is null || target is null || source.HexTile == -1 || target.HexTile == -1)
+                return false; // interpreter_extra.cc:2630-2632
+            return _host.ObjCanHearResolver is { } r
+                ? r(source, target)
+                : Hex.HexGrid.Distance(source.HexTile, target.HexTile) <= 20; // headless fallback
         }
 
         public void AnimateMoveToTile(int objectHandle, int tile, int speed)

@@ -102,9 +102,14 @@ public sealed partial class ViewerGame
     }
 
     /// <summary>
-    /// Walls/scenery drawn AFTER the dude (higher hex = in front) whose sprite
-    /// covers the dude's upper body fade so he stays visible — the PoC's
-    /// approximation of the engine's egg-masked translucency.
+    /// Walls/scenery drawn AFTER the dude whose sprite covers him fade so he stays visible — the
+    /// engine's egg-masked translucency. P113 (item 7a): the GATE is the faithful obj_egg dispatch
+    /// ported from fallout2-ce object.cc:4949-4981 — scenery/wall FID, dude not hidden, object NOT
+    /// already translucent (runtime flags &amp; 0xFC000 == 0, TRANS_NONE included), then the proto
+    /// extendedFlags 4-way tileIsInFrontOf/tileIsToRightOf dispatch (branch argument ORDER is
+    /// asymmetric — ported verbatim). The REGION is the real egg.frm rect (interface FID 2)
+    /// anchored like any sprite (object.cc:4995-5010); the uniform fade stands in for the
+    /// per-pixel egg-alpha blend (documented cosmetic cut).
     /// </summary>
     private bool FadesOverDude(MapObject obj, SpriteInfo sprite)
     {
@@ -114,12 +119,69 @@ public sealed partial class ViewerGame
             return false;
         if (obj.HexTile <= _dude.Dude.HexTile)
             return false; // drawn before the dude -> he's on top anyway
+        if ((_dude.Dude.Flags & 0x01) != 0) // OBJECT_HIDDEN dude
+            return false;
+        if ((obj.Flags & 0xFC000) != 0) // already translucent (incl. TRANS_NONE) — engine skips egg
+            return false;
 
-        (int dudeX, int dudeY) = _camera.HexToScreen(_dude.Dude.HexTile);
-        // Egg region: an ellipse-ish box around the dude's torso/head.
-        var eggRect = new Rectangle(dudeX + 16 - 45, dudeY + 8 - 70, 90, 75);
-        var spriteRect = new Rectangle(sprite.Left, sprite.Top, sprite.Frame.Width, sprite.Frame.Height);
-        return eggRect.Intersects(spriteRect);
+        int dudeTile = _dude.Dude.HexTile;
+        int objTile = obj.HexTile;
+        const int wallTransEnd = 0x10000000; // OBJECT_WALL_TRANS_END (obj_types.h:81)
+        int ext;
+        try { ext = _protos.Get(obj.Pid).ExtendedFlags; }
+        catch (Exception ex) when (ex is FileNotFoundException or InvalidDataException) { ext = 0; }
+
+        bool masked;
+        if ((ext & 0x8000000) != 0 || unchecked((uint)ext & 0x80000000) != 0)
+        {
+            masked = Formats.Hex.HexGrid.TileIsInFrontOf(objTile, dudeTile);
+            if (masked && Formats.Hex.HexGrid.TileIsToRightOf(objTile, dudeTile)
+                && (obj.Flags & wallTransEnd) != 0)
+                masked = false;
+        }
+        else if ((ext & 0x10000000) != 0)
+        {
+            masked = Formats.Hex.HexGrid.TileIsInFrontOf(objTile, dudeTile)
+                || Formats.Hex.HexGrid.TileIsToRightOf(dudeTile, objTile);
+        }
+        else if ((ext & 0x20000000) != 0)
+        {
+            masked = Formats.Hex.HexGrid.TileIsInFrontOf(objTile, dudeTile)
+                && Formats.Hex.HexGrid.TileIsToRightOf(dudeTile, objTile);
+        }
+        else
+        {
+            masked = Formats.Hex.HexGrid.TileIsToRightOf(dudeTile, objTile)
+                && !(Formats.Hex.HexGrid.TileIsInFrontOf(dudeTile, objTile)
+                    && (obj.Flags & wallTransEnd) != 0);
+        }
+        if (!masked)
+            return false;
+
+        return EggRect().Intersects(new Rectangle(sprite.Left, sprite.Top, sprite.Frame.Width, sprite.Frame.Height));
+    }
+
+    /// <summary>P113: the egg region — the real egg.frm (interface FID 2, object.cc:352) anchored at
+    /// the dude's tile like any sprite (tile+16,+8 − width/2, −(height−1), + frame-0 offsets), with
+    /// the walker pixel nudge so the mask follows him mid-step. Falls back to the old torso box when
+    /// the art is absent (headless).</summary>
+    private Rectangle EggRect()
+    {
+        (int dudeX, int dudeY) = _camera.HexToScreen(_dude!.Dude.HexTile);
+        int ax = dudeX + 16 + _dude.OffsetX;
+        int ay = dudeY + 8 + _dude.OffsetY;
+        try
+        {
+            Formats.Frm.FrmFile egg = _frmCache.GetFrm(Fid.Build(ObjectType.Interface, 2));
+            Formats.Frm.FrmFrame f = egg.GetFrame(0, 0);
+            ax += egg.RotationOffsetsX[0] + f.OffsetX;
+            ay += egg.RotationOffsetsY[0] + f.OffsetY;
+            return new Rectangle(ax - f.Width / 2, ay - (f.Height - 1), f.Width, f.Height);
+        }
+        catch (Exception ex) when (ex is FileNotFoundException or InvalidDataException)
+        {
+            return new Rectangle(ax - 45, ay - 70, 90, 75);
+        }
     }
 
     /// <summary>True when the dude's square has a roof tile (he is indoors).</summary>

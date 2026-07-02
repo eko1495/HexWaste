@@ -68,6 +68,10 @@ public sealed record WeaponProtoStats(
     public const int PerkAccurate = 59;   // +20 to hit (combat.cc:4423)
     public const int PerkPenetrate = 60;  // DT reduced to 20% — DT ONLY, NOT DR (combat.cc:4535)
     public const int PerkKnockback = 61;  // knockback distance divisor 5 instead of 10 (combat.cc:4651)
+    // P113 (item 3C/3A): range + night-sight weapon perks (perk_defs.h, PERK_AWARENESS = 0 anchor):
+    public const int PerkLongRange = 58;  // PE range multiplier 4 instead of 2 (combat.cc:4359-4363)
+    public const int PerkScopeRange = 64; // PE multiplier 5, min effective range 8 (combat.cc:4364-4372)
+    public const int PerkNightSight = 66; // darkness to-hit penalty suppressed (combat.cc:4448-4450)
 
     /// <summary>Guns have a fire attack anim (item.cc _attack_anim index ≥ 6).
     /// Throwers (index 5) stay on the melee path until rung (a) lands —

@@ -1220,12 +1220,21 @@ public sealed class CombatEngine
             // (combat.cc:4414 — minStrengthMod -= 3). Dude only, 0 ranks = no change.
             int effectiveStrength = attacker.Stat(CritterStat.Strength)
                 + (attackerIsDude && _host.DudePerkRank(Perks.PerkId.WeaponHandling) > 0 ? 3 : 0);
+            // P113 (item 3C): LONG_RANGE/SCOPE_RANGE weapon perks change the PE range term
+            // (combat.cc:4359-4372) — a weapon property, NOT dude-gated. Perk-less = (2,0), identical.
+            (int rangeMult, int minRange) = w.WeaponPerk switch
+            {
+                WeaponProtoStats.PerkLongRange => (4, 0),
+                WeaponProtoStats.PerkScopeRange => (5, 8),
+                _ => (2, 0),
+            };
             toHit = RangedMath.ToHitChance(
                 attacker.SmallGunsSkill, distance,
                 perception, attackerIsDude,                          // PE-5 when blind (stat.cc:191)
                 defender.ArmorClass + apDodge, ammo?.AcModifier ?? 0,
                 w.MinStrength, effectiveStrength, crittersInPath,
-                attackerBlind: attacker.Blind);                      // ×12 distance penalty (combat.cc:4383)
+                attackerBlind: attacker.Blind,                       // ×12 distance penalty (combat.cc:4383)
+                perkRangeMult: rangeMult, perkMinRange: minRange);
         }
         else
         {
@@ -1611,6 +1620,12 @@ public sealed class CombatEngine
                 _host.Log(line);
             xpOverridden = overridden;
         }
+
+        // P113 (item 7d): itemDestroyAllHidden (combat.cc:4858, right after destroy_p_proc) — natural-
+        // weapon items (ITEM_HIDDEN proto flag: claws, flame breath) vanish from the corpse's loot.
+        for (int i = critter.Inventory.Count - 1; i >= 0; i--)
+            if (_host.ItemIsHidden(critter.Inventory[i]))
+                critter.Inventory.RemoveAt(i);
 
         // Engine: kills by the dude OR his team accrue XP — never for the dude's own death
         // (combat.cc:4860 gates on victim != gDude).

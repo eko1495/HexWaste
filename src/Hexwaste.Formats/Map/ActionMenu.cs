@@ -2,7 +2,7 @@ namespace Hexwaste.Formats.Map;
 
 /// <summary>The FO2 right-click action-menu verbs (values == the engine's
 /// GameMouseActionMenuItem so a probe/log is engine-comparable). The MVP wires
-/// Look/Talk/Use/UseSkill/Cancel; Drop(1)/Inventory(2)/Rotate(4)/Unload(7)/Push(9)
+/// Look/Talk/Use/UseSkill/Push/Cancel; Drop(1)/Inventory(2)/Rotate(4)/Unload(7)
 /// are deferred (no Hexwaste handler).</summary>
 public enum ActionMenuItem
 {
@@ -11,6 +11,7 @@ public enum ActionMenuItem
     Talk = 5,
     Use = 6,
     UseSkill = 8,
+    Push = 9, // P113 (item 6): push_p_proc — the only content-rich minor proc (124 scripts define it)
 }
 
 /// <summary>Builds the ordered action-menu item list for an object, ported from
@@ -21,7 +22,7 @@ public static class ActionMenu
 {
     public static List<ActionMenuItem> Build(
         ObjectType type, bool isDude, bool isActiveCritter, bool canTalk, bool inCombat,
-        bool sceneryCanUse, bool isContainer)
+        bool sceneryCanUse, bool isContainer, bool canPush = false)
     {
         var m = new List<ActionMenuItem>(4);
         switch (type)
@@ -41,6 +42,9 @@ public static class ActionMenu
                     else if (!isActiveCritter)
                         m.Add(ActionMenuItem.Use); // corpse -> loot
                 }
+                // P113: PUSH before LOOK (game_mouse.cc:1096-1098 — actionCheckPush gates it).
+                if (canPush)
+                    m.Add(ActionMenuItem.Push);
                 m.Add(ActionMenuItem.Look);
                 m.Add(ActionMenuItem.UseSkill);
                 break;

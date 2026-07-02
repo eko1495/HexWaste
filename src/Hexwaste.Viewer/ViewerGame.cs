@@ -799,6 +799,9 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
         /// <summary>Set the dude's poison to InitialPoison, advance the game clock GameMinutes, process the
         /// poison damage ticks, and report the poison + HP deltas (P35-M3 poison-over-time).</summary>
         public sealed record PoisonTick(int InitialPoison, int GameMinutes) : StartupAction;
+        /// <summary>P113 (item 7c): set the dude's radiation counter, mark him dosed, advance the clock by
+        /// Days, and report the resulting band + applied stat penalties + HP.</summary>
+        public sealed record RadProbe(int Radiation, int Days) : StartupAction;
         /// <summary>Snapshot the dude's BonusStats, advance the clock GameMinutes, fire the scheduled
         /// drug wear-off, and report every changed stat index before→after (P37 — proves the immediate
         /// effect + the timed reversal). Pid is informational; the drug must already be in effect via
@@ -1054,6 +1057,7 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
                 ObjectRemoved = obj => OnScriptObjectRemoved(obj),
                 ClockTicks = () => _clock.Ticks,
                 CurrentMapIndexProvider = () => _mapList.GetIndexByFileName(_currentMapName),
+                CurrentTownProvider = () => _currentAreaId, // P113 (item 5): metarule(46) CURRENT_TOWN
                 OnScriptMessage = message => Log(message),
                 MoveRequested = (npc, tile) => StartNpcWalk(npc, tile),
                 // Phase-21: script-driven lighting. set_light_level sets the global ambient
@@ -1225,6 +1229,7 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
                     ProcessPoison();
                     ProcessDrugs();
                     ProcessWithdrawals();
+                    ProcessRads(); // P113 (item 7c)
                 },
                 // P63 (Sierra Army Depot): tile_contains_obj_pid scans every object at (tile, elevation) for
                 // the pid (the engine's objectFindFirstAtLocation loop). ported from opTileContainsObjectWithPid.
@@ -1304,6 +1309,12 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
                         return;
                     _combat.BeginScriptAggro(attacker, target);
                 },
+                // P113 (Stage 3): obj_can_see_obj / obj_can_hear_obj answer with the real
+                // perception + facing + line-of-sight model instead of a flat 20-hex radius — so
+                // animals notice the dude when he's within their (Perception-scaled) sight/hearing
+                // range, not the instant a map with any animal on it loads.
+                ObjCanSeeResolver = ScriptCanSee,
+                ObjCanHearResolver = ScriptCanHear,
                 ExpAwarded = amount => AwardXp(amount),
                 MapStartOverridden = (tile, elevation, rotation) => OverrideDudeStart(tile, elevation, rotation),
                 MoviePlayed = movieId => ShowMovieCard(movieId),
@@ -1871,6 +1882,16 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
             return;
         }
 
+        // P113 (item 5): the elevator level picker is modal — it owns input until a level or Esc.
+        if (_elevatorPicker is not null)
+        {
+            UpdateElevatorPicker(keyboard);
+            _previousMouse = mouse;
+            _previousKeyboard = keyboard;
+            base.Update(gameTime);
+            return;
+        }
+
         // Skilldex (S / SKILLDEX button): click a button (or press 1-8) to arm a skill, Esc/S close.
         if (_skilldexOpen)
         {
@@ -2414,6 +2435,7 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
         // earlier in Update, matching the engine's _gdialogActive() gate.
         _scriptHost?.PumpTimers(gameTime.ElapsedGameTime.TotalMilliseconds, _dude?.Dude);
         PumpCritterProcs(gameTime.ElapsedGameTime.TotalMilliseconds);
+        ConsumePendingElevator(); // P113 (item 5): catch a use_p_proc / critter-proc metarule(15)
         PumpMapUpdate(gameTime.ElapsedGameTime.TotalMilliseconds); // P1-M2: recurring 600-tick map_update
 
         // Map transitions are queued by exit grids/stairs and applied here,
@@ -2655,6 +2677,7 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
                 _audio?.PlaySfx(_stepCounter % 4 == 0 ? "FOOTSTE1" : "FOOTSTEP");
 
             _scriptHost?.RunSpatialsAt(_map, tile, _elevation, dude);
+            ConsumePendingElevator(); // P113 (item 5): a spatial's metarule(15) opens the picker here
             CheckExitGridAt(tile);
             RevealAround(tile); // automap fog reveals as the dude explores (P20-M2)
 
@@ -3152,18 +3175,54 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
     /// <summary>True if <paramref name="npc"/> perceives the dude (P30 A-M3; isWithinPerception): the
     /// NPC's Perception + facing + distance vs the dude's (sneak-reduced) detection range. Used to gate
     /// scripted aggro so an actively-sneaking dude can go unnoticed.</summary>
-    private bool DudePerceivedBy(MapObject npc)
+    private bool DudePerceivedBy(MapObject npc) =>
+        _dude is null || IsWithinPerception(npc, _dude.Dude);
+
+    /// <summary>P113 (Stage 3): isWithinPerception (combat_ai.cc:3499) generalized for any observer +
+    /// target — the observer's Perception, facing arc, and distance vs the target's detection range,
+    /// with the dude-sneak reduction when the target IS the dude. Backs obj_can_see/hear + the P30
+    /// scripted-aggro gate.</summary>
+    private bool IsWithinPerception(MapObject observer, MapObject target)
     {
-        if (_dude is null)
-            return true;
-        int perception = GetCritterState(npc)?.Perception ?? 5;
-        int dudeTile = _dude.Dude.HexTile;
-        bool canSee = Formats.Combat.PerceptionDetect.CanSee(npc.Rotation, npc.HexTile, dudeTile);
-        int distance = Formats.Hex.HexGrid.Distance(npc.HexTile, dudeTile);
+        int perception = GetCritterState(observer)?.Perception ?? 5;
+        bool canSee = Formats.Combat.PerceptionDetect.CanSee(observer.Rotation, observer.HexTile, target.HexTile);
+        int distance = Formats.Hex.HexGrid.Distance(observer.HexTile, target.HexTile);
         bool inCombat = _combat.Phase != Formats.Combat.CombatPhase.Idle;
+        bool targetIsDude = target == _dude?.Dude;
+        bool targetIsGlass = (target.Flags & 0x20000) != 0; // OBJECT_TRANS_GLASS
         return Formats.Combat.PerceptionDetect.IsWithinPerception(distance, perception, DudeSkillValue(8),
-            canSee, targetIsGlass: false, targetIsDude: true, _sneak.IsSneaking, _sneak.FlagSet, inCombat);
+            canSee, targetIsGlass, targetIsDude, _sneak.IsSneaking, _sneak.FlagSet, inCombat);
     }
+
+    /// <summary>P113 (Stage 3): obj_can_see_obj (interpreter_extra.cc:1783) — perception AND a clear
+    /// sight path. fo2ce's _make_straight_path(flag 16) requires its first obstacle to BE the target
+    /// (obstacle == object2), so a target that does not block movement (corpse / hidden / NO_BLOCK)
+    /// can never terminate the trace → not visible.</summary>
+    private bool ScriptCanSee(MapObject source, MapObject target)
+    {
+        if (!IsWithinPerception(source, target))
+            return false;
+        if (target.IsHidden || (target.Flags & 0x10) != 0
+            || (Fid.Type(target.Fid) is ObjectType.Critter && target.IsDead))
+            return false;
+        (MapObject? blocker, int critters) = Formats.Combat.LineOfFire.Trace(
+            source.HexTile, target.HexTile, t => SightBlockerAt(t, source, target));
+        return blocker is null && critters == 0;
+    }
+
+    /// <summary>P113 (Stage 3): obj_can_hear_obj (interpreter_extra.cc:2620, the CE sfall fix) —
+    /// perception only, no line-of-sight.</summary>
+    private bool ScriptCanHear(MapObject source, MapObject target) => IsWithinPerception(source, target);
+
+    /// <summary>P113 (Stage 3): a movement blocker between two tiles for the sight trace —
+    /// _obj_blocking_at rules (object.cc:2387), NOT the shoot-blocking subset: a wall/scenery/living
+    /// critter (NO_BLOCK 0x10 + HIDDEN 0x01 excluded — corpses carry NO_BLOCK, so no dead-critter
+    /// branch is needed). Flats are scanned too (secret blocking hexes).</summary>
+    private MapObject? SightBlockerAt(int tile, MapObject source, MapObject target) =>
+        _solidObjects[_elevation].Concat(_flatObjects[_elevation]).FirstOrDefault(o =>
+            o.HexTile == tile && o != source && o != target
+            && (o.Flags & 0x11) == 0
+            && Fid.Type(o.Fid) is ObjectType.Wall or ObjectType.Scenery or ObjectType.Critter);
 
     private void TakeFromContainer(int index)
     {
@@ -3270,6 +3329,21 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
         if (_dude is null || index < 0 || index >= _dudeInventory.Count)
             return;
         MapObject item = _dudeInventory[index];
+
+        // P113 (item 6): drop_p_proc — _obj_drop runs the ITEM's script with source = dropper,
+        // self = the item; script_overrides keeps the item in the bag (proto_instance.cc:693-708).
+        // fo2ce sets no action_being_used for DROP. Inert for vanilla map data today (only
+        // proto-attached scripts define it — aibroc/aixander — and proto-sid instantiation isn't
+        // modelled), but the hook is where the engine has it. Note: _obj_drop's step 1,
+        // is_dropping_p_proc on the DROPPER (proto_instance.cc:680, source = item), is INERT here —
+        // only obj_dude.int defines it and the dude carries no script.
+        var dropScripted = _scriptHost?.RunObjectProc(item, _map, _dude.Dude, "drop_p_proc");
+        if (dropScripted is not null)
+            foreach (string line in dropScripted.Messages)
+                Log(line);
+        if (dropScripted is { Overridden: true })
+            return;
+
         _dudeInventory.RemoveAt(index);
         UnequipForTransfer(item);
         item.HexTile = _dude.Dude.HexTile;
@@ -4712,6 +4786,7 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
         }
         DrawMapFade(gameTime); // P52-M6: the post-load fade-in, on top of everything
         DrawActionMenu();      // P82-M6: the right-click action menu, above the world/HUD
+        DrawElevatorPicker();  // P113 (item 5): the elevator level picker modal
         DrawMouseCursor();     // P82-M5: the FO2 hex-ring / arrow cursor, above everything
         _spriteBatch.End();
 
@@ -5322,6 +5397,7 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
         ProcessPoison(); // P35-M3: poison damage ticks on game time (also catches up after rest/travel jumps)
         ProcessDrugs(); // P37: scheduled drug stat reversals fire on game time (same catch-up after jumps)
         ProcessWithdrawals(); // P38: withdrawal onset/recovery fire on game time (drain-loop for clock jumps)
+        ProcessRads(); // P113 (item 7c): the radiation band model — midnight checks + delayed damage/heal
 
         int hour = _clock.Hour / 100;
         if (hour == _lastAmbientHour)

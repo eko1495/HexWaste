@@ -64,6 +64,12 @@ public sealed class MapObject
     /// <summary>Doors' openFlags (scenery subtype 0) — lock bit 0x02000000, jam 0x04000000.</summary>
     public int DoorOpenFlags { get; set; }
 
+    /// <summary>P113 (item 5): an elevator scenery object's type + start level (SCENERY_TYPE_ELEVATOR
+    /// data, objectDataRead proto.cc:613-615). The type indexes fallout2-ce's gElevator* tables; the
+    /// level is the starting floor. −1 = not an elevator.</summary>
+    public int ElevatorType { get; set; } = -1;
+    public int ElevatorLevel { get; set; } = -1;
+
     /// <summary>
     /// Lock state, ported from fallout2-ce proto_instance.cc objectIsLocked():
     /// items check data.flags, scenery checks door.openFlags; OBJ_LOCKED = 0x02000000.
@@ -490,8 +496,9 @@ public sealed class MapFile
                         obj.Destination = MapDestination.FromBuiltTile(map, builtTile);
                         break;
                     }
-                    case 2: // SCENERY_TYPE_ELEVATOR: type+level (hardcoded tables; out of scope)
-                        reader.Skip(8);
+                    case 2: // SCENERY_TYPE_ELEVATOR: type + starting level (P113 item 5)
+                        obj.ElevatorType = reader.ReadInt32();
+                        obj.ElevatorLevel = reader.ReadInt32();
                         break;
                     case 3 or 4: // ladders: v19 has builtTile only; v20 adds map first
                     {

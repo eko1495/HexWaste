@@ -20,6 +20,7 @@ int aimLocation = 8; // HIT_LOCATION_UNCALLED
 string? characterName = null;
 List<ViewerGame.StartupAction> actions = [];
 int? gotoTile = null;
+int? elevatorPick = null;
 int? doorTile = null;
 double ambient = 1.0;
 bool ambientFixed = false;
@@ -58,6 +59,9 @@ for (int i = 0; i < args.Length; i++)
             break;
         case "--goto" when i + 1 < args.Length:
             gotoTile = int.Parse(args[++i]);
+            break;
+        case "--elevator-pick" when i + 1 < args.Length: // P113 (item 5): auto-pick this elevator button
+            elevatorPick = int.Parse(args[++i]);
             break;
         case "--door" when i + 1 < args.Length:
             doorTile = int.Parse(args[++i]);
@@ -478,6 +482,10 @@ for (int i = 0; i < args.Length; i++)
             actions.Add(new ViewerGame.StartupAction.PoisonTick(int.Parse(args[i + 1]), int.Parse(args[i + 2])));
             i += 2;
             break;
+        case "--rad-probe" when i + 2 < args.Length: // P113 (item 7c): set rad counter, advance N days, report band
+            actions.Add(new ViewerGame.StartupAction.RadProbe(int.Parse(args[i + 1]), int.Parse(args[i + 2])));
+            i += 2;
+            break;
         case "--drug-probe" when i + 2 < args.Length:
             actions.Add(new ViewerGame.StartupAction.DrugProbe(int.Parse(args[i + 1]), int.Parse(args[i + 2])));
             i += 2;
@@ -797,6 +805,7 @@ using var game = new ViewerGame(gameDir!, mapName, screenshot, roofs)
     CharacterName = characterName,
     AutoChoose = choose,
     WalkToTile = gotoTile,
+    ElevatorPickOverride = elevatorPick,
     ToggleDoorAtTile = doorTile,
     InitialAmbient = ambient,
     AmbientFixed = ambientFixed,

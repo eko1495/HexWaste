@@ -29,6 +29,7 @@ public sealed partial class ViewerGame
         ActionMenuItem.Talk => "TALK",
         ActionMenuItem.Use => "USEGET",
         ActionMenuItem.UseSkill => "SKILL",
+        ActionMenuItem.Push => "PUSH", // P113 (item 6)
         _ => "CANCEL",
     };
 
@@ -38,7 +39,7 @@ public sealed partial class ViewerGame
         {
             _actionIconsTried = true;
             foreach (ActionMenuItem it in (ActionMenuItem[])[ActionMenuItem.Look, ActionMenuItem.Talk,
-                ActionMenuItem.Use, ActionMenuItem.UseSkill, ActionMenuItem.Cancel])
+                ActionMenuItem.Use, ActionMenuItem.UseSkill, ActionMenuItem.Push, ActionMenuItem.Cancel])
             {
                 string b = ActionIconBase(it);
                 _actionIcons[it] = (
@@ -62,7 +63,8 @@ public sealed partial class ViewerGame
         bool inCombat = _combat.Phase != Formats.Combat.CombatPhase.Idle;
         bool isContainer = IsContainer(obj) || (type == ObjectType.Item && obj.Inventory.Count > 0);
         bool sceneryCanUse = type == ObjectType.Scenery;                  // InteractWith routes (door/use_p_proc/no-op)
-        _actionMenuItems = ActionMenu.Build(type, isDude, activeCritter, canTalk, inCombat, sceneryCanUse, isContainer);
+        bool canPush = activeCritter && !isDude && CanPushCritter(obj);   // P113 (item 6)
+        _actionMenuItems = ActionMenu.Build(type, isDude, activeCritter, canTalk, inCombat, sceneryCanUse, isContainer, canPush);
         _actionMenuObj = obj;
 
         Rectangle vp = GraphicsDevice.Viewport.Bounds;
@@ -105,8 +107,62 @@ public sealed partial class ViewerGame
                 _actionSkillTarget = obj;
                 _skilldexOpen = true;
                 break;
+            case ActionMenuItem.Push:
+                PushCritter(obj);
+                break;
             case ActionMenuItem.Cancel:
                 break;
+        }
+    }
+
+    /// <summary>P113 (item 6): actionCheckPush (actions.cc:1996-2037) — a live non-dude critter whose
+    /// script DEFINES push_p_proc, within talk reach (distance ≤ 12; the sight-path half of
+    /// _action_can_talk_to is a documented cut), and in combat neither (same-team AND the dude's own
+    /// last attacker) nor (its attacker being on the dude's team).</summary>
+    private bool CanPushCritter(MapObject target)
+    {
+        if (_dude is null || _scriptHost is null)
+            return false;
+        if (Formats.Hex.HexGrid.Distance(_dude.Dude.HexTile, target.HexTile) > 12)
+            return false;
+        if (!_scriptHost.ObjectHasProc(target, _map, "push_p_proc"))
+            return false;
+        if (_combat.Phase != Formats.Combat.CombatPhase.Idle)
+        {
+            MapObject dude = _dude.Dude;
+            if (target.Team == dude.Team && ReferenceEquals(target, dude.WhoHitMe))
+                return false;
+            if (target.WhoHitMe is { } attacker && attacker.Team == dude.Team)
+                return false;
+        }
+        return true;
+    }
+
+    /// <summary>P113 (item 6): actionPush (actions.cc:2040-2108) — run the target's push_p_proc
+    /// (source = dude, self = target; script_overrides aborts the shove), then move it one hex in
+    /// the first unblocked of rotations rotationTo+{0,1,5,2,4,3}; all blocked = no-op. fo2ce walks
+    /// the critter there (AP-limited in combat) — we walk via StartNpcWalk and fall back to a
+    /// direct placement when the critter has no walk art.</summary>
+    private void PushCritter(MapObject target)
+    {
+        if (_dude is null)
+            return;
+        var scripted = _scriptHost?.RunObjectProc(target, _map, _dude.Dude, "push_p_proc");
+        if (scripted is not null)
+            foreach (string line in scripted.Messages)
+                Log(line);
+        if (scripted is { Overridden: true })
+            return;
+
+        int rotation = Formats.Hex.HexGrid.RotationTo(_dude.Dude.HexTile, target.HexTile);
+        foreach (int offset in (int[])[0, 1, 5, 2, 4, 3])
+        {
+            int tile = Formats.Hex.HexGrid.TileInDirection(target.HexTile, (rotation + offset) % 6);
+            if (_blockedTiles.Contains(tile))
+                continue;
+            if (!StartNpcWalk(target, tile))
+                PlaceCritter(target, tile); // no walk art — the Shove-style direct placement
+            return;
         }
     }
 

@@ -81,6 +81,25 @@ public interface ICombatHost
     /// <summary>True if a tile blocks movement (Pathfinder predicate). _blockedTiles.Contains.</summary>
     bool IsBlocked(int tile);
 
+    // --- P113 (Stage 0): perception/light/door/hidden-item host data ---
+    /// <summary>The dude's Sneak skill value (skillGetValue(gDude, SKILL_SNEAK) — the target-side term
+    /// of isWithinPerception, combat_ai.cc:3499). Default 0 (fake host has no dude).</summary>
+    int DudeSneakSkill => 0;
+    /// <summary>dudeIsSneaking(): the sneak flag is on AND the last roll succeeded. Default false.</summary>
+    bool DudeIsActivelySneaking => false;
+    /// <summary>The sneak FLAG (set but possibly not working — the ×2/3 tier). Default false.</summary>
+    bool DudeHasSneakFlag => false;
+    /// <summary>Light intensity (0..65536) at the critter's tile — objectGetLightIntensity
+    /// (object.cc:1748) for the darkness to-hit modifier (combat.cc:4446-4463). Default full
+    /// brightness so the fake host and pre-P113 behavior see no darkness penalty.</summary>
+    int LightIntensityAt(MapObject critter) => 65536;
+    /// <summary>A closed door at the tile that THIS mover may path through and open — the pathfinder's
+    /// canUseDoor exemption (animation.cc:1802-1808) for combat movement. Default false (door-blind).</summary>
+    bool IsPassableClosedDoor(MapObject mover, int tile) => false;
+    /// <summary>ITEM_HIDDEN (proto item extendedFlags 0x08000000, item.cc:1133) — natural-weapon
+    /// items destroyed on death (itemDestroyAllHidden, combat.cc:4858). Default false.</summary>
+    bool ItemIsHidden(MapObject item) => false;
+
     // --- Animation-as-turn-clock (combat.cc:5322/5334; damage at zero :5363) ---
     /// <summary>An attack/action animation is still playing for this critter
     /// (engine: _combat_turn_running &gt; 0 for the actor). _animator has state.</summary>

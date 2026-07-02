@@ -754,6 +754,22 @@ public sealed partial class ViewerGame
                     Console.WriteLine($"poison-tick: poison={initPoison}->{pd.Poison} hp={hpBefore}->{pd.CurrentHp} minutes={minutes}");
                     break;
                 }
+                case StartupAction.RadProbe(var initRad, var days) when _dude is not null && _dudeGcd is not null:
+                {
+                    int hpBefore = _dude.Dude.CurrentHp;
+                    _dude.Dude.Radiation = initRad;
+                    _dudeRadiated = true; // simulate CRITTER_RADIATED from a fresh dose
+                    for (int day = 0; day < days; day++) // advance a day at a time so each midnight fires
+                    {
+                        _clock.Ticks += Formats.GameClock.TicksPerDay;
+                        ProcessRads();
+                    }
+                    var bonus = Enumerable.Range(0, 35).Where(s => _radBonus[s] != 0).Select(s => $"{s}={_radBonus[s]}");
+                    int band = Formats.Combat.RadiationTables.CounterToLevel(_dude.Dude.Radiation);
+                    Console.WriteLine($"rad-probe: rad={initRad} band={band} days={days} pending={_radEvents.Count} "
+                        + $"hp={hpBefore}->{_dude.Dude.CurrentHp} bonus=[{string.Join(",", bonus)}] dead={(_combat.IsGameOver ? 1 : 0)}");
+                    break;
+                }
                 case StartupAction.DrugProbe(var drugPid, var drugMinutes) when _dudeGcd is not null:
                 {
                     // P37: advance the clock (cumulative across probes), fire the scheduled wear-off, then
@@ -2139,6 +2155,7 @@ public sealed partial class ViewerGame
             UpdateClock(10);
             _scriptHost?.PumpTimers(10, _dude?.Dude);
             PumpCritterProcs(10);
+            ConsumePendingElevator(); // P113 (item 5): harness --elevator-pick services it here
             if (_pendingTransition is { } transition)
             {
                 _pendingTransition = null;

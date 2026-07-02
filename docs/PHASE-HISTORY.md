@@ -1013,3 +1013,50 @@ examinable there (better than fo2ce's mode juggling). Pathfinder itself was rule
 ScreenEmbedding is the true tileToScreenXY pixel formula (heuristic parity with _idist), the 2000-node cap
 matches fo2ce (and we lack their 2000 open-list cap — strict superset), so reachability was never worse
 than the original; the clicks were simply never reaching the movement branch.
+---
+
+Phase 113 (part 1 — "fo2ce fidelity batch: perception + items 1-8, minus Stage-4 combat"): a workflow
+grounded + adversarially verified 7 fidelity gaps vs fallout2-ce; this commit lands everything that is (and
+was gate-proven) BYTE-IDENTICAL across all 16 combat + 187 encounter + opening + 4 quest goldens. Stage 4
+(the transcript-changing combat items) follows in its own commits.
+
+- STAGE 3 — the PERCEPTION model (the reported animal-aggro bug). obj_can_see_obj (0x80DC) + obj_can_hear_obj
+  (0x80F5), which shared a flat 20-hex ObjCanSee, now answer with the real isWithinPerception (combat_ai.cc:3499):
+  PERCEPTION*5 inside the facing arc (_can_see, actions.cc:1523) WITH line-of-sight, else PERCEPTION hearing
+  (×2 in combat), with the dude-sneak reduction. see = perception + a clear sight path (_make_straight_path
+  flag 16 → movement-blocker rules, a non-blocking corpse/hidden target can't terminate the trace → not
+  visible); hear = perception only (the CE sfall fix, no LoS). ScriptHost gains ObjCanSee/HearResolver;
+  ViewerGame.IsWithinPerception (generalizing DudePerceivedBy) + ScriptCanSee/ScriptCanHear + SightBlockerAt
+  (movement-blocker: flags 0x11, Critter/Scenery/Wall, incl. flats). Animals now notice the dude within their
+  Perception-scaled sight/hearing instead of the instant the map loads. GATE: byte-identical (encounter animal
+  scripts either don't poll these ops on the golden maps, or their animals sit inside perception range anyway).
+- ITEM 1 done as Stage 3; ITEM 2 (combat-AI perception) is Stage 4.3.
+- 2.1 LONG_RANGE(58)/SCOPE_RANGE(64) weapon perks — RangedMath.ToHitChance gains (perkRangeMult, perkMinRange);
+  ComputeToHit maps the weapon perk (4/0, 5/8, default 2/0), combat.cc:4337-4392. Not dude-gated.
+- 2.2 itemDestroyAllHidden on death (combat.cc:4858) — ITEM_HIDDEN natural weapons vanish from the corpse loot.
+- 2.3 EGG per-pixel mask GATE ported verbatim (object.cc:4949-4981 4-way extendedFlags dispatch +
+  HexGrid.TileIsInFrontOf/TileIsToRightOf, the exact 1.3333333333333335 constant) + the real egg.frm rect
+  (interface FID 2). Uniform-fade stand-in for the alpha blend is a documented cosmetic cut.
+- 2.4 drop_p_proc hook (proto_instance.cc:693-708); is_dropping documented inert. create_p_proc documented
+  VESTIGIAL (never scriptExec'd in fo2ce).
+- 2.5 push_p_proc — the Push action-menu verb + actionCheckPush/actionPush (actions.cc:1996-2108):
+  ScriptHost.ObjectHasProc (scriptHasProc, imported-proc excluded), CanPushCritter (dist≤12 + team clauses),
+  PushCritter (run the proc, shove one hex in rotation+{0,1,5,2,4,3}).
+- 2.6 proto_data NAME(1)/DESC(2) STRING members (interpreter_extra.cc:2961, "<None>" fallback) +
+  critter member 11 = BODY_TYPE.
+- 2.7 ELEVATORS — MapFile parses the SCENERY_TYPE_ELEVATOR type+level; metarule(15) records a request the
+  viewer services (10×10 stub scan for the panel, level picker, teleport via ApplyTransition, facing SE);
+  metarule(46) CURRENT_TOWN wired (<0→0 clamp). ElevatorTables.cs = the 24 vanilla rows VERBATIM from
+  elevator.cc. New --elevator-pick harness. (The KLARATCV/klatoxcv on-slice elevator is type 13.)
+- 2.8 RADIATION band model (critter.cc:487-643) — RadiationTables.cs (verbatim gRadiationEnduranceModifiers /
+  EffectStats / EffectPenalties, the death-check span 6). CombatHost.ProcessRads runs the midnight check per
+  crossed day (band → END save → level++ on fail → damage event +rand(4,18)h), applies the penalty band to
+  BONUS stats + current HP (stat id 35 special-case), schedules the +7-day heal reversal, primary-stat death
+  check. --rad-probe verified: rad 500→DEADLY {STR-2,END-1,AGI-2,HP-5,HEAL-5}, rad 1000→FATAL HP-20, rad 50 inert.
+- 2.9 spatial scripts get map_enter/update/exit (scriptsExecMapUpdateScripts iterates every script TYPE list) —
+  GetSpatialSelf factored out, RunSpatialMapProc wired into all three. GATE: byte-identical (the two golden-map
+  spatials that define map_enter — htFlies@broken2, ntRicRom@newr4 — emit nothing the FILTER captures).
+
+Unit tests: P113FidelityTests (radiation bands + penalty indexing, elevator Klamath row + button clamp, the
+scope/long-range range term). 807 Formats tests pass. Plan + adversarial-verify persisted at
+memory/p113-plan-design.md + p113-plan-verify.md.

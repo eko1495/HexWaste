@@ -306,4 +306,24 @@ public static class HexGrid
         int dy = Math.Abs(y2 - y1);
         return dx + dy - Math.Min(dx, dy) / 2;
     }
+
+    /// <summary>ported from fallout2-ce src/tile.cc tileIsInFrontOf() (0x4B1994): screen-space
+    /// half-plane test, dx &lt;= dy * -4.0 (dbl_50E7C7). The camera cancels out of the deltas,
+    /// so the origin-anchored embedding is exact.</summary>
+    public static bool TileIsInFrontOf(int tile1, int tile2)
+    {
+        (int x1, int y1) = ScreenEmbedding(tile1);
+        (int x2, int y2) = ScreenEmbedding(tile2);
+        return (double)(x2 - x1) <= (y2 - y1) * -4.0;
+    }
+
+    /// <summary>ported from fallout2-ce src/tile.cc tileIsToRightOf() (0x4B1A00). The multiplier is
+    /// deliberately 1.3333333333333335 (0x3FF55555555556), NOT 4/3 — the original binary's exact
+    /// constant; the difference decides real tile pairs (tile.cc:884-887).</summary>
+    public static bool TileIsToRightOf(int tile1, int tile2)
+    {
+        (int x1, int y1) = ScreenEmbedding(tile1);
+        (int x2, int y2) = ScreenEmbedding(tile2);
+        return (double)(x2 - x1) <= (y2 - y1) * 1.3333333333333335;
+    }
 }

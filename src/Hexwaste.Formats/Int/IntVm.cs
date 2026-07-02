@@ -383,6 +383,11 @@ public interface IVmExternals
     /// <summary>P101 (Tier B): proto_data (0x8104, opGetProtoData) — a proto's data member (int). Default 0.</summary>
     int ProtoData(int pid, int member) => 0;
 
+    /// <summary>P113 (item 7b): proto_data STRING members — NAME (1) / DESCRIPTION (2) return a string
+    /// in the engine (opGetProtoData VALUE_TYPE_STRING branch, interpreter_extra.cc:2961;
+    /// protoGetDataMember, proto.cc). Null → the caller pushes the int path instead.</summary>
+    string? ProtoDataString(int pid, int member) => null;
+
     /// <summary>P101 (Tier B): tile_is_visible (0x80F8) — crude on-screen proximity to the camera-centre tile.</summary>
     int TileIsVisible(int tile) => 0;
 
@@ -452,8 +457,12 @@ public interface IVmExternals
     /// <summary>item_caps_adjust — mutates the caps stack; 0 on success, -1 when insufficient.</summary>
     int CapsAdjust(int objectHandle, int amount) => -1;
 
-    /// <summary>obj_can_see_obj — PoC: distance-based sight (no line-of-sight walls).</summary>
+    /// <summary>obj_can_see_obj (0x80DC) — elevation + isWithinPerception + a clear sight path
+    /// (interpreter_extra.cc:1783). Default false.</summary>
     bool ObjCanSee(int objectHandle, int targetHandle) => false;
+    /// <summary>obj_can_hear_obj (0x80F5) — elevation + isWithinPerception, NO line-of-sight (the CE
+    /// sfall fix, interpreter_extra.cc:2620). Default routes to ObjCanSee for back-compat.</summary>
+    bool ObjCanHear(int objectHandle, int targetHandle) => ObjCanSee(objectHandle, targetHandle);
 
     /// <summary>animate_move_obj_to_tile — the host may start a walk animation.</summary>
     void AnimateMoveToTile(int objectHandle, int tile, int speed) { }
@@ -1637,11 +1646,16 @@ public sealed class IntVm
                 PushInt(_externals.CapsAdjust(PopInt(), amount));
                 break;
             }
-            case 0x80DC: // obj_can_see_obj (pops target, source)
-            case 0x80F5: // obj_can_hear_obj — same PoC distance check
+            case 0x80DC: // obj_can_see_obj (pops target, source) — perception + sight path
             {
                 int target = PopInt();
                 PushInt(_externals.ObjCanSee(PopInt(), target) ? 1 : 0);
+                break;
+            }
+            case 0x80F5: // obj_can_hear_obj (pops target, source) — perception only, no sight path
+            {
+                int target = PopInt();
+                PushInt(_externals.ObjCanHear(PopInt(), target) ? 1 : 0);
                 break;
             }
             case 0x80AB: // using_skill (pops skill, object) — interpreter_extra.cc:579
@@ -1932,7 +1946,13 @@ public sealed class IntVm
             case 0x8104: // proto_data (opGetProtoData, :2962): pops member FIRST then pid, push value
             {
                 int pdMember = PopInt();
-                PushInt(_externals.ProtoData(PopInt(), pdMember));
+                int pdPid = PopInt();
+                // P113 (item 7b): NAME (1) / DESCRIPTION (2) are STRING members (proto.cc
+                // protoGetDataMember); the engine's missing-text fallback is proto.msg entry 10.
+                if (_externals.ProtoDataString(pdPid, pdMember) is { } pdText)
+                    PushString(pdText);
+                else
+                    PushInt(_externals.ProtoData(pdPid, pdMember));
                 break;
             }
             case 0x80F8: // tile_is_visible (opTileIsVisible, :2671): pop tile, push 0/1
