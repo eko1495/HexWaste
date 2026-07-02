@@ -6,17 +6,11 @@ equip: 10mm SMG readied
 burst Healthy Slave@11670 [10mm SMG 30rnd d8]: chance=28% rounds=10 hit=1 damage=12
 burst-extra: Handsome Slave@12670 hit=2 damage=26
 burst-extra: Cute Slave@11272 hit=1 damage=11
-joins: Cute Slave@9876 (team 25)
+joins: Villager@8667 (team 25)
+joins: Villager@9677 (team 25)
 joins: Villager@10070 (team 25)
-joins: Villager@10270 (team 25)
 joins: Villager@10271 (team 25)
-joins: Villager@10276 (team 25)
-joins: Villager@11076 (team 25)
-joins: Cute Slave@11082 (team 25)
-joins: Cute Slave@11272 (team 25)
-joins: Clever Slave@11482 (team 25)
 joins: Healthy Slave@11678 (team 25)
-joins: Healthy Slave@12077 (team 25)
 joins: Clever Slave@12276 (team 25)
 joins: Handsome Slave@12670 (team 25)
 joins: Clever Slave@12672 (team 25)

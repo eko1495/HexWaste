@@ -1930,7 +1930,7 @@ public class CombatEngineTests
             var item = new MapObject { Id = 8, HexTile = 0, X = 0, Y = 0, Frame = 0, Rotation = 0, Fid = 0x06000000, Flags = 0, Pid = 8, Sid = -1, AmmoQuantity = -1 };
             var host = new FakeCombatHost { CriticalsEnabled = false, LoadedAmmoCount = 10, Equipped = (new ProtoInfo(8, 0, 0x06000000, 0, 0x06, 3, Weapon: w), item) };
             host.PerkRanks[Perks.PerkId.WeaponHandling] = rank;
-            host.SetDude(NewCritter(20100, hp: 30, ap: 10, skill: 75)); // Small Guns = 5 + 4*5 + 75 = 100
+            host.SetDude(NewCritter(20100, hp: 30, ap: 10, skill: 75, perception: 0)); // Small Guns = 5 + 4*5 + 75 = 100
             return AttackChance(host);
         }
         // P74-M1: the dude's PE (NewCritter leaves it 0) clamps to the engine min 1, so the distance
@@ -1949,7 +1949,7 @@ public class CombatEngineTests
             var w = new WeaponProtoStats(0, 5, 12, 0, 40, 0, 0, 1, 5, 0, 0, 0, -1, 12, 0, WeaponPerk: perk); // min-ST 1
             var item = new MapObject { Id = 8, HexTile = 0, X = 0, Y = 0, Frame = 0, Rotation = 0, Fid = 0x06000000, Flags = 0, Pid = 8, Sid = -1, AmmoQuantity = -1 };
             var host = new FakeCombatHost { CriticalsEnabled = false, LoadedAmmoCount = 10, Equipped = (new ProtoInfo(8, 0, 0x06000000, 0, 0x06, 3, Weapon: w), item) };
-            host.SetDude(NewCritter(20100, hp: 30, ap: 10, skill: 50));
+            host.SetDude(NewCritter(20100, hp: 30, ap: 10, skill: 50, perception: 0));
             return AttackChance(host);
         }
         Assert.Equal(Chance(-1) + 20, Chance(WeaponProtoStats.PerkAccurate)); // no-perk baseline + 20
@@ -2135,11 +2135,15 @@ public class CombatEngineTests
     }
 
     private static (MapObject Obj, CritterProtoStats Proto) NewCritter(
-        int tile, int hp, int ap = 10, int seq = 1, int exp = 0, int betterCrit = 0, int meleeDmg = 0, int skill = 0, int endurance = 0, int dr = 0, int killType = 0)
+        int tile, int hp, int ap = 10, int seq = 1, int exp = 0, int betterCrit = 0, int meleeDmg = 0, int skill = 0, int endurance = 0, int dr = 0, int killType = 0, int perception = 5)
     {
         int[] b = new int[35];
         b[CritterStat.Strength] = 5;
         b[CritterStat.Agility] = 5;
+        // P113 (4.3): a real perception so the AI's isWithinPerception target/join gate sees nearby
+        // targets (PE 5 → PE*2 = 10-hex hearing in combat). The combat/encounter GOLDENS use the real
+        // host's proto PE, so this only affects these fake-host unit tests.
+        b[CritterStat.Perception] = perception;
         b[CritterStat.Endurance] = endurance;
         b[CritterStat.MaximumHitPoints] = hp;
         b[CritterStat.MaximumActionPoints] = ap;

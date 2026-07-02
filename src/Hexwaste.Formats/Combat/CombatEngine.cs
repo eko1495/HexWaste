@@ -1731,6 +1731,21 @@ public sealed class CombatEngine
     // CRITTER_MANEUVER_* flags (obj_types.h:120-123) — MapObject.Maneuver carries them.
     private const int ManeuverEngaging = 0x01, ManeuverDisengaging = 0x02, ManeuverFleeing = 0x04;
 
+    /// <summary>P113 (4.3): isWithinPerception (combat_ai.cc:3499) for in-combat target acquisition —
+    /// the observer's Perception, facing arc, and distance vs the target's detection range (PE×2
+    /// hearing in combat), with the dude-sneak reduction when the target is the dude. The AI uses this
+    /// to decide whether a critter has a valid danger source, mirroring _ai_danger_source (:1693).</summary>
+    private bool WithinPerception(MapObject observer, MapObject target)
+    {
+        if (_host.GetCritterState(observer) is not { } os)
+            return false;
+        bool canSee = PerceptionDetect.CanSee(observer.Rotation, observer.HexTile, target.HexTile);
+        int distance = HexGrid.Distance(observer.HexTile, target.HexTile);
+        return PerceptionDetect.IsWithinPerception(distance, os.Perception, _host.DudeSneakSkill,
+            canSee, (target.Flags & 0x20000) != 0, target == _host.Dude,
+            _host.DudeIsActivelySneaking, _host.DudeHasSneakFlag, inCombat: true);
+    }
+
     /// <summary>
     /// Does a candidate critter join the fight, ported from fallout2-ce src/combat_ai.cc
     /// _combatai_want_to_join() (:3165): a dead/knocked-out critter never joins; one hurt this turn
@@ -1751,7 +1766,10 @@ public sealed class CombatEngine
             return true;
         if ((c.Maneuver & (ManeuverDisengaging | ManeuverFleeing)) != 0)
             return false;
-        return CombatRules.ShouldJoin(c, _hostiles, dude.HexTile);
+        // P113 (4.3): join if on a team with an active hostile AND the candidate PERCEIVES the dude —
+        // _combatai_notify_friends + the perception-gated _ai_danger_source (combat_ai.cc:3632/1695),
+        // replacing the flat 20-hex sight radius. A critter facing away or out of range holds off.
+        return !c.IsDead && _hostiles.Any(h => h.Team == c.Team) && WithinPerception(c, dude);
     }
 
     /// <summary>Same-team / hurt / script-willing critters join the fight at round start
@@ -1871,6 +1889,10 @@ public sealed class CombatEngine
             _hostiles.Clear();
             _hostiles.Add(attacker);
             attacker.WhoHitMeCid = -1;
+            // P113 (4.3): a script that aggroes the dude (opAttackComplex) has DECIDED to attack — the
+            // dude is its danger source ungated by perception, so a blind/rear-facing ambusher still
+            // engages. Byte-identical for goldens: the ambusher opens combat adjacent to the dude anyway.
+            attacker.WhoHitMe = dude;
             AddJoiners();
             if (_host.GetCritterState(dude) is { } stats)
                 ResetDudeAp(stats);
@@ -2018,7 +2040,12 @@ public sealed class CombatEngine
 
     /// <summary>Remove living hostiles farther than sight range from every member
     /// of the dude's team (they have disengaged). All hostiles START within sight
-    /// (AddJoiners), so this only drops critters that actually fled away.</summary>
+    /// (AddJoiners), so this only drops critters that actually fled away.
+    /// P113 (4.3) NOTE: the fo2ce _combatai_want_to_stop disengage is perception-based
+    /// (!isWithinPerception of the danger source), but porting it here is DEFERRED — a fled
+    /// hostile keeps its whoHitMe danger source, so a naive perception prune both fails to drop
+    /// genuine fleers (they still "perceive" via whoHitMe) and wrongly drops a blind/rear-facing
+    /// adjacent enemy before it can take its flee turn. The flat sight-range drop is retained.</summary>
     private void PruneEscapedHostiles()
     {
         if (_dudeSpectator) // P73: dude-centric sight doesn't apply to a brawl he's not in
@@ -2037,6 +2064,7 @@ public sealed class CombatEngine
                 best = Math.Min(best, HexGrid.Distance(from.HexTile, ally.HexTile));
         return best;
     }
+
 
     /// <summary>
     /// Step the INTERLEAVED round order one combatant at a time (ported from combat.cc _combat()'s
@@ -2351,6 +2379,14 @@ public sealed class CombatEngine
                 defenderObj = other;
             }
         }
+
+        // P113 (4.3): the nearest-picked target is a valid danger source only if the enemy PERCEIVES it
+        // (isWithinPerception, combat_ai.cc:1693). Its whoHitMe (last attacker / script-aggro target) is
+        // EXEMPT — checked first, ungated (combat_ai.cc:1655). Out of sight/hearing with no whoHitMe → no
+        // danger source: a rear-facing or distant critter no longer beelines the dude the moment combat
+        // starts elsewhere.
+        if (defenderObj is not null && defenderObj != enemy.WhoHitMe && !WithinPerception(enemy, defenderObj))
+            defenderObj = null;
 
         // P101 (bucket 3): RETALIATION — prefer whoever last hit this critter over the nearest target,
         // when that attacker is still a live cross-team combatant (combat_ai.cc _ai_danger_source returns
