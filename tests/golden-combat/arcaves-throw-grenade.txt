@@ -2,7 +2,7 @@ dude sheet: None (gender 0), SPECIAL 5/5/5/5/5/5/5, tags []
 animating 2 multi-frame scenery/misc object(s)
 give: Grenade (Frag) x1
 equip: Grenade (Frag) readied
-throw Grenade (Frag) -> @20529: chance=27% hit=True explosive
+throw Grenade (Frag) -> @20529: chance=37% hit=True explosive
 joins: Radscorpion@21729 (team 4)
 explosion-hit: Radscorpion@20529 damage=25
 knockback: Radscorpion@20529 -> 20929

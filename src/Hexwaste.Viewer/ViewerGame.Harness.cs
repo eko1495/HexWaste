@@ -34,6 +34,7 @@ public sealed partial class ViewerGame
                     _camera.SetCenter(hex);
                     if (_dude is not null) // teleport adjacent so range checks pass (test plumbing)
                         _dude.Dude.HexTile = Formats.Hex.HexGrid.TileInDirection(hex, 3);
+                        RebuildLighting(); // P114: the dude's light follows him to the teleported combat position
                     if (lockpick)
                         TryLockpick(target);
                     else
@@ -191,6 +192,7 @@ public sealed partial class ViewerGame
                     if (_dude is not null)
                     {
                         _dude.Dude.HexTile = Formats.Hex.HexGrid.TileInDirection(brawlCenter, 0, 20); // well clear
+                        RebuildLighting(); // P114: the dude's light follows him to the teleported combat position
                         RebuildBlockedTiles(_dude.Dude);
                     }
 
@@ -228,6 +230,7 @@ public sealed partial class ViewerGame
                     MapObject? foe = CritterAt(cwFight, aliveOnly: true);
                     if (foe is null || _dude is null) { Console.Error.WriteLine($"combat-walk: no critter at {cwFight}"); break; }
                     _dude.Dude.HexTile = Formats.Hex.HexGrid.TileInDirection(cwFight, 3); // adjacent, like --fight
+                    RebuildLighting(); // P114: the dude's light follows him to the teleported combat position
                     RebuildBlockedTiles(_dude.Dude);
                     if (cwCripple)
                         _dude.Dude.CombatResults |= Formats.Combat.CriticalTables.DamCripLegLeft;
@@ -1287,6 +1290,7 @@ public sealed partial class ViewerGame
                     if (_solidObjects[_elevation].Any(o => o.HexTile == fightHex && Fid.Type(o.Fid) is ObjectType.Critter))
                     {
                         _dude.Dude.HexTile = Formats.Hex.HexGrid.TileInDirection(fightHex, 3); // adjacent, like --fight
+                        RebuildLighting(); // P114: the dude's light follows him to the teleported combat position
                         RebuildBlockedTiles(_dude.Dude);
                     }
                     foreach (MapObject oc in _solidObjects[_elevation]
@@ -1306,6 +1310,7 @@ public sealed partial class ViewerGame
                     MapObject? enemy = CritterAt(enemyHex);
                     if (enemy is null) { Console.Error.WriteLine($"ac-dodge: no critter at {enemyHex}"); break; }
                     _dude.Dude.HexTile = Formats.Hex.HexGrid.TileInDirection(enemyHex, 3); // adjacent, like --fight
+                    RebuildLighting(); // P114: the dude's light follows him to the teleported combat position
                     RebuildBlockedTiles(_dude.Dude);
                     _combat.BeginScriptAggro(enemy, _dude.Dude);
                     int dudeMax = GetCritterState(_dude.Dude)?.MaxActionPoints ?? 0;
@@ -1323,6 +1328,7 @@ public sealed partial class ViewerGame
                     MapObject? mark = CritterAt(targetHex);
                     if (mark is null) { Console.Error.WriteLine($"steal: no critter at {targetHex}"); break; }
                     _dude.Dude.HexTile = Formats.Hex.HexGrid.TileInDirection(targetHex, 3);
+                    RebuildLighting(); // P114: the dude's light follows him to the teleported combat position
                     RebuildBlockedTiles(_dude.Dude);
                     int markBefore = mark.Inventory.Count, dudeBefore = _dudeInventory.Count;
                     TryUseSkillOn(10, mark);
@@ -1404,6 +1410,7 @@ public sealed partial class ViewerGame
                             UseInventoryItem(idx); // ready it in hand
                     }
                     _dude.Dude.HexTile = Formats.Hex.HexGrid.TileInDirection(projHex, 0, 5);
+                    RebuildLighting(); // P114: the dude's light follows him to the teleported combat position
                     _projectiles.Clear();
                     _combat.TryThrow(projHex);
                     Projectile? p = _projectiles.FirstOrDefault();
@@ -1431,6 +1438,7 @@ public sealed partial class ViewerGame
                 {
                     if (_dude is not null) // teleport into throw range (test plumbing)
                         _dude.Dude.HexTile = Formats.Hex.HexGrid.TileInDirection(throwHex, 3);
+                        RebuildLighting(); // P114: the dude's light follows him to the teleported combat position
                     _combat.TryThrow(throwHex);
                     for (int guard = 0; guard < 3000 && _combat.IsResolving; guard++)
                     {
@@ -1539,6 +1547,7 @@ public sealed partial class ViewerGame
                         _camera.SetCenter(skillHex);
                         if (_dude is not null) // teleport adjacent so range checks pass (test plumbing)
                             _dude.Dude.HexTile = Formats.Hex.HexGrid.TileInDirection(skillHex, 3);
+                            RebuildLighting(); // P114: the dude's light follows him to the teleported combat position
                     }
                     TryUseSkillOn(useSkill, skillTarget);
                     Console.WriteLine($"use-skill: skill={useSkill} target={ObjectName(skillTarget)} "
@@ -1706,6 +1715,7 @@ public sealed partial class ViewerGame
                     _camera.SetCenter(burstHex);
                     if (_dude is not null) // teleport adjacent (test plumbing, like --attack)
                         _dude.Dude.HexTile = Formats.Hex.HexGrid.TileInDirection(burstHex, 3);
+                        RebuildLighting(); // P114: the dude's light follows him to the teleported combat position
                     _combat.TryBurst(target);
 
                     for (int guard = 0; guard < 3000 && _combat.IsResolving; guard++)
@@ -1744,6 +1754,7 @@ public sealed partial class ViewerGame
                     _camera.SetCenter(attackHex);
                     if (_dude is not null) // teleport adjacent (test plumbing, like use-hex)
                         _dude.Dude.HexTile = Formats.Hex.HexGrid.TileInDirection(attackHex, 3);
+                        RebuildLighting(); // P114: the dude's light follows him to the teleported combat position
                     _combat.TryAttack(target, AimLocation);
 
                     // Run the choreography to completion so transcripts and
@@ -1772,6 +1783,7 @@ public sealed partial class ViewerGame
                     _camera.SetCenter(fightHex);
                     if (_dude is not null)
                         _dude.Dude.HexTile = Formats.Hex.HexGrid.TileInDirection(fightHex, 3);
+                        RebuildLighting(); // P114: the dude's light follows him to the teleported combat position
 
                     // Autoplay: punch any adjacent hostile while AP lasts,
                     // end turn, let the AI move — until someone wins.
