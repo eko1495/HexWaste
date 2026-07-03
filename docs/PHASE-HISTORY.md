@@ -1106,3 +1106,30 @@ null → override still fires); all 16 combat + 187 encounter + opening + 4 ques
 E2E-VERIFIED: walking onto the elev-2 trigger opens the "ELEVATOR [1]Level 1 [2]Level 2" picker (screenshot);
 --elevator-pick 0 teleports map 12 elev 2 → elev 1 tile 16052 (Descriptions[13][0]). The override_map_start
 fix also corrects any stairway/ladder that lands the dude on a non-entrance elevation on a map that overrides.
+---
+
+Phase 114 (engine gaps 1-7 — the post-P113 gap-audit punch-list, grounded + adversarially verified by a
+workflow, plan at memory/p114-plan-design.md + p114-plan-verify.md). Nine items in three risk-ascending
+tiers, one commit per tier:
+- TIER 1 (byte-identical, commit 2d15f58): (1) opDisplay 0x806B — the one interpreter_lib.cc external a bound
+  script references (gcfestus) now arity-stubs instead of throwing. (2) per-map .gam MAP_GLOBAL_VARS — a fresh
+  map's map-globals come from maps\<name>.gam, overriding the .map-baked count (map.cc:932-947); fixes Sierra
+  depolv1 (1 vs 16). (3) Enhanced Knockout weapon perk 117 (combat.cc:3798/4146) — faithful but DEAD in
+  vanilla (no shipped weapon carries it). (4) Master Trader −25% buy price + Smooth Talker +1 INT/rank for giq
+  gates + barter reaction modifier — all rank-gated inert at 0.
+- TIER 2 (byte-identical, commit c6cf5d2): (5) script timers keyed on GAME ticks not wall-clock (queue.cc) —
+  PumpTimers folds into UpdateClock + fires on game_time_advance, so a clock JUMP fires due timers. (6) reg_anim
+  batches dispatch SEQUENTIALLY (animation.cc animationRunSequence) via a new pure RegAnimSequencer — the lone
+  N=1 golden is unchanged.
+- TIER 3 (commit b38ab47): (8, the #1 ranked gap) MOVING DUDE LIGHT — the dude emits light (dist 4, int
+  65536, object.cc:1655) that re-spreads on each hex crossed + on the harness combat-teleport. THE INTERACTION:
+  his torch lifts an adjacent target's tile out of the darkness-to-hit band (P113 4.2), so he fights +10 better
+  at point-blank in a dark cave → re-recorded 12 arcaves combat fixtures + kill-counter (the same arcaves
+  fight); denbus2 (ambient above the band) + non-adjacent fixtures byte-identical (the verify's UNCONFIRMED
+  denbus2 case resolved clean). (7) missed-shot collateral — a missed single gun/thrown-solid shot overshoots
+  into the first critter beyond the target (combat.cc:3937, deterministic pick, damage-only, dude-only);
+  byte-identical (no golden miss has a bystander in-line). (9) help-shout AI — a critter with no danger source
+  engages the perceived attacker of a wounded team-mate (combat_ai.cc aiFindAttackers:1495), additive
+  null-fallback → lone-dude fights unchanged; byte-identical. DEFERRED (higher golden-risk, documented): item
+  10 terrain travel-time (whole-suite regen), grenade scatter, NPC-attacker overshoot, roofs per-block,
+  map_var −1 OOR, the unconditional-override help-shout variant. 820 Formats tests + all four golden suites pass.
