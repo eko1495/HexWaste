@@ -837,8 +837,9 @@ public sealed partial class ViewerGame
         foreach (MapObject obj in _solidObjects[_elevation]
             .Where(o => o.Sid != -1 && Formats.Hex.HexGrid.Distance(o.HexTile, tile) <= 3).ToList())
         {
-            var scripted = _scriptHost?.RunObjectProc(obj, _map, marker, fixedParam: 20, actionBeingUsed: -1,
-                "damage_p_proc");
+            // The scenery reads target_obj (the marker) → metarule(49) → EXPLOSION, so the marker MUST be
+            // the script's TARGET (fo2ce _scr_explode_scenery), not source/dude — RunExplosionDamage sets it.
+            var scripted = _scriptHost?.RunExplosionDamage(obj, _map, marker, _dude?.Dude);
             if (scripted is not null)
                 foreach (string line in scripted.Messages)
                     Log(line);

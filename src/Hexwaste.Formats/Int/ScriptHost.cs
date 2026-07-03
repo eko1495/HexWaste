@@ -681,6 +681,41 @@ public sealed class ScriptHost(GameFileSystem vfs, ScriptList scripts, Hexwaste.
             fixedParam, actionBeingUsed, procedureNames);
     }
 
+    /// <summary>Run a scenery/door's damage_p_proc for a nearby explosion — ported from fallout2-ce
+    /// src/scripts.cc _scr_explode_scenery (:2879): fixedParam = 20, and the script's TARGET is the misc-10
+    /// explosion marker. A door reads target_obj → metarule(METARULE_WEAPON_DAMAGE_TYPE) → EXPLOSION and
+    /// unlocks/opens/destroys itself. RunObjectProc leaves target null (→ target_obj falls back to self),
+    /// which is why the blast never reached the door before.</summary>
+    public ScriptRunResult? RunExplosionDamage(MapObject scenery, MapFile map, MapObject marker, MapObject? dude)
+    {
+        if (scenery.Sid == -1 || !map.ScriptsBySid.TryGetValue(scenery.Sid, out MapScriptRecord? record))
+            return null;
+        string? path = scripts.GetScriptPath(record.ScriptListIndex);
+        if (path is null)
+            return null;
+        try
+        {
+            IntProgram? program = GetProgram(path);
+            if (program is null)
+                return null;
+            var externals = new ScriptContext(this, map, scenery.Sid, record, self: scenery, source: dude, dude: dude)
+            {
+                FixedParamValue = 20,     // _scr_explode_scenery: script->fixedParam = 20
+                ActionBeingUsedValue = -1,
+                Target = marker,          // script->target = the explosion marker (read via target_obj)
+            };
+            var vm = new IntVm(program, externals, OnStubbedExternal, ExternalVars);
+            return vm.TryRunProcedure("damage_p_proc")
+                ? new ScriptRunResult(externals.Overridden, externals.Messages)
+                : null;
+        }
+        catch (Exception ex) when (ex is InvalidDataException or FileNotFoundException or NotSupportedException)
+        {
+            Console.Error.WriteLine($"script {path}: {ex.Message}");
+            return null;
+        }
+    }
+
     /// <summary>
     /// Run a combatant's combat_p_proc with the engine's combat context (combat.cc:3245/4730):
     /// self = the combatant, source = NULL always, target = the struck defender (fp=2) or null (fp=4),

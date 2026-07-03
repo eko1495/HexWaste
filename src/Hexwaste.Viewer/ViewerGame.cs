@@ -1585,6 +1585,7 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
         _regAnimMoves.Clear(); // reg_anim_func batch record resets per map (P33-M1)
         _regAnimSeq = null; // P114: drop any in-flight reg_anim sequence
         _regAnimBlockOn = null;
+        _armedCharges.Clear(); // placed explosives don't survive a map change
         _npcWalkers.Clear();
         _homeTiles.Clear();
         _projectiles.Clear();
@@ -3536,7 +3537,64 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
             return;
         }
 
+        // Timed placeable explosive (Dynamite 51 / Plastic 85 — ITEM_TYPE_MISC). ported from fallout2-ce
+        // src/proto_instance.cc _obj_use_explosive (:868): arm it, set a timer, queue an EVENT_TYPE_EXPLOSION.
+        // The 0-180s countdown PICKER is out of scope (like the skill-book screen fade above) — we use a
+        // short default and PLACE the armed charge at the dude's feet (arm-then-drop), so it detonates on the
+        // ground beside him rather than in his pack. Get it within 3 hexes of a door to blow it open.
+        if (Formats.Item.Explosives.IsExplosive(item.Pid) && _dude is not null)
+        {
+            ArmExplosive(item);
+            return;
+        }
+
         Log($"You can't use the {ObjectName(item)} that way.");
+    }
+
+    /// <summary>Placed armed charges awaiting detonation (game-time due tick).</summary>
+    private readonly List<(MapObject Charge, long DueTick)> _armedCharges = [];
+    private const int ExplosiveTimerSeconds = 10; // the omitted 0-180s picker's stand-in default
+
+    /// <summary>Arm a timed explosive: consume one from the pack, place the ACTIVATED pid on the ground at
+    /// the dude's tile, and schedule its detonation on game time (proto_instance.cc _obj_use_explosive).</summary>
+    private void ArmExplosive(MapObject item)
+    {
+        int armedPid = Formats.Item.Explosives.Activate(item.Pid);
+        item.StackCount--;
+        if (item.StackCount <= 0)
+            _dudeInventory.Remove(item);
+
+        int tile = _dude!.Dude.HexTile;
+        if (RebuildObject(armedPid, 1) is not { } charge)
+            return;
+        charge.HexTile = tile;
+        charge.Flags |= 0x08; // flat: rests on the ground
+        InsertSorted(_flatObjects[_elevation], charge);
+        _armedCharges.Add((charge, _clock.Ticks + (long)ExplosiveTimerSeconds * Formats.GameClock.TicksPerSecond));
+
+        Log("You set the timer."); // proto.msg 589
+        Console.WriteLine($"arm-explosive: pid=0x{armedPid:X} tile={tile} timer={ExplosiveTimerSeconds}s");
+    }
+
+    /// <summary>Detonate any armed charge whose timer has elapsed (game time) — an area explosion (critters)
+    /// plus the scenery/door damage sweep, then destroy the charge. ported from fallout2-ce src/queue.cc
+    /// _queue_do_explosion_ (:457): the charge explodes at its own (dropped) tile.</summary>
+    private void ProcessArmedCharges()
+    {
+        for (int i = _armedCharges.Count - 1; i >= 0; i--)
+        {
+            if (_clock.Ticks < _armedCharges[i].DueTick)
+                continue;
+            MapObject charge = _armedCharges[i].Charge;
+            _armedCharges.RemoveAt(i);
+            int tile = charge.HexTile;
+            (int min, int max) = Formats.Item.Explosives.Damage(charge.Pid); // (+10 with Demolition Expert — unmodeled)
+            Console.WriteLine($"detonate: pid=0x{charge.Pid:X} tile={tile} dmg={min}-{max}");
+            _flatObjects[_elevation].Remove(charge);       // _obj_destroy: the charge is consumed
+            _solidObjects[_elevation].Remove(charge);
+            _combat.Explode(tile, _dude?.Dude, min, max, radius: 3); // critter AoE (combat.cc _compute_explosion)
+            SpawnExplosionMarker(tile);                     // _scr_explode_scenery: doors/scenery damage_p_proc
+        }
     }
 
     /// <summary>Equipping armor mutates bonus stats (inventory.cc:2544
@@ -5449,6 +5507,7 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
         ProcessWithdrawals(); // P38: withdrawal onset/recovery fire on game time (drain-loop for clock jumps)
         ProcessRads(); // P113 (item 7c): the radiation band model — midnight checks + delayed damage/heal
         _scriptHost?.PumpTimers(_dude?.Dude); // P114: script timers fire on game time (catch-up after jumps)
+        ProcessArmedCharges(); // placed explosives detonate on game time
 
         int hour = _clock.Hour / 100;
         if (hour == _lastAmbientHour)
