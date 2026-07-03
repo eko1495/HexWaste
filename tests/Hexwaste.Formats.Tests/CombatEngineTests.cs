@@ -1446,6 +1446,59 @@ public class CombatEngineTests
     }
 
     [Fact]
+    public void MissedSingleShotHitsABystanderInTheOvershootLine()
+    {
+        // P114: a MISSED gun shot overshoots into the first critter beyond the target (combat.cc:3937).
+        int from = 20100;
+        int target = HexGrid.TileInDirection(from, 0, 3);
+
+        var host = new FakeCombatHost { CriticalsEnabled = false, LoadedAmmoCount = 10 };
+        host.SetDude(NewCritter(from, hp: 30, ap: 12, skill: 100));
+        MapObject enemy = host.AddCritter(NewCritter(target, hp: 500));
+        (ProtoInfo proto, MapObject item) = MakeBurstWeapon(rounds: 10, apCost2: 6, minDmg: 10, maxDmg: 10, maxRange: 40);
+        host.Equipped = (proto, item);
+
+        // Stand a bystander on the from->target overshoot line, beyond the target.
+        int endpoint = HexGrid.TileNumBeyond(from, target, 40);
+        var line = new List<int>();
+        LineOfFire.Trace(target, endpoint, t => { line.Add(t); return null; });
+        Assert.True(line.Count > 1, "there must be an overshoot tile beyond the target");
+        MapObject bystander = host.AddCritter(NewCritter(line[1], hp: 500));
+
+        host.BlockerOverride = tile => host.CombatCritters.FirstOrDefault(c => c.HexTile == tile && !c.IsDead);
+
+        // SequenceRng(100…) → the to-hit d100 is 100 > any clamped chance → MISS; damage rolls are fixed (10).
+        var engine = new CombatEngine(host, new SequenceRng(100));
+        Assert.True(engine.TryAttack(enemy));
+        host.Animating.Clear();
+        engine.ProcessAnimations();
+
+        Assert.Equal(500, enemy.CurrentHp);           // the primary target was missed
+        Assert.True(bystander.CurrentHp < 500, "the overshoot should have struck the bystander");
+    }
+
+    [Fact]
+    public void MissedSingleShotWithClearOvershootHitsNobody()
+    {
+        // The 1-on-1 invariant the ranged goldens rely on: an empty overshoot line → no accidental hit,
+        // no extra RNG drawn. (Same miss setup, but no bystander behind the target.)
+        int from = 20100;
+        int target = HexGrid.TileInDirection(from, 0, 3);
+        var host = new FakeCombatHost { CriticalsEnabled = false, LoadedAmmoCount = 10 };
+        host.SetDude(NewCritter(from, hp: 30, ap: 12, skill: 100));
+        MapObject enemy = host.AddCritter(NewCritter(target, hp: 500));
+        host.Equipped = MakeBurstWeapon(rounds: 10, apCost2: 6, minDmg: 10, maxDmg: 10, maxRange: 40);
+        host.BlockerOverride = tile => host.CombatCritters.FirstOrDefault(c => c.HexTile == tile && !c.IsDead);
+
+        var engine = new CombatEngine(host, new SequenceRng(100));
+        Assert.True(engine.TryAttack(enemy));
+        host.Animating.Clear();
+        engine.ProcessAnimations();
+
+        Assert.Equal(500, enemy.CurrentHp); // missed, nobody else on the line → no accidental hit
+    }
+
+    [Fact]
     public void BurstConeCatchesACollateralBystanderOnALine()
     {
         // M2: a critter standing on the left cone line takes collateral fire, while the

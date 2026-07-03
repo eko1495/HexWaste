@@ -35,15 +35,20 @@ public sealed class CombatEngine
         // P74-M2: a Knockback-perk weapon halves the shove divisor (10→5 = double distance).
         bool KnockbackPerk = false,
         // P26 gore: the killing blow's damage type + attacker animation feed DeathAnims.Pick.
-        int DamageType = 0, int AttackerAnim = DeathAnims.FallBack);
+        int DamageType = 0, int AttackerAnim = DeathAnims.FallBack,
+        // P114: a MISSED ranged/thrown shot that struck a bystander in the overshoot line (combat.cc:3937).
+        AccidentalHit? Accidental = null);
     private PendingAttack? _pendingAttack;
+
+    /// <summary>P114: the bystander a missed single ranged/thrown shot overshoots into (combat.cc:3937-3969).</summary>
+    private sealed record AccidentalHit(MapObject Victim, int Damage);
 
     /// <summary>A thrown weapon in flight: lands when the throw animation finishes —
     /// an explosive detonates (AoE), a spear/rock damages the target and drops
     /// recoverable on the ground.</summary>
     private sealed record PendingThrow(MapObject Thrower, MapObject? Target, int TargetTile,
         bool Hit, int Damage, bool Explosive, int MinDamage, int MaxDamage, ProtoInfo Proto, MapObject Item,
-        int CritFlags = 0);
+        int CritFlags = 0, AccidentalHit? Accidental = null); // P114: overshoot bystander on a thrown-solid miss
     private PendingThrow? _pendingThrow;
 
     /// <summary>A burst in flight: every round is rolled up front; the accumulated
@@ -360,12 +365,20 @@ public sealed class CombatEngine
         if (!hit && TriggerCritFailure(attacker, attackerIsDude: true, weaponProto, weaponItem, delta))
             _dudeAp = 0;
 
+        // P114: a missed gun shot can overshoot into a bystander (combat.cc:3937). Computed up-front so the
+        // damage RNG draw is ordered here; only a critter in the overshoot line draws (else byte-identical).
+        AccidentalHit? accidental = null;
+        if (!hit && isGun && weaponProto?.Weapon is not null)
+            accidental = ComputeAccidentalMiss(dude, target, target.HexTile, weaponProto.Weapon.MaxRange1,
+                weaponProto, _host.LoadedAmmo(weaponProto, weaponItem!), DiffDmgMod(dude));
+
         if (isGun)
             weaponItem!.AmmoQuantity = _host.WeaponAmmo(weaponProto!, weaponItem) - 1;
         _pendingAttack = new PendingAttack(dude, target, chance, hit, damage, critFlags, CanKnockback: !isGun,
             KnockbackPerk: weaponProto?.Weapon is { WeaponPerk: WeaponProtoStats.PerkKnockback }, // P74-M2
             DamageType: weaponProto?.Weapon?.DamageType ?? 0, // P26 gore context
-            AttackerAnim: DeathAnims.AttackAnimFor(isGun, weaponProto?.Weapon is not null));
+            AttackerAnim: DeathAnims.AttackAnimFor(isGun, weaponProto?.Weapon is not null),
+            Accidental: accidental);
         _host.Transcript($"attack {_host.ObjectName(target)}@{target.HexTile}"
             + $"{(weaponProto is null ? "" : $" [{_host.ObjectNameByPid(weaponProto.Pid)}{(isGun ? $" {weaponItem!.AmmoQuantity}rnd d{distance}" : "")}]")}: chance={chance}% hit={hit} damage={damage}{CritTag(critFlags)}");
 
@@ -663,6 +676,68 @@ public sealed class CombatEngine
         }
     }
 
+    /// <summary>P114: a MISSED single ranged/thrown shot overshoots the target and can strike the first
+    /// critter in the line beyond it (combat.cc attackCompute:3937-3969). fo2ce picks the accidental target
+    /// DETERMINISTICALLY (no to-hit roll) — the first shoot-blocker on the straight path from the target's
+    /// tile to the overshoot endpoint (target excluded), else whatever blocks the endpoint — then rolls one
+    /// plain (non-crit) damage packet. Draws RNG ONLY when a living critter is in the way, so a clear
+    /// overshoot line is byte-identical. NOT _check_ranged_miss (that is vestigial). Grenade scatter (the
+    /// RNG-drawing explosive branch, combat.cc:3941) is deferred.</summary>
+    private AccidentalHit? ComputeAccidentalMiss(MapObject attackerObj, MapObject? targetObj, int targetTile,
+        int range, ProtoInfo weaponProto, AmmoProtoStats? ammo, int difficultyDamageModifier)
+    {
+        int endpoint = HexGrid.TileNumBeyond(attackerObj.HexTile, targetTile, range);
+        if (endpoint == targetTile)
+            return null;
+
+        // Exclude the shooter + the intended target from blocking (ShootBlockerAt takes both).
+        MapObject excludeTarget = targetObj ?? attackerObj;
+        MapObject? victim = null;
+        LineOfFire.Trace(targetTile, endpoint, tile =>
+        {
+            MapObject? obj = _host.ShootBlockerAt(tile, attackerObj, excludeTarget);
+            if (victim is null && obj is not null && tile != targetTile && Fid.Type(obj.Fid) is ObjectType.Critter)
+                victim = obj;
+            return obj; // a wall stops the line
+        });
+        victim ??= _host.ShootBlockerAt(endpoint, attackerObj, excludeTarget); // endpoint fallback
+
+        if (victim is null || Fid.Type(victim.Fid) is not ObjectType.Critter || victim.IsDead
+            || _host.GetCritterState(victim) is not { } vs)
+            return null;
+
+        int dmg = RangedMath.RollDamage(_rng, weaponProto.Weapon!.MinDamage, weaponProto.Weapon.MaxDamage, vs,
+            ammo?.DrModifier ?? 0, ammo?.DamageMultiplier ?? 1, ammo?.DamageDivisor ?? 1,
+            difficultyDamageModifier: difficultyDamageModifier);
+        return new AccidentalHit(victim, dmg);
+    }
+
+    /// <summary>Apply a missed shot's accidental bystander hit (mirrors ApplyBurstExtras — HP, damage_p_proc,
+    /// kill / on-hit proc; the dude routes to GameOver).</summary>
+    private void ApplyAccidentalHit(AccidentalHit acc, MapObject attacker)
+    {
+        if (acc.Damage <= 0 || acc.Victim.IsDead)
+            return;
+        MapObject? dude = _host.Dude;
+        acc.Victim.CurrentHp -= acc.Damage;
+        _host.Log($"The shot goes wide and hits the {_host.ObjectName(acc.Victim)} for {acc.Damage} damage.");
+        if (acc.Victim != dude && acc.Victim.Sid != -1)
+            foreach (string line in _host.RunDamageProc(acc.Victim, attacker, acc.Damage))
+                _host.Log(line);
+        if (acc.Victim.CurrentHp <= 0)
+        {
+            if (acc.Victim == dude)
+                GameOver();
+            else
+                KillCritter(acc.Victim, attacker, acc.Damage, 0, DeathAnims.FallBack);
+        }
+        else if (acc.Victim != dude)
+        {
+            _host.OnTargetHit(acc.Victim, attacker, knockedDown: false);
+            RunOnHitCombatProc(attacker, acc.Victim);
+        }
+    }
+
     /// <summary>HIT_LOCATION nibble for a THROW attack mode (item.cc _attack_anim).</summary>
     private const int ThrowAnim = 5;
 
@@ -769,10 +844,16 @@ public sealed class CombatEngine
                 difficultyDamageModifier: DiffDmgMod(dude)) // P84 (dude-only throw → 100, byte-identical)
             : 0;
 
+        // P114: a missed NON-explosive throw overshoots into a bystander (combat.cc:3937). Grenade scatter
+        // (the explosive branch) is deferred. Draws damage RNG only when a critter is in the overshoot line.
+        AccidentalHit? accidental = !hit && !explosive
+            ? ComputeAccidentalMiss(dude, targetCritter, targetTile, range, weaponProto, ammo: null, DiffDmgMod(dude))
+            : null;
+
         dude.Rotation = HexGrid.RotationTo(dude.HexTile, targetTile);
         _host.RemoveFromHand(dude, weaponItem); // leaves the hand at throw time
         _pendingThrow = new PendingThrow(dude, targetCritter, targetTile, hit, damage, explosive,
-            weaponProto.Weapon.MinDamage, weaponProto.Weapon.MaxDamage, weaponProto, weaponItem, critFlags);
+            weaponProto.Weapon.MinDamage, weaponProto.Weapon.MaxDamage, weaponProto, weaponItem, critFlags, accidental);
         _host.Transcript($"throw {_host.ObjectNameByPid(weaponProto.Pid)} -> @{targetTile}"
             + $": chance={chance}% hit={hit}{(explosive ? " explosive" : $" damage={damage}")}{CritTag(critFlags)}");
         _host.OnThrowStarted(dude, targetTile, weaponProto);
@@ -819,6 +900,8 @@ public sealed class CombatEngine
         else
         {
             _host.Log($"The {_host.ObjectNameByPid(t.Proto.Pid)} misses.");
+            if (t.Accidental is { } acc) // P114: the overshoot bystander hit
+                ApplyAccidentalHit(acc, t.Thrower);
         }
 
         // Recoverable: the weapon drops on the ground at the landing tile.
@@ -1345,6 +1428,8 @@ public sealed class CombatEngine
             // Dodge reaction (actions.cc:906) — only a non-prone, non-KO'd defender dodges (P34-M6).
             if (attack.Target != dude && !_knockedDown.Contains(attack.Target) && !IsKnockedOut(attack.Target))
                 _host.OnTargetDodge(attack.Target);
+            if (attack.Accidental is { } acc) // P114: the overshoot bystander hit
+                ApplyAccidentalHit(acc, attack.Attacker);
             return;
         }
 
@@ -1757,6 +1842,18 @@ public sealed class CombatEngine
             canSee, (target.Flags & 0x20000) != 0, target == _host.Dude,
             _host.DudeIsActivelySneaking, _host.DudeHasSneakFlag, inCombat: true);
     }
+
+    /// <summary>P114: friend-attacked targeting (combat_ai.cc aiFindAttackers whoHitFriend branch,
+    /// :1495-1507). A critter with no danger source of its own can still engage the attacker of a wounded
+    /// team-mate — the NEAREST such cross-team attacker it PERCEIVES wins (perception-gated like
+    /// _ai_danger_source:1695). Additive: only consulted when the perception gate left no target, so a
+    /// lone-dude fight — where every team-mate's whoHitMe is the dude (== the nearest target) — is unchanged.</summary>
+    private MapObject? FriendAttacker(MapObject enemy) =>
+        _hostiles.Where(f => f.Team == enemy.Team && !f.IsDead && f != enemy)
+                 .Select(f => f.WhoHitMe)
+                 .Where(a => a is { IsDead: false } && a.Team != enemy.Team && WithinPerception(enemy, a))
+                 .OrderBy(a => HexGrid.Distance(enemy.HexTile, a!.HexTile))
+                 .FirstOrDefault();
 
     /// <summary>
     /// Does a candidate critter join the fight, ported from fallout2-ce src/combat_ai.cc
@@ -2399,6 +2496,12 @@ public sealed class CombatEngine
         // starts elsewhere.
         if (defenderObj is not null && defenderObj != enemy.WhoHitMe && !WithinPerception(enemy, defenderObj))
             defenderObj = null;
+
+        // P114: help-shout / friend-attacked. With no danger source of its own, this critter engages the
+        // perceived attacker of a wounded team-mate (combat_ai.cc aiFindAttackers:1495) rather than passing.
+        // Additive — lone-dude fights (the friend's attacker IS the dude, already the nearest) are unchanged.
+        if (defenderObj is null && FriendAttacker(enemy) is { } friendTarget)
+            defenderObj = friendTarget;
 
         // P101 (bucket 3): RETALIATION — prefer whoever last hit this critter over the nearest target,
         // when that attacker is still a live cross-team combatant (combat_ai.cc _ai_danger_source returns

@@ -2647,7 +2647,12 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
             Frame = 0,
             Rotation = Math.Clamp(rotation, 0, 5),
             Fid = Fid.Build(ObjectType.Critter, critterIndex),
-            Flags = 0,
+            // P114: the dude emits light (distance 4, intensity 65536) — object.cc:1655 objectSetLight(gDude,
+            // 4, 0x10000). OBJECT_LIGHTING (0x20) lets RebuildLighting spread it; it re-spreads on each hex
+            // (TileChanged below), so dark caves/interiors light up around him as in the engine.
+            Flags = 0x20,
+            LightIntensity = Formats.Light.LightGrid.IntensityMax,
+            LightDistance = 4,
             Pid = 0x01000001,
         };
 
@@ -2689,6 +2694,7 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
             List<MapObject> solids = _solidObjects[_elevation];
             solids.Remove(dude);
             InsertSorted(solids, dude);
+            RebuildLighting(); // P114: the dude's light moves with him — re-spread from the new tile (object.cc:1354)
             _camera.SetCenter(tile);
             _camera.PanX = 0;
             _camera.PanY = 0;

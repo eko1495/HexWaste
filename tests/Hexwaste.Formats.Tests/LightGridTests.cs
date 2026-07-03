@@ -39,6 +39,22 @@ public class LightGridTests
     }
 
     [Fact]
+    public void DudeEmitterLiftsAnAdjacentTileAcrossTheDarknessBand()
+    {
+        // P114: the dude's light (distance 4, intensity 65536) at arcaves ambient (40960 = the -10 to-hit
+        // band). A melee-adjacent (dist-1) tile crosses 52428 -> band 0 (+10 dude to-hit — the interaction
+        // that re-records arcaves combat); a dist-2 tile stays at ambient, so only point-blank gets the lift.
+        var grid = new LightGrid { Ambient = 40960 };
+        grid.AddObjectLight(Source, 4, LightGrid.IntensityMax, NoBlockers);
+
+        int adjacent = grid.GetTileIntensity(HexGrid.TileInDirection(Source, 0, 1));
+        Assert.True(adjacent > 52428, "point-blank target crosses out of the darkness penalty band");
+
+        int twoOut = grid.GetTileIntensity(HexGrid.TileInDirection(Source, 0, 2));
+        Assert.Equal(40960, twoOut); // ambient wins beyond 1 hex — no to-hit change at range
+    }
+
+    [Fact]
     public void UnobstructedLightFallsOffMonotonicallyAlongARay()
     {
         var grid = new LightGrid { Ambient = 0 };
