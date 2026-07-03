@@ -1647,6 +1647,9 @@ public sealed class ScriptHost(GameFileSystem vfs, ScriptList scripts, Hexwaste.
                 return;
             int minDamage = maxDamage == 0 ? 0 : 1;
             _host.ExplosionRequested?.Invoke(tile, elevation, minDamage, maxDamage);
+            // fo2ce opExplosion → actionExplode ends with gameUiEnable() (actions.cc:1793) — clears a trap's
+            // game_ui_disable so an explosion-only trap (e.g. the Golgotha grave niWilGrv) can't soft-lock.
+            _host.GameUiEnabledRequested?.Invoke(true);
         }
 
         // P57: set_exit_grids retargets exit-grid objects; wield_obj_critter equips an item on a critter.
@@ -2025,6 +2028,10 @@ public sealed class ScriptHost(GameFileSystem vfs, ScriptList scripts, Hexwaste.
             if (_host.ObjectOf(objectHandle) is not { } obj || Fid.PidType(obj.Pid) != 1)
                 return;
             _host.CritterDamaged?.Invoke(obj, amount, (damageTypeWithFlags & 0x100) != 0);
+            // fo2ce opCritterDamage → actionDamage ends with gameUiEnable() (actions.cc:1955). gGameUiDisabled
+            // is a bool, so this clears a trap's earlier game_ui_disable — mines/pits that damage-then-rely on
+            // the action to re-enable (e.g. IIPit) would otherwise soft-lock the player.
+            _host.GameUiEnabledRequested?.Invoke(true);
         }
 
         // ported from fallout2-ce interpreter_extra.cc opOverrideMapStart()

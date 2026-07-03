@@ -13,6 +13,29 @@ public sealed partial class ViewerGame
         if (!_combat.TryUseActionPoints(2))
             return;
 
+        // ported from item.cc _item_d_take_drug (:2789): the Jet Antidote ends Jet withdrawal + clears the
+        // addiction. Hexwaste keeps Jet's withdrawal penalty PERMANENT (ProcessWithdrawals), so without this
+        // the −1 ST/PE/AP from ever testing Jet is unremovable by any means. Only intercepts when actually
+        // addicted (else the antidote falls through as an ordinary — inert — drug, matching the return 1).
+        if (item.Pid == JetAntidotePid && _scriptHost is { } sh
+            && Formats.Item.DrugAddiction.GvarForPid(JetPid) is int jetGvar && jetGvar >= 0
+            && sh.GlobalVars.GetValueOrDefault(jetGvar, 0) != 0)
+        {
+            if (_jetWithdrawalActive) // performWithdrawalEnd: reverse the folded penalty
+            {
+                ApplyWithdrawalPerk(Formats.Perks.PerkId.JetAddiction, -1);
+                _jetWithdrawalActive = false;
+            }
+            _pendingWithdrawalEvents.RemoveAll(e => e.Perk == Formats.Perks.PerkId.JetAddiction); // _queue_clear_type
+            sh.GlobalVars[jetGvar] = 0; // dudeClearAddiction(PROTO_ID_JET)
+            Log("The Jet antidote purges the addiction from your system.");
+            Console.WriteLine("drug: Jet antidote cleared Jet addiction");
+            item.StackCount--;
+            if (item.StackCount <= 0)
+                _dudeInventory.Remove(item);
+            return;
+        }
+
         // ported from item.cc _item_d_take_drug (:2809): the immediate effect, then schedule the two
         // delayed kicks (the down-ramp + restore that net to zero = the wear-off). P37.
         int hpBefore = _dude?.Dude.CurrentHp ?? 0;
@@ -125,6 +148,12 @@ public sealed partial class ViewerGame
     /// item.cc's EVENT_TYPE_WITHDRAWAL queue; drained from UpdateClock like the drug/poison ticks.</summary>
     private readonly List<(long FireTick, bool IsStart, int Pid, int Perk)> _pendingWithdrawalEvents = [];
 
+    private const int JetPid = 259, JetAntidotePid = 260; // PROTO_ID_JET / PROTO_ID_JET_ANTIDOTE (proto_types.h)
+    /// <summary>Whether the PERMANENT Jet withdrawal penalty is currently folded into the sheet (its onset
+    /// fired). Lets the Jet Antidote reverse exactly what was applied — not over-subtract during the onset
+    /// window nor no-op after it.</summary>
+    private bool _jetWithdrawalActive;
+
     /// <summary>A dedicated seeded RNG for the addiction roll, isolated off the combat/worldmap/skill
     /// streams (the _sneakRng/_partyRng pattern) — so giving/looting/using a chem never perturbs them.</summary>
     private Formats.Combat.ICombatRng? _addictionRng;
@@ -186,6 +215,7 @@ public sealed partial class ViewerGame
             if (isStart) // performWithdrawalStart (item.cc:3039)
             {
                 ApplyWithdrawalPerk(perk, +1);
+                if (perk == Formats.Perks.PerkId.JetAddiction) _jetWithdrawalActive = true;
                 int duration = 10080; // 7 game-days
                 if (DudeHasTrait(Formats.Combat.TraitModifiers.ChemReliant)) duration /= 2;
                 if (DudePerkRank(Formats.Perks.PerkId.FlowerChild) > 0) duration /= 2;

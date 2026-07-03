@@ -2348,7 +2348,9 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
             return;
         }
 
-        if (IsKeyPressed(keyboard, Keys.M))
+        // The worldmap is unreachable during combat (fo2ce: no map key in combat) — otherwise the player
+        // flees any fight by travelling away, bypassing the combat aftermath scripts.
+        if (IsKeyPressed(keyboard, Keys.M) && _combat.Phase == Formats.Combat.CombatPhase.Idle)
             _worldmapOpen = true;
 
         // Esc opens the options/pause menu (engine-faithful; the panel offers Quit).
