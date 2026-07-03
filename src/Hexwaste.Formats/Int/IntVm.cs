@@ -560,7 +560,11 @@ public sealed class IntVm
     private const int BreakMask = 0x016D;
 
     /// <summary>Hard safety budget; real procs run a few thousand ops at most.</summary>
-    private const int InstructionBudget = 100_000;
+    // fo2ce has NO instruction cap. Some shipped scripts busy-wait synchronously — e.g. the arcaves spike
+    // trap flies its missile one hex per 500 loop iterations (ATSrTrp*.Missile_Fired), which at 100k aborted
+    // mid-flight and left game_ui_disable stranded (the player stuck). Raised well past any real script loop
+    // while still catching a true runaway (5M instructions run in well under a second).
+    private const int InstructionBudget = 5_000_000;
 
     private readonly struct Value(ushort tag, int raw)
     {

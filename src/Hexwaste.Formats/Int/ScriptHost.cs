@@ -1048,6 +1048,9 @@ public sealed class ScriptHost(GameFileSystem vfs, ScriptList scripts, Hexwaste.
         catch (Exception ex) when (ex is InvalidDataException or FileNotFoundException or NotSupportedException)
         {
             Console.Error.WriteLine($"script {path}: {ex.Message}");
+            // Safety net: a proc that game_ui_disable'd then died (runaway/error) must not leave the player
+            // input-locked forever — restore the UI on any aborted proc run through here (spatials/objects).
+            GameUiEnabledRequested?.Invoke(true);
             return null;
         }
     }
