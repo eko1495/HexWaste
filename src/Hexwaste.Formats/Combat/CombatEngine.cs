@@ -2068,6 +2068,38 @@ public sealed class CombatEngine
         }
     }
 
+    /// <summary>Player-initiated end-combat gate — ported from fallout2-ce src/combat.cc combatAttemptEnd
+    /// (:3075): refuse to leave while any live hostile still WANTS TO FIGHT. Returns true iff combat
+    /// actually ended (the caller shows combat.msg #103 on false). Distinct from Reset() (the debug/map-load
+    /// hard teardown) — this is what the ENDCOMBAT button must call.</summary>
+    public bool TryEndCombat()
+    {
+        if (_phase == CombatPhase.Idle)
+            return true;
+        if (_phase == CombatPhase.GameOver)
+            return false;
+        if (_hostiles.Any(h => !WantsToStopFighting(h)))
+            return false; // an enemy still engaged — combat.cc:3086 message #103, no end
+        EndCombat();
+        return true;
+    }
+
+    /// <summary>ported from fallout2-ce src/combat_ai.cc _combatai_want_to_stop (:3211): a critter stops
+    /// fighting (does NOT block the player leaving combat) if it is dead/KO, fleeing/disengaging, or it no
+    /// longer perceives a danger source. For the exit gate the danger source is the dude + his live party;
+    /// an alive, engaging animal that still perceives the dude (e.g. adjacent) keeps the fight open.</summary>
+    private bool WantsToStopFighting(MapObject h)
+    {
+        if (h.IsDead || IsKnockedOut(h))
+            return true;
+        if ((h.Maneuver & (ManeuverDisengaging | ManeuverFleeing)) != 0)
+            return true;
+        MapObject? dude = _host.Dude;
+        IEnumerable<MapObject> dudeSide = (dude is { IsDead: false } ? [dude] : Array.Empty<MapObject>())
+            .Concat(_host.PartyMembers.Where(p => !p.IsDead));
+        return !dudeSide.Any(e => WithinPerception(h, e)); // no perceivable danger source → it wants to stop
+    }
+
     /// <summary>Public so a non-combat death (script/trap damage) can trigger the
     /// full game-over (state + transcript + host death screen).</summary>
     public void GameOver()

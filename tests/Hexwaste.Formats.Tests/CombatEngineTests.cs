@@ -1446,6 +1446,30 @@ public class CombatEngineTests
     }
 
     [Fact]
+    public void CannotEndCombatWhileAnAdjacentHostileStillFights()
+    {
+        // Bugfix: the ENDCOMBAT button was ungated (a hard Reset). fo2ce combatAttemptEnd (combat.cc:3075)
+        // refuses to leave while a live enemy still wants to fight (_combatai_want_to_stop).
+        var host = new FakeCombatHost { CriticalsEnabled = false };
+        host.SetDude(NewCritter(20100, hp: 30, ap: 10, skill: 100));
+        MapObject enemy = host.AddCritter(NewCritter(HexGrid.TileInDirection(20100, 0), hp: 500, perception: 5));
+        var engine = new CombatEngine(host, new MinRng());
+        Assert.True(engine.TryAttack(enemy)); // opens combat; enemy is a live, adjacent, engaging hostile
+        host.Animating.Clear();
+        engine.ProcessAnimations();
+        Assert.NotEqual(CombatPhase.Idle, engine.Phase);
+
+        // The adjacent angry animal blocks the exit.
+        Assert.False(engine.TryEndCombat());
+        Assert.NotEqual(CombatPhase.Idle, engine.Phase);
+
+        // A dead (or KO'd/fled) hostile "wants to stop" → the fight can now be left.
+        enemy.CombatResults |= CriticalTables.DamDead;
+        Assert.True(engine.TryEndCombat());
+        Assert.Equal(CombatPhase.Idle, engine.Phase);
+    }
+
+    [Fact]
     public void MissedSingleShotHitsABystanderInTheOvershootLine()
     {
         // P114: a MISSED gun shot overshoots into the first critter beyond the target (combat.cc:3937).

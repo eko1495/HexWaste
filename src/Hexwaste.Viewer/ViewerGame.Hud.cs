@@ -344,7 +344,7 @@ public sealed partial class ViewerGame
         // Combat-mode buttons (shown + clickable only during a fight; M5).
         new("ENDTURN", new Rectangle(590, 43, 38, 22), () => _combat.EndPlayerTurn(), CombatOnly: true),                  // :1903
         new("ENDCOMBAT", new Rectangle(590, 65, 38, 22),                                                                  // :1955
-            () => { if (_combat.Phase != Formats.Combat.CombatPhase.Idle) _combat.Reset(); }, CombatOnly: true),
+            () => AttemptEndCombat(), CombatOnly: true),
     ];
 
     /// <summary>Route a left-click to a HUD button if it landed on one. Returns true

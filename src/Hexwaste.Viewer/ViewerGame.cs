@@ -401,6 +401,19 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
     /// <summary>perk.msg / trait.msg display names (P28-M4); lazy. perk i → msg 101+i, trait i →
     /// msg 100+i (perk.cc:218 / trait.cc:74). Fall back to a generic label if the file is absent.</summary>
     private Formats.Text.MessageFile? _perkMsg; private bool _perkMsgTried;
+    private Formats.Text.MessageFile? _combatMsg; private bool _combatMsgTried;
+
+    /// <summary>The ENDCOMBAT button (+ any player attempt to leave combat): only ends if no live hostile
+    /// still wants to fight (combat.cc combatAttemptEnd) — otherwise surface combat.msg #103. Distinct from
+    /// the map-load/harness hard Reset().</summary>
+    private void AttemptEndCombat()
+    {
+        if (_combat.Phase == Formats.Combat.CombatPhase.Idle)
+            return;
+        if (!_combat.TryEndCombat())
+            Log(LazyMsg(@"text\english\game\combat.msg", ref _combatMsgTried, ref _combatMsg)?.GetText(103)
+                is { Length: > 0 } m ? m : "You can't leave combat right now.");
+    }
     private Formats.Text.MessageFile? _traitMsg; private bool _traitMsgTried;
     private Formats.Text.MessageFile? LazyMsg(string path, ref bool tried, ref Formats.Text.MessageFile? cache)
     {
