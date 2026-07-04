@@ -44,6 +44,17 @@ public sealed class ScriptHost(GameFileSystem vfs, ScriptList scripts, Hexwaste.
     /// are never pinned (the phase-5 measured leak).</summary>
     private readonly Dictionary<(string Map, int Sid), int[]> _localVarSlices = [];
 
+    /// <summary>One persistent VM per (map NAME, sid) for the whole map visit —
+    /// ported from fallout2-ce src/scripts.cc scriptExecProc (:1275-1295): the
+    /// Program is created once per Script (latched by SCRIPT_FLAG_0x01) and its
+    /// module globals live in stackValues until map unload (_scr_remove_all →
+    /// programListFree, scripts.cc:2405). A fresh VM per proc run (the old model)
+    /// re-zeroed those globals, breaking every cross-proc counter/one-shot idiom
+    /// (heartbeats, dialog→lifecycle quest flags, the prizefight coordinator).
+    /// Keyed by sid, NOT script path: two critters sharing one .int get
+    /// independent globals (scripts.cc:661-671). Cleared on every map load.</summary>
+    private readonly Dictionary<(string Map, int Sid), IntVm> _vmCache = [];
+
     // Object handle table: scripts see objects as opaque ints; 0 = null.
     private readonly List<MapObject> _handles = [];
     private readonly Dictionary<MapObject, int> _handleByObject = [];
@@ -663,6 +674,50 @@ public sealed class ScriptHost(GameFileSystem vfs, ScriptList scripts, Hexwaste.
     public sealed record ScriptRunResult(bool Overridden, List<string> Messages);
 
     /// <summary>
+    /// The cached-VM checkout: returns the persistent VM for (map, sid) with its
+    /// context rebound for this run (scriptSetObjects/scriptSetFixedParam analog,
+    /// scripts.cc:624-658), creating and caching it on first use. Two escapes to a
+    /// throwaway VM: a same-sid re-entrant call while the cached VM is mid-Interpret
+    /// (fresh globals for the nested frame only — the old per-proc behavior), and a
+    /// program mismatch (shouldn't happen; sid→script binding is stable per visit).
+    /// NOTE dialog safety: a DialogSession holds this VM between Choose calls with
+    /// IsRunning == false — that's safe ONLY because the host is dialog-modal
+    /// (ViewerGame.Update returns early while _dialog is non-null, and the critter/
+    /// map_update pumps gate on it), so no other proc can fire mid-conversation.
+    /// If scripts ever pump during dialog, this needs a conversation-lifetime
+    /// checkout flag.
+    /// </summary>
+    private IntVm GetOrCreateVm(MapFile map, int sid, IntProgram program, ScriptContext externals)
+    {
+        (string, int) key = (map.Header.Name, sid);
+        if (_vmCache.TryGetValue(key, out IntVm? cached))
+        {
+            if (cached.IsRunning)
+                return new IntVm(program, externals, OnStubbedExternal, ExternalVars);
+            if (ReferenceEquals(cached.Program, program))
+            {
+                cached.Rebind(externals);
+                return cached;
+            }
+        }
+
+        var vm = new IntVm(program, externals, OnStubbedExternal, ExternalVars);
+        _vmCache[key] = vm;
+        return vm;
+    }
+
+    /// <summary>Drops a (map, sid) VM after an aborted proc run (budget blown / bad
+    /// opcode): the abort skipped the epilogue, so the stack above the globals is
+    /// dirty — the next call rebuilds a clean VM (re-running global init). Mirrors
+    /// fallout2-ce refusing to run a program whose flags mark it dead.</summary>
+    private void EvictVm(MapFile map, int sid) => _vmCache.Remove((map.Header.Name, sid));
+
+    /// <summary>Clears all cached script VMs — call on every map load and on
+    /// load-game. Module globals reset per visit (scripts.cc:2405 programListFree),
+    /// unlike LVARs, which persist per map name.</summary>
+    public void ClearScriptVms() => _vmCache.Clear();
+
+    /// <summary>
     /// Runs the first procedure (by name) the object's script defines, with
     /// full context. Returns null when the object has no script / no such
     /// proc / the VM fails (soft fallback).
@@ -704,7 +759,7 @@ public sealed class ScriptHost(GameFileSystem vfs, ScriptList scripts, Hexwaste.
                 ActionBeingUsedValue = -1,
                 Target = marker,          // script->target = the explosion marker (read via target_obj)
             };
-            var vm = new IntVm(program, externals, OnStubbedExternal, ExternalVars);
+            IntVm vm = GetOrCreateVm(map, scenery.Sid, program, externals);
             return vm.TryRunProcedure("damage_p_proc")
                 ? new ScriptRunResult(externals.Overridden, externals.Messages)
                 : null;
@@ -712,6 +767,7 @@ public sealed class ScriptHost(GameFileSystem vfs, ScriptList scripts, Hexwaste.
         catch (Exception ex) when (ex is InvalidDataException or FileNotFoundException or NotSupportedException)
         {
             Console.Error.WriteLine($"script {path}: {ex.Message}");
+            EvictVm(map, scenery.Sid);
             return null;
         }
     }
@@ -740,7 +796,7 @@ public sealed class ScriptHost(GameFileSystem vfs, ScriptList scripts, Hexwaste.
                 ActionBeingUsedValue = -1,
                 Target = target,
             };
-            var vm = new IntVm(program, externals, OnStubbedExternal, ExternalVars);
+            IntVm vm = GetOrCreateVm(map, self.Sid, program, externals);
             return vm.TryRunProcedure("combat_p_proc")
                 ? new ScriptRunResult(externals.Overridden, externals.Messages)
                 : null;
@@ -748,6 +804,7 @@ public sealed class ScriptHost(GameFileSystem vfs, ScriptList scripts, Hexwaste.
         catch (Exception ex) when (ex is InvalidDataException or FileNotFoundException or NotSupportedException)
         {
             Console.Error.WriteLine($"script {path}: {ex.Message}");
+            EvictVm(map, self.Sid);
             return null;
         }
     }
@@ -807,7 +864,7 @@ public sealed class ScriptHost(GameFileSystem vfs, ScriptList scripts, Hexwaste.
             {
                 UsedWith = usedWith,
             };
-            var vm = new IntVm(program, externals, OnStubbedExternal, ExternalVars);
+            IntVm vm = GetOrCreateVm(map, sid, program, externals);
             return vm.TryRunProcedure(procedureName)
                 ? new ScriptRunResult(externals.Overridden, externals.Messages)
                 : null;
@@ -815,6 +872,7 @@ public sealed class ScriptHost(GameFileSystem vfs, ScriptList scripts, Hexwaste.
         catch (Exception ex) when (ex is InvalidDataException or FileNotFoundException or NotSupportedException)
         {
             Console.Error.WriteLine($"script {path}: {ex.Message}");
+            EvictVm(map, sid);
             return null;
         }
     }
@@ -857,11 +915,15 @@ public sealed class ScriptHost(GameFileSystem vfs, ScriptList scripts, Hexwaste.
                 FixedParamValue = 0,
                 ActionBeingUsedValue = -1,
             };
-            new IntVm(program, externals, OnStubbedExternal, ExternalVars).RunGlobalInit();
+            // Route through the cache so the prologue's global writes land in the VM
+            // the later map_enter/map_update/heartbeat procs reuse (the old code
+            // discarded this VM, throwing the init values away every proc).
+            GetOrCreateVm(map, sid, program, externals).RunGlobalInit();
         }
         catch (Exception ex) when (ex is InvalidDataException or FileNotFoundException or NotSupportedException)
         {
             Console.Error.WriteLine($"script {path}: {ex.Message}");
+            EvictVm(map, sid);
         }
     }
 
@@ -1036,7 +1098,7 @@ public sealed class ScriptHost(GameFileSystem vfs, ScriptList scripts, Hexwaste.
                 FixedParamValue = fixedParam,
                 ActionBeingUsedValue = actionBeingUsed,
             };
-            var vm = new IntVm(program, externals, OnStubbedExternal, ExternalVars);
+            IntVm vm = GetOrCreateVm(map, sid, program, externals);
             foreach (string name in procedureNames)
             {
                 if (vm.TryRunProcedure(name))
@@ -1048,6 +1110,7 @@ public sealed class ScriptHost(GameFileSystem vfs, ScriptList scripts, Hexwaste.
         catch (Exception ex) when (ex is InvalidDataException or FileNotFoundException or NotSupportedException)
         {
             Console.Error.WriteLine($"script {path}: {ex.Message}");
+            EvictVm(map, sid);
             // Safety net: a proc that game_ui_disable'd then died (runaway/error) must not leave the player
             // input-locked forever — restore the UI on any aborted proc run through here (spatials/objects).
             GameUiEnabledRequested?.Invoke(true);
@@ -1253,6 +1316,7 @@ public sealed class ScriptHost(GameFileSystem vfs, ScriptList scripts, Hexwaste.
             catch (Exception ex) when (ex is InvalidDataException or NotSupportedException)
             {
                 Console.Error.WriteLine($"dialog proc {procedureIndex}: {ex.Message}");
+                _context.EvictVm(); // aborted mid-proc — the cached VM's stack is dirty
                 Active = false;
                 return false;
             }
@@ -1289,8 +1353,12 @@ public sealed class ScriptHost(GameFileSystem vfs, ScriptList scripts, Hexwaste.
             if (program is null)
                 return null;
 
+            // Shared with the lifecycle procs on purpose: a global set in talk_p_proc /
+            // a dialog node must be visible to the same script's later map_update /
+            // critter_p_proc (the DCVic "Free Vic" pattern). Safe because the host is
+            // dialog-modal — see GetOrCreateVm.
             var context = new ScriptContext(this, map, obj.Sid, record, self: obj, source: dude, dude: dude);
-            var vm = new IntVm(program, context, OnStubbedExternal, ExternalVars);
+            IntVm vm = GetOrCreateVm(map, obj.Sid, program, context);
             if (!vm.TryRunProcedure("talk_p_proc"))
                 return null;
 
@@ -1304,6 +1372,7 @@ public sealed class ScriptHost(GameFileSystem vfs, ScriptList scripts, Hexwaste.
         catch (Exception ex) when (ex is InvalidDataException or FileNotFoundException or NotSupportedException)
         {
             Console.Error.WriteLine($"script {path}: {ex.Message}");
+            EvictVm(map, obj.Sid);
             return null;
         }
     }
@@ -1333,6 +1402,9 @@ public sealed class ScriptHost(GameFileSystem vfs, ScriptList scripts, Hexwaste.
         public MapObject? UsedWith { get; init; }
 
         public int ObjectBeingUsedWithId() => _host.HandleOf(UsedWith);
+
+        /// <summary>Drops this script's cached VM (dialog abort path — see ScriptHost.EvictVm).</summary>
+        internal void EvictVm() => _host.EvictVm(_map, _sid);
 
         /// <summary>target_obj override: the on-hit combat_p_proc (fp=2) sets target = the struck
         /// defender (combat.cc:4730 scriptSetObjects(attacker,NULL,defender)). Null → self (the default).</summary>

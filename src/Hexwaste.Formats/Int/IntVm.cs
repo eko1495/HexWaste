@@ -577,16 +577,37 @@ public sealed class IntVm
     }
 
     private readonly IntProgram _program;
-    private readonly IVmExternals _externals;
+    private IVmExternals _externals; // swapped per proc run by Rebind() on a cached VM
     private readonly Action<string>? _onStubbedExternal;
+
+    /// <summary>The immutable bytecode this VM runs — the cache invariant check
+    /// (one program per (map, sid) for the whole visit).</summary>
+    public IntProgram Program => _program;
+
+    /// <summary>True while Interpret() is on the stack — a same-sid re-entrant proc
+    /// call must get a throwaway VM instead of aliasing the running one.</summary>
+    public bool IsRunning { get; private set; }
+
+    /// <summary>
+    /// Swaps the per-proc script context (self/source/target/fixedParam) without
+    /// rebuilding the VM — the cached-VM analog of fallout2-ce scriptSetObjects/
+    /// scriptSetFixedParam (scripts.cc:624-658), which mutate the Script in place
+    /// while the Program (and its module globals) persists for the map visit.
+    /// </summary>
+    public void Rebind(IVmExternals externals) => _externals = externals;
 
     // ported from fallout2-ce src/random.h ROLL_* enum
     private const int RollCriticalFailure = 0;
     private const int RollSuccess = 2;
     private const int RollCriticalSuccess = 3;
 
-    /// <summary>Deterministic RNG (scripts only use it for stock quantities and flavor).</summary>
-    private readonly Random _random = new(20260612);
+    /// <summary>Deterministic RNG (scripts only use it for stock quantities and flavor).
+    /// Reseeded at each named-proc entry (TryRunProcedure) so a cached VM reproduces the
+    /// per-proc fresh-VM byte stream exactly; dialog node procs (TryRunProcedureByIndex)
+    /// keep advancing it within one conversation, as before.</summary>
+    private Random _random = new(RandomSeed);
+
+    private const int RandomSeed = 20260612;
 
     /// <summary>Dialog text: literal string, or a message-list lookup for int ids.</summary>
     private string ResolveDialogText(int messageListId, Value msg) =>
@@ -665,7 +686,15 @@ public sealed class IntVm
     public bool TryRunProcedure(string name)
     {
         int index = _program.FindProcedure(name);
-        return index >= 0 && TryRunProcedureByIndex(index);
+        if (index < 0)
+            return false;
+
+        // Every named-proc entry restarts the script RNG at the fixed seed — exactly what
+        // the old one-VM-per-proc lifetime gave for free. Keeps all goldens byte-identical
+        // now that the VM persists per (map, sid). Dialog nodes go through
+        // TryRunProcedureByIndex directly and continue the stream within a conversation.
+        _random = new Random(RandomSeed);
+        return TryRunProcedureByIndex(index);
     }
 
     /// <summary>
@@ -737,20 +766,30 @@ public sealed class IntVm
     /// <summary>The _interpret() dispatch loop, with a hard instruction budget.</summary>
     private void Interpret()
     {
-        int budget = InstructionBudget;
-        while ((_flags & BreakMask) == 0)
+        // Same-sid re-entrancy sentinel for the cached-VM cache (ScriptHost.GetOrCreateVm):
+        // a nested proc call on this sid while we're mid-Interpret gets a throwaway VM.
+        IsRunning = true;
+        try
         {
-            if (--budget < 0)
-                throw new InvalidDataException(
-                    $"Script exceeded the {InstructionBudget} instruction budget (runaway loop?).");
+            int budget = InstructionBudget;
+            while ((_flags & BreakMask) == 0)
+            {
+                if (--budget < 0)
+                    throw new InvalidDataException(
+                        $"Script exceeded the {InstructionBudget} instruction budget (runaway loop?).");
 
-            ushort opcode = (ushort)_program.ReadCode16(_instructionPointer);
-            _instructionPointer += 2;
+                ushort opcode = (ushort)_program.ReadCode16(_instructionPointer);
+                _instructionPointer += 2;
 
-            if (((opcode >> 8) & 0x80) == 0)
-                throw new InvalidDataException($"Bad opcode word 0x{opcode:X4} at 0x{_instructionPointer - 2:X}.");
+                if (((opcode >> 8) & 0x80) == 0)
+                    throw new InvalidDataException($"Bad opcode word 0x{opcode:X4} at 0x{_instructionPointer - 2:X}.");
 
-            Execute(opcode);
+                Execute(opcode);
+            }
+        }
+        finally
+        {
+            IsRunning = false;
         }
     }
 

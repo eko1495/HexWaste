@@ -1572,6 +1572,7 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
         _animator = new ObjectAnimator(_frmCache);
         _scriptHost?.ClearTimers();
         _scriptHost?.ResetHandles();
+        _scriptHost?.ClearScriptVms(); // module globals reset per visit (scripts.cc:2405 programListFree)
         _combat.Reset();
         _walkMode = false;
         _hoveredObject = null;
@@ -5855,6 +5856,7 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
             _scriptHost.GlobalVars.Clear();
             SeedGlobalVars(); // P32-M1: seed the non-zero vault13.gam globals (e.g. Arroyo rep 50, FIND_VIC 1)
             _scriptHost.ClearAllLocalVars();
+            _scriptHost.ClearScriptVms();
             _scriptHost.ExternalVars.Clear();
         }
         ResetParty();

@@ -383,6 +383,7 @@ public sealed partial class ViewerGame
             // LVARs must be in place BEFORE map_enter runs on the restored
             // map — scripts gate their one-time work on them.
             _scriptHost.ClearAllLocalVars();
+            _scriptHost.ClearScriptVms(); // stale in-memory VM globals must not leak into the loaded game
             foreach ((string mapName, Dictionary<int, int[]> slices) in state.LocalVars)
                 _scriptHost.ImportLocalVars(mapName, slices);
         }
