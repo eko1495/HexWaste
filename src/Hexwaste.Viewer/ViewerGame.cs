@@ -769,6 +769,15 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
         /// interval (must NOT fire) then Beats full 600-tick intervals (each fires once), and report the
         /// counts — a deterministic, headless proof of the heartbeat cadence. STATE-only.</summary>
         public sealed record MapUpdateHeartbeatProbe(int Beats) : StartupAction;
+        /// <summary>P116 (fix B QA): run the full per-frame pump (clock/timers/animator/critter procs/
+        /// map_update) for Ms simulated milliseconds in 10 ms steps, MID action sequence — lets a
+        /// script-driven cutscene (the Modoc shotgun wedding) play out between probes. STATE-only.</summary>
+        public sealed record PumpMs(int Ms) : StartupAction;
+        /// <summary>P116 (fix B QA): report the game_ui_disable input-lock flag (STATE-only).</summary>
+        public sealed record UiProbe : StartupAction;
+        /// <summary>P116 (fix B QA): report ScriptCanSee (the obj_can_see_obj seam) from the critter
+        /// at FromHex to the critter at ToHex (or the dude when ToHex &lt; 0). STATE-only.</summary>
+        public sealed record CanSeeProbe(int FromHex, int ToHex) : StartupAction;
         /// <summary>Per-map content-coverage smoke scan: census the loaded map (critters / containers /
         /// doors / scripted objects) and report the FULL set of stubbed (unwired) externals its scripts
         /// fired (map_enter on load + a map_update pass) — a NEW city's silent-quest-gap detector.

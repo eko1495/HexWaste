@@ -439,6 +439,17 @@ for (int i = 0; i < args.Length; i++)
             // P1-M2: exercise the recurring 600-tick map_update heartbeat N times (deterministic cadence).
             actions.Add(new ViewerGame.StartupAction.MapUpdateHeartbeatProbe(int.Parse(args[++i])));
             break;
+        case "--pump-ms" when i + 1 < args.Length:
+            // P116 (fix B QA): run the per-frame pump mid-sequence so scripted cutscenes play out.
+            actions.Add(new ViewerGame.StartupAction.PumpMs(int.Parse(args[++i])));
+            break;
+        case "--ui-probe":
+            actions.Add(new ViewerGame.StartupAction.UiProbe());
+            break;
+        case "--can-see-probe" when i + 2 < args.Length:
+            actions.Add(new ViewerGame.StartupAction.CanSeeProbe(int.Parse(args[i + 1]), int.Parse(args[i + 2])));
+            i += 2;
+            break;
         case "--smoke":
             // per-map content+stub coverage census (helps adding new cities): --map <m> --smoke
             actions.Add(new ViewerGame.StartupAction.SmokeScan());

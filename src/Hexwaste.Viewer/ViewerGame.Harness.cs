@@ -487,6 +487,47 @@ public sealed partial class ViewerGame
                         + $"halfIntervalFires={halfIntervalFires} totalFires={totalFires}");
                     break;
                 }
+                case StartupAction.PumpMs(var pumpMs):
+                {
+                    // P116 (fix B QA): the same per-frame pump the post-action AdvanceCyclingMs loop
+                    // runs, but MID sequence — a script cutscene (fade out + game_ui_disable + timed
+                    // critter_p_proc beats, e.g. the Modoc shotgun wedding) plays out between probes.
+                    for (int advanced = 0; advanced < pumpMs; advanced += 10)
+                    {
+                        _animator.Update(10);
+                        _combat.Step();
+                        _dude?.Update(10);
+                        PumpPendingInteraction();
+                        UpdateAmbientLife(10);
+                        UpdateClock(10);
+                        PumpCritterProcs(10);
+                        PumpMapUpdate(10);
+                        if (_pendingTransition is { } pumpTransition)
+                        {
+                            _pendingTransition = null;
+                            ApplyTransition(pumpTransition);
+                        }
+                    }
+                    Console.WriteLine($"pump-ms: {pumpMs}");
+                    break;
+                }
+                case StartupAction.UiProbe:
+                    Console.WriteLine($"ui-probe: disabled={_gameUiDisabled}");
+                    break;
+                case StartupAction.CanSeeProbe(var csFrom, var csTo):
+                {
+                    MapObject? csSource = CritterAt(csFrom);
+                    MapObject? csTarget = csTo < 0 ? _dude?.Dude : CritterAt(csTo);
+                    if (csSource is null || csTarget is null)
+                    {
+                        Console.Error.WriteLine($"can-see-probe: no critter at {csFrom}/{csTo}");
+                        break;
+                    }
+                    Console.WriteLine($"can-see-probe: from={csSource.HexTile} to={csTarget.HexTile}"
+                        + $" withinPerception={IsWithinPerception(csSource, csTarget)}"
+                        + $" canSee={ScriptCanSee(csSource, csTarget)}");
+                    break;
+                }
                 case StartupAction.MapUpdateProbe when _map is not null && _scriptHost is not null:
                 {
                     // M0 diagnostic: run map_update_p_proc (the map script + every scripted object —
