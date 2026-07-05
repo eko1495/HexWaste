@@ -48,7 +48,10 @@ public sealed class MapObject
     public required int Rotation { get; set; }
     public required int Fid { get; set; }
     public required int Flags { get; set; }
-    public required int Pid { get; init; }
+    /// <summary>Settable (not init-only): the engine mutates an object's pid in place for the
+    /// charged-item toggles (Geiger/Stealth Boy I ↔ II, item.cc miscItemTurnOn/Off) and the
+    /// lit flare. (P116, review H.)</summary>
+    public required int Pid { get; set; }
 
     /// <summary>Light emission: radius in hexes (max 8) and intensity (0..65536). Mutable —
     /// obj_set_light_level (P21) re-lights an object at runtime.</summary>
@@ -477,7 +480,11 @@ public sealed class MapFile
                     case 4: // ITEM_TYPE_AMMO: rounds in the box
                         obj.AmmoQuantity = reader.ReadInt32();
                         break;
-                    case 5 or 6: // MISC charges / KEY keyCode
+                    case 5: // ITEM_TYPE_MISC: charges (obj->data.item.misc.charges — P116, review H;
+                            // reuses AmmoQuantity, the same data.item union slot fo2ce overlays)
+                        obj.AmmoQuantity = reader.ReadInt32();
+                        break;
+                    case 6: // KEY keyCode
                         reader.Skip(4);
                         break;
                 }

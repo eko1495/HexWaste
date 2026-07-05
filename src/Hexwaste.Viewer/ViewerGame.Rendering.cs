@@ -361,6 +361,10 @@ public sealed partial class ViewerGame
     /// 0xFC000 trans bits (object.cc:943). Unknown protos → None (opaque).</summary>
     private Formats.Proto.TransType TranslucencyOf(MapObject obj)
     {
+        // P116 (review H): a per-OBJECT glass flag overrides the proto (the Stealth Boy sets
+        // OBJECT_TRANS_GLASS on its owner — item.cc stealthBoyTurnOn; object.cc reads obj->flags).
+        if ((obj.Flags & Formats.Item.ChargedItems.TransGlassFlag) != 0)
+            return Formats.Proto.TransType.Glass;
         if (_transByPid.TryGetValue(obj.Pid, out Formats.Proto.TransType cached))
             return cached;
         Formats.Proto.TransType t;

@@ -778,6 +778,9 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
         /// <summary>P116 (fix B QA): report ScriptCanSee (the obj_can_see_obj seam) from the critter
         /// at FromHex to the critter at ToHex (or the dude when ToHex &lt; 0). STATE-only.</summary>
         public sealed record CanSeeProbe(int FromHex, int ToHex) : StartupAction;
+        /// <summary>P116 (review "car trunk" QA): board the car, give one item of Pid (0 = none),
+        /// stash it via the real trunk loot-panel path, and report the trunk state. STATE-only.</summary>
+        public sealed record TrunkProbe(int Pid) : StartupAction;
         /// <summary>Per-map content-coverage smoke scan: census the loaded map (critters / containers /
         /// doors / scripted objects) and report the FULL set of stubbed (unwired) externals its scripts
         /// fired (map_enter on load + a map_update pass) — a NEW city's silent-quest-gap detector.
@@ -2011,7 +2014,10 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
             bool apress = mouse.LeftButton == ButtonState.Pressed && _previousMouse.LeftButton == ButtonState.Released;
             if (IsKeyPressed(keyboard, Keys.Escape) || IsKeyPressed(keyboard, Keys.A)
                 || (apress && cancel.Contains(mouse.X, mouse.Y)))
+            {
                 _automapOpen = false;
+                _automapScanner = false; // the scanner view lasts one automap session (automapShow resets flags)
+            }
             else if (IsKeyPressed(keyboard, Keys.H) || IsKeyPressed(keyboard, Keys.L)
                 || (apress && detail.Contains(mouse.X, mouse.Y)))
             {
@@ -2019,7 +2025,7 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
                 Log($"Automap detail: {(_automapHighDetail ? "high" : "low")}.");
             }
             else if (IsKeyPressed(keyboard, Keys.S) || (apress && scanner.Contains(mouse.X, mouse.Y)))
-                Log("No motion scanner.");
+                TryAutomapScanner(); // P116 (review H): spend a Motion Sensor charge for the scanner view
             if (IsKeyPressed(keyboard, Keys.PageUp))
                 SwitchElevation(+1);
             if (IsKeyPressed(keyboard, Keys.PageDown))
@@ -2151,6 +2157,10 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
                     if (_tradePartner is not null && shiftHeld)
                     {
                         GiveToFollower(gi); // trade give-side: Shift+1-9 → the follower
+                    }
+                    else if (_lootContainer is not null && shiftHeld)
+                    {
+                        PutIntoContainer(gi); // P116: stash the dude item at this row (loot move-right)
                     }
                     else if (_lootContainer is not null)
                     {
@@ -2410,7 +2420,14 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
             _roofsVisible = !_roofsVisible;
 
         if (IsKeyPressed(keyboard, Keys.T))
-            ToggleWalkMode();
+        {
+            // P116 (review "car trunk"): Shift+T opens the Highwayman trunk when the car is
+            // with the party; plain T keeps the walk/run toggle.
+            if (keyboard.IsKeyDown(Keys.LeftShift) || keyboard.IsKeyDown(Keys.RightShift))
+                OpenCarTrunk();
+            else
+                ToggleWalkMode();
+        }
 
         // L: lockpick the hovered door.
         if (IsKeyPressed(keyboard, Keys.L) && _hoveredObject is { } lockTarget && IsDoor(lockTarget))
@@ -3300,6 +3317,8 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
         _lootContainer.Inventory.RemoveAt(index);
         AddToDudeInventory(item);
         Log($"You take: {ObjectName(item)}{(item.StackCount > 1 ? $" x{item.StackCount}" : "")}.");
+        if (ReferenceEquals(_lootContainer, _trunkObject))
+            CommitTrunk(); // P116: the trunk's canonical list lives on CarState
     }
 
     /// <summary>Open the Steal screen on a live critter (P78): reuse the loot panel, reset the per-session
@@ -3533,6 +3552,20 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
             return;
         }
 
+        // P116 (review F): the six self-use MISC items run their OWN use_p_proc, then one is
+        // consumed — ported from fallout2-ce proto_instance.cc _obj_use_misc_item (:986) plus
+        // the rc=1 consume in _obj_use_item (:1119). The Pip-Boy enhancers, Raiders/Survey maps,
+        // Cat's Paw #5 and Ramirez's box dead-ended at "can't use that way" before.
+        if (Formats.Item.MiscItems.IsSelfUseScripted(item.Pid))
+        {
+            bool ran = TryRunItemUseScript(item, proto) is not null;
+            Console.WriteLine($"use-misc-item: pid={item.Pid} script={(ran ? "ran" : "none")}");
+            item.StackCount--;
+            if (item.StackCount <= 0)
+                _dudeInventory.Remove(item);
+            return;
+        }
+
         // P40: using an ammo box reloads the equipped weapon with THAT ammo type (the player's type
         // selection — the engine's drag-ammo-onto-weapon). The no-mixed-mags rule blocks a swap into a
         // loaded weapon of a different type → hint to unload (Shift+R) first.
@@ -3560,7 +3593,244 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
             return;
         }
 
+        // P116 (review H): charged MISC items — item.cc _item_m_use_charged_item (:2247).
+        // Geiger Counter / Stealth Boy toggle (charge + trickle drain); Motion Sensor spends
+        // one charge per automap scanner view.
+        if (Formats.Item.ChargedItems.IsChargedItem(item.Pid))
+        {
+            UseChargedItem(item);
+            return;
+        }
+
+        // P116 (review F): any remaining MISC item that carries its own script runs its
+        // use_p_proc, NOT consumed — the radio path (proto_instance.cc _obj_use_radio :850,
+        // which fires for ANY weapon/misc item with a sid). Ordered after the explosive block,
+        // unlike fo2ce, because Hexwaste's armed-explosive flow is pid-driven and no vanilla
+        // explosive carries a script — behaviour-equivalent on vanilla content.
+        if (proto.SubType == 5 /* ITEM_TYPE_MISC */ && TryRunItemUseScript(item, proto) is { } used)
+        {
+            Console.WriteLine($"use-item-script: pid={item.Pid} overridden={used.Overridden}");
+            return;
+        }
+
         Log($"You can't use the {ObjectName(item)} that way.");
+    }
+
+    /// <summary>Run an inventory item's own use_p_proc (self = the item, source = the dude),
+    /// lazily stamping the proto's default script when the instance has none registered on the
+    /// CURRENT map — the _obj_new_sid stamp fo2ce applies at object creation (proto_instance.cc:75).
+    /// A sid inherited from another map's table is re-stamped too: the same numeric sid can alias a
+    /// DIFFERENT record on this map, so the record must resolve to the proto's scripts.lst index.
+    /// Returns null when the item has no script or the proc didn't run.</summary>
+    private Formats.Int.ScriptHost.ScriptRunResult? TryRunItemUseScript(MapObject item, ProtoInfo proto)
+    {
+        if (_scriptHost is null || _map is null)
+            return null;
+        int protoIndex = proto.ScriptId != -1 ? proto.ScriptId & 0xFFFFFF : -1;
+        bool registered = item.Sid != -1
+            && _map.ScriptsBySid.TryGetValue(item.Sid, out Formats.Map.MapScriptRecord? rec)
+            && (protoIndex == -1 || rec.ScriptListIndex == protoIndex);
+        if (!registered)
+        {
+            if (protoIndex == -1)
+                return null;
+            item.Sid = _scriptHost.AllocateSid(_map, protoIndex);
+        }
+        var result = _scriptHost.RunObjectProc(item, _map, _dude?.Dude, "use_p_proc");
+        if (result is not null)
+            foreach (string line in result.Messages)
+                Log(line);
+        return result;
+    }
+
+    /// <summary>The Highwayman trunk as a loot-panel container (P116, review "car trunk"): a
+    /// synthetic pid-455 object whose Inventory IS <see cref="Formats.CarState.TrunkItems"/> —
+    /// created once so the shared storage keeps a stable identity. fo2ce's trunk is a party-member
+    /// item repositioned beside the parked car by ZICrTrnk.int; Hexwaste has no physical parked
+    /// car, so Shift+T opens it directly whenever the car is with the party.</summary>
+    private MapObject? _trunkObject;
+
+    private void OpenCarTrunk()
+    {
+        if (_scriptHost is null)
+            return;
+        Formats.CarState car = _scriptHost.Car;
+        bool carHere = car.InCar || (car.CurrentAreaId >= 0 && car.CurrentAreaId == _currentAreaId);
+        if (!carHere)
+        {
+            Log("The car isn't here.");
+            return;
+        }
+        if (_trunkObject is null)
+        {
+            _trunkObject = RebuildObject(455, 1); // PROTO_ID_CAR_TRUNK
+            if (_trunkObject is null)
+                return;
+            _trunkObject.Inventory.AddRange(car.TrunkItems);
+        }
+        // The CarState list stays the source of truth (save/load serializes it); the panel edits
+        // the object's list, so sync back on every open/close via CommitTrunk.
+        _lootContainer = _trunkObject;
+        _inventoryOpen = false;
+        Log($"Trunk (capacity {_scriptHost.GetTrunkMaxSize()}): Shift+1-9 stashes, 1-9 takes.");
+        Console.WriteLine($"trunk: open items={_trunkObject.Inventory.Count} max={_scriptHost.GetTrunkMaxSize()}");
+    }
+
+    /// <summary>Mirror the trunk panel's edits back into CarState (called when the loot panel
+    /// closes or the game saves).</summary>
+    private void CommitTrunk()
+    {
+        if (_trunkObject is null || _scriptHost is null)
+            return;
+        _scriptHost.Car.TrunkItems.Clear();
+        _scriptHost.Car.TrunkItems.AddRange(_trunkObject.Inventory);
+    }
+
+    /// <summary>Stash a dude item into the open loot container (the loot screen's move-right pane;
+    /// P116). The trunk enforces its size cap (sum of item Size × count vs container maxSize —
+    /// item.cc itemGetTotalSize/_item_c_check_size semantics); world containers stay uncapped,
+    /// matching the shipped looseness of TakeFromContainer.</summary>
+    private void PutIntoContainer(int index)
+    {
+        if (_lootContainer is null || index < 0 || index >= _dudeInventory.Count)
+            return;
+        MapObject item = _dudeInventory[index];
+        if (ReferenceEquals(_lootContainer, _trunkObject) && _scriptHost is not null)
+        {
+            int used = _lootContainer.Inventory.Sum(i => SafeProto(i.Pid)?.Size * Math.Max(1, i.StackCount) ?? 0);
+            int adding = (SafeProto(item.Pid)?.Size ?? 0) * Math.Max(1, item.StackCount);
+            if (used + adding > _scriptHost.GetTrunkMaxSize())
+            {
+                Log("The trunk is full.");
+                return;
+            }
+        }
+        _dudeInventory.RemoveAt(index);
+        UnequipForTransfer(item);
+        _lootContainer.Inventory.Add(item);
+        Log($"You stash: {ObjectName(item)}{(item.StackCount > 1 ? $" x{item.StackCount}" : "")}.");
+        if (ReferenceEquals(_lootContainer, _trunkObject))
+            CommitTrunk();
+    }
+
+    /// <summary>Charged items currently ON, draining one charge per trickle interval
+    /// (item.cc miscItemTrickleEventProcess; game-time due ticks). (P116, review H.)</summary>
+    private readonly List<(MapObject Item, long DueTick)> _trickleItems = [];
+
+    /// <summary>The automap is showing the Motion Sensor scanner view (AUTOMAP_WITH_SCANNER):
+    /// living critters plotted regardless of fog. One automap session only.</summary>
+    private bool _automapScanner;
+
+    /// <summary>Use a charged MISC item, ported from fallout2-ce src/item.cc
+    /// _item_m_use_charged_item (:2247): Geiger Counter / Stealth Boy toggle on-off; the
+    /// Motion Sensor consumes a charge and opens the automap scanner view.</summary>
+    private void UseChargedItem(MapObject item)
+    {
+        if (Formats.Item.ChargedItems.IsToggleable(item.Pid))
+        {
+            if (Formats.Item.ChargedItems.IsOn(item.Pid))
+                TurnOffChargedItem(item);
+            else
+                TurnOnChargedItem(item);
+            return;
+        }
+
+        // Motion Sensor: one charge per scanner view (automapShow(true, true)).
+        if (item.AmmoQuantity <= 0)
+        {
+            Log($"The {ObjectName(item)} has no charges left."); // items.msg 5 class
+            Console.WriteLine($"charged-item: pid={item.Pid} empty");
+            return;
+        }
+        item.AmmoQuantity--;
+        _automapScanner = true;
+        _automapOpen = true;
+        Console.WriteLine($"charged-item: pid={item.Pid} scanner charges={item.AmmoQuantity}");
+    }
+
+    /// <summary>miscItemTurnOn (item.cc:2709): consume a charge, flip to the "on" pid, queue the
+    /// trickle drain; the Stealth Boy sets OBJECT_TRANS_GLASS on the dude (stealthBoyTurnOn —
+    /// translucent render + halved NPC perception range); the Geiger Counter reads out the rem
+    /// counter (items.msg 8).</summary>
+    private void TurnOnChargedItem(MapObject item)
+    {
+        if (item.AmmoQuantity <= 0)
+        {
+            Log($"The {ObjectName(item)} has no charges left.");
+            Console.WriteLine($"charged-item: pid={item.Pid} empty");
+            return;
+        }
+        item.AmmoQuantity--;
+        item.Pid = Formats.Item.ChargedItems.TurnedOnPid(item.Pid);
+        _trickleItems.Add((item, _clock.Ticks + Formats.Item.ChargedItems.TrickleTicks(item.Pid)));
+        Log($"The {ObjectName(item)} is on.");
+        if (Formats.Item.ChargedItems.IsStealthBoy(item.Pid) && _dude is not null)
+            _dude.Dude.Flags |= Formats.Item.ChargedItems.TransGlassFlag;
+        else if (_dude is not null)
+            Log($"The rem counter reads: {_dude.Dude.Radiation}."); // items.msg 8 (paraphrased — no game strings)
+        Console.WriteLine($"charged-item: pid={item.Pid} on charges={item.AmmoQuantity}"
+            + (Formats.Item.ChargedItems.IsStealthBoy(item.Pid) ? " glass=1" : $" rems={_dude?.Dude.Radiation ?? 0}"));
+    }
+
+    /// <summary>miscItemTurnOff (item.cc:2814): stop the trickle, flip back to the "off" pid,
+    /// clear the stealth-boy glass flag.</summary>
+    private void TurnOffChargedItem(MapObject item)
+    {
+        _trickleItems.RemoveAll(t => t.Item == item);
+        if (Formats.Item.ChargedItems.IsStealthBoy(item.Pid) && _dude is not null)
+            _dude.Dude.Flags &= ~Formats.Item.ChargedItems.TransGlassFlag;
+        item.Pid = Formats.Item.ChargedItems.TurnedOffPid(item.Pid);
+        Log($"The {ObjectName(item)} is off.");
+        Console.WriteLine($"charged-item: pid={item.Pid} off charges={item.AmmoQuantity}");
+    }
+
+    /// <summary>The trickle drain (miscItemTrickleEventProcess): each due interval consumes one
+    /// charge and reschedules; an empty item turns itself off. Also SELF-HEALING: any "on"-pid
+    /// item in the dude's bag with no trickle entry (a loaded save — the queue isn't serialized)
+    /// gets re-armed, so the invariant "on ⇔ ticking" survives save/load.</summary>
+    private void ProcessTrickleItems()
+    {
+        foreach (MapObject bagItem in _dudeInventory)
+            if (Formats.Item.ChargedItems.IsOn(bagItem.Pid) && !_trickleItems.Any(t => t.Item == bagItem))
+            {
+                _trickleItems.Add((bagItem, _clock.Ticks + Formats.Item.ChargedItems.TrickleTicks(bagItem.Pid)));
+                if (Formats.Item.ChargedItems.IsStealthBoy(bagItem.Pid) && _dude is not null)
+                    _dude.Dude.Flags |= Formats.Item.ChargedItems.TransGlassFlag;
+            }
+
+        for (int i = _trickleItems.Count - 1; i >= 0; i--)
+        {
+            (MapObject item, long due) = _trickleItems[i];
+            if (_clock.Ticks < due)
+                continue;
+            if (item.AmmoQuantity > 0 && _dudeInventory.Contains(item))
+            {
+                item.AmmoQuantity--;
+                _trickleItems[i] = (item, _clock.Ticks + Formats.Item.ChargedItems.TrickleTicks(item.Pid));
+            }
+            else
+            {
+                if (_dudeInventory.Contains(item))
+                    Log($"The {ObjectName(item)} has no charges left.");
+                TurnOffChargedItem(item);
+            }
+        }
+    }
+
+    /// <summary>The automap SCANNER button (automap.cc:430): spend one Motion Sensor charge for
+    /// the critter-blip view. DOCUMENTED SIMPLIFICATION: fo2ce requires the sensor in an active
+    /// hand; any bag slot qualifies here (Hexwaste's hands are weapons-only).</summary>
+    private void TryAutomapScanner()
+    {
+        MapObject? sensor = _dudeInventory.FirstOrDefault(i => i.Pid == Formats.Item.ChargedItems.MotionSensor);
+        if (sensor is null || sensor.AmmoQuantity <= 0)
+        {
+            Log(sensor is null ? "The motion sensor is not installed." : "The motion sensor has no charges remaining.");
+            return;
+        }
+        sensor.AmmoQuantity--;
+        _automapScanner = true;
+        Console.WriteLine($"charged-item: pid={sensor.Pid} scanner charges={sensor.AmmoQuantity}");
     }
 
     /// <summary>Placed armed charges awaiting detonation (game-time due tick).</summary>
@@ -5520,6 +5790,7 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
         ProcessRads(); // P113 (item 7c): the radiation band model — midnight checks + delayed damage/heal
         _scriptHost?.PumpTimers(_dude?.Dude); // P114: script timers fire on game time (catch-up after jumps)
         ProcessArmedCharges(); // placed explosives detonate on game time
+        ProcessTrickleItems(); // P116 (review H): Geiger/Stealth Boy charge drain on game time
 
         int hour = _clock.Hour / 100;
         if (hour == _lastAmbientHour)
@@ -5807,20 +6078,114 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
                 Log(line);
     }
 
-    /// <summary>Use the armed inventory item on a clicked object (the
-    /// use_obj_on path: crowbar pry, key doors, Vic's radio).</summary>
+    /// <summary>Use the armed inventory item on a clicked object — the _protinst_use_item_on
+    /// pipeline (proto_instance.cc:1249): medical bags → item/target use_obj_on scripts →
+    /// the default handler (drug applied to the TARGET). (P116, review item G.)</summary>
     private void UseItemOn(MapObject item, MapObject target)
     {
         _pendingUseItem = null;
-        var result = _scriptHost?.RunUseObjOn(item, target, _map, _dude?.Dude);
-        if (result is null)
+
+        // Medical bags = a First Aid / Doctor skill use on the target, out of combat only
+        // (proto.msg 902), then a 1-in-10 supplies-depletion roll consumes one bag (rc=1 →
+        // itemRemove in _obj_use_item_on). DOCUMENTED SIMPLIFICATION: Hexwaste's TryHeal rolls
+        // a plain d100 vs skill (no critical channel, same as the Skilldex path), so the
+        // +20/+40 criticalChanceModifier has no seam to land on.
+        if (Formats.Item.MedicalBags.TryGet(item.Pid, out int bagSkill, out int bagCrit))
         {
-            Log($"Using the {ObjectName(item)} on the {ObjectName(target)} does nothing.");
+            if (_combat.Phase != Formats.Combat.CombatPhase.Idle)
+            {
+                Log("You cannot do that in combat.");
+                return;
+            }
+            TryHeal(bagSkill, target, target == _dude?.Dude);
+            _skillRng ??= new Formats.Combat.SystemCombatRng(RngSeed ?? Environment.TickCount);
+            bool depleted = _skillRng.Next(1, 11) == 1; // randomBetween(1,10) == 1
+            if (depleted)
+            {
+                Log($"The supplies in the {ObjectName(item)} run out.");
+                item.StackCount--;
+                if (item.StackCount <= 0)
+                    _dudeInventory.Remove(item);
+            }
+            Console.WriteLine($"medbag: pid={item.Pid} skill={bagSkill} crit=+{bagCrit} depleted={depleted}");
             return;
         }
-        foreach (string line in result.Messages)
-            Log(line);
-        Console.WriteLine($"use-on: {ObjectName(item)} -> {ObjectName(target)} overridden={result.Overridden} lines={result.Messages.Count}");
+
+        var result = _scriptHost?.RunUseObjOn(item, target, _map, _dude?.Dude);
+        if (result is not null)
+        {
+            foreach (string line in result.Messages)
+                Log(line);
+            Console.WriteLine($"use-on: {ObjectName(item)} -> {ObjectName(target)} overridden={result.Overridden} lines={result.Messages.Count}");
+            if (result.Overridden)
+                return;
+        }
+
+        // _protinst_default_use_item (proto_instance.cc:1162): no script claimed the
+        // interaction — a drug is applied to the TARGET critter (stimpak a companion).
+        ProtoInfo? itemProto = SafeProto(item.Pid);
+        if (itemProto?.Drug is { } drug && Fid.Type(target.Fid) is ObjectType.Critter)
+        {
+            if (target.IsDead)
+            {
+                Log("That won't work on the dead."); // proto.msg 583-586 class
+                return;
+            }
+            if (target == _dude?.Dude)
+            {
+                UseDrug(item, drug); // the full dude model (chemistry + addiction)
+                return;
+            }
+            ApplyDrugToNpc(target, item, drug);
+            return;
+        }
+
+        Log($"Using the {ObjectName(item)} on the {ObjectName(target)} does nothing."); // msg 582 class
+    }
+
+    /// <summary>Apply a drug item to a living NPC — the _item_d_take_drug(target) arm of
+    /// _protinst_default_use_item (proto_instance.cc:1194): roll the stats[0] == -2 random-range
+    /// heal, fold immediate stat amounts into the same per-critter bonus the AI chem path uses,
+    /// consume one. DOCUMENTED SIMPLIFICATION (same as TryNpcUseCombatDrug): no timed wear-off
+    /// or addiction for NPCs, and the bonus clears on combat end.</summary>
+    private void ApplyDrugToNpc(MapObject target, MapObject item, DrugProtoStats drug)
+    {
+        _skillRng ??= new Formats.Combat.SystemCombatRng(RngSeed ?? Environment.TickCount);
+        int[] bonus = _npcDrugBonus.TryGetValue(target, out int[]? b) ? b : _npcDrugBonus[target] = new int[35];
+        int hpHeal = 0;
+
+        if (drug.Stats[0] == -2)
+        {
+            // amounts[0..1] are a random range applied to stats[1] (the stimpak heal roll).
+            int amount = _skillRng.Next(drug.Amounts[0], drug.Amounts[1] + 1);
+            if (drug.Stats[1] == 35) hpHeal += amount;
+            else if (drug.Stats[1] is >= 0 and < 35) bonus[drug.Stats[1]] += amount;
+            if (drug.Stats[2] == 35) hpHeal += drug.Amounts[2];
+            else if (drug.Stats[2] is >= 0 and < 35) bonus[drug.Stats[2]] += drug.Amounts[2];
+        }
+        else
+        {
+            for (int i = 0; i < 3; i++)
+            {
+                if (drug.Stats[i] == 35) hpHeal += drug.Amounts[i];
+                else if (drug.Stats[i] is >= 0 and < 35) bonus[drug.Stats[i]] += drug.Amounts[i];
+            }
+        }
+
+        int before = target.CurrentHp;
+        if (hpHeal > 0)
+        {
+            int max = GetCritterState(target)?.MaxHp ?? target.CurrentHp;
+            target.CurrentHp = Math.Min(target.CurrentHp + hpHeal, max);
+            if (target.CurrentHp > before)
+                _floatText.Add(target.HexTile, _elevation, $"+{target.CurrentHp - before}", CombatFloatColors.SkillResponse);
+        }
+
+        item.StackCount--;
+        if (item.StackCount <= 0)
+            _dudeInventory.Remove(item);
+        Log($"You use the {ObjectName(item)} on the {ObjectName(target)}."); // proto.msg 581 class
+        Console.WriteLine($"drug-on: pid={item.Pid} -> {ObjectName(target)}@{target.HexTile} heal={target.CurrentHp - before} hp={target.CurrentHp}");
     }
 
     private void StartNewGame()

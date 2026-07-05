@@ -18,6 +18,17 @@ public sealed class CarState
     public const int GvarFuelCellRegulator = 453; // GVAR_CAR_UPGRADE_FUEL_CELL_REGULATOR
     public const int GvarBlower = 439;            // GVAR_CAR_BLOWER (speed-only, not a fuel discount)
 
+    /// <summary>The trunk's shared storage (P116, review "car trunk"). In fo2ce the trunk is a
+    /// pid-455 CONTAINER item carried as a party member (ZICrTrnk.int repositions it beside the
+    /// parked car each map_enter), so its inventory persists engine-side; Hexwaste has no physical
+    /// parked car, so the host owns the list directly and the viewer opens it as a loot container.</summary>
+    public List<Map.MapObject> TrunkItems { get; } = [];
+
+    /// <summary>The trunk capacity — fo2ce stores it ON THE PID-455 PROTO's container maxSize,
+    /// which METARULE_SET/GET_CAR_CARRY_AMOUNT (52/53, interpreter_extra.cc:3331) mutate/read
+    /// (the car-upgrade scripts raise it). Initialized from the proto by the host.</summary>
+    public int TrunkMaxSize { get; set; } = 100;
+
     public bool InCar { get; set; }
     // fo2ce inits carFuel = CAR_FUEL_MAX even before the car is owned (worldmap.cc:919); isInCar gates
     // ownership. Defaulting Fuel to max keeps metarule3 110 (out-of-gas) false → 0, matching pre-P100.

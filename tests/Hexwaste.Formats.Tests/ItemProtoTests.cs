@@ -49,6 +49,49 @@ public class ItemProtoTests
     }
 
     [GameDataFact]
+    public void ProtoScriptIdParsesForSelfUseItems()
+    {
+        // P116 (review F): the proto header sid (proto.cc protoRead, previously skipped) —
+        // the _obj_new_sid stamp that makes self-use items carry their script. Type nibble 3
+        // = SCRIPT_TYPE_ITEM; low 24 bits = the scripts.lst index.
+        using var vfs = GameFileSystem.Open(GameData.RequiredDir);
+        var protos = new ProtoDatabase(vfs);
+
+        Assert.Equal(0x03000448, protos.Get(Item.MiscItems.RaidersMap).ScriptId);
+        Assert.Equal(0x0300047A, protos.Get(Item.MiscItems.PipBoyLingualEnhancer).ScriptId);
+        Assert.Equal(-1, protos.Get(84).ScriptId);  // radios are scripted per map INSTANCE
+        Assert.Equal(-1, protos.Get(266).ScriptId); // Vic's radio too
+
+        // The six-pid _obj_use_misc_item set (proto_instance.cc:986).
+        Assert.True(Item.MiscItems.IsSelfUseScripted(444));
+        Assert.True(Item.MiscItems.IsSelfUseScripted(516));
+        Assert.False(Item.MiscItems.IsSelfUseScripted(84));
+    }
+
+    [GameDataFact]
+    public void ChargedItemAndContainerPayloadsParse()
+    {
+        using var vfs = GameFileSystem.Open(GameData.RequiredDir);
+        var protos = new ProtoDatabase(vfs);
+
+        // P116 (review H): MISC charge capacities (proto.item.data.misc.charges) — created
+        // instances start full. Empirical values confirmed live by --use-book 52/54/59.
+        Assert.Equal(200, protos.Get(Item.ChargedItems.GeigerCounterOff).MiscCharges);
+        Assert.Equal(100, protos.Get(Item.ChargedItems.StealthBoyOff).MiscCharges);
+        Assert.Equal(150, protos.Get(Item.ChargedItems.MotionSensor).MiscCharges);
+
+        // P116 (car trunk): the pid-455 trunk container's maxSize — what METARULE_SET/
+        // GET_CAR_CARRY_AMOUNT mutate/read (interpreter_extra.cc:3331).
+        Assert.Equal(250, protos.Get(455).ContainerMaxSize);
+
+        // The toggle pid pairs (item.cc miscItemTurnOn/Off) round-trip.
+        Assert.Equal(Item.ChargedItems.GeigerCounterOn, Item.ChargedItems.TurnedOnPid(52));
+        Assert.Equal(Item.ChargedItems.StealthBoyOff, Item.ChargedItems.TurnedOffPid(210));
+        Assert.Equal(600, Item.ChargedItems.TrickleTicks(Item.ChargedItems.StealthBoyOn));
+        Assert.Equal(3000, Item.ChargedItems.TrickleTicks(Item.ChargedItems.GeigerCounterOn));
+    }
+
+    [GameDataFact]
     public void StatDrugPayloadsParseWithTheTimedWearOff()
     {
         using var vfs = GameFileSystem.Open(GameData.RequiredDir);

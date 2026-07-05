@@ -450,6 +450,10 @@ for (int i = 0; i < args.Length; i++)
             actions.Add(new ViewerGame.StartupAction.CanSeeProbe(int.Parse(args[i + 1]), int.Parse(args[i + 2])));
             i += 2;
             break;
+        case "--trunk-probe" when i + 1 < args.Length:
+            // P116 (car trunk QA): board the car, stash <pid> (0 = just open), report the trunk.
+            actions.Add(new ViewerGame.StartupAction.TrunkProbe(int.Parse(args[++i])));
+            break;
         case "--smoke":
             // per-map content+stub coverage census (helps adding new cities): --map <m> --smoke
             actions.Add(new ViewerGame.StartupAction.SmokeScan());

@@ -35,7 +35,18 @@ public sealed record ProtoInfo(
     /// <summary>First dword of the scenery subtype data (proto.scenery.data.generic.field_0;
     /// for doors this is door.openFlags). Bit 0x04 = walk-thru — _obj_portal_is_walk_thru
     /// (object.cc:2056) gates whether the DUDE may path through the closed door. 0 for non-scenery.</summary>
-    int SceneryData0 = 0)
+    int SceneryData0 = 0,
+    /// <summary>The proto's default script id (proto.cc protoRead sid; -1 = none). fo2ce stamps it
+    /// on every created instance via _obj_new_sid (proto_instance.cc:75), which is how self-use
+    /// items (Raiders Map, Pip-Boy enhancers, radios) always carry their script (P116, review F).
+    /// Low 24 bits = the scripts.lst index.</summary>
+    int ScriptId = -1,
+    /// <summary>MISC-item charge capacity (proto.item.data.misc.charges) — created instances
+    /// start full (proto.cc:765). 0 for everything else. (P116, review H.)</summary>
+    int MiscCharges = 0,
+    /// <summary>Container capacity in item-size units (proto.item.data.container.maxSize) —
+    /// what METARULE_SET/GET_CAR_CARRY_AMOUNT mutate on the trunk proto. 0 for non-containers.</summary>
+    int ContainerMaxSize = 0)
 {
     /// <summary>The object's translucency class from its flag bits 0xFC000 (P23) — the engine
     /// sets one OBJECT_TRANS_* from the proto at instantiation (object.cc:943).</summary>
@@ -188,6 +199,9 @@ public sealed class ProtoDatabase(GameFileSystem vfs)
         int subType = -1;
         byte soundId = 0;
         int sceneryData0 = 0;
+        int scriptId = -1;
+        int miscCharges = 0;
+        int containerMaxSize = 0;
         int inventoryFid = -1;
         int cost = 0;
         int weight = 0;
@@ -215,7 +229,7 @@ public sealed class ProtoDatabase(GameFileSystem vfs)
                 reader.Skip(8); // lightDistance, lightIntensity
                 flags = reader.ReadInt32();
                 extendedFlags = reader.ReadInt32();
-                reader.Skip(4); // sid
+                scriptId = reader.ReadInt32(); // proto sid (P116, review F; was skipped)
                 if ((ObjectType)type is ObjectType.Item or ObjectType.Scenery)
                     subType = reader.ReadInt32();
 
@@ -284,6 +298,13 @@ public sealed class ProtoDatabase(GameFileSystem vfs)
                             ammo = new AmmoProtoStats(reader.ReadInt32(), reader.ReadInt32(),
                                 reader.ReadInt32(), reader.ReadInt32(), reader.ReadInt32(), reader.ReadInt32());
                             break;
+                        case 1: // ITEM_TYPE_CONTAINER (proto.cc:1560-1563): maxSize, openFlags
+                            containerMaxSize = reader.ReadInt32(); // the trunk capacity metarules 52/53 target (P116)
+                            break;
+                        case 5: // ITEM_TYPE_MISC (proto.cc:1613-1617): powerTypePid, powerType, charges
+                            reader.Skip(8);
+                            miscCharges = reader.ReadInt32(); // stamped on created instances (P116, review H)
+                            break;
                     }
                 }
                 else if ((ObjectType)type is ObjectType.Critter)
@@ -326,7 +347,7 @@ public sealed class ProtoDatabase(GameFileSystem vfs)
                 throw new InvalidDataException($"PID 0x{pid:X8}: unexpected type {type}.");
         }
 
-        return new ProtoInfo(filePid, messageId, fid, flags, extendedFlags, subType, soundId, inventoryFid, critter, cost, weapon, armor, drug, ammo, weight, size, sceneryData0);
+        return new ProtoInfo(filePid, messageId, fid, flags, extendedFlags, subType, soundId, inventoryFid, critter, cost, weapon, armor, drug, ammo, weight, size, sceneryData0, scriptId, miscCharges, containerMaxSize);
     }
 
     private string[] GetList(int type)

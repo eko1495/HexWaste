@@ -155,6 +155,11 @@ public sealed class SaveState
     public int CarFuel { get; set; } = CarState.FuelMax;
     public int CarAreaId { get; set; } = -1;
 
+    /// <summary>P116 (review "car trunk"): the trunk's shared storage + the script-set capacity
+    /// (metarule 52). Null on old saves → empty trunk / proto-default capacity.</summary>
+    public List<SavedItem>? TrunkItems { get; set; }
+    public int? TrunkMaxSize { get; set; }
+
     /// <summary>Flags carries the equip bits (in-hand 0x3000000, worn 0x4000000).
     /// Ammo sentinels: -1 = derive from the prototype on load (V2).</summary>
     public sealed record SavedItem(int Pid, int Count, int Flags = 0,

@@ -243,6 +243,7 @@ public sealed partial class ViewerGame
     {
         try
         {
+            ProtoInfo proto = _protos.Get(pid);
             var obj = new MapObject
             {
                 Id = -4,
@@ -251,12 +252,14 @@ public sealed partial class ViewerGame
                 Y = 0,
                 Frame = 0,
                 Rotation = 0,
-                Fid = _protos.Get(pid).Fid,
+                Fid = proto.Fid,
                 Flags = 0,
                 Pid = pid,
                 Sid = -1,
             };
             obj.StackCount = Math.Max(count, 1);
+            if (proto.MiscCharges > 0)
+                obj.AmmoQuantity = proto.MiscCharges; // created MISC items start full (proto.cc:765; P116, review H)
             return obj;
         }
         catch (Exception ex) when (ex is FileNotFoundException or InvalidDataException)
@@ -264,6 +267,18 @@ public sealed partial class ViewerGame
             Console.Error.WriteLine($"load: dropping unknown pid 0x{pid:X8}: {ex.Message}");
             return null;
         }
+    }
+
+    /// <summary>P116 (review "car trunk"): serialize the trunk storage — syncing any open trunk
+    /// panel first — sparse (null when empty, old-save shaped).</summary>
+    private List<Formats.SaveState.SavedItem>? SnapshotTrunk()
+    {
+        CommitTrunk();
+        List<MapObject> items = _scriptHost?.Car.TrunkItems ?? [];
+        return items.Count == 0 ? null
+            : [.. items.Select(i => new Formats.SaveState.SavedItem(i.Pid, Math.Max(i.StackCount, 1),
+                i.Flags & (MapObject.FlagInLeftHand | MapObject.FlagInRightHand | MapObject.FlagWorn),
+                i.AmmoQuantity, i.AmmoTypePid))];
     }
 
     private void SaveGame()
@@ -341,6 +356,10 @@ public sealed partial class ViewerGame
             CarInCar = _scriptHost?.Car.InCar ?? false, // P100 (bucket 1): the Highwayman car state
             CarFuel = _scriptHost?.Car.Fuel ?? Formats.CarState.FuelMax,
             CarAreaId = _scriptHost?.Car.CurrentAreaId ?? -1,
+            // P116 (review "car trunk"): sync any open trunk panel first, then persist the storage.
+            TrunkItems = SnapshotTrunk(),
+            TrunkMaxSize = _scriptHost is not null && _scriptHost.Car.TrunkMaxSize != 100
+                ? _scriptHost.Car.TrunkMaxSize : null,
             TravelDestinationAreaId = _activeTravel?.Dest.Index ?? -1, // in-flight leg target (P17-M4)
             // _worldmap (not Worldmap): only export if worldmap.txt was actually
             // touched this session — never force-parse it just to save.
@@ -408,6 +427,18 @@ public sealed partial class ViewerGame
             _scriptHost.Car.InCar = state.CarInCar;
             _scriptHost.Car.Fuel = state.CarFuel;
             _scriptHost.Car.CurrentAreaId = state.CarAreaId;
+            // P116 (review "car trunk"): restore the trunk storage (null on old saves = empty).
+            _scriptHost.Car.TrunkItems.Clear();
+            foreach (SaveState.SavedItem item in state.TrunkItems ?? [])
+                if (RebuildObject(item.Pid, item.Count) is { } obj)
+                {
+                    obj.AmmoQuantity = item.AmmoQuantity;
+                    obj.AmmoTypePid = item.AmmoTypePid;
+                    _scriptHost.Car.TrunkItems.Add(obj);
+                }
+            if (state.TrunkMaxSize is { } trunkMax)
+                _scriptHost.SetTrunkMaxSize(trunkMax);
+            _trunkObject = null; // rebuilt lazily against the restored list on next open
         }
         _worldmap = null;
         _worldFog = null; // re-create against the freshly parsed worldmap, then import the save

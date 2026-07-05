@@ -1072,11 +1072,19 @@ public sealed partial class ViewerGame
                 continue;
             Plot(obj.HexTile, col, 2);
         }
+        // P116 (review H): the Motion Sensor scanner view — every LIVING critter plotted red
+        // regardless of the seen-tile fog (automap.cc:524-528, AUTOMAP_WITH_SCANNER +
+        // _colorTable[31744]).
+        if (_automapScanner)
+            foreach (MapObject critter in _solidObjects[_elevation])
+                if (Fid.Type(critter.Fid) is ObjectType.Critter && !critter.IsDead && !critter.IsHidden)
+                    Plot(critter.HexTile, new Color(248, 0, 0), 2);
+
         if (_dude is not null)
             Plot(_dude.Dude.HexTile, new Color(255, 255, 255), 3); // the dude marker
 
         var labelGreen = new Color(0, 252, 0);
-        _fontRenderer.Draw(_spriteBatch, $"AUTOMAP — {_currentMapName} (elev {_elevation}, {(_automapHighDetail ? "hi" : "lo")} detail)",
+        _fontRenderer.Draw(_spriteBatch, $"AUTOMAP — {_currentMapName} (elev {_elevation}, {(_automapHighDetail ? "hi" : "lo")} detail{(_automapScanner ? ", scanner" : "")})",
             new Vector2(o.X + 20, o.Y + 12), labelGreen);
         _fontRenderer.Draw(_spriteBatch, "SCANNER / CANCEL / hi-lo switch — or Esc/A close, H/L detail, PgUp/Dn elev",
             new Vector2(o.X + 20, o.Y + h - 24), new Color(0, 168, 0));

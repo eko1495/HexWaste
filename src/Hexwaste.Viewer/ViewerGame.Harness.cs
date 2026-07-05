@@ -514,6 +514,24 @@ public sealed partial class ViewerGame
                 case StartupAction.UiProbe:
                     Console.WriteLine($"ui-probe: disabled={_gameUiDisabled}");
                     break;
+                case StartupAction.TrunkProbe(var tpPid) when _scriptHost is not null:
+                {
+                    // P116 (car trunk QA): the real Shift+T → Shift+1 stash → take path, headless.
+                    _scriptHost.Car.GiveToParty(); // board so the "car is here" gate passes
+                    if (tpPid > 0 && RebuildObject(tpPid, 1) is { } tpItem)
+                        AddToDudeInventory(tpItem);
+                    OpenCarTrunk();
+                    if (_lootContainer is not null && tpPid > 0)
+                    {
+                        int tpIdx = _dudeInventory.FindIndex(it => it.Pid == tpPid);
+                        if (tpIdx >= 0)
+                            PutIntoContainer(tpIdx);
+                    }
+                    Console.WriteLine($"trunk-probe: items=[{string.Join(",", _scriptHost.Car.TrunkItems.Select(it => it.Pid))}]"
+                        + $" max={_scriptHost.GetTrunkMaxSize()} open={_lootContainer is not null}");
+                    _lootContainer = null;
+                    break;
+                }
                 case StartupAction.CanSeeProbe(var csFrom, var csTo):
                 {
                     MapObject? csSource = CritterAt(csFrom);

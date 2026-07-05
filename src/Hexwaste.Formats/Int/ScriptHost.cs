@@ -331,6 +331,34 @@ public sealed class ScriptHost(GameFileSystem vfs, ScriptList scripts, Hexwaste.
     /// <summary>A script recruited (true) or dismissed (false) this critter.</summary>
     public Action<MapObject, bool>? PartyChanged { get; set; }
 
+    /// <summary>The trunk capacity is seeded from the pid-455 container proto the first time it is
+    /// read, then owned by <see cref="CarState.TrunkMaxSize"/> — the same lifetime as fo2ce's
+    /// in-memory proto field the 52/53 metarules mutate. (P116, review "car trunk".)</summary>
+    private bool _trunkSizeSeeded;
+
+    public int GetTrunkMaxSize()
+    {
+        if (!_trunkSizeSeeded)
+        {
+            _trunkSizeSeeded = true;
+            try
+            {
+                if (protos.Get(455).ContainerMaxSize is > 0 and var seeded)
+                    Car.TrunkMaxSize = seeded;
+            }
+            catch (Exception ex) when (ex is FileNotFoundException or InvalidDataException)
+            {
+            }
+        }
+        return Car.TrunkMaxSize;
+    }
+
+    public void SetTrunkMaxSize(int size)
+    {
+        _trunkSizeSeeded = true;
+        Car.TrunkMaxSize = size;
+    }
+
     /// <summary>Runtime sid for a script-created object (engine scr_new): a
     /// fresh type-3 sid registered into the map's script table.</summary>
     public int AllocateSid(MapFile map, int scriptIndex)
@@ -1503,8 +1531,19 @@ public sealed class ScriptHost(GameFileSystem vfs, ScriptList scripts, Hexwaste.
             // (interpreter_extra.cc:3286). The <0→0 clamp keeps direct-map/harness runs (area id −1
             // before any worldmap travel) returning today's 0.
             46 => Math.Max(0, _host.CurrentTownProvider?.Invoke() ?? 0),
+            // P116 (review "car trunk"): METARULE_SET/GET_CAR_CARRY_AMOUNT (52/53) — fo2ce
+            // mutates/reads the pid-455 trunk proto's container maxSize (interpreter_extra.cc:3331);
+            // the host keeps it on CarState, seeded from that proto.
+            52 => SetTrunkSize(argument),
+            53 => _host.GetTrunkMaxSize(),
             _ => 0,
         };
+
+        private int SetTrunkSize(int size)
+        {
+            _host.SetTrunkMaxSize(size);
+            return 1;
+        }
 
         private int RequestElevator(int elevatorType)
         {
