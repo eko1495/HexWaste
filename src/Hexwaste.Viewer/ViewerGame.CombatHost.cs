@@ -788,7 +788,11 @@ public sealed partial class ViewerGame
     public bool IsAnyWalkerMoving() => _npcWalkers.Values.Any(w => w.Moving);
     public bool IsWalkerMoving(MapObject critter) =>
         _npcWalkers.TryGetValue(critter, out DudeController? w) && w.Moving;
-    public bool StartWalk(MapObject critter, int targetTile) => StartNpcWalk(critter, targetTile);
+    public bool StartWalk(MapObject critter, int targetTile, bool run = false) => StartNpcWalk(critter, targetTile, run);
+
+    /// <summary>ICombatHost (P117): the critters.lst run flag (art.cc artCritterFidShouldRun) —
+    /// gates the AI approach's run request.</summary>
+    public bool CritterShouldRun(MapObject critter) => _artIndex.CritterShouldRun(critter.Fid);
 
     public void OnThrowStarted(MapObject thrower, int targetTile, ProtoInfo weaponProto)
     {
@@ -920,7 +924,8 @@ public sealed partial class ViewerGame
             case Formats.Int.RegAnimKind.MoveToTile:
             case Formats.Int.RegAnimKind.RunToTile:
             {
-                bool started = StartNpcWalk(a.Object, a.Tile);
+                // P117: a scripted reg_anim_obj_RUN_to_tile finally runs (was funneled into walk).
+                bool started = StartNpcWalk(a.Object, a.Tile, a.Kind == Formats.Int.RegAnimKind.RunToTile);
                 _regAnimMoves.Add(
                     $"{ObjectName(a.Object)}@{a.Object.HexTile}->{a.Tile}:"
                     + $"{(a.Kind == Formats.Int.RegAnimKind.RunToTile ? "run" : "walk")}:{(started ? "ok" : "no")}");
@@ -935,7 +940,8 @@ public sealed partial class ViewerGame
                 int dest = a.Dest is null
                     ? -1
                     : Formats.Map.Placement.FreeTileNear(a.Dest.HexTile, t => _blockedTiles.Contains(t));
-                bool started = dest >= 0 && StartNpcWalk(a.Object, dest);
+                bool started = dest >= 0
+                    && StartNpcWalk(a.Object, dest, a.Kind == Formats.Int.RegAnimKind.RunToObject);
                 _regAnimMoves.Add(
                     $"{ObjectName(a.Object)}@{a.Object.HexTile}->obj@{dest}:"
                     + $"{(a.Kind == Formats.Int.RegAnimKind.RunToObject ? "run" : "walk")}:{(started ? "ok" : "no")}");

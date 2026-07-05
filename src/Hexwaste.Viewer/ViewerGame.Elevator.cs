@@ -50,7 +50,7 @@ public sealed partial class ViewerGame
 
         if (ElevatorPickOverride is { } forced)
         {
-            RideElevator(type, Math.Clamp(forced, 0, levels - 1));
+            RideElevator(type, Math.Clamp(forced, 0, levels - 1), current);
             ElevatorPickOverride = null;
             return;
         }
@@ -71,11 +71,14 @@ public sealed partial class ViewerGame
     /// <summary>Teleport the dude to the picked floor (scripts.cc:926-999): same map + elevation →
     /// reposition facing SE; otherwise a map transition to (map, elevation, tile). Same-map-different-
     /// elevation reloads the map (a documented simplification — fo2ce does an in-place mapSetElevation).</summary>
-    private void RideElevator(int type, int button)
+    private void RideElevator(int type, int button, int startButton)
     {
         (int map, int elevation, int tile) = ElevatorTables.Descriptions[type][button];
         if (tile == -1)
             return; // unused button slot
+        // P117 sfx: the ride sound by level count + levels travelled (elevator.cc:438).
+        if (Formats.Sound.SfxName.Elevator(ElevatorTables.Levels[type], Math.Abs(button - startButton)) is { } rideSfx)
+            _audio?.PlaySfx(rideSfx);
         Log("The elevator doors open.");
         Console.WriteLine($"elevator-ride: button={button} -> map={map} elev={elevation} tile={tile}");
 
@@ -113,7 +116,7 @@ public sealed partial class ViewerGame
             if (hit)
             {
                 _elevatorPicker = null;
-                RideElevator(picker.Type, i);
+                RideElevator(picker.Type, i, picker.Current);
                 return;
             }
         }

@@ -26,6 +26,20 @@ public class AnimationCodeTests
 public class CritterArtRealGameDataTests
 {
     [GameDataFact]
+    public void CritterShouldRunParsesTheListFlags()
+    {
+        // P117: the critters.lst third comma field is the AI run gate (art.cc artInit :238-251
+        // + artCritterFidShouldRun :894). Empirical flags confirmed live via --npc-run/--npc-walk
+        // on modmain (Miria fid index 0x24 runs; Davin index 0x30 does not).
+        using var vfs = GameFileSystem.Open(GameData.RequiredDir);
+        var art = new ArtIndex(vfs);
+
+        Assert.True(art.CritterShouldRun(Fid.Build(ObjectType.Critter, 0x24)));
+        Assert.False(art.CritterShouldRun(Fid.Build(ObjectType.Critter, 0x30)));
+        Assert.False(art.CritterShouldRun(Fid.Build(ObjectType.Scenery, 1))); // non-critters never run
+    }
+
+    [GameDataFact]
     public void ResolvesAndLoadsStandingCritterFrm()
     {
         using var vfs = GameFileSystem.Open(GameData.RequiredDir);

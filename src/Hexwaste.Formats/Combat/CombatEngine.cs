@@ -2698,12 +2698,17 @@ public sealed class CombatEngine
         // Crippled legs cost 4×/8× AP per hex (critter.cc:1349); 1× otherwise → an
         // intact enemy's budget is unchanged (byte-identical).
         int costPerHex = CritterState.MovePointCost(enemy.CombatResults);
+        // P117: the approach RUNS when the mover still has half its AP and its art says so —
+        // ported from fallout2-ce combat_ai.cc:2424 _ai_move_steps_closer (actionPoints >=
+        // maxAp/2 && artCritterFidShouldRun); gated on the PRE-move AP like the engine.
+        bool approachRun = self is not null && _actingEnemyAp >= self.MaxActionPoints / 2
+            && _host.CritterShouldRun(enemy);
         int steps = Math.Min(path.Length - 1, _actingEnemyAp / costPerHex); // stop adjacent
         _actingEnemyAp -= steps * costPerHex;
         int targetTile = enemy.HexTile;
         for (int i = 0; i < steps; i++)
             targetTile = HexGrid.TileInDirection(targetTile, path[i]);
-        return _host.StartWalk(enemy, targetTile);
+        return _host.StartWalk(enemy, targetTile, approachRun);
     }
 
     /// <summary>Run away from a threat tile: greedily step to the unblocked
@@ -2745,7 +2750,9 @@ public sealed class CombatEngine
         _host.Log($"The {_host.ObjectName(critter)} flees!");
         _host.Transcript($"flee: {_host.ObjectName(critter)}@{fromTile} -> {target}");
         _host.OnCritterFlee(critter); // P72-M3: flee taunt (Draw-only, isolated rng → byte-identical)
-        return _host.StartWalk(critter, target);
+        // P117: _ai_run_away registers a RUN unconditionally (combat_ai.cc:1210) — no
+        // shouldRun gate; the host falls back to walk when the run art is missing.
+        return _host.StartWalk(critter, target, run: true);
     }
 
     /// <summary>How close a "stay close to me" companion keeps to the dude before regrouping (P50;
@@ -2889,12 +2896,16 @@ public sealed class CombatEngine
             tile => _host.IsBlocked(tile), t => _host.IsPassableClosedDoor(ally, t)); // P113 (4.1)
         if (path is null || path.Length <= 1)
             return false;
+        // P117: allies approach through the same _ai_move_steps_closer, so the same
+        // half-AP + shouldRun run gate applies (combat_ai.cc:2424).
+        bool allyRun = _host.GetCritterState(ally) is { } allyState
+            && _actingAllyAp >= allyState.MaxActionPoints / 2 && _host.CritterShouldRun(ally);
         int steps = Math.Min(path.Length - 1, _actingAllyAp);
         _actingAllyAp -= steps;
         int walkTarget = ally.HexTile;
         for (int i = 0; i < steps; i++)
             walkTarget = HexGrid.TileInDirection(walkTarget, path[i]);
-        return _host.StartWalk(ally, walkTarget);
+        return _host.StartWalk(ally, walkTarget, allyRun);
     }
 
     /// <summary>P50: an ally heals when hurt past its chem-use threshold (combat_ai.cc _ai_check_drugs

@@ -184,17 +184,36 @@ public sealed partial class ViewerGame
         }
     }
 
-    /// <summary>True when the dude's square has a roof tile (he is indoors).</summary>
-    private bool DudeIsUnderRoof()
+    /// <summary>The dude's current square-grid index (his roof square), or -1 off-grid.</summary>
+    private int DudeRoofSquare()
     {
-        if (_dude is null || _map.Elevations[_elevation] is not { } elevation)
-            return false;
+        if (_dude is null)
+            return -1;
         int hex = _dude.Dude.HexTile;
         int sx = (hex % Camera.HexGridWidth - 1) / 2;
         int sy = hex / Camera.HexGridWidth / 2;
-        if (sx < 0 || sx >= MapElevation.SquareGridWidth || sy < 0 || sy >= MapElevation.SquareGridHeight)
-            return false;
-        return elevation.RoofTileId(sy * MapElevation.SquareGridWidth + sx) != 1;
+        return sx < 0 || sx >= MapElevation.SquareGridWidth || sy < 0 || sy >= MapElevation.SquareGridHeight
+            ? -1
+            : sy * MapElevation.SquareGridWidth + sx;
+    }
+
+    /// <summary>P117: the squares whose roofs hide because the dude stands under that CONNECTED
+    /// roof block (object.cc:1446 → tile_fill_roof) — recomputed only when his square changes
+    /// (the engine's _obj_last_roof_x/y latch). Empty when he is outdoors.</summary>
+    private readonly HashSet<int> _hiddenRoofSquares = [];
+    private int _lastRoofSquare = -1;
+    private int _lastRoofElevation = -1;
+
+    private void UpdateHiddenRoofs()
+    {
+        int square = DudeRoofSquare();
+        if (square == _lastRoofSquare && _elevation == _lastRoofElevation)
+            return;
+        _lastRoofSquare = square;
+        _lastRoofElevation = _elevation;
+        _hiddenRoofSquares.Clear();
+        if (square >= 0 && _map.Elevations[_elevation] is { } elevation)
+            _hiddenRoofSquares.UnionWith(Formats.Map.RoofFill.ConnectedRoofSquares(elevation, square));
     }
 
     /// <summary>

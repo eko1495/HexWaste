@@ -34,8 +34,30 @@ public static class SfxName
     public static string Scenery(bool passive, SceneryAction action, string name) =>
         $"S{(passive ? 'P' : 'A')}{SceneryActionCodes[(int)action]}{name,-4}1".ToUpperInvariant();
 
+    /// <summary>ported from game_sound.cc sfxBuildOpenName() for container ITEMS (:1478):
+    /// "I{action}CNTNR{soundId}" — soundId is the item proto's sound char (field_80). (P117 sfx.)</summary>
+    public static string Container(SceneryAction action, byte soundId)
+    {
+        char sound = soundId is >= 0x20 and < 0x7F ? char.ToUpperInvariant((char)soundId) : 'A';
+        return $"I{SceneryActionCodes[(int)action]}CNTNR{sound}".ToUpperInvariant();
+    }
+
     /// <summary>Virtual VFS path for an sfx name.</summary>
     public static string Path(string name) => $@"sound\sfx\{name}.acm";
+
+    // ported from fallout2-ce src/elevator.cc gElevatorSoundEffects (:301): indexed
+    // [elevator level count - 2][levels travelled]; unused slots are "ERROR" → null here.
+    private static readonly string?[][] ElevatorRideSfx =
+    [
+        ["ELV1_1", "ELV1_1", null, null],
+        ["ELV1_2", "ELV1_2", "ELV1_1", null],
+        ["ELV1_3", "ELV1_3", "ELV2_3", "ELV1_1"],
+    ];
+
+    /// <summary>The elevator ride sound (elevator.cc:438): pick by the elevator's level count
+    /// and |target − start| levels travelled; null when out of table range. (P117 sfx.)</summary>
+    public static string? Elevator(int levels, int traveled) =>
+        levels - 2 is >= 0 and < 3 && traveled is >= 0 and < 4 ? ElevatorRideSfx[levels - 2][traveled] : null;
 
     /// <summary>The character-action variant passed to <see cref="CharName"/> as <c>extra</c>
     /// (game_sound.h:27 CharacterSoundEffect).</summary>

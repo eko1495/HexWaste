@@ -576,7 +576,6 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
     /// pocket the panels do.</summary>
     private List<MapObject> _dudeInventory = [];
     private readonly GameClock _clock = new();
-    private bool _dudeUnderRoof;
     private int _lastAmbientHour = -1;
 
     /// <summary>Path for F5/F9 saves and the --save-to/--load-from flags.</summary>
@@ -781,6 +780,9 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
         /// <summary>P116 (review "car trunk" QA): board the car, give one item of Pid (0 = none),
         /// stash it via the real trunk loot-panel path, and report the trunk state. STATE-only.</summary>
         public sealed record TrunkProbe(int Pid) : StartupAction;
+        /// <summary>P117 QA: teleport the dude to Hex, recompute the connected-roof hide, and
+        /// report hidden-vs-total roofed squares — proves per-building (not global) hiding.</summary>
+        public sealed record RoofProbe(int Hex) : StartupAction;
         /// <summary>Per-map content-coverage smoke scan: census the loaded map (critters / containers /
         /// doors / scripted objects) and report the FULL set of stubbed (unwired) externals its scripts
         /// fired (map_enter on load + a map_update pass) — a NEW city's silent-quest-gap detector.
@@ -813,7 +815,7 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
         public sealed record BlockedProbe(int Hex) : StartupAction;
         /// <summary>P110 QA: start a scripted NPC walk (StartNpcWalk) from the critter at NpcHex to
         /// TargetHex — e2e-drives NPC door pathing headlessly with --advance-ms.</summary>
-        public sealed record NpcWalk(int NpcHex, int TargetHex) : StartupAction;
+        public sealed record NpcWalk(int NpcHex, int TargetHex, bool Run = false) : StartupAction;
         /// <summary>P100 (Point 3): run the MAP script's combat_p_proc "combat over" hook (fixedParam = a
         /// KO'er team) and report whether the map defines it + script_overrides — proves the prizefight
         /// caught-KO seam (_scr_end_combat) without needing a live fight.</summary>
@@ -3001,7 +3003,7 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
     }
 
     /// <summary>Starts a script- or ambient-driven NPC walk (shared walker plumbing).</summary>
-    private bool StartNpcWalk(MapObject npc, int target)
+    private bool StartNpcWalk(MapObject npc, int target, bool run = false)
     {
         if (npc == _dude?.Dude || _npcWalkers.ContainsKey(npc)
             || Fid.Type(npc.Fid) is not ObjectType.Critter)
@@ -3015,6 +3017,19 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
                 return false;
         }
 
+        // P117: a requested RUN still falls back to walk on a crippled leg or missing run art —
+        // animationRegisterRunToTile's guards (animation.cc:753-758), via the same RunGuard the
+        // dude uses (no sneak leg for NPCs). The art check keeps the weapon-coded FID like
+        // DudeMovementAnimCode (documented divergence from the engine's weapon-0 probe).
+        int animCode = Formats.Combat.RunGuard.AnimWalk;
+        if (run)
+        {
+            int runFid = Fid.Build(ObjectType.Critter, Fid.Index(npc.Fid),
+                Formats.Combat.RunGuard.AnimRunning, Fid.WeaponCode(npc.Fid));
+            animCode = Formats.Combat.RunGuard.MovementAnimCode(npc.CombatResults,
+                sneakFlag: false, silentRunning: false, runArtExists: _vfs.Exists(_artIndex.GetFrmPath(runFid)));
+        }
+
         // P113 (4.1): a target that's a usable closed door is allowed (the walk opens it on contact) —
         // a combat approach path truncated by AP can legitimately end on a door tile.
         if (target == npc.HexTile
@@ -3024,6 +3039,7 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
         // P110: NPCs path through closed usable doors and open them on contact, like fo2ce
         // (canUseDoor has no walk-thru gate for non-dude critters — townsfolk enter buildings).
         var walker = new DudeController(npc, _frmCache, tile => _blockedTiles.Contains(tile),
+            () => animCode,
             isUsableClosedDoor: t => NpcUsableClosedDoorAt(npc, t) is not null,
             openDoorAt: t =>
             {
@@ -3137,6 +3153,17 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
         }
     }
 
+    /// <summary>P117 sfx: the open/close/locked/unlock sound for a container or scenery —
+    /// sfxBuildOpenName (game_sound.cc:1464): scenery → "S{action}DOORS{proto sound char}",
+    /// container ITEM → "I{action}CNTNR{proto sound char}".</summary>
+    private void PlayOpenCloseSfx(MapObject obj, Formats.Sound.SfxName.SceneryAction action)
+    {
+        byte soundId = SafeProto(obj.Pid)?.SoundId ?? 0;
+        _audio?.PlaySfx(Fid.Type(obj.Fid) is ObjectType.Scenery
+            ? Formats.Sound.SfxName.Door(action, soundId)
+            : Formats.Sound.SfxName.Container(action, soundId));
+    }
+
     private void PickUpItem(MapObject item)
     {
         var scripted = _scriptHost?.RunObjectProc(item, _map, _dude?.Dude, "pickup_p_proc");
@@ -3156,6 +3183,7 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
         foreach (MapElevation? elev in _map.Elevations)
             elev?.Objects.Remove(item);
         AddToDudeInventory(item);
+        _audio?.PlaySfx("ipickup1"); // P117 sfx (inventory.cc:2364)
         Log($"You pick up: {ObjectName(item)}.");
     }
 
@@ -3316,6 +3344,7 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
             return;
         _lootContainer.Inventory.RemoveAt(index);
         AddToDudeInventory(item);
+        _audio?.PlaySfx("ipickup1"); // P117 sfx (inventory.cc:4581)
         Log($"You take: {ObjectName(item)}{(item.StackCount > 1 ? $" x{item.StackCount}" : "")}.");
         if (ReferenceEquals(_lootContainer, _trunkObject))
             CommitTrunk(); // P116: the trunk's canonical list lives on CarState
@@ -3427,6 +3456,7 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
         item.HexTile = _dude.Dude.HexTile;
         _map.Elevations[_elevation]?.Objects.Add(item);
         OnScriptObjectPlaced(item);
+        _audio?.PlaySfx("iputdown"); // P117 sfx (inventory.cc:2383)
         Log($"You drop: {ObjectName(item)}.");
     }
 
@@ -3708,6 +3738,7 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
         _dudeInventory.RemoveAt(index);
         UnequipForTransfer(item);
         _lootContainer.Inventory.Add(item);
+        _audio?.PlaySfx("iputdown"); // P117 sfx (inventory.cc:4595)
         Log($"You stash: {ObjectName(item)}{(item.StackCount > 1 ? $" x{item.StackCount}" : "")}.");
         if (ReferenceEquals(_lootContainer, _trunkObject))
             CommitTrunk();
@@ -4601,11 +4632,13 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
             if (obj.IsLockedState)
             {
                 Log($"The {ObjectName(obj)} is locked.");
+                PlayOpenCloseSfx(obj, Formats.Sound.SfxName.SceneryAction.Lock); // P117: proto_instance.cc:1805
                 return;
             }
 
             _lootContainer = obj;
             _panelPage = 0;
+            PlayOpenCloseSfx(obj, Formats.Sound.SfxName.SceneryAction.Open); // P117: proto_instance.cc:1842
             PrewarmItemTextures(obj.Inventory);
             return;
         }
@@ -4918,6 +4951,7 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
                     else
                     {
                         target.IsLockedState = false;
+                        PlayOpenCloseSfx(target, Formats.Sound.SfxName.SceneryAction.Unlock); // P117 sfx
                         Log($"You pick the lock on the {ObjectName(target)}.");
                     }
                     return;
@@ -5126,7 +5160,7 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
         // the sprite batch opens.
         if (!_worldmapOpen && _map is not null)
         {
-            _dudeUnderRoof = DudeIsUnderRoof();
+            UpdateHiddenRoofs(); // P117: per-building roof hide (only the connected block)
             DrawFloors();
         }
 
@@ -5457,6 +5491,11 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
             if (tileId == 1)
                 continue;
 
+            // P117: HIDE the roof block the dude stands under (tile_fill_roof sets the same
+            // flag-0x01 skip the check above honours) — was a global 35% dim of every roof.
+            if (_hiddenRoofSquares.Contains(square))
+                continue;
+
             (int x, int y) = _camera.SquareToRoofScreen(square);
             if (x < viewport.Left - 80 || x > viewport.Right || y < viewport.Top - 36 || y > viewport.Bottom)
                 continue;
@@ -5467,8 +5506,6 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
             byte ambientLevel = (byte)Math.Clamp(
                 _lightGrid.Ambient * 255 / Formats.Light.LightGrid.IntensityMax, 0, 255);
             var roofTint = new Color(ambientLevel, ambientLevel, ambientLevel);
-            if (_dudeUnderRoof)
-                roofTint *= 0.35f;
             Texture2D texture = _frmCache.GetTexture(Fid.Build(ObjectType.Tile, tileId));
             _spriteBatch.Draw(texture, new Vector2(x, y), roofTint);
         }
@@ -6263,7 +6300,7 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
         GraphicsDevice.Clear(Color.Black);
         if (!_worldmapOpen && _map is not null)
         {
-            _dudeUnderRoof = DudeIsUnderRoof();
+            UpdateHiddenRoofs(); // P117: per-building roof hide (screenshot path)
             DrawFloors();
         }
         _spriteBatch.Begin(samplerState: SamplerState.PointClamp);

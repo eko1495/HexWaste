@@ -454,6 +454,10 @@ for (int i = 0; i < args.Length; i++)
             // P116 (car trunk QA): board the car, stash <pid> (0 = just open), report the trunk.
             actions.Add(new ViewerGame.StartupAction.TrunkProbe(int.Parse(args[++i])));
             break;
+        case "--roof-probe" when i + 1 < args.Length:
+            // P117 QA: hidden-vs-total roofed squares with the dude at <hex>.
+            actions.Add(new ViewerGame.StartupAction.RoofProbe(int.Parse(args[++i])));
+            break;
         case "--smoke":
             // per-map content+stub coverage census (helps adding new cities): --map <m> --smoke
             actions.Add(new ViewerGame.StartupAction.SmokeScan());
@@ -484,6 +488,10 @@ for (int i = 0; i < args.Length; i++)
             break;
         case "--npc-walk" when i + 2 < args.Length: // P110 QA: walk the NPC at <hex> to <target>
             actions.Add(new ViewerGame.StartupAction.NpcWalk(int.Parse(args[i + 1]), int.Parse(args[i + 2])));
+            i += 2;
+            break;
+        case "--npc-run" when i + 2 < args.Length: // P117 QA: same, requesting ANIM_RUNNING
+            actions.Add(new ViewerGame.StartupAction.NpcWalk(int.Parse(args[i + 1]), int.Parse(args[i + 2]), Run: true));
             i += 2;
             break;
         case "--combat-over" when i + 1 < args.Length:

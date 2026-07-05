@@ -2323,7 +2323,8 @@ public class CombatEngineTests
         public bool IsFallInProgress(MapObject critter) => false;
         public bool IsAnyWalkerMoving() => false;
         public bool IsWalkerMoving(MapObject critter) => false;
-        public bool StartWalk(MapObject critter, int targetTile) { critter.HexTile = targetTile; return true; }
+        public bool StartWalk(MapObject critter, int targetTile, bool run = false) { critter.HexTile = targetTile; return true; }
+        public bool CritterShouldRun(MapObject critter) => true; // instant-teleport fake — anim code is moot
         public void PlaceCritter(MapObject critter, int tile) => critter.HexTile = tile;
         public void StopDude() { }
         public void ClearAnimation(MapObject critter) => Animating.Remove(critter);

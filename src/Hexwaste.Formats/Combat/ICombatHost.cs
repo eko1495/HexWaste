@@ -112,7 +112,12 @@ public interface ICombatHost
     bool IsWalkerMoving(MapObject critter);
 
     // --- Movement (StartNpcWalk + its draw-list/blocking closure stay here) ---
-    bool StartWalk(MapObject critter, int targetTile);                  // :1616 StartNpcWalk
+    /// <summary>run = request ANIM_RUNNING; the host still falls back to walk when the
+    /// critter has no run art or a crippled leg (animation.cc:753-758). (P117.)</summary>
+    bool StartWalk(MapObject critter, int targetTile, bool run = false); // :1616 StartNpcWalk
+    /// <summary>The critters.lst run flag (art.cc artCritterFidShouldRun) — gates the AI
+    /// approach's run request (combat_ai.cc:2424). (P117.)</summary>
+    bool CritterShouldRun(MapObject critter);
     /// <summary>Instantly relocate a critter (knockback shove): set its tile and
     /// re-sort the draw list + blocking. No animation.</summary>
     void PlaceCritter(MapObject critter, int tile);

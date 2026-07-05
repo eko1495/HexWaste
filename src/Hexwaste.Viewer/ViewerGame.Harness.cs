@@ -532,6 +532,21 @@ public sealed partial class ViewerGame
                     _lootContainer = null;
                     break;
                 }
+                case StartupAction.RoofProbe(var rpHex) when _dude is not null && _map is not null:
+                {
+                    // P117 QA: prove only the CONNECTED roof block hides (was a global dim).
+                    _dude.Dude.HexTile = rpHex;
+                    _lastRoofSquare = -2; // force recompute
+                    UpdateHiddenRoofs();
+                    int totalRoofed = 0;
+                    if (_map.Elevations[_elevation] is { } rpElev)
+                        for (int sq = 0; sq < MapElevation.SquareGridSize; sq++)
+                            if ((rpElev.RoofTileId(sq) & 0xFFF) != 1)
+                                totalRoofed++;
+                    Console.WriteLine($"roof-probe: hex={rpHex} square={DudeRoofSquare()}"
+                        + $" hidden={_hiddenRoofSquares.Count} totalRoofed={totalRoofed}");
+                    break;
+                }
                 case StartupAction.CanSeeProbe(var csFrom, var csTo):
                 {
                     MapObject? csSource = CritterAt(csFrom);
@@ -722,16 +737,20 @@ public sealed partial class ViewerGame
                     break;
                 }
                 // _npcWalkProbe (field below) carries the walked NPC to the post-advance report.
-                case StartupAction.NpcWalk(var nwHex, var nwTarget):
+                case StartupAction.NpcWalk(var nwHex, var nwTarget, var nwRun):
                 {
                     // P110: e2e for NPC door pathing — the walk runs in the advance loop; assert the
-                    // end position with a later blocked-probe / the npc-walk line.
+                    // end position with a later blocked-probe / the npc-walk line. P117: --npc-run
+                    // requests ANIM_RUNNING; the moving anim code proves the run/walk resolution.
                     MapObject? nwNpc = CritterAt(nwHex, aliveOnly: true);
                     if (nwNpc is null) { Console.Error.WriteLine($"npc-walk: no critter at {nwHex}"); break; }
-                    bool nwStarted = StartNpcWalk(nwNpc, nwTarget);
+                    bool nwStarted = StartNpcWalk(nwNpc, nwTarget, nwRun);
                     int nwWalkFid = Fid.Build(ObjectType.Critter, Fid.Index(nwNpc.Fid), 1, Fid.WeaponCode(nwNpc.Fid));
+                    int nwAnim = nwStarted && _npcWalkers.TryGetValue(nwNpc, out DudeController? nwWalker)
+                        ? Fid.AnimType(nwWalker.CurrentFid) : -1;
                     Console.WriteLine($"npc-walk: from {nwHex} to {nwTarget} started={(nwStarted ? 1 : 0)}"
-                        + $" fid=0x{nwNpc.Fid:X} walkFid=0x{nwWalkFid:X} art={( _vfs.Exists(_artIndex.GetFrmPath(nwWalkFid)) ? 1 : 0)}");
+                        + $" fid=0x{nwNpc.Fid:X} walkFid=0x{nwWalkFid:X} art={( _vfs.Exists(_artIndex.GetFrmPath(nwWalkFid)) ? 1 : 0)}"
+                        + $" anim={nwAnim} shouldRun={(_artIndex.CritterShouldRun(nwNpc.Fid) ? 1 : 0)}");
                     if (nwStarted)
                         _npcWalkProbe = (nwNpc, nwTarget);
                     break;

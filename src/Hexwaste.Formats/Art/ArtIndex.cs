@@ -49,6 +49,39 @@ public sealed class ArtIndex(GameFileSystem vfs)
         return Array.FindIndex(list, n => string.Equals(n, baseName, StringComparison.OrdinalIgnoreCase));
     }
 
+    private int[]? _critterShouldRun;
+
+    /// <summary>Whether the AI should RUN this critter toward its target — the critters.lst
+    /// third comma field, ported from fallout2-ce src/art.cc artInit (:238-251) +
+    /// artCritterFidShouldRun (:894): "name,alias,run" → atoi(run); "name,alias" → 0;
+    /// a bare "name" → 1. Gates the combat approach only (combat_ai.cc:2424); the register
+    /// itself still falls back to walk when the run art is missing. (P117 NPC run.)</summary>
+    public bool CritterShouldRun(int fid)
+    {
+        if (Fid.Type(fid) is not ObjectType.Critter)
+            return false;
+        if (_critterShouldRun is null)
+        {
+            using Stream stream = vfs.OpenRead(@"art\critters\critters.lst");
+            using var reader = new StreamReader(stream);
+            var flags = new List<int>();
+            while (reader.ReadLine() is { } line)
+            {
+                int sep1 = line.IndexOf(',');
+                if (sep1 < 0)
+                {
+                    flags.Add(1);
+                    continue;
+                }
+                int sep2 = line.IndexOf(',', sep1 + 1);
+                flags.Add(sep2 < 0 ? 0 : int.TryParse(line[(sep2 + 1)..].Trim(), out int run) ? run : 0);
+            }
+            _critterShouldRun = [.. flags];
+        }
+        int index = Fid.Index(fid);
+        return index >= 0 && index < _critterShouldRun.Length && _critterShouldRun[index] != 0;
+    }
+
     /// <summary>The critters.lst base name for a critter FID (e.g. "hfprim"), or null.
     /// The 2nd char encodes gender ('m'/'f') — used for gender-correct sfx.</summary>
     public string? CritterBaseName(int fid)
