@@ -38,7 +38,10 @@ Prebuilt self-contained builds (Linux x64 / Windows x64) are produced by
   procedures run for real, script timers fire (doors auto-close behind you).
 - **Dialog**: full `gsay` conversation trees with keyboard choices, and the
   iconic Fallout 2 animated talking head above the reply (the real per-NPC head
-  art, idling on its fidget animation) whenever a script supplies one.
+  art, idling on its fidget animation) whenever a script supplies one — and the
+  head reacts: script mood nudges shift it between its good/neutral/bad
+  animation families with the proper transition, and voiced lines lip-sync with
+  the matching phoneme set.
 - **Persistent world**: per-map deltas keyed to the pristine map files —
   loot a footlocker in the Den, walk to the Temple and back, it stays
   looted; F5/F9 saves the whole visited world as JSON.
@@ -133,7 +136,10 @@ Prebuilt self-contained builds (Linux x64 / Windows x64) are produced by
 - **Worldmap**: click-to-travel between areas (`maps.txt`/`city.txt`) — a party
   dot crosses the map, paced by terrain: crossing mountains genuinely costs more
   game time (and car fuel) per pixel, exactly like the original's walk loop, not
-  just a slower animation. The trip can be saved/resumed mid-walk. The map is fogged: subtiles you haven't been near stay
+  just a slower animation. The trip can be saved/resumed mid-walk. Driving the
+  Highwayman shows the animated car monitor with its draining fuel bar, and the
+  car itself sits parked on the town map where you left it — click it to open
+  the trunk. The map is fogged: subtiles you haven't been near stay
   black, ones you've glimpsed are dimmed, and the corridors you've walked are
   clear — and hidden sub-areas (Car Outta Gas, the toxic caves) only put a marker
   on the map once you've explored near them. The wasteland bites — travel rolls

@@ -156,6 +156,20 @@ public sealed class WorldmapScreen : IDisposable
         spriteBatch.Draw(_marker, new Rectangle(x - 4, y - 4, 8, 8), Color.White);
     }
 
+    /// <summary>P122: draw an arbitrary party sprite (the driving Highwayman, wmcarmve.frm)
+    /// centred on the worldmap pixel with the same transform as the dot. The sprite scales
+    /// with the map (fo2ce's worldmap view is 1:1; ours fits the window) so the car keeps
+    /// its on-map proportions.</summary>
+    public void DrawPartySprite(SpriteBatch spriteBatch, Rectangle viewport, int worldX, int worldY, Texture2D sprite)
+    {
+        (float scale, int offsetX, int offsetY) = Layout(viewport);
+        int x = offsetX + (int)(worldX * scale);
+        int y = offsetY + (int)(worldY * scale);
+        int w = Math.Max(8, (int)(sprite.Width * scale));
+        int h = Math.Max(8, (int)(sprite.Height * scale));
+        spriteBatch.Draw(sprite, new Rectangle(x - w / 2, y - h / 2, w, h), Color.White);
+    }
+
     public WorldArea? HitTest(int mouseX, int mouseY, Rectangle viewport,
         Formats.Map.WorldmapFog? fog = null)
     {

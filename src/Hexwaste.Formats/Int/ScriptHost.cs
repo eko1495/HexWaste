@@ -1314,6 +1314,19 @@ public sealed class ScriptHost(GameFileSystem vfs, ScriptList scripts, Hexwaste.
         /// -1 for a head-less dialog. The viewer renders the head FRM above the conversation panel.</summary>
         public int HeadId => _context.DialogHeadId;
 
+        /// <summary>P122: the head's LIVE fidget family (1 good / 4 neutral / 7 bad) — seeded by
+        /// start_gdialog's reaction, stepped by dialogue_reaction mid-conversation.</summary>
+        public int HeadReaction => _context.DialogHeadReaction;
+
+        /// <summary>P122: consume the queued one-shot reaction-transition anim (0/2/3/5/6/8), or
+        /// null. The presenter plays it once before the new fidget family.</summary>
+        public int? TakeHeadTransition()
+        {
+            int? t = _context.PendingHeadTransition;
+            _context.PendingHeadTransition = null;
+            return t;
+        }
+
         internal DialogSession(IntVm vm, ScriptContext context, string npcName)
         {
             _vm = vm;
@@ -2181,7 +2194,31 @@ public sealed class ScriptHost(GameFileSystem vfs, ScriptList scripts, Hexwaste.
         /// (ResetDialogRound/DialogStart leave it alone) until the next start_gdialog.</summary>
         public int DialogHeadId { get; private set; } = -1;
 
-        public void DialogSessionStart(int headId, int backgroundId) => DialogHeadId = headId;
+        // P122: the head's CURRENT fidget family — the head anim value FIDGET_GOOD 1 /
+        // FIDGET_NEUTRAL 4 / FIDGET_BAD 7 (art.h). Seeded by start_gdialog's reaction arg,
+        // stepped by dialogue_reaction.
+        public int DialogHeadReaction { get; private set; } = 4;
+
+        /// <summary>P122: a one-shot transition anim (head anims 0/2/3/5/6/8) queued by a
+        /// reaction change; the presenter consumes it (plays once, then the new fidget).</summary>
+        public int? PendingHeadTransition { get; set; }
+
+        public void DialogSessionStart(int headId, int backgroundId, int reaction = 4)
+        {
+            DialogHeadId = headId;
+            DialogHeadReaction = reaction is 1 or 4 or 7 ? reaction : 4; // clamp odd script args
+            PendingHeadTransition = null;
+        }
+
+        /// <summary>dialogue_reaction: nudge the fidget family one step toward good/bad with
+        /// the matching transition anim — the <see cref="HeadReaction"/> machine (P122).</summary>
+        public void DialogReaction(int value)
+        {
+            (int? transition, int fidget) = HeadReaction.Step(DialogHeadReaction, value);
+            DialogHeadReaction = fidget;
+            if (transition is not null)
+                PendingHeadTransition = transition;
+        }
 
         public void DialogStart()
         {

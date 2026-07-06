@@ -147,8 +147,15 @@ public interface IVmExternals
     /// <summary>gsay_end (_gdialogGo): the collected reply+options are ready to present.</summary>
     void DialogEnd() { }
 
-    /// <summary>start_gdialog — headId is -1 for head-less NPCs.</summary>
-    void DialogSessionStart(int headId, int backgroundId) { }
+    /// <summary>start_gdialog — headId is -1 for head-less NPCs. <paramref name="reaction"/> is
+    /// the initial fidget family the script supplies (the head anim value: 1 good / 4 neutral /
+    /// 7 bad — _gdialogInitFromScript feeds it straight to _gdSetupFidget). (P122.)</summary>
+    void DialogSessionStart(int headId, int backgroundId, int reaction = 4) { }
+
+    /// <summary>dialogue_reaction (0x80E0, interpreter_extra.cc:1958 _talk_to_critter_reacts):
+    /// the script nudges the talking head's mood — value −1 good / 0 neutral / +1 bad
+    /// (a1 + 50 → GAME_DIALOG_REACTION_*). (P122.)</summary>
+    void DialogReaction(int value) { }
 
     /// <summary>end_dialogue.</summary>
     void DialogSessionEnd() { }
@@ -1411,12 +1418,15 @@ public sealed class IntVm
             {
                 int backgroundId = PopInt();
                 int headId = PopInt();
-                Pop(); // reactionLevel
+                int reaction = PopInt(); // the initial fidget family (1/4/7) — P122
                 Pop(); // obj
                 Pop(); // msgListId — discarded by the engine too
-                _externals.DialogSessionStart(headId, backgroundId);
+                _externals.DialogSessionStart(headId, backgroundId, reaction);
                 break;
             }
+            case 0x80E0: // dialogue_reaction (pops the mood nudge: −1 good / 0 / +1 bad) — P122
+                _externals.DialogReaction(PopInt());
+                break;
             case 0x80DF: // end_dialogue
                 _externals.DialogSessionEnd();
                 break;

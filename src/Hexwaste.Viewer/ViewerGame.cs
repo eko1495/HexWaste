@@ -1754,6 +1754,8 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
             _pendingEncounter = null;
         }
 
+        SpawnParkedCar(transient); // P122: the physical Highwayman on the parked town's maps
+
         RebuildLighting();
 
         _camera.SetWindowSize(Window.ClientBounds.Width, Window.ClientBounds.Height);
@@ -1834,6 +1836,14 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
         // state — never read by the headless transcript goldens). Reset when no head is shown.
         if (EffectiveHeadId() >= 0)
         {
+            // P122: a dialogue_reaction queued a transition (good↔neutral↔bad) — play it once
+            // from frame 0, then resume the (new) fidget family (_talk_to_critter_reacts).
+            if (_dialog?.TakeHeadTransition() is { } moodShift)
+            {
+                _headTransitionAnim = moodShift;
+                _headFrame = 0;
+                _headFrameTimerMs = 0;
+            }
             _headFrameTimerMs += gameTime.ElapsedGameTime.TotalMilliseconds;
             while (_headFrameTimerMs >= HeadFrameMs) { _headFrameTimerMs -= HeadFrameMs; _headFrame++; }
             if (_activeLip is not null) // P101: advance lip-sync playback; drop back to fidget when the ACM ends
@@ -1843,7 +1853,7 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
                     _activeLip = null;
             }
         }
-        else { _headFrame = 0; _headFrameTimerMs = 0; _activeLip = null; }
+        else { _headFrame = 0; _headFrameTimerMs = 0; _activeLip = null; _headTransitionAnim = null; }
 
         // Main menu / character creation: the world idles underneath. The menu/creation flow plays the
         // engine's menu music (mainmenu.cc → 07desert); PlayMusic de-dups so calling each frame is a no-op.
@@ -3747,9 +3757,42 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
     /// <summary>The Highwayman trunk as a loot-panel container (P116, review "car trunk"): a
     /// synthetic pid-455 object whose Inventory IS <see cref="Formats.CarState.TrunkItems"/> —
     /// created once so the shared storage keeps a stable identity. fo2ce's trunk is a party-member
-    /// item repositioned beside the parked car by ZICrTrnk.int; Hexwaste has no physical parked
-    /// car, so Shift+T opens it directly whenever the car is with the party.</summary>
+    /// item repositioned beside the parked car by ZICrTrnk.int; Shift+T opens it directly whenever
+    /// the car is with the party, and clicking the P122 parked-car scenery opens it too.</summary>
     private MapObject? _trunkObject;
+
+    /// <summary>P122: the parked Highwayman scenery on the current map (null = the car isn't
+    /// parked in this area). Transient — spawned per map load like an encounter group, never
+    /// serialized (CarState.CurrentAreaId is the persistent truth).</summary>
+    private MapObject? _carObject;
+
+    private const int CarPid = 0x20003F1; // PROTO_ID_CAR (proto_types.h:195)
+
+    /// <summary>Spawn the physical Highwayman near the entrance when the car is parked in the
+    /// just-loaded map's area. Vanilla materializes the car via content (per-map ZSDrvCar.int
+    /// instances self-destroying when the car isn't here — no slice map bakes one), so Hexwaste
+    /// owns the placement engine-side: a documented simplification. Clicking it opens the trunk
+    /// (the ZSDrvCar use_p_proc menu's trunk option).</summary>
+    private void SpawnParkedCar(bool transient)
+    {
+        _carObject = null;
+        if (transient || _scriptHost is null || _dude is null)
+            return;
+        Formats.CarState car = _scriptHost.Car;
+        if (car.CurrentAreaId < 0 || car.CurrentAreaId != _currentAreaId)
+            return;
+        MapObject? carObj = RebuildObject(CarPid, 1);
+        if (carObj is null || !_vfs.Exists(_artIndex.GetFrmPath(carObj.Fid)))
+            return; // no car art → stay invisible (the pre-P122 behavior)
+        // Park it a few hexes from the dude's entry spot, on free ground.
+        carObj.HexTile = Formats.Map.Placement.FreeTileNear(
+            _dude.Dude.HexTile + 4 * Camera.HexGridWidth + 4, t => _blockedTiles.Contains(t));
+        carObj.Rotation = 2;
+        _carObject = carObj;
+        InsertSorted(_solidObjects[_elevation], carObj);
+        _blockedTiles.Add(carObj.HexTile);
+        Console.WriteLine($"car-parked: area={car.CurrentAreaId} tile={carObj.HexTile}");
+    }
 
     private void OpenCarTrunk()
     {
@@ -4670,6 +4713,19 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
         if (_scriptHost is not null)
             _scriptHost.PendingDialogSpeaker = null;
 
+        // P122: the parked Highwayman — using it opens the trunk (the ZSDrvCar use_p_proc menu's
+        // trunk branch; refuel is the use-item-on path, which already targets the car by pid).
+        if (obj == _carObject && _carObject is not null)
+        {
+            if (!IsAdjacentToDude(obj))
+            {
+                Log("Too far away.");
+                return;
+            }
+            OpenCarTrunk();
+            return;
+        }
+
         if (Fid.Type(obj.Fid) is ObjectType.Critter)
         {
             // Dead critters are containers (gate on DAM_DEAD).
@@ -5269,6 +5325,11 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
             // moving marker mid-travel (phase-17 M2/M3 — one dot, the unified position).
             if (_worldPosX >= 0 && _worldPosY >= 0)
                 _worldmapScreen?.DrawPartyDot(_spriteBatch, GraphicsDevice.Viewport.Bounds, _worldPosX, _worldPosY);
+            // P122: driving shows the Highwayman monitor box — the wmcarmve movie + the wmscreen
+            // overlay + a fuel bar at the chrome's fixed window spot (worldmap.cc:6179-6199,
+            // WM_WINDOW_CAR at 514,336 / overlay 499,330 / fuel bar 500,339 h70); anchored to the
+            // viewport corner until the full worldmap chrome exists.
+            DrawWorldmapCarBox();
             DrawEncounterPrompt();
         }
         else
@@ -5627,7 +5688,9 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
                 _activeLip = Formats.Sound.LipData.Parse(_vfs.ReadAllBytes(lipPath));
             _lipElapsedMs = 0;
             _lipDurationMs = _audio?.PlaySpeechData(_vfs.ReadAllBytes($@"sound\speech\{subdir}\{audio}.acm")) ?? 0;
-            _lipAnim = Formats.Sound.LipData.AnimNeutralPhonemes; // good/bad tinting by reaction is a refinement
+            // P122: the phoneme set follows the head's LIVE fidget family (1→9, 4→10, 7→11 —
+            // _gdSetupFidget maps the reaction to the matching *_PHONEMES anim).
+            _lipAnim = Formats.Int.HeadReaction.PhonemesFor(_dialog?.HeadReaction ?? 4);
             if (_lipDurationMs <= 0)
                 _activeLip = null; // audio off / decode failed → the fidget path
             return;
@@ -5669,10 +5732,14 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
     /// <summary>The shared conversation panel — reply text + numbered options at the
     /// bottom of the screen. Drives both scripted dialog and the companion-control hub
     /// (phase-10 M4); <see cref="_dialogOptionRects"/> feeds mouse hit-testing.</summary>
-    // P87: talking-head animation — the fidget cycles on a wall-time tick (game_dialog.cc head-fidget),
-    // a documented presentation choice (no .lip phoneme lip-sync; the .lip timing files aren't shipped).
+    // P87: talking-head animation — the fidget cycles on a wall-time tick (game_dialog.cc head-fidget).
+    // (P122 comment fix: an earlier note here claimed the .lip timing files aren't shipped — they ARE,
+    // 1029 of them in the DATs, and the P101 lip-sync below uses them.)
     private int _headFrame;
     private double _headFrameTimerMs;
+    // P122: a one-shot reaction-transition anim (head anims 0/2/3/5/6/8) playing before the new
+    // fidget family; null = fidget as usual. Frame-advanced by the same _headFrame tick.
+    private int? _headTransitionAnim;
     // P101 (bucket 1c): the active lip-sync playback — the loaded .lip, elapsed playback ms + the ACM
     // duration, and the phoneme-anim id (9/10/11) chosen by the reply's reaction. Null = fidget.
     private Formats.Sound.LipData? _activeLip;
@@ -5681,39 +5748,71 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
     private const double HeadFrameMs = 1000.0 / 8; // heads.lst fps ~8
 
     /// <summary>P87/P89: render the dialogue talking head in the upper area of the centred 640x480 dialog
-    /// frame, at the engine's display anchor. The head FRM is the neutral fidget pose (art.cc anim 4 =
-    /// _head1 'n' + _head2 'f', fidget #1, e.g. ELDERNF1); its frames cycle for an idle "living" head.
-    /// Falls back silently to a text-only dialog if the head art is absent. ported from fallout2-ce
-    /// src/game_dialog.cc gdialogInitFromScript()/_gdSetupFidget() (the head display buffer at window-
-    /// local (126,14), gameDialogRenderTalkingHead).</summary>
+    /// frame, at the engine's display anchor. P122: the pose follows the script's REACTION — the fidget
+    /// family (anim 1 good / 4 neutral / 7 bad, e.g. ELDERGF1/NF1/BF1), a one-shot transition anim when
+    /// a dialogue_reaction shifts the mood, and the matching phoneme set while a voiced line plays.
+    /// Missing family art falls back to neutral, then to a text-only dialog. ported from fallout2-ce
+    /// src/game_dialog.cc _gdSetupFidget()/_talk_to_critter_reacts() (display buffer at window-local
+    /// (126,14), gameDialogRenderTalkingHead).</summary>
     private void DrawTalkingHead(int headId, int frameX, int frameY)
     {
-        // P101 (bucket 1c): while a voiced line plays, lip-sync — pick the phoneme-anim FRM (9/10/11) and
-        // the frame the current phoneme maps to (fo2ce game_dialog.cc:2847). Otherwise the P87 fidget (anim 4).
-        int animType = 4, requestedFrame = _headFrame;
-        if (_activeLip is { } lip && _lipDurationMs > 0)
+        int reaction = _dialog?.HeadReaction ?? 4;
+        int animType, requestedFrame = _headFrame;
+        if (_headTransitionAnim is { } transition)
         {
+            animType = transition; // the one-shot mood transition (game_dialog.cc _gdPlayTransition)
+        }
+        else if (_activeLip is { } lip && _lipDurationMs > 0)
+        {
+            // P101 (bucket 1c): while a voiced line plays, lip-sync — the family's phoneme FRM
+            // (9 good / 10 neutral / 11 bad) and the frame the current phoneme maps to (:2847).
             animType = _lipAnim;
             int samplePos = (int)(_lipElapsedMs / 1000.0 * lip.SampleRate);
             requestedFrame = Formats.Sound.LipData.FrameForPhoneme(lip.PhonemeAt(samplePos));
         }
-        int fid = Formats.Fid.Build(Formats.ObjectType.Head, headId, animType, weaponCode: 1);
-        Texture2D head;
-        try
+        else
         {
-            int frames = _frmCache.FrameCount(fid);
-            head = _frmCache.GetTexture(fid, frames > 0 ? requestedFrame % frames : 0);
+            animType = reaction; // the fidget family (1/4/7)
         }
-        catch (Exception ex) when (ex is FileNotFoundException or InvalidDataException or NotSupportedException)
+
+        Texture2D? head = HeadTexture(headId, animType, requestedFrame, out bool finishedOnce);
+        if (_headTransitionAnim is not null && finishedOnce)
         {
+            // The transition ran its frames — resume the (new) family's fidget.
+            _headTransitionAnim = null;
+            _headFrame = 0;
+            head ??= HeadTexture(headId, reaction, 0, out _);
+        }
+        // A missing good/bad family degrades to the neutral art rather than a blank frame.
+        head ??= animType != 4 ? HeadTexture(headId, 4, requestedFrame, out _) : null;
+        if (head is null)
             return; // head art missing -> graceful text-only dialog
-        }
 
         // The engine's head display area is window-local (126,14), ~388px wide; the heads sit centred in
         // the 640 frame. Centre this head's own width within that area and draw it at natural size.
         int x = frameX + 126 + (388 - head.Width) / 2;
         int y = frameY + 14;
         _spriteBatch.Draw(head, new Vector2(x, y), Color.White);
+    }
+
+    /// <summary>A head FRM frame, or null when the art is absent. <paramref name="finishedOnce"/>
+    /// reports whether <paramref name="frame"/> ran past the anim's last frame (transition-complete
+    /// detection); looping anims still render frame % count.</summary>
+    private Texture2D? HeadTexture(int headId, int animType, int frame, out bool finishedOnce)
+    {
+        finishedOnce = false;
+        int fid = Formats.Fid.Build(Formats.ObjectType.Head, headId, animType, weaponCode: 1);
+        try
+        {
+            int frames = _frmCache.FrameCount(fid);
+            finishedOnce = frames > 0 && frame >= frames;
+            return _frmCache.GetTexture(fid, frames > 0 ? Math.Min(frame, frames - 1) % frames : 0);
+        }
+        catch (Exception ex) when (ex is FileNotFoundException or InvalidDataException or NotSupportedException)
+        {
+            finishedOnce = true; // a missing transition must not wedge the head
+            return null;
+        }
     }
 
     private void DrawConversationPanel(string name, string reply, IReadOnlyList<string> options,

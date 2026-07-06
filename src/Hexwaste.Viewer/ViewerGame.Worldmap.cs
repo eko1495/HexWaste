@@ -143,6 +143,7 @@ public sealed partial class ViewerGame
         while (_travelStepAccumMs >= TravelTickMs && _activeTravel is { } active)
         {
             _travelStepAccumMs -= TravelTickMs;
+            _carDotFrame++; // P122: the driving Highwayman animates per tick (worldmap.cc:3047)
             Formats.Map.TravelStep s = active.Leg.Step();
             _clock.Ticks += Formats.Map.WorldmapTravel.PathfinderTicks( // P79 Pathfinder
                 Formats.Map.WorldmapTravel.TicksPerStep, DudePerkRank(Formats.Perks.PerkId.Pathfinder));
@@ -275,6 +276,49 @@ public sealed partial class ViewerGame
     /// <summary>The in-flight animated leg + its destination; null = not travelling. Update
     /// drains <see cref="Formats.Map.TravelLeg.Step"/> over wall-time (phase-17 M2).</summary>
     private (Formats.Map.TravelLeg Leg, WorldArea Dest)? _activeTravel;
+
+    // P122: the worldmap Highwayman monitor — wmcarmve.frm (interface 433) frames cycle per
+    // travel tick while driving (worldmap.cc:3047); wmscreen (363) frames the movie, and the
+    // fuel bar drains alongside (wmInterfaceRefreshCarFuel).
+    private int _carDotFrame;
+
+    /// <summary>Draw the in-car monitor box (worldmap.cc:6179-6199): the car movie + the screen
+    /// overlay + the fuel bar, anchored to the viewport's lower-right (the chrome's spot is
+    /// window-fixed; Hexwaste has no worldmap chrome yet — documented). No-op on foot / no art.</summary>
+    private void DrawWorldmapCarBox()
+    {
+        if (_scriptHost?.Car is not { InCar: true } car)
+            return;
+        Texture2D? movie;
+        try
+        {
+            int fid = Fid.Build(ObjectType.Interface, 433);
+            int frames = _frmCache.FrameCount(fid);
+            movie = _frmCache.GetTexture(fid, frames > 0 ? _carDotFrame % frames : 0);
+        }
+        catch (Exception ex) when (ex is FileNotFoundException or InvalidDataException or NotSupportedException)
+        {
+            return;
+        }
+
+        // The engine's offsets: overlay (499,330), movie (514,336), fuel bar (500,339) —
+        // i.e. movie at overlay+(15,6), bar at overlay+(1,9), inside the 640x480 window.
+        Viewport vp = GraphicsDevice.Viewport;
+        Texture2D? overlay = InterfaceFrm(363); // wmscreen
+        int boxW = overlay?.Width ?? movie.Width + 15;
+        int boxH = overlay?.Height ?? movie.Height + 12;
+        int ox = vp.Width - boxW - 12, oy = vp.Height - boxH - 12;
+        _spriteBatch.Draw(movie, new Vector2(ox + 15, oy + 6), Color.White);
+        if (overlay is not null)
+            _spriteBatch.Draw(overlay, new Vector2(ox, oy), Color.White);
+        // The fuel bar: a green column that drains with the tank (wmInterfaceRefreshCarFuel —
+        // height 70 · fuel/CAR_FUEL_MAX at (500,339) → overlay-local (1,9)).
+        _panelPixel ??= CreatePixel();
+        int barH = (int)(70L * Math.Clamp(car.Fuel, 0, Formats.CarState.FuelMax) / Formats.CarState.FuelMax);
+        if (barH > 0)
+            _spriteBatch.Draw(_panelPixel, new Rectangle(ox + 1, oy + 9 + (70 - barH), 2, barH),
+                new Color(0, 196, 0));
+    }
     private double _travelStepAccumMs;
     private const double TravelTickMs = 30; // wall-time per cadence tick (the dot's base pace)
 

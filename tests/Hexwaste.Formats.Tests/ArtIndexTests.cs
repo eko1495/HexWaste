@@ -127,6 +127,23 @@ public class HeadArtRealGameDataTests
     }
 
     [GameDataFact]
+    public void ResolvesGoodAndBadFidgetHeadFrms()
+    {
+        // P122 (head reactions): the good/bad fidget families ship for the classic heads —
+        // anim 1 = 'g','f' (good fidget) and anim 7 = 'b','f' (bad fidget), fidget #1
+        // (ELDERGF1/ELDERBF1). A reaction switch must find real art to matter.
+        using var vfs = GameFileSystem.Open(GameData.RequiredDir);
+        var artIndex = new ArtIndex(vfs);
+
+        string good = artIndex.GetFrmPath(Fid.Build(ObjectType.Head, 3, animType: 1, weaponCode: 1));
+        Assert.EndsWith(@"heads\eldergf1.frm", good.ToLowerInvariant());
+        Assert.True(vfs.Exists(good), $"{good} not found");
+        string bad = artIndex.GetFrmPath(Fid.Build(ObjectType.Head, 3, animType: 7, weaponCode: 1));
+        Assert.EndsWith(@"heads\elderbf1.frm", bad.ToLowerInvariant());
+        Assert.True(vfs.Exists(bad), $"{bad} not found");
+    }
+
+    [GameDataFact]
     public void ResolvesNeutralTalkHeadFrm()
     {
         using var vfs = GameFileSystem.Open(GameData.RequiredDir);
