@@ -783,6 +783,9 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
         /// <summary>P119 QA: open the elevator level picker UI directly (art verification —
         /// no gameplay effect until a button is picked).</summary>
         public sealed record ElevatorOpen(int Type, int Level) : StartupAction;
+        /// <summary>P125 QA: open the worldmap with the current town's townmap sub-view showing;
+        /// Enter >= 0 also picks that entrance.</summary>
+        public sealed record TownmapOpen(int Enter = -1) : StartupAction;
         /// <summary>P119 QA: open the called-shot window over the critter at Hex (art verification).</summary>
         public sealed record AimOpen(int Hex) : StartupAction;
         /// <summary>P116 (fix B QA): report the game_ui_disable input-lock flag (STATE-only).</summary>
@@ -1401,7 +1404,12 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
 
         LoadMap(_mapName, spawnAt: null);
 
-        _worldmapScreen = new WorldmapScreen(GraphicsDevice, _vfs, _palette, _cities, _fontRenderer, _frmCache);
+        _worldmapScreen = new WorldmapScreen(GraphicsDevice, _vfs, _palette, _cities, _fontRenderer, _frmCache)
+        {
+            // P125: townmap entrance labels — worldmap.msg 200 + 10·area + entrance, at runtime.
+            TownmapMsg = id => LazyMsg(@"text\english\game\worldmap.msg",
+                ref _worldmapMsgTried, ref _worldmapMsg)?.GetText(id),
+        };
         _interfaceBar = new InterfaceBar(GraphicsDevice, _vfs, _palette); // P11 HUD bar
         if (StartInMenu)
         {
@@ -2381,6 +2389,8 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
             // wmInterfaceCenterOnParty) and keep following the dot mid-travel.
             if ((!_worldmapWasOpen || _activeTravel is not null) && _worldPosX >= 0)
                 _worldmapScreen?.CenterOn(_worldPosX, _worldPosY);
+            if (!_worldmapWasOpen && _worldmapScreen is not null)
+                _worldmapScreen.TownmapArea = null; // P125: a fresh open starts on the world view
             _worldmapWasOpen = true;
 
             // Phase-17 M2: while the dot is moving, Esc/click HALTS travel (stay put on the
@@ -2396,12 +2406,56 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
             }
             else
             {
+                bool click = mouse.LeftButton == ButtonState.Pressed && _previousMouse.LeftButton == ButtonState.Released;
+
+                // P125: the townmap sub-view owns input while open (wmTownMapFunc :5757):
+                // Esc/T/W drop back to the world view; keys 1-9 / a hotspot click enter
+                // that entrance's map at its (elevation, tile, rotation).
+                if (_worldmapScreen is { HasChrome: true, TownmapArea: { } town } tm)
+                {
+                    if (IsKeyPressed(keyboard, Keys.Escape) || IsKeyPressed(keyboard, Keys.T)
+                        || IsKeyPressed(keyboard, Keys.W))
+                    {
+                        tm.TownmapArea = null;
+                    }
+                    else
+                    {
+                        int pick = -1;
+                        for (int i = 0; i < town.Entrances.Count && i < 9 && pick < 0; i++)
+                            if (IsKeyPressed(keyboard, Keys.D1 + i)
+                                && town.Entrances[i] is { StartsOn: true, TownmapX: >= 0, TownmapY: >= 0 })
+                                pick = i;
+                        if (pick < 0 && click)
+                            pick = tm.TownmapEntranceAt(mouse.X, mouse.Y, GraphicsDevice.Viewport.Bounds);
+                        if (pick >= 0)
+                            EnterTownmapEntrance(town, pick);
+                    }
+                    _previousMouse = mouse;
+                    _previousKeyboard = keyboard;
+                    base.Update(gameTime);
+                    return;
+                }
+
                 if (IsKeyPressed(keyboard, Keys.Escape) || IsKeyPressed(keyboard, Keys.M))
                     _worldmapOpen = false;
 
-                bool click = mouse.LeftButton == ButtonState.Pressed && _previousMouse.LeftButton == ButtonState.Released;
                 if (_worldmapScreen is { HasChrome: true } wms)
                 {
+                    // P125: the TOWN/WORLD switch (T/W keys or the red button at 519,439)
+                    // opens the current town's townmap (worldmap.cc:3144 gates on standing
+                    // at a town whose townmap art exists).
+                    WorldArea? here = _cities.Areas.FirstOrDefault(a => a.Index == _currentAreaId);
+                    bool switchHit = IsKeyPressed(keyboard, Keys.T) || IsKeyPressed(keyboard, Keys.W)
+                        || (click && wms.TownWorldSwitchRect(GraphicsDevice.Viewport.Bounds).Contains(mouse.X, mouse.Y));
+                    if (switchHit && wms.HasTownmap(here))
+                    {
+                        _audio?.PlaySfx("ib1p1xx1");
+                        wms.TownmapArea = here;
+                        _previousMouse = mouse;
+                        _previousKeyboard = keyboard;
+                        base.Update(gameTime);
+                        return;
+                    }
                     // P123 chrome input: arrow keys + wheel + view-edge hover scroll the 1:1
                     // map view (wmInterfaceScroll); the town-tab red buttons quick-travel
                     // (KEY_CTRL_F1.. handler, worldmap.cc:3232); the tab arrows page the list.
@@ -2426,7 +2480,10 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
                     {
                         (Rectangle up, Rectangle down) = wms.TabArrowRects(GraphicsDevice.Viewport.Bounds);
                         List<WorldArea> towns = wms.TabTowns(WorldFog);
-                        if (_hoveredArea is not null)
+                        if (_hoveredArea is not null && _hoveredArea.Index == _currentAreaId
+                            && wms.HasTownmap(_hoveredArea))
+                            wms.TownmapArea = _hoveredArea; // your own circle opens the townmap (:3144)
+                        else if (_hoveredArea is not null)
                             TravelTo(_hoveredArea);
                         else if (up.Contains(mouse.X, mouse.Y))
                             wms.ScrollTabs(-1, WorldFog);

@@ -501,6 +501,22 @@ public sealed partial class ViewerGame
                         + $" gauge={InterfaceFrm(Formats.Map.ElevatorTables.GaugeFrmId) is not null}");
                     break;
                 }
+                case StartupAction.TownmapOpen(var tmEnter):
+                {
+                    // P125 QA: worldmap + the current area's townmap sub-view (art check);
+                    // tmEnter >= 0 also picks that entrance (the wmTownMapFunc key path).
+                    WorldArea? tmHere = _cities.Areas.FirstOrDefault(a => a.Index == _currentAreaId);
+                    _worldmapOpen = true;
+                    if (_worldmapScreen is not null)
+                        _worldmapScreen.TownmapArea = tmHere;
+                    _worldmapWasOpen = true; // don't let the open-latch clear the sub-view
+                    Console.WriteLine($"townmap: area={_currentAreaId}"
+                        + $" art={( _worldmapScreen?.HasTownmap(tmHere) == true ? 1 : 0)}"
+                        + $" entrances={tmHere?.Entrances.Count(e => e.StartsOn && e.TownmapX >= 0) ?? 0}");
+                    if (tmEnter >= 0 && tmHere is not null)
+                        EnterTownmapEntrance(tmHere, tmEnter);
+                    break;
+                }
                 case StartupAction.AimOpen(var aoHex):
                 {
                     // P119 QA: hover-capture the critter at the hex, then the same open the V key runs.

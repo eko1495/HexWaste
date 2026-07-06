@@ -57,6 +57,15 @@ public sealed class WorldmapScreen : IDisposable
     public int ScrollX { get; private set; }
     public int ScrollY { get; private set; }
 
+    /// <summary>P125: the town whose townmap sub-view is showing in the chrome's map view
+    /// (wmTownMapFunc), or null for the world view. Toggled by the TOWN/WORLD switch.</summary>
+    public WorldArea? TownmapArea { get; set; }
+
+    /// <summary>True when the area has townmap art to show (city.txt townmap_art_idx,
+    /// worldmap.cc:3144 gates the switch on mapFid != -1).</summary>
+    public bool HasTownmap(WorldArea? area) =>
+        area is { TownmapArtIdx: >= 0 } && Frm(area.TownmapArtIdx) is not null;
+
     /// <summary>The town-tab list offset, in whole rows.</summary>
     public int TabsOffset { get; private set; }
 
@@ -196,6 +205,68 @@ public sealed class WorldmapScreen : IDisposable
         spriteBatch.Begin(samplerState: SamplerState.PointClamp, rasterizerState: _scissor);
         _graphicsDevice.ScissorRectangle = Rectangle.Intersect(view, viewport);
 
+        // P125: the townmap sub-view replaces the world content inside the same chrome
+        // (wmTownMapRefresh :5915 blits the town art at the view spot; hotspot buttons at
+        // the entrances' window coords; labels from worldmap.msg under each hotspot).
+        if (TownmapArea is { } town && Frm(town.TownmapArtIdx) is { } townArt)
+        {
+            spriteBatch.Draw(townArt, new Vector2(view.X, view.Y), Color.White);
+            Texture2D? spot = Frm(HotspotFrm);
+            for (int i = 0; i < town.Entrances.Count; i++)
+            {
+                AreaEntrance e = town.Entrances[i];
+                if (!e.StartsOn || e.TownmapX < 0 || e.TownmapY < 0)
+                    continue;
+                if (spot is not null)
+                    spriteBatch.Draw(spot, new Vector2(o.X + e.TownmapX, o.Y + e.TownmapY), Color.White);
+                string? label = TownmapMsg?.Invoke(200 + 10 * town.Index + i);
+                if (label is not null)
+                    _font?.Draw(spriteBatch, label, new Vector2(
+                        o.X + e.TownmapX + (spot?.Width ?? 24) / 2 - (_font?.MeasureWidth(label) ?? 0) / 2,
+                        o.Y + e.TownmapY + (spot?.Height ?? 26) + 4), new Color(0, 252, 0));
+            }
+        }
+        else
+        {
+            DrawWorldView(spriteBatch, view, hovered, fog, partyX, partyY, destX, destY);
+        }
+
+        spriteBatch.End();
+        _graphicsDevice.ScissorRectangle = oldScissor;
+        spriteBatch.Begin(samplerState: SamplerState.PointClamp);
+
+        DrawTabs(spriteBatch, o, fog);
+        DrawDate(spriteBatch, o, hourHhmm, day, month, year);
+        if (Frm(DialFrm, (hourHhmm / 100 + 12) % Math.Max(1, DialFrameCount())) is { } dial)
+            spriteBatch.Draw(dial, new Vector2(o.X + 532, o.Y + 48), Color.White); // WM_WINDOW_DIAL
+
+        if (inCar)
+        {
+            // The car monitor at its real chrome spot (worldmap.cc:6179-6199).
+            if (Frm(433, carFrame) is { } movie)
+                spriteBatch.Draw(movie, new Vector2(o.X + 514, o.Y + 336), Color.White);
+            if (Frm(CarOverlayFrm) is { } overlay)
+                spriteBatch.Draw(overlay, new Vector2(o.X + 499, o.Y + 330), Color.White);
+            int barH = (int)(70L * Math.Clamp(fuel, 0, fuelMax) / Math.Max(1, fuelMax));
+            if (barH > 0)
+                spriteBatch.Draw(_marker, new Rectangle(o.X + 500, o.Y + 339 + (70 - barH), 2, barH),
+                    new Color(0, 196, 0));
+        }
+        else if (Frm(GlobeFrm) is { } globe)
+        {
+            spriteBatch.Draw(globe, new Vector2(o.X + 495, o.Y + 330), Color.White); // wmglobe stamp
+        }
+    }
+
+    /// <summary>P125: resolves a worldmap.msg entry for townmap entrance labels
+    /// (200 + 10·area + entrance) at runtime; null = no label. Set by the viewer.</summary>
+    public Func<int, string?>? TownmapMsg { get; set; }
+
+    /// <summary>The world view's scissored content (tiles, fog, circles, markers) — the
+    /// pre-P125 body of DrawChrome, unchanged.</summary>
+    private void DrawWorldView(SpriteBatch spriteBatch, Rectangle view, WorldArea? hovered,
+        Formats.Map.WorldmapFog? fog, int partyX, int partyY, int destX, int destY)
+    {
         int wx0 = view.X - ScrollX, wy0 = view.Y - ScrollY; // world (0,0) in screen space
         for (int i = 0; i < TileCount; i++)
             if (_tiles[i] is { } tile)
@@ -232,32 +303,34 @@ public sealed class WorldmapScreen : IDisposable
             else
                 spriteBatch.Draw(_marker, new Rectangle(wx0 + partyX - 4, wy0 + partyY - 4, 8, 8), Color.White);
         }
+    }
 
-        spriteBatch.End();
-        _graphicsDevice.ScissorRectangle = oldScissor;
-        spriteBatch.Begin(samplerState: SamplerState.PointClamp);
-
-        DrawTabs(spriteBatch, o, fog);
-        DrawDate(spriteBatch, o, hourHhmm, day, month, year);
-        if (Frm(DialFrm, (hourHhmm / 100 + 12) % Math.Max(1, DialFrameCount())) is { } dial)
-            spriteBatch.Draw(dial, new Vector2(o.X + 532, o.Y + 48), Color.White); // WM_WINDOW_DIAL
-
-        if (inCar)
+    /// <summary>P125: the entrance index under the mouse on the open townmap (hotspot-art
+    /// sized rects at the entrances' window coords), or -1.</summary>
+    public int TownmapEntranceAt(int mouseX, int mouseY, Rectangle viewport)
+    {
+        if (TownmapArea is not { } town)
+            return -1;
+        Point o = ChromeOrigin(viewport);
+        Texture2D? spot = Frm(HotspotFrm);
+        int w = spot?.Width ?? 24, h = spot?.Height ?? 26;
+        for (int i = 0; i < town.Entrances.Count; i++)
         {
-            // The car monitor at its real chrome spot (worldmap.cc:6179-6199).
-            if (Frm(433, carFrame) is { } movie)
-                spriteBatch.Draw(movie, new Vector2(o.X + 514, o.Y + 336), Color.White);
-            if (Frm(CarOverlayFrm) is { } overlay)
-                spriteBatch.Draw(overlay, new Vector2(o.X + 499, o.Y + 330), Color.White);
-            int barH = (int)(70L * Math.Clamp(fuel, 0, fuelMax) / Math.Max(1, fuelMax));
-            if (barH > 0)
-                spriteBatch.Draw(_marker, new Rectangle(o.X + 500, o.Y + 339 + (70 - barH), 2, barH),
-                    new Color(0, 196, 0));
+            AreaEntrance e = town.Entrances[i];
+            if (e.StartsOn && e.TownmapX >= 0 && e.TownmapY >= 0
+                && new Rectangle(o.X + e.TownmapX, o.Y + e.TownmapY, w, h).Contains(mouseX, mouseY))
+                return i;
         }
-        else if (Frm(GlobeFrm) is { } globe)
-        {
-            spriteBatch.Draw(globe, new Vector2(o.X + 495, o.Y + 330), Color.White); // wmglobe stamp
-        }
+        return -1;
+    }
+
+    /// <summary>P125: the TOWN/WORLD switch's click band (the red button baked at
+    /// window-local 519,439 — wmInterfaceInit :4605).</summary>
+    public Rectangle TownWorldSwitchRect(Rectangle viewport)
+    {
+        Point o = ChromeOrigin(viewport);
+        Texture2D? btn = Frm(RedUpFrm);
+        return new Rectangle(o.X + 519, o.Y + 439, btn?.Width ?? 15, btn?.Height ?? 16);
     }
 
     private int DialFrameCount()

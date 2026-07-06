@@ -257,6 +257,30 @@ public sealed partial class ViewerGame
         Log($"You arrive at {area.Name}.");
     }
 
+    /// <summary>P125: enter a townmap entrance — load its map at the entrance's
+    /// (elevation, tile, rotation), exactly like the wmTownMapFunc pick
+    /// (worldmap.cc:5800-5802 → mapSetEnteringLocation). The clock/worldPos are already
+    /// settled (we're standing at the town); this only chooses WHERE to walk in.</summary>
+    private void EnterTownmapEntrance(WorldArea area, int entranceIndex)
+    {
+        if (entranceIndex < 0 || entranceIndex >= area.Entrances.Count)
+            return;
+        AreaEntrance entrance = area.Entrances[entranceIndex];
+        int mapIndex = _mapList.FindByLookupName(entrance.MapLookupName);
+        string? mapFile = mapIndex >= 0 ? _mapList.GetMapFileName(mapIndex) : null;
+        if (mapFile is null)
+        {
+            Console.Error.WriteLine($"townmap: area {area.Index} entrance {entranceIndex}"
+                + $" cannot resolve map '{entrance.MapLookupName}'");
+            return;
+        }
+        if (_worldmapScreen is not null)
+            _worldmapScreen.TownmapArea = null;
+        _worldmapOpen = false;
+        Console.WriteLine($"townmap-enter: area={area.Index} entrance={entranceIndex} -> {mapFile}");
+        LoadMap(mapFile, new MapDestination(mapIndex, entrance.Tile, entrance.Elevation, entrance.Rotation));
+    }
+
     /// <summary>Pre-answer for a detected encounter in headless runs (phase-16 M1):
     /// true = engage, false = avoid. Null in live play → the interactive Y/N prompt.</summary>
     private bool? _autoEncounterAnswer;

@@ -1,6 +1,8 @@
 namespace Hexwaste.Formats.Map;
 
-/// <summary>One way into a world area: a target map + position.</summary>
+/// <summary>One way into a world area: a target map + position. <see cref="TownmapX"/>/<see cref="TownmapY"/>
+/// are the entrance hotspot's WINDOW coordinates on the townmap view (fo2ce creates the buttons on the
+/// worldmap window at entrance->x/y directly, wmTownMapInit :5886); -1 = no hotspot. (P125.)</summary>
 public sealed record AreaEntrance(
     bool StartsOn,
     /// <summary>maps.txt lookup_name (NOT the file name).</summary>
@@ -8,7 +10,9 @@ public sealed record AreaEntrance(
     int Elevation,
     /// <summary>-1 means use the map's own entering position.</summary>
     int Tile,
-    int Rotation);
+    int Rotation,
+    int TownmapX = -1,
+    int TownmapY = -1);
 
 /// <summary>A location on the worldmap.</summary>
 public sealed class WorldArea
@@ -23,6 +27,11 @@ public sealed class WorldArea
 
     public required string Size { get; init; }
     public required bool StartsOn { get; init; }
+
+    /// <summary>city.txt townmap_art_idx — the art\intrface list index of this town's
+    /// townmap view art; -1 = no townmap (wmConfigInit :2410). (P125.)</summary>
+    public int TownmapArtIdx { get; init; } = -1;
+
     public List<AreaEntrance> Entrances { get; } = [];
 }
 
@@ -50,6 +59,7 @@ public sealed class CityList
         int worldY = 0;
         string size = "Medium";
         bool startsOn = false;
+        int townmapArt = -1;
         List<AreaEntrance> entrances = [];
 
         void Flush()
@@ -64,6 +74,7 @@ public sealed class CityList
                 WorldY = worldY,
                 Size = size,
                 StartsOn = startsOn,
+                TownmapArtIdx = townmapArt,
             };
             area.Entrances.AddRange(entrances);
             list._areas.Add(area);
@@ -84,6 +95,7 @@ public sealed class CityList
                 worldY = 0;
                 size = "Medium";
                 startsOn = false;
+                townmapArt = -1;
                 entrances = [];
                 continue;
             }
@@ -115,6 +127,10 @@ public sealed class CityList
             {
                 startsOn = value.Equals("On", StringComparison.OrdinalIgnoreCase);
             }
+            else if (key.Equals("townmap_art_idx", StringComparison.OrdinalIgnoreCase))
+            {
+                townmapArt = ParseOr(value, -1); // P125: the townmap view art
+            }
             else if (key.StartsWith("entrance_", StringComparison.OrdinalIgnoreCase))
             {
                 string[] parts = value.Split(',');
@@ -125,7 +141,9 @@ public sealed class CityList
                         parts[3].Trim(),
                         ParseOr(parts[4], -1),
                         ParseOr(parts[5], -1),
-                        ParseOr(parts[6], 0)));
+                        ParseOr(parts[6], 0),
+                        TownmapX: ParseOr(parts[1], -1),   // P125: hotspot window coords
+                        TownmapY: ParseOr(parts[2], -1)));
                 }
             }
         }

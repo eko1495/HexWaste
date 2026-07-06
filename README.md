@@ -141,7 +141,9 @@ Prebuilt self-contained builds (Linux x64 / Windows x64) are produced by
   Click a discovered city (or its tab) to travel — the party marker crosses
   the view, paced by terrain: crossing mountains genuinely costs more game
   time (and car fuel) per pixel, exactly like the original's walk loop. The
-  trip can be saved/resumed mid-walk. Driving the Highwayman swaps the globe
+  trip can be saved/resumed mid-walk. The TOWN/WORLD switch (or clicking the
+  town you're standing in) flips to the townmap sub-view — the city's own map
+  art with flashing entrance hotspots; pick one to walk in at that district. Driving the Highwayman swaps the globe
   for the animated car monitor with its draining fuel bar, and the car itself
   sits parked on the town map where you left it — click it to open the trunk. The map is fogged: subtiles you haven't been near stay
   black, ones you've glimpsed are dimmed, and the corridors you've walked are

@@ -21,6 +21,19 @@ public class WorldmapRealGameDataTests
         // Every area position must be inside the 1400x1500 tile canvas.
         Assert.All(cities.Areas, a => Assert.InRange(a.WorldX, 0, 1400));
         Assert.All(cities.Areas, a => Assert.InRange(a.WorldY, 0, 1500));
+
+        // P125 (townmap sub-view): townmap_art_idx + the entrance hotspot window coords
+        // parse (city.txt entrance_N = State,tmX,tmY,... — Arroyo ships art 156 with its
+        // bridge hotspot at 350,275; the Den art 160 with entrance_0 at 124,293).
+        Assert.Equal(156, arroyo.TownmapArtIdx);
+        Assert.Equal(350, arroyo.Entrances[0].TownmapX);
+        Assert.Equal(275, arroyo.Entrances[0].TownmapY);
+        WorldArea den = cities.Areas.First(a => a.Index == 1);
+        Assert.Equal(160, den.TownmapArtIdx);
+        Assert.Equal((124, 293), (den.Entrances[0].TownmapX, den.Entrances[0].TownmapY));
+        // Hotspot coords must sit inside the 640x480 worldmap window when present.
+        Assert.All(cities.Areas.SelectMany(a => a.Entrances).Where(e => e.TownmapX >= 0),
+            e => Assert.InRange(e.TownmapX, 0, 640));
     }
 
     [GameDataFact]

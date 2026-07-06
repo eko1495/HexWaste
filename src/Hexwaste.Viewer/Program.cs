@@ -449,6 +449,10 @@ for (int i = 0; i < args.Length; i++)
         case "--aim-open" when i + 1 < args.Length: // P119 QA: open the called-shot window at <hex>
             actions.Add(new ViewerGame.StartupAction.AimOpen(int.Parse(args[++i])));
             break;
+        case "--townmap": // P125 QA: open the current town's townmap sub-view; optional entrance to enter
+            actions.Add(new ViewerGame.StartupAction.TownmapOpen(
+                i + 1 < args.Length && !args[i + 1].StartsWith("--") ? int.Parse(args[++i]) : -1));
+            break;
         case "--pump-ms" when i + 1 < args.Length:
             // P116 (fix B QA): run the per-frame pump mid-sequence so scripted cutscenes play out.
             actions.Add(new ViewerGame.StartupAction.PumpMs(int.Parse(args[++i])));
