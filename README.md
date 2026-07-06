@@ -178,7 +178,10 @@ Prebuilt self-contained builds (Linux x64 / Windows x64) are produced by
   City's citizenship test, Gecko's reactor terminal, Lenny's / Marcus's / Myron's / the
   Vault 15 Doc's / Sierra's Skynet recruitment (real `party.txt` companions), and Modoc's
   "Jonny in the Well" dialogue + scripted well; finishing a specific quest is content
-  navigation, not engine work.
+  navigation, not engine work. A static bytecode census over all 1263 shipped scripts
+  verifies 107 of the 110 Pip-Boy quests are completable end to end — the other three
+  are the original game's own content bugs (their quest variables are never written to
+  the completion value by any script), faithfully reproduced and pinned by a test.
 - **Companions**: recruit, then a control hub (talk to them) — wait here /
   follow / trade / dismiss / rejoin; a 1:1 flat item trade to gear them up; and
   a combat-control window (the authentic `CONTROL.frm` art) to set their tactics
