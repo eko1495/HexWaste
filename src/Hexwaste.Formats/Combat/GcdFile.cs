@@ -26,7 +26,8 @@ public sealed class GcdFile
     /// critterUpdateDerivedStats(). special = the 7 SPECIAL values; tags = the
     /// chosen skill indices (padded to 4 with -1); gender 0/1; traits = up to two
     /// selected trait ids (P29-M3; null/empty = none).</summary>
-    public static GcdFile Create(int[] special, int[] tags, int gender, int[]? traits = null, string name = "Wanderer")
+    public static GcdFile Create(int[] special, int[] tags, int gender, int[]? traits = null,
+        string name = "Wanderer", int age = 25)
     {
         // Normalise to exactly two trait slots (-1 = empty), the .gcd trailer layout.
         int[] traitArr = [traits is { Length: > 0 } ? traits[0] : -1, traits is { Length: > 1 } ? traits[1] : -1];
@@ -57,6 +58,7 @@ public sealed class GcdFile
         baseStats[29] = 100;                      // DAMAGE_RESISTANCE_EMP (gcdLoad)
         baseStats[31] = 2 * en;                   // RADIATION_RESISTANCE
         baseStats[32] = 5 * en;                   // POISON_RESISTANCE
+        baseStats[33] = age;                      // AGE (P121 chargen age selector, 16-35)
         baseStats[34] = gender;                   // GENDER
 
         int[] tagged = [.. Enumerable.Range(0, 4).Select(i => i < tags.Length ? tags[i] : -1)];

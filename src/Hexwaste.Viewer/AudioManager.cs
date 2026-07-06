@@ -30,7 +30,10 @@ public sealed class AudioManager : IDisposable
         _speechDir = Path.Combine(gameDir, "sound", "speech");
     }
 
-    public void PlaySfx(string name)
+    /// <summary>Play a one-shot sfx. <paramref name="gain"/> scales the base volume 0..1 —
+    /// the positional attenuation factor (SfxVolume.RelativeGain, P121); default 1 = the
+    /// pre-P121 full volume for unanchored/UI sounds.</summary>
+    public void PlaySfx(string name, float gain = 1f)
     {
         if (!_enabled)
             return;
@@ -46,7 +49,7 @@ public sealed class AudioManager : IDisposable
                 _sfxCache[name] = effect;
             }
 
-            effect?.Play(0.5f, 0f, 0f);
+            effect?.Play(0.5f * Math.Clamp(gain, 0f, 1f), 0f, 0f);
         }
         catch (Exception ex) when (ex is NoAudioHardwareException or InvalidOperationException)
         {

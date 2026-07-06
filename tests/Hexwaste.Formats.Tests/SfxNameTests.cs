@@ -91,3 +91,34 @@ public class SoundRealGameDataTests
         Assert.Contains(ambient, e => e.Name == "dogbark");
     }
 }
+
+public class SfxVolumeTests
+{
+    [Theory]
+    [InlineData(true, 100, 5, 1f)]          // on-screen never attenuates (:1297)
+    [InlineData(false, 5, 5, 1f)]           // within PE hexes → full (:1306)
+    [InlineData(false, 3, 5, 1f)]
+    [InlineData(false, 10, 5, 0.3333f)]     // ≥ 2·PE → the 0x2AAA floor (:1304)
+    [InlineData(false, 50, 5, 0.3333f)]
+    public void RelativeGainMatchesTheEngineBands(bool onScreen, int distance, int pe, float expected)
+    {
+        // P121: _gsound_compute_relative_volume (game_sound.cc:1272).
+        Assert.Equal(expected, Formats.Sound.SfxVolume.RelativeGain(onScreen, distance, pe), 3);
+    }
+
+    [Fact]
+    public void RelativeGainFadesLinearlyBetweenPeAnd2Pe()
+    {
+        // PE 6, distance 9 = halfway: 0x7FFF − 0x5554·3/6 = 0x7FFF − 0x2AAA → ≈ 0.6667 (:1302).
+        Assert.Equal((0x7FFF - 0x5554 * 3 / 6) / 32767f,
+            Formats.Sound.SfxVolume.RelativeGain(false, 9, 6), 5);
+        // Monotone: closer is never quieter across the fade band.
+        float prev = 1f;
+        for (int d = 6; d <= 12; d++)
+        {
+            float g = Formats.Sound.SfxVolume.RelativeGain(false, d, 6);
+            Assert.True(g <= prev, $"gain rose at distance {d}");
+            prev = g;
+        }
+    }
+}

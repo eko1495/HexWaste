@@ -178,6 +178,13 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
     private readonly List<int> _createTraits = [];
     private int _createTraitIndex;
     private const int TraitCount = 16; // trait_defs.h Trait enum: Fast Metabolism (0) … Gifted (15)
+    // P121: the NAME/AGE plates (characterEditorEditName/Age, character_editor.cc:3197/3319) —
+    // a typed name (11 chars, empty keeps the default) and an age spinner clamped 16-35.
+    private string _createName = "";
+    private int _createAge = 25;
+    private bool _createNameOpen, _createAgeOpen;
+    private string _createNameEdit = "";
+    private int _createAgeSaved;
 
     /// <summary>Movie caption card (play_gmovie): title + .sve subtitle lines.</summary>
     private List<string>? _movieCard;
@@ -1416,6 +1423,9 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
             {
                 case "pick": _menu = MenuState.CharacterPick; _premadeSel = 0; break;
                 case "create": EnterCreation(); break;
+                // P121: boot with a plate editor open (screenshots/QA).
+                case "create-name": EnterCreation(); _createNameOpen = true; break;
+                case "create-age": EnterCreation(); _createAgeOpen = true; _createAgeSaved = _createAge; break;
                 case "credits": _menu = MenuState.Credits; _creditsScroll = 320; break; // mid-scroll for the screenshot
                 case "death": _menu = MenuState.None; _debugDeathScreen = true; break;
                 case "endgame": _scriptHost.GlobalVars[408] = 1; ShowEndgameSlideshow(); break; // Arroyo victory slide, for a screenshot
@@ -3195,13 +3205,31 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
 
     /// <summary>P117 sfx: the open/close/locked/unlock sound for a container or scenery —
     /// sfxBuildOpenName (game_sound.cc:1464): scenery → "S{action}DOORS{proto sound char}",
-    /// container ITEM → "I{action}CNTNR{proto sound char}".</summary>
+    /// container ITEM → "I{action}CNTNR{proto sound char}". P121: attenuated by position.</summary>
     private void PlayOpenCloseSfx(MapObject obj, Formats.Sound.SfxName.SceneryAction action)
     {
         byte soundId = SafeProto(obj.Pid)?.SoundId ?? 0;
         _audio?.PlaySfx(Fid.Type(obj.Fid) is ObjectType.Scenery
             ? Formats.Sound.SfxName.Door(action, soundId)
-            : Formats.Sound.SfxName.Container(action, soundId));
+            : Formats.Sound.SfxName.Container(action, soundId), SfxGain(obj));
+    }
+
+    /// <summary>P121: the positional volume factor for a sound anchored to a world object —
+    /// _gsound_compute_relative_volume (game_sound.cc:1272). On-screen (the object's tile
+    /// inside the viewport, standing in for the engine's object-rect vs iso-window
+    /// intersection, :1293-1297) → full volume; off-screen fades with hex distance from the
+    /// dude vs his Perception. Null / the dude himself → 1.</summary>
+    private float SfxGain(MapObject? obj)
+    {
+        if (obj is null || _dude is null || obj == _dude.Dude)
+            return 1f;
+        (int sx, int sy) = _camera.HexToScreen(obj.HexTile);
+        Viewport vp = GraphicsDevice.Viewport;
+        const int margin = 48; // a sprite-sized apron around the viewport
+        bool onScreen = sx >= -margin && sx <= vp.Width + margin && sy >= -margin && sy <= vp.Height + margin;
+        int distance = Formats.Hex.HexGrid.Distance(_dude.Dude.HexTile, obj.HexTile);
+        int perception = GetCritterState(_dude.Dude)?.Perception ?? 5;
+        return Formats.Sound.SfxVolume.RelativeGain(onScreen, distance, perception);
     }
 
     private void PickUpItem(MapObject item)
@@ -5123,7 +5151,7 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
             _blockedTiles.Add(door.HexTile);
             Console.WriteLine("door closes");
             Log($"The {ObjectName(door)} closes.");
-            _audio?.PlaySfx(Formats.Sound.SfxName.Door(Formats.Sound.SfxName.SceneryAction.Close, soundId));
+            _audio?.PlaySfx(Formats.Sound.SfxName.Door(Formats.Sound.SfxName.SceneryAction.Close, soundId), SfxGain(door));
         }
         else
         {
@@ -5132,7 +5160,7 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
             _blockedTiles.Remove(door.HexTile);
             Console.WriteLine("door opens");
             Log($"The {ObjectName(door)} opens.");
-            _audio?.PlaySfx(Formats.Sound.SfxName.Door(Formats.Sound.SfxName.SceneryAction.Open, soundId));
+            _audio?.PlaySfx(Formats.Sound.SfxName.Door(Formats.Sound.SfxName.SceneryAction.Open, soundId), SfxGain(door));
         }
     }
 
@@ -5942,6 +5970,7 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
 
             case MenuState.CreateStats:
             {
+                if (HandleCreateModalKeys(k)) break; // P121: an open name/age editor owns the keys
                 if (IsKeyPressed(k, Keys.Up)) _createCursor = (_createCursor + 7) % 8;
                 if (IsKeyPressed(k, Keys.Down)) _createCursor = (_createCursor + 1) % 8;
                 int delta = IsKeyPressed(k, Keys.Right) ? 1 : IsKeyPressed(k, Keys.Left) ? -1 : 0;
@@ -5960,6 +5989,7 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
             }
 
             case MenuState.CreateTraits:
+                if (HandleCreateModalKeys(k)) break; // P121
                 if (IsKeyPressed(k, Keys.Up)) _createTraitIndex = (_createTraitIndex + TraitCount - 1) % TraitCount;
                 if (IsKeyPressed(k, Keys.Down)) _createTraitIndex = (_createTraitIndex + 1) % TraitCount;
                 if (IsKeyPressed(k, Keys.Space)) ToggleCreateTrait(_createTraitIndex);
@@ -5969,6 +5999,7 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
                 break;
 
             case MenuState.CreateTags:
+                if (HandleCreateModalKeys(k)) break; // P121
                 if (IsKeyPressed(k, Keys.Up)) _skillAllocIndex = (_skillAllocIndex + 17) % 18;
                 if (IsKeyPressed(k, Keys.Down)) _skillAllocIndex = (_skillAllocIndex + 1) % 18;
                 if (IsKeyPressed(k, Keys.Space)) ToggleCreateTag(_skillAllocIndex);
@@ -6023,6 +6054,9 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
         _createTraits.Clear();
         _createTraitIndex = 0;
         _skillAllocIndex = 0;
+        _createName = "";                    // P121: empty = the "Wanderer" default at commit
+        _createAge = 25;                     // the editor's starting age
+        _createNameOpen = _createAgeOpen = false;
         _menu = MenuState.CreateStats;
     }
 
@@ -6058,11 +6092,14 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
             Console.WriteLine("create: pick exactly 3 tag skills (Space)");
             return;
         }
-        _dudeGcd = Formats.Combat.GcdFile.Create(_createSpecial, [.. _createTags], _createGender, [.. _createTraits]);
+        _dudeGcd = Formats.Combat.GcdFile.Create(_createSpecial, [.. _createTags], _createGender, [.. _createTraits],
+            name: string.IsNullOrWhiteSpace(_createName) ? "Wanderer" : _createName.Trim(),
+            age: _createAge); // P121: the typed name + spinner age ride the gcd
         _dudePerkRanks = new int[Formats.Perks.PerkTable.Count]; // a new character has no perks (P28-M2)
         _activeCharacter = "custom";
         Console.WriteLine($"create: SPECIAL {string.Join("/", _createSpecial)} gender {_createGender}"
-            + $" tags [{string.Join(",", _createTags)}] traits [{string.Join(",", _createTraits)}] HP {_dudeGcd.Stats.BaseStats[7]}");
+            + $" tags [{string.Join(",", _createTags)}] traits [{string.Join(",", _createTraits)}] HP {_dudeGcd.Stats.BaseStats[7]}"
+            + $" age {_createAge} named={(!string.IsNullOrWhiteSpace(_createName) ? 1 : 0)}");
         StartNewGame();
         _menu = MenuState.None;
     }

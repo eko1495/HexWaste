@@ -30,8 +30,9 @@ Prebuilt self-contained builds (Linux x64 / Windows x64) are produced by
 - **World**: DAT2 archives, FRM sprites + palette cycling, AAF fonts, full
   static lighting (light pools, day/night clock, script-set ambient — caves dim
   to their cavern level on entry), roofs/egg transparency,
-  sound (a C# port of the Interplay ACM decoder — music, sfx, footsteps),
-  ambient NPC life (fidgets, wander, script-driven brahmin behavior).
+  sound (a C# port of the Interplay ACM decoder — music, sfx, footsteps, with
+  positional attenuation: off-screen sounds fade with distance vs your
+  Perception), ambient NPC life (fidgets, wander, script-driven brahmin behavior).
 - **Scripts**: a micro INT-bytecode VM with a real script host — map-entry
   scripts lock doors and stock containers, examine/dialog/lockpick/timer
   procedures run for real, script timers fire (doors auto-close behind you).
@@ -102,9 +103,10 @@ Prebuilt self-contained builds (Linux x64 / Windows x64) are produced by
 - **Game shell**: the authentic Fallout 2 front door — the real `mainmenu.frm`
   main menu (mouse + keyboard), the `pickchar.frm` premade selector (portrait, SPECIAL,
   bio), the `edtrcrte.frm` character-creation editor (point-buy SPECIAL with steppers,
-  skill tagging, optional traits, a stat/skill description card), a scrolling
+  skill tagging, optional traits, a stat/skill description card, and the name/age/sex
+  plates with their pop-up editors — type a name, spin the age 16–35), a scrolling
   `credits.txt` roll, and the iconic `death.frm` death screen when you fall.
-- **Character**: create your own (SPECIAL, gender, optional traits, tagged skills)
+- **Character**: create your own (name, age, SPECIAL, gender, optional traits, tagged skills)
   in the authentic creation editor, or pick a premade from the selector; level-ups
   grant skill points you spend on the character sheet (C),
   and stat-gated dialog runs the right branches — including IQ-gated options, so a

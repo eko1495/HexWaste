@@ -118,6 +118,22 @@ public class GcdCreateTests
             bs, g.Stats.BonusStats, g.Stats.Skills, g.TaggedSkills, 0)); // Small Guns tagged = 53
     }
 
+    [Fact]
+    public void CreateCarriesTheChargenNameAndAge()
+    {
+        // P121: the name field + age spinner ride the created sheet — age into base stat 33
+        // (STAT_AGE), the name verbatim; defaults are "Wanderer"/25.
+        int[] special = [5, 5, 5, 5, 5, 5, 5];
+        var named = Hexwaste.Formats.Combat.GcdFile.Create(special, [0, 1, 2], gender: 0,
+            name: "Sulik-Fan", age: 31);
+        Assert.Equal("Sulik-Fan", named.Name);
+        Assert.Equal(31, named.Stats.BaseStats[33]);
+
+        var defaulted = Hexwaste.Formats.Combat.GcdFile.Create(special, [0, 1, 2], gender: 0);
+        Assert.Equal("Wanderer", defaulted.Name);
+        Assert.Equal(25, defaulted.Stats.BaseStats[33]);
+    }
+
     private static MapObject NewDude() => new()
     {
         Id = 1, HexTile = 100, X = 0, Y = 0, Frame = 0, Rotation = 0,

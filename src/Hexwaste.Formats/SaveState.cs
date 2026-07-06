@@ -97,6 +97,10 @@ public sealed class SaveState
     /// <summary>The dude's tagged skills (4; -1 padded). Pairs with DudeBaseStats.</summary>
     public int[]? DudeTaggedSkills { get; set; }
 
+    /// <summary>The dude's display name (P121 chargen name field); null on older saves →
+    /// the loader's premade/"Wanderer" fallback.</summary>
+    public string? DudeName { get; set; }
+
     /// <summary>Current HP; -1 = full (pre-progression saves).</summary>
     public int DudeHp { get; set; } = -1;
     public int Elevation { get; set; }

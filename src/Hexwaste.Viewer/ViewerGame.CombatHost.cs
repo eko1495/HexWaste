@@ -121,7 +121,7 @@ public sealed partial class ViewerGame
             if (oldCode != 0 && Formats.Sound.SfxName.CharName(
                     _artIndex.CritterBaseName(critter.Fid), AnimPutAway,
                     Formats.Sound.SfxName.CharacterSoundEffect.Unused, oldCode) is { } holsterSfx)
-                _audio?.PlaySfx(holsterSfx);
+                _audio?.PlaySfx(holsterSfx, SfxGain(critter));
         }
 
         critter.Fid = armedStand;
@@ -227,7 +227,8 @@ public sealed partial class ViewerGame
             Console.WriteLine($"reload: {ObjectNameByPid(weaponProto.Pid)} -> {weaponItem.AmmoQuantity}/{weapon.AmmoCapacity}");
             // Weapon-ready sfx on a successful reload (the engine rings the weapon in, combat.cc) — P34-M5.
             if (weapon.SoundCode > 0)
-                _audio?.PlaySfx(Formats.Sound.SfxName.WeaponName(Formats.Sound.SfxName.WeaponSoundEffect.Ready, weapon.SoundCode, primaryOrPunch: true));
+                _audio?.PlaySfx(Formats.Sound.SfxName.WeaponName(Formats.Sound.SfxName.WeaponSoundEffect.Ready,
+                    weapon.SoundCode, primaryOrPunch: true), SfxGain(holder));
             return true;
         }
 
@@ -548,10 +549,12 @@ public sealed partial class ViewerGame
         return true;
     }
 
-    private void PlayWeaponSfx(ProtoInfo? weaponProto)
+    /// <summary>P121: <paramref name="at"/> anchors the shot for positional attenuation
+    /// (the attacker); null = full volume.</summary>
+    private void PlayWeaponSfx(ProtoInfo? weaponProto, MapObject? at = null)
     {
         if (weaponProto?.Weapon is { SoundCode: > 0 } weapon)
-            _audio?.PlaySfx(Formats.Sound.SfxName.WeaponAttack(weapon.SoundCode));
+            _audio?.PlaySfx(Formats.Sound.SfxName.WeaponAttack(weapon.SoundCode), SfxGain(at));
     }
 
     /// <summary>The game-tick at which the dude's next poison damage tick fires; -1 = not poisoned.
@@ -858,7 +861,7 @@ public sealed partial class ViewerGame
             fid = Fid.Build(ObjectType.Critter, Fid.Index(thrower.Fid), animThrow, 0);
         if (_vfs.Exists(_artIndex.GetFrmPath(fid)))
             _animator.PlayActionOnce(thrower, fid);
-        PlayWeaponSfx(weaponProto);
+        PlayWeaponSfx(weaponProto, thrower);
         LaunchProjectile(thrower.HexTile, targetTile, weaponProto); // the thrown item flies (phase-10 #11)
     }
 
@@ -1043,12 +1046,12 @@ public sealed partial class ViewerGame
         if (attacker != _dude?.Dude)
             TryTaunt(attacker, Formats.Combat.CombatTaunt.Type.Attack);
         if (weaponProto?.Weapon is not null)
-            PlayWeaponSfx(weaponProto);
+            PlayWeaponSfx(weaponProto, attacker);
         // Unarmed/melee swing grunt (actions.cc:625 sfxBuildCharName(attacker, ANIM_THROW_PUNCH, CONTACT)) —
         // a wielded weapon plays its own sfx above instead (P34-M5).
         else if (Formats.Sound.SfxName.CharName(_artIndex.CritterBaseName(attacker.Fid), 16 /*ANIM_THROW_PUNCH*/,
                      Formats.Sound.SfxName.CharacterSoundEffect.Contact, Fid.WeaponCode(attacker.Fid)) is { } swing)
-            _audio?.PlaySfx(swing);
+            _audio?.PlaySfx(swing, SfxGain(attacker));
         StartAttackAnimation(attacker, weaponProto);
         LaunchProjectile(attacker, target, weaponProto);
     }
@@ -1148,7 +1151,7 @@ public sealed partial class ViewerGame
         // audio-only, plays for any target incl. the dude; null/silent when the base is unresolvable (P34-M5).
         if (Formats.Sound.SfxName.CharName(_artIndex.CritterBaseName(target.Fid), animHitFromFront,
                 Formats.Sound.SfxName.CharacterSoundEffect.Unused, Fid.WeaponCode(target.Fid)) is { } grunt)
-            _audio?.PlaySfx(grunt);
+            _audio?.PlaySfx(grunt, SfxGain(target));
 
         // P69-M2: the dude reacts too (the engine reacts him — actions.cc _show_damage_to_object). The
         // render path already supports it: ResolveSprite uses the animator state when the walker isn't
@@ -1219,7 +1222,7 @@ public sealed partial class ViewerGame
         else if (Formats.Sound.SfxName.CharName(_artIndex.CritterBaseName(critter.Fid), deathAnim,
                      Formats.Sound.SfxName.CharacterSoundEffect.Die, Fid.WeaponCode(critter.Fid)) is { } scream)
         {
-            _audio?.PlaySfx(scream);
+            _audio?.PlaySfx(scream, SfxGain(critter));
         }
 
         int fallFid = Fid.Build(ObjectType.Critter, Fid.Index(critter.Fid), deathAnim, 0);

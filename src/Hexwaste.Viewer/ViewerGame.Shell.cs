@@ -375,15 +375,16 @@ public sealed partial class ViewerGame
     }
 
     // The engine's bignum.frm digit-pair blit (character_editor.cc characterEditorDrawBigNumber): 14x24 cells,
-    // white digits in [0..167], red (a value > 10) in [168..]; tens then ones, no leading-zero suppression.
-    private void DrawBigNum(int ox, int oy, int sx, int sy, int value)
+    // white digits in [0..167], red in [168..] (the RED flag — P121: an explicit param, the old
+    // value>10 heuristic wrongly reddened the age spinner); tens then ones, no leading-zero suppression.
+    private void DrawBigNum(int ox, int oy, int sx, int sy, int value, bool red = false)
     {
         if (_bigNum is null)
         {
             _fontRenderer?.Draw(_spriteBatch, value.ToString("D2"), new Vector2(ox + sx, oy + sy + 6), new Color(0, 252, 0));
             return;
         }
-        int v = Math.Clamp(value, 0, 99), off = value > 10 ? 168 : 0;
+        int v = Math.Clamp(value, 0, 99), off = red ? 168 : 0;
         _spriteBatch.Draw(_bigNum, new Vector2(ox + sx, oy + sy), new Rectangle(off + v / 10 * 14, 0, 14, 24), Color.White);
         _spriteBatch.Draw(_bigNum, new Vector2(ox + sx + 14, oy + sy), new Rectangle(off + v % 10 * 14, 0, 14, 24), Color.White);
     }
@@ -474,7 +475,186 @@ public sealed partial class ViewerGame
         bool ready = _createPoints == 0 && _createTags.Count == 3;
         T(452, 456, "DONE", ready ? gold : gray);
         T(556, 456, "CANCEL", gold);
+
+        DrawCreationPlates(ox, oy);
+        if (_createNameOpen)
+            DrawNameModal(ox, oy);
+        else if (_createAgeOpen)
+            DrawAgeModal(ox, oy);
         return true;
+    }
+
+    // ---- P121: the NAME / AGE / SEX plates + their pop-up editors ----------------------
+    // character_editor.cc: the plates sit at (NAME_BUTTON_X=9, NAME_BUTTON_Y=0) in plate-width
+    // sequence (:1567-1625); the current value is baked centered onto the plate art
+    // (characterEditorDrawName/Age/Gender :2562/:2528/:2652). Interface FRM ids from
+    // gCharacterEditorFrmIds: NAME off 185, AGE off 176, SEX off 188; the editors reuse
+    // CHARWIN 208 / NAMEBOX 214 / AGEBOX 205 / DONEBOX 209 / red button 8/9 / arrows 122-125.
+
+    private const int PlateNameOffFrm = 185, PlateAgeOffFrm = 176, PlateSexOffFrm = 188;
+    private const int CharWinFrm = 208, NameBoxFrm = 214, AgeBoxFrm = 205, DoneBoxFrm = 209;
+    private const int ArrowLeftUpFrm = 122, ArrowRightUpFrm = 124;
+
+    // (the editor.msg cache _editorMsg/_editorMsgTried lives in ViewerGame.cs:523)
+    private string EditorMsg(int id, string fallback) =>
+        LazyMsg(@"text\english\game\editor.msg", ref _editorMsgTried, ref _editorMsg)?.GetText(id) ?? fallback;
+
+    /// <summary>The window-local x of plate 0 = name, 1 = age, 2 = sex (each starts where the
+    /// previous plate's art ends, character_editor.cc:1587/1607).</summary>
+    private int PlateX(int plate)
+    {
+        int x = 9;
+        if (plate >= 1)
+            x += InterfaceFrm(PlateNameOffFrm)?.Width ?? 100;
+        if (plate >= 2)
+            x += InterfaceFrm(PlateAgeOffFrm)?.Width ?? 70;
+        return x;
+    }
+
+    private void DrawCreationPlates(int ox, int oy)
+    {
+        var value = new Color(0, 108, 0); // _colorTable[18979] — the plates' dark-green baked text
+        void Plate(int index, int frmId, string text)
+        {
+            Texture2D? plate = InterfaceFrm(frmId);
+            int x = PlateX(index);
+            if (plate is not null)
+                _spriteBatch.Draw(plate, new Vector2(ox + x, oy), Color.White);
+            int w = plate?.Width ?? 100;
+            _fontRenderer!.Draw(_spriteBatch, text,
+                new Vector2(ox + x + w / 2 - _fontRenderer.MeasureWidth(text) / 2, oy + 6), value);
+        }
+        Plate(0, PlateNameOffFrm, _createName);
+        Plate(1, PlateAgeOffFrm, $"{EditorMsg(104, "Age")} {_createAge}");
+        Plate(2, PlateSexOffFrm, _createGender == 1 ? EditorMsg(108, "Female") : EditorMsg(107, "Male"));
+    }
+
+    /// <summary>The name editor (characterEditorEditName :3197): CHARWIN at window-local (17,0),
+    /// NAMEBOX + DONEBOX + the red done button; the typed text (≤11 chars) with a cursor.</summary>
+    private void DrawNameModal(int ox, int oy)
+    {
+        DrawCharWinModal(ox + 17, oy, out int mx, out int my);
+        if (InterfaceFrm(NameBoxFrm) is { } box)
+            _spriteBatch.Draw(box, new Vector2(mx + 13, my + 13), Color.White);
+        _fontRenderer!.Draw(_spriteBatch, _createNameEdit + "_", new Vector2(mx + 23, my + 19), new Color(0, 252, 0));
+    }
+
+    /// <summary>The age editor (characterEditorEditAge :3319): CHARWIN beside the name plate,
+    /// AGEBOX with the left/right arrows at (19,13)/(105,13) and the big-number age at (55,10).</summary>
+    private void DrawAgeModal(int ox, int oy)
+    {
+        DrawCharWinModal(ox + PlateX(1), oy, out int mx, out int my);
+        if (InterfaceFrm(AgeBoxFrm) is { } box)
+            _spriteBatch.Draw(box, new Vector2(mx + 8, my + 7), Color.White);
+        if (InterfaceFrm(ArrowLeftUpFrm) is { } left)
+            _spriteBatch.Draw(left, new Vector2(mx + 19, my + 13), Color.White);
+        if (InterfaceFrm(ArrowRightUpFrm) is { } right)
+            _spriteBatch.Draw(right, new Vector2(mx + 105, my + 13), Color.White);
+        DrawBigNum(mx, my, 55, 10, _createAge);
+    }
+
+    /// <summary>The shared CHARWIN chassis + DONEBOX + red done button + label; outputs the
+    /// modal's screen origin for the caller's content.</summary>
+    private void DrawCharWinModal(int x, int y, out int mx, out int my)
+    {
+        mx = x;
+        my = y;
+        if (InterfaceFrm(CharWinFrm) is { } charWin)
+            _spriteBatch.Draw(charWin, new Vector2(x, y), Color.White);
+        else
+        {
+            _panelPixel ??= CreatePixel();
+            _spriteBatch.Draw(_panelPixel, new Rectangle(x, y, 140, 70), new Color(24, 24, 24, 240));
+        }
+        if (InterfaceFrm(DoneBoxFrm) is { } doneBox)
+            _spriteBatch.Draw(doneBox, new Vector2(x + 13, y + 40), Color.White);
+        if (InterfaceFrm(CalledShotCancelUpFrmId) is { } btn) // the little red button (FRM 8)
+            _spriteBatch.Draw(btn, new Vector2(x + 26, y + 44), Color.White);
+        _fontRenderer!.Draw(_spriteBatch, EditorMsg(100, "DONE"), new Vector2(x + 50, y + 44), new Color(180, 180, 168));
+    }
+
+    /// <summary>Modal-first creation clicks: true = the click was consumed by an open editor
+    /// (or opened one via the plates). Shares the plate x-layout with the draw.</summary>
+    private bool HandleCreationPlateMouse(int lx, int ly)
+    {
+        if (_createNameOpen || _createAgeOpen)
+        {
+            int mx = _createNameOpen ? 17 : PlateX(1);
+            if (new Rectangle(mx + 13, 40, 120, 24).Contains(lx, ly)) // the DONEBOX strip commits
+            {
+                _audio?.PlaySfx("ib1p1xx1"); // the done-click (character_editor.cc:3433)
+                CommitCreateModal();
+            }
+            else if (_createAgeOpen && new Rectangle(mx + 19, 13, 25, 24).Contains(lx, ly))
+                _createAge = Math.Max(16, _createAge - 1);
+            else if (_createAgeOpen && new Rectangle(mx + 105, 13, 25, 24).Contains(lx, ly))
+                _createAge = Math.Min(35, _createAge + 1);
+            return true; // a modal swallows every creation click
+        }
+
+        int plateH = InterfaceFrm(PlateNameOffFrm)?.Height ?? 26;
+        if (new Rectangle(PlateX(0), 0, PlateX(1) - PlateX(0), plateH).Contains(lx, ly))
+        {
+            _createNameEdit = _createName;
+            _createNameOpen = true;
+            return true;
+        }
+        if (new Rectangle(PlateX(1), 0, PlateX(2) - PlateX(1), plateH).Contains(lx, ly))
+        {
+            _createAgeSaved = _createAge;
+            _createAgeOpen = true;
+            return true;
+        }
+        if (new Rectangle(PlateX(2), 0, InterfaceFrm(PlateSexOffFrm)?.Width ?? 70, plateH).Contains(lx, ly))
+        {
+            _createGender ^= 1; // a direct toggle (fo2ce opens a Male/Female picker — documented)
+            return true;
+        }
+        return false;
+    }
+
+    private void CommitCreateModal()
+    {
+        if (_createNameOpen && _createNameEdit.Trim().Length > 0)
+            _createName = _createNameEdit.Trim(); // empty keeps the old name (:3269)
+        _createNameOpen = _createAgeOpen = false;
+    }
+
+    /// <summary>Modal-first creation keys: true = consumed. Name: printable chars (≤11,
+    /// _get_input_str's cap :3268) / Backspace / Enter / Esc; age: arrows 16-35, Esc reverts.</summary>
+    private bool HandleCreateModalKeys(KeyboardState k)
+    {
+        if (_createNameOpen)
+        {
+            if (IsKeyPressed(k, Keys.Enter)) { CommitCreateModal(); return true; }
+            if (IsKeyPressed(k, Keys.Escape)) { _createNameOpen = false; return true; }
+            if (IsKeyPressed(k, Keys.Back) && _createNameEdit.Length > 0)
+                _createNameEdit = _createNameEdit[..^1];
+            bool shift = k.IsKeyDown(Keys.LeftShift) || k.IsKeyDown(Keys.RightShift);
+            for (Keys key = Keys.A; key <= Keys.Z && _createNameEdit.Length < 11; key++)
+                if (IsKeyPressed(k, key))
+                    _createNameEdit += shift || _createNameEdit.Length == 0
+                        ? (char)('A' + key - Keys.A) : (char)('a' + key - Keys.A);
+            for (Keys key = Keys.D0; key <= Keys.D9 && _createNameEdit.Length < 11; key++)
+                if (IsKeyPressed(k, key))
+                    _createNameEdit += (char)('0' + key - Keys.D0);
+            if (IsKeyPressed(k, Keys.Space) && _createNameEdit.Length is > 0 and < 11)
+                _createNameEdit += ' ';
+            if (IsKeyPressed(k, Keys.OemMinus) && _createNameEdit.Length < 11)
+                _createNameEdit += '-';
+            return true;
+        }
+        if (_createAgeOpen)
+        {
+            if (IsKeyPressed(k, Keys.Enter)) { _createAgeOpen = false; return true; }
+            if (IsKeyPressed(k, Keys.Escape)) { _createAge = _createAgeSaved; _createAgeOpen = false; return true; }
+            if (IsKeyPressed(k, Keys.Left) || IsKeyPressed(k, Keys.Down))
+                _createAge = Math.Max(16, _createAge - 1);  // 16-35 (character_editor.cc:3442-3448)
+            if (IsKeyPressed(k, Keys.Right) || IsKeyPressed(k, Keys.Up))
+                _createAge = Math.Min(35, _createAge + 1);
+            return true;
+        }
+        return false;
     }
 
     /// <summary>The description-card text for the active creation sub-state's cursor (stat / trait / skill).</summary>
@@ -497,6 +677,10 @@ public sealed partial class ViewerGame
         int lx = mouse.X - ox, ly = mouse.Y - oy;
         bool click = mouse.LeftButton == ButtonState.Pressed && _previousMouse.LeftButton == ButtonState.Released;
         if (!click)
+            return;
+
+        // P121: the NAME/AGE/SEX plates + their pop-up editors take precedence.
+        if (HandleCreationPlateMouse(lx, ly))
             return;
 
         // SPECIAL steppers (+/-) and stat selection.

@@ -321,6 +321,8 @@ public sealed partial class ViewerGame
             DudeActiveHand = _activeHand != MapObject.FlagInRightHand ? _activeHand : null, // P81 (sparse: null = right)
             DudeBaseStats = _dudeGcd is not null ? [.. _dudeGcd.Stats.BaseStats] : null,
             DudeTaggedSkills = _dudeGcd is not null ? [.. _dudeGcd.TaggedSkills] : null,
+            DudeName = _dudeGcd?.Name, // P121: the typed chargen name round-trips
+
             Elevation = _elevation,
             ClockTicks = _clock.Ticks,
             GlobalVars = new Dictionary<int, int>(_scriptHost?.GlobalVars ?? []),
@@ -497,7 +499,8 @@ public sealed partial class ViewerGame
                 Stats = new Formats.Proto.CritterProtoStats(0, 0, 0,
                     [.. savedBase], new int[35], state.DudeSkills is { Length: 18 } s ? [.. s] : new int[18],
                     0, 0, 0, 0),
-                Name = _activeCharacter == "custom" ? "Wanderer" : _dudeGcd?.Name ?? "Wanderer",
+                Name = state.DudeName // P121: prefer the saved chargen name; old saves fall back
+                    ?? (_activeCharacter == "custom" ? "Wanderer" : _dudeGcd?.Name ?? "Wanderer"),
                 TaggedSkills = state.DudeTaggedSkills is { Length: 4 } t ? [.. t] : [-1, -1, -1, -1],
                 Traits = [-1, -1],
             };
