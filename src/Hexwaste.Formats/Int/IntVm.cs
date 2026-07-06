@@ -573,14 +573,23 @@ public sealed class IntVm
     // while still catching a true runaway (5M instructions run in well under a second).
     private const int InstructionBudget = 5_000_000;
 
-    private readonly struct Value(ushort tag, int raw)
+    private readonly struct Value(ushort tag, int raw, bool isObjectHandle = false)
     {
         public ushort Tag { get; } = tag;
         public int Raw { get; } = raw;
 
+        /// <summary>P126: provenance — this int came from an object-returning external
+        /// (self_obj, create_object_sid, …). Tag stays TypeInt so every consumer treats it
+        /// as a plain int; the flag only feeds the stale-handle diagnostic at the
+        /// persistent-var setters (handles are per-map-load and never serialized, so a
+        /// handle stored in a GVAR/MVAR/LVAR resolves to a DIFFERENT object later).</summary>
+        public bool IsObjectHandle { get; } = isObjectHandle;
+
         public bool IsString => Tag is TypeStaticString or TypeDynamicString;
 
         public static Value Int(int value) => new(TypeInt, value);
+
+        public static Value ObjectHandle(int handle) => new(TypeInt, handle, isObjectHandle: true);
     }
 
     private readonly IntProgram _program;
@@ -1238,7 +1247,7 @@ public sealed class IntVm
                 _externals.SetScriptOverrides();
                 break;
             case 0x80BC: // self_obj
-                PushInt(_externals.SelfObjectId());
+                PushObject(_externals.SelfObjectId());
                 break;
             case 0x80C1: // get_local_var
                 PushInt(_externals.GetLocalVar(PopInt()));
@@ -1257,38 +1266,42 @@ public sealed class IntVm
                 break;
             }
 
-            // ---- variable setters (opSetLocalVar pops value, then index)
+            // ---- variable setters (opSetLocalVar pops value, then index). P126: these are
+            // the PERSISTENT stores (LVAR/MVAR survive per-map deltas, GVAR the whole save),
+            // while object handles are per-map-load — a handle written here resolves to a
+            // different object after reload, so the pop is provenance-checked. VM module
+            // globals (store_global) share the handles' lifetime and stay unchecked.
             case 0x80C2: // set_local_var
             {
-                int value = PopInt();
+                int value = PopIntCheckedForHandle("LVAR");
                 _externals.SetLocalVar(PopInt(), value);
                 break;
             }
             case 0x80C4: // set_map_var
             {
-                int value = PopInt();
+                int value = PopIntCheckedForHandle("MVAR");
                 _externals.SetMapVar(PopInt(), value);
                 break;
             }
             case 0x80C6: // set_global_var
             {
-                int value = PopInt();
+                int value = PopIntCheckedForHandle("GVAR");
                 _externals.SetGlobalVar(PopInt(), value);
                 break;
             }
 
             // ---- script context
             case 0x80BD: // source_obj
-                PushInt(_externals.SourceObjectId());
+                PushObject(_externals.SourceObjectId());
                 break;
             case 0x80BE: // target_obj
-                PushInt(_externals.TargetObjectId());
+                PushObject(_externals.TargetObjectId());
                 break;
             case 0x80BF: // dude_obj
-                PushInt(_externals.DudeObjectId());
+                PushObject(_externals.DudeObjectId());
                 break;
             case 0x80C0: // obj_being_used_with
-                PushInt(_externals.ObjectBeingUsedWithId());
+                PushObject(_externals.ObjectBeingUsedWithId());
                 break;
             case 0x80F7: // fixed_param
                 PushInt(_externals.FixedParam());
@@ -1515,7 +1528,7 @@ public sealed class IntVm
                 _externals.PartyRemove(PopInt());
                 break;
             case 0x814B: // party_member_obj (pops pid, pushes handle)
-                PushInt(_externals.PartyMemberByPid(PopInt()));
+                PushObject(_externals.PartyMemberByPid(PopInt()));
                 break;
             case 0x80EF: // critter_damage (pops typeWithFlags, amount, obj)
             {
@@ -1559,7 +1572,7 @@ public sealed class IntVm
                 int elevation = PopInt();
                 int tile = PopInt();
                 int pid = PopInt();
-                PushInt(_externals.CreateObject(pid, tile, elevation, scriptIndex));
+                PushObject(_externals.CreateObject(pid, tile, elevation, scriptIndex));
                 break;
             }
             case 0x80F4: // destroy_object
@@ -1600,7 +1613,7 @@ public sealed class IntVm
             case 0x810D: // obj_carrying_pid_obj (pops pid, critter) -> item handle (or 0)
             {                // ported from fallout2-ce src/interpreter_extra.cc:3438
                 int pid = PopInt();
-                PushInt(_externals.ObjCarryingPidObj(PopInt(), pid));
+                PushObject(_externals.ObjCarryingPidObj(PopInt(), pid));
                 break;
             }
             case 0x80B6: // move_to (pops elevation, tile, obj) -> new tile
@@ -1629,7 +1642,7 @@ public sealed class IntVm
             {
                 int pid = PopInt();
                 int elevation = PopInt();
-                PushInt(_externals.TileContainsPidObj(PopInt(), elevation, pid));
+                PushObject(_externals.TileContainsPidObj(PopInt(), elevation, pid));
                 break;
             }
 
@@ -1862,7 +1875,7 @@ public sealed class IntVm
             case 0x8106: // critter_inven_obj (pops type, then critter)
             {
                 int type = PopInt();
-                PushInt(_externals.CritterInventoryObject(PopInt(), type));
+                PushObject(_externals.CritterInventoryObject(PopInt(), type));
                 break;
             }
             case 0x80A8: // set_map_start (pops rotation, elevation, y, x)
@@ -2100,6 +2113,10 @@ public sealed class IntVm
 
     private void PushInt(int value) => _stack.Add(Value.Int(value));
 
+    /// <summary>P126: push an object handle — a plain int carrying the provenance flag
+    /// the persistent-var setters use for the stale-handle diagnostic.</summary>
+    private void PushObject(int handle) => _stack.Add(Value.ObjectHandle(handle));
+
     /// <summary>programPushString() reduced to a list of dynamic strings.</summary>
     private void PushString(string? value)
     {
@@ -2123,6 +2140,25 @@ public sealed class IntVm
             throw new InvalidDataException($"Expected an int on the stack, got tag 0x{value.Tag:X4}.");
         return value.Raw;
     }
+
+    /// <summary>P126 stale-handle guard: PopInt for the persistent-var setters — a LIVE
+    /// object handle (non-zero, straight off an object-returning external) written to a
+    /// GVAR/MVAR/LVAR is a latent bug (handles are per-map-load, never serialized: the
+    /// stored int resolves to a DIFFERENT object after reload). No vanilla script does
+    /// this (P124 census); the diagnostic exists to catch future content/engine work.
+    /// Reported once per (kind, value) to stderr — never the golden-captured stdout.</summary>
+    private int PopIntCheckedForHandle(string varKind)
+    {
+        Value value = Pop();
+        if (value.Tag != TypeInt)
+            throw new InvalidDataException($"Expected an int on the stack, got tag 0x{value.Tag:X4}.");
+        if (value.IsObjectHandle && value.Raw != 0 && _reportedHandleStores.Add((varKind, value.Raw)))
+            Console.Error.WriteLine($"stale-handle: a script stored live object handle {value.Raw} in a"
+                + $" persistent {varKind} — handles do not survive map reload/save, this WILL dangle");
+        return value.Raw;
+    }
+
+    private readonly HashSet<(string, int)> _reportedHandleStores = [];
 
     private string PopString() => AsString(Pop());
 
