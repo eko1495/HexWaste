@@ -133,13 +133,17 @@ Prebuilt self-contained builds (Linux x64 / Windows x64) are produced by
   you can't pick up / loot / buy more, and you lose action points in combat.
 - **Barter**: real shopkeeper trade (Tubby's stock box and all) at the
   engine's price formula.
-- **Worldmap**: click-to-travel between areas (`maps.txt`/`city.txt`) — a party
-  dot crosses the map, paced by terrain: crossing mountains genuinely costs more
-  game time (and car fuel) per pixel, exactly like the original's walk loop, not
-  just a slower animation. The trip can be saved/resumed mid-walk. Driving the
-  Highwayman shows the animated car monitor with its draining fuel bar, and the
-  car itself sits parked on the town map where you left it — click it to open
-  the trunk. The map is fogged: subtiles you haven't been near stay
+- **Worldmap**: the authentic worldmap window — the real chrome frame around a
+  scrolling 1:1 map view (arrow keys / wheel / hover the edge), city circles
+  with the "you are here" hotspot and destination markers, the alphabetical
+  town-tab rail with red quick-travel buttons, the date/time readout, the
+  day/night dial that turns with the clock, and the Vault-Tec globe plate.
+  Click a discovered city (or its tab) to travel — the party marker crosses
+  the view, paced by terrain: crossing mountains genuinely costs more game
+  time (and car fuel) per pixel, exactly like the original's walk loop. The
+  trip can be saved/resumed mid-walk. Driving the Highwayman swaps the globe
+  for the animated car monitor with its draining fuel bar, and the car itself
+  sits parked on the town map where you left it — click it to open the trunk. The map is fogged: subtiles you haven't been near stay
   black, ones you've glimpsed are dimmed, and the corridors you've walked are
   clear — and hidden sub-areas (Car Outta Gas, the toxic caves) only put a marker
   on the map once you've explored near them. The wasteland bites — travel rolls

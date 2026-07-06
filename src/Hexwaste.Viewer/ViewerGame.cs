@@ -373,6 +373,7 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
     private const double AmbientIntervalMs = 17000; // ~the engine's 10*randomBetween(15,20) game-ticks
     private WorldmapScreen? _worldmapScreen;
     private bool _worldmapOpen;
+    private bool _worldmapWasOpen; // P123: open-transition latch (center the chrome view once)
     private InterfaceBar? _interfaceBar;
     /// <summary>The bar's screen footprint this frame (0-height when hidden) so the
     /// message log + HUD text lift above it instead of colliding (P11 M0).</summary>
@@ -1400,7 +1401,7 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
 
         LoadMap(_mapName, spawnAt: null);
 
-        _worldmapScreen = new WorldmapScreen(GraphicsDevice, _vfs, _palette, _cities, _fontRenderer);
+        _worldmapScreen = new WorldmapScreen(GraphicsDevice, _vfs, _palette, _cities, _fontRenderer, _frmCache);
         _interfaceBar = new InterfaceBar(GraphicsDevice, _vfs, _palette); // P11 HUD bar
         if (StartInMenu)
         {
@@ -2376,6 +2377,12 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
         // Worldmap mode swallows map input.
         if (_worldmapOpen)
         {
+            // P123: center the chrome view on the party when the map opens (wmInterfaceInit →
+            // wmInterfaceCenterOnParty) and keep following the dot mid-travel.
+            if ((!_worldmapWasOpen || _activeTravel is not null) && _worldPosX >= 0)
+                _worldmapScreen?.CenterOn(_worldPosX, _worldPosY);
+            _worldmapWasOpen = true;
+
             // Phase-17 M2: while the dot is moving, Esc/click HALTS travel (stay put on the
             // worldmap); a fresh click then re-routes. Esc with no travel closes the map.
             if (_activeTravel is not null)
@@ -2392,10 +2399,56 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
                 if (IsKeyPressed(keyboard, Keys.Escape) || IsKeyPressed(keyboard, Keys.M))
                     _worldmapOpen = false;
 
-                _hoveredArea = _worldmapScreen?.HitTest(mouse.X, mouse.Y, GraphicsDevice.Viewport.Bounds, WorldFog);
-                if (mouse.LeftButton == ButtonState.Pressed && _previousMouse.LeftButton == ButtonState.Released
-                    && _hoveredArea is not null)
-                    TravelTo(_hoveredArea);
+                bool click = mouse.LeftButton == ButtonState.Pressed && _previousMouse.LeftButton == ButtonState.Released;
+                if (_worldmapScreen is { HasChrome: true } wms)
+                {
+                    // P123 chrome input: arrow keys + wheel + view-edge hover scroll the 1:1
+                    // map view (wmInterfaceScroll); the town-tab red buttons quick-travel
+                    // (KEY_CTRL_F1.. handler, worldmap.cc:3232); the tab arrows page the list.
+                    const int scrollStep = 20; // fo2ce's wheel scroll step (:3260)
+                    Rectangle wmView = wms.ViewRect(GraphicsDevice.Viewport.Bounds);
+                    int dx = (keyboard.IsKeyDown(Keys.Right) ? scrollStep : 0) - (keyboard.IsKeyDown(Keys.Left) ? scrollStep : 0);
+                    int dy = (keyboard.IsKeyDown(Keys.Down) ? scrollStep : 0) - (keyboard.IsKeyDown(Keys.Up) ? scrollStep : 0);
+                    if (wmView.Contains(mouse.X, mouse.Y))
+                    {
+                        dy -= (mouse.ScrollWheelValue - _previousMouse.ScrollWheelValue) / 120 * scrollStep;
+                        const int edge = 8; // hover the view edge to scroll (wmMouseBkProc)
+                        if (mouse.X < wmView.X + edge) dx -= scrollStep / 2;
+                        if (mouse.X > wmView.Right - edge) dx += scrollStep / 2;
+                        if (mouse.Y < wmView.Y + edge) dy -= scrollStep / 2;
+                        if (mouse.Y > wmView.Bottom - edge) dy += scrollStep / 2;
+                    }
+                    if (dx != 0 || dy != 0)
+                        wms.ScrollBy(dx, dy);
+
+                    _hoveredArea = wms.HitTestChrome(mouse.X, mouse.Y, GraphicsDevice.Viewport.Bounds, WorldFog);
+                    if (click)
+                    {
+                        (Rectangle up, Rectangle down) = wms.TabArrowRects(GraphicsDevice.Viewport.Bounds);
+                        List<WorldArea> towns = wms.TabTowns(WorldFog);
+                        if (_hoveredArea is not null)
+                            TravelTo(_hoveredArea);
+                        else if (up.Contains(mouse.X, mouse.Y))
+                            wms.ScrollTabs(-1, WorldFog);
+                        else if (down.Contains(mouse.X, mouse.Y))
+                            wms.ScrollTabs(+1, WorldFog);
+                        else
+                            for (int row = 0; row < 7; row++)
+                                if (wms.TabButtonRect(GraphicsDevice.Viewport.Bounds, row).Contains(mouse.X, mouse.Y)
+                                    && wms.TabsOffset + row < towns.Count)
+                                {
+                                    _audio?.PlaySfx("ib1p1xx1");
+                                    TravelTo(towns[wms.TabsOffset + row]);
+                                    break;
+                                }
+                    }
+                }
+                else
+                {
+                    _hoveredArea = _worldmapScreen?.HitTest(mouse.X, mouse.Y, GraphicsDevice.Viewport.Bounds, WorldFog);
+                    if (click && _hoveredArea is not null)
+                        TravelTo(_hoveredArea);
+                }
             }
 
             _previousMouse = mouse;
@@ -2403,6 +2456,8 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
             base.Update(gameTime);
             return;
         }
+
+        _worldmapWasOpen = false; // P123: the next open re-centers the chrome view on the party
 
         // The worldmap is unreachable during combat (fo2ce: no map key in combat) — otherwise the player
         // flees any fight by travelling away, bypassing the combat aftermath scripts.
@@ -5320,16 +5375,28 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
         _spriteBatch.Begin(samplerState: SamplerState.PointClamp);
         if (_worldmapOpen)
         {
-            _worldmapScreen?.Draw(_spriteBatch, GraphicsDevice.Viewport.Bounds, _hoveredArea, WorldFog);
-            // The party dot: "you are here" whenever a worldmap position is known, and the
-            // moving marker mid-travel (phase-17 M2/M3 — one dot, the unified position).
-            if (_worldPosX >= 0 && _worldPosY >= 0)
-                _worldmapScreen?.DrawPartyDot(_spriteBatch, GraphicsDevice.Viewport.Bounds, _worldPosX, _worldPosY);
-            // P122: driving shows the Highwayman monitor box — the wmcarmve movie + the wmscreen
-            // overlay + a fuel bar at the chrome's fixed window spot (worldmap.cc:6179-6199,
-            // WM_WINDOW_CAR at 514,336 / overlay 499,330 / fuel bar 500,339 h70); anchored to the
-            // viewport corner until the full worldmap chrome exists.
-            DrawWorldmapCarBox();
+            // P123: the authentic chrome window (worldmap.frm, the scrolling 450x443 view,
+            // town tabs, date/dial, globe/car monitor); the fitted view + corner car box
+            // stay as the missing-art residual.
+            if (_worldmapScreen is { HasChrome: true } wms)
+            {
+                Formats.CarState? car = _scriptHost?.Car;
+                (int m, int d, int y) = _clock.Date; // month 1-12; the months strip is 0-based
+                wms.DrawChrome(_spriteBatch, GraphicsDevice.Viewport.Bounds, _hoveredArea, WorldFog,
+                    _worldPosX, _worldPosY,
+                    _activeTravel?.Dest.WorldX ?? -1, _activeTravel?.Dest.WorldY ?? -1,
+                    _clock.Hour, d, m - 1, y,
+                    car?.InCar == true, car?.Fuel ?? 0, Formats.CarState.FuelMax, _carDotFrame);
+            }
+            else
+            {
+                _worldmapScreen?.Draw(_spriteBatch, GraphicsDevice.Viewport.Bounds, _hoveredArea, WorldFog);
+                // The party dot: "you are here" whenever a worldmap position is known, and the
+                // moving marker mid-travel (phase-17 M2/M3 — one dot, the unified position).
+                if (_worldPosX >= 0 && _worldPosY >= 0)
+                    _worldmapScreen?.DrawPartyDot(_spriteBatch, GraphicsDevice.Viewport.Bounds, _worldPosX, _worldPosY);
+                DrawWorldmapCarBox(); // P122 corner fallback (the chrome hosts the real one)
+            }
             DrawEncounterPrompt();
         }
         else
