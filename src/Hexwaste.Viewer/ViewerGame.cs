@@ -1642,6 +1642,13 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
                     if (_vfs.Exists(_artIndex.GetFrmPath(unarmed)))
                         obj.Fid = unarmed;
                 }
+
+                // P118: a critter carrying a WIELDED weapon idles with the armed stand art —
+                // the map file often ships the bare fid while the in-hand flag says armed
+                // (fo2ce stamps the nibble on every wield, inventory.cc _invenWieldFunc).
+                if (Fid.WeaponCode(obj.Fid) == 0 && !obj.IsDead
+                    && obj.Inventory.FirstOrDefault(i => i.IsInHand) is { } wielded)
+                    SetWieldedWeaponArt(obj, SafeProto(wielded.Pid), animate: false);
             }
         }
 
@@ -2232,7 +2239,7 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
             return;
         }
 
-        if (IsKeyPressed(keyboard, Keys.I))
+        if (IsKeyPressed(keyboard, Keys.I) && TryPayInventoryOpenCost())
         {
             _inventoryOpen = true;
             _panelPage = 0;
@@ -2247,8 +2254,9 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
         if (IsKeyPressed(keyboard, Keys.S))
             _skilldexOpen = true;
 
-        // P opens the Pip-Boy (engine KEY_LOWERCASE_P).
-        if (IsKeyPressed(keyboard, Keys.P))
+        // P opens the Pip-Boy (engine KEY_LOWERCASE_P) — never during combat (P118 WATCH;
+        // game.cc:652 gates KEY_P on !isInCombat).
+        if (IsKeyPressed(keyboard, Keys.P) && _combat.Phase == Formats.Combat.CombatPhase.Idle)
             { _pipboyOpen = true; _pipboyArchives = false; } // P88: (re)open on the STATUS page
 
         // Z rests to heal (when it's safe).
@@ -3153,6 +3161,32 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
         }
     }
 
+    /// <summary>P118 (WATCH list): opening the inventory during combat is the dude's-turn-only
+    /// and costs 4 − 2×QuickPockets AP, refused with a message when AP is short — ported from
+    /// fallout2-ce src/inventory.cc inventoryOpen (:556-596). Item use INSIDE the panel is then
+    /// free, like the engine (the AP was paid at the door). Closes the "unlimited off-turn
+    /// stimpaks / free mid-fight armor swap" exploit.</summary>
+    private bool TryPayInventoryOpenCost()
+    {
+        if (_combat.Phase == Formats.Combat.CombatPhase.Idle || _combat.IsGameOver)
+            return true;
+        if (_combat.Phase != Formats.Combat.CombatPhase.PlayerTurn)
+            return false; // _combat_whose_turn() != dude → silently refused
+        int cost = 4 - 2 * DudePerkRank(Formats.Perks.PerkId.QuickPockets);
+        if (cost > 0)
+        {
+            if (cost > _combat.DudeAp)
+            {
+                Log("You don't have enough action points to use inventory.");
+                Console.WriteLine($"inventory-combat: refused ap={_combat.DudeAp} cost={cost}");
+                return false;
+            }
+            _combat.SetDudeAp(_combat.DudeAp - cost);
+            Console.WriteLine($"inventory-combat: opened ap={_combat.DudeAp} cost={cost}");
+        }
+        return true;
+    }
+
     /// <summary>P117 sfx: the open/close/locked/unlock sound for a container or scenery —
     /// sfxBuildOpenName (game_sound.cc:1464): scenery → "S{action}DOORS{proto sound char}",
     /// container ITEM → "I{action}CNTNR{proto sound char}".</summary>
@@ -3510,6 +3544,9 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
             item.Flags &= ~(MapObject.FlagInLeftHand | MapObject.FlagInRightHand);
             if (equip)
                 item.Flags |= _activeHand;
+            // P118: the dude's idle art arms/disarms with the wield (draw/holster transition).
+            if (_dude is not null)
+                SetWieldedWeaponArt(_dude.Dude, equip ? proto : null, animate: true);
             Log(equip ? $"You ready the {ObjectName(item)}." : $"You put away the {ObjectName(item)}.");
             Console.WriteLine($"equip: {ObjectName(item)} {(equip ? "readied" : "stowed")}");
             return;
@@ -4403,19 +4440,31 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
     /// on the per-map can_rest_here flag + the worldmap rest loop; we have neither, so
     /// we gate on combat + local safety (no living non-party critter within sight) — a
     /// documented divergence.</summary>
+    /// <summary>P118 (WATCH list): the rest gate, ported from fallout2-ce
+    /// src/critter.cc _critter_can_obj_dude_rest (:1305) + src/worldmap.cc wmMapCanRestHere
+    /// (:2840, the maps.txt can_rest_here per-elevation flags). Anyone the dude has HIT blocks
+    /// rest anywhere; on a can_rest_here=No map/elevation ANY living non-team critter blocks —
+    /// the engine scans the whole elevation, no distance cutoff (replaces the old
+    /// sight-range-only approximation, which also over-blocked rest-allowed maps).</summary>
     private string? RestBlockReason()
     {
         if (_dude is null)
             return "no dude";
         if (_combat.Phase != Formats.Combat.CombatPhase.Idle)
             return "in combat";
-        bool danger = _solidObjects[_elevation].Any(o =>
-            Fid.Type(o.Fid) is ObjectType.Critter && o != _dude.Dude && !o.IsDead
-            && (_scriptHost is null || !_scriptHost.PartyMembers.Contains(o))
-            && !_dismissedCompanions.ContainsKey(o) // a companion you just dismissed isn't a threat
-            && Formats.Hex.HexGrid.Distance(o.HexTile, _dude.Dude.HexTile)
-                <= Formats.Combat.CombatRules.SightRangeHexes);
-        return danger ? "enemies near" : null;
+        bool mapForbids = !_mapList.CanRestHere(_currentMapName, _elevation);
+        foreach (MapObject o in _solidObjects[_elevation])
+        {
+            if (Fid.Type(o.Fid) is not ObjectType.Critter || o == _dude.Dude || o.IsDead
+                || (_scriptHost is not null && _scriptHost.PartyMembers.Contains(o))
+                || _dismissedCompanions.ContainsKey(o)) // a companion you just dismissed isn't a threat
+                continue;
+            if (o.WhoHitMe == _dude.Dude)
+                return "enemies near";               // someone you've hit is still up
+            if (mapForbids && o.Team != _dude.Dude.Team)
+                return "not safe here";              // a no-rest map with strangers about
+        }
+        return null;
     }
 
     private void LogRestRefusal(string why)

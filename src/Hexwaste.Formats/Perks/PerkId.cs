@@ -28,7 +28,7 @@ public static class PerkId
     public const int Pathfinder = 43;       // worldmap travel time −25%/rank (worldmap.cc:4179)
     public const int CautiousNature = 80;   // +3 to the surrounding-encounter spawn distance (worldmap.cc:3985)
     public const int HeaveHo = 35;          // +2 effective Strength per rank for throw range (item.cc:1613)
-    public const int QuickPockets = 48;     // −2 inventory-access AP/rank (inventory.cc:572) — NOT modeled (no in-combat inventory AP)
+    public const int QuickPockets = 48;     // −2 inventory-access AP/rank (inventory.cc:572) — P118: feeds TryPayInventoryOpenCost
     public const int SwiftLearner = 50;     // +5% experience per rank (stat.cc:737)
     public const int LivingAnatomy = 97;    // +5 damage vs a living (non-robot/alien) target (combat.cc:4619)
     public const int Pyromaniac = 101;      // +5 damage with a fire weapon (combat.cc:4626)

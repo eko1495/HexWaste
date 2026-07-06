@@ -332,11 +332,11 @@ public sealed partial class ViewerGame
     // the baked iface.frm buttons sit, so the DN press-art overlays exactly.
     private HudButton[] HudButtons() =>
     [
-        new("INV", new Rectangle(211, 40, 32, 21), () => { _inventoryOpen = true; _panelPage = 0; PrewarmItemTextures(_dudeInventory); }), // interface.cc:360
+        new("INV", new Rectangle(211, 40, 32, 21), () => { if (TryPayInventoryOpenCost()) { _inventoryOpen = true; _panelPage = 0; PrewarmItemTextures(_dudeInventory); } }), // interface.cc:360; P118 combat AP gate
         new("OPT", new Rectangle(210, 61, 34, 34), () => { _optionsOpen = true; }),                                       // :380
         new("MAP", new Rectangle(526, 39, 41, 19), () => { if (_combat.Phase == Formats.Combat.CombatPhase.Idle) _worldmapOpen = true; }), // :433 — not during combat
         new("CHA", new Rectangle(526, 58, 41, 19), () => { if (_dudeGcd is not null) _skillAllocOpen = true; }),          // :475
-        new("PIP", new Rectangle(526, 77, 41, 19), () => { _pipboyOpen = true; }),                                        // :454
+        new("PIP", new Rectangle(526, 77, 41, 19), () => { if (_combat.Phase == Formats.Combat.CombatPhase.Idle) _pipboyOpen = true; }), // :454; P118 — fo2ce blocks the Pipboy in combat (game.cc:652)
         new("SKILLDEX", new Rectangle(523, 6, 22, 21), () => { _skilldexOpen = true; }),                                  // :406
         // The weapon slot (interface.cc:505 gSingleAttackButton): click SWITCHES the active weapon when a
         // second is ready (P82 dual-wield), else cycles the attack mode (single↔burst). F fires (P15 M1).

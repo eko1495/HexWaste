@@ -17,6 +17,10 @@ public sealed class MapList
     private readonly Dictionary<string, int> _indexByMapName = new(StringComparer.OrdinalIgnoreCase);
     private readonly HashSet<int> _unsaved = [];           // saved=No → transient encounter maps
     private readonly Dictionary<int, List<StartPoint>> _startPoints = [];
+    // can_rest_here=Yes/No[,Yes/No,Yes/No] per elevation (worldmap.cc:2683 → the
+    // MAP_CAN_REST_ELEVATION_0/1/2 flags 0x08/0x10/0x20). Absent = the engine default
+    // (flags init to all-can-rest, wmMapInit).
+    private readonly Dictionary<int, bool[]> _canRestByIndex = [];
 
     public static MapList Load(GameFileSystem vfs)
     {
@@ -60,6 +64,16 @@ public sealed class MapList
                 // visit (no save slot); anything else (Yes/absent) is saved.
                 if (line["saved=".Length..].Split(';')[0].Trim().StartsWith("No", StringComparison.OrdinalIgnoreCase))
                     list._unsaved.Add(currentIndex);
+            }
+            else if (currentIndex >= 0 && line.StartsWith("can_rest_here=", StringComparison.OrdinalIgnoreCase))
+            {
+                // "Yes,No,Yes" per elevation; a short list leaves the tail at the engine
+                // default (Yes) — wmSetFlags only runs for the values present.
+                string[] parts = line["can_rest_here=".Length..].Split(';')[0].Split(',');
+                bool[] canRest = [true, true, true];
+                for (int e = 0; e < canRest.Length && e < parts.Length; e++)
+                    canRest[e] = !parts[e].Trim().StartsWith("No", StringComparison.OrdinalIgnoreCase);
+                list._canRestByIndex[currentIndex] = canRest;
             }
             else if (currentIndex >= 0 && line.StartsWith("random_start_point_", StringComparison.OrdinalIgnoreCase))
             {
@@ -127,6 +141,12 @@ public sealed class MapList
     public IReadOnlyList<StartPoint> GetRandomStartPoints(string mapFileName) =>
         _startPoints.TryGetValue(GetIndexByFileName(mapFileName), out List<StartPoint>? pts)
             ? pts : [];
+
+    /// <summary>wmMapCanRestHere (worldmap.cc:2840): may the dude rest on this map's
+    /// elevation? Absent key / unknown map = yes (the engine's default flags). (P118 WATCH.)</summary>
+    public bool CanRestHere(string mapFileName, int elevation) =>
+        !_canRestByIndex.TryGetValue(GetIndexByFileName(mapFileName), out bool[]? canRest)
+        || elevation is < 0 or > 2 || canRest[elevation];
 
     /// <summary>Resolves a maps.txt lookup_name (used by city.txt entrances) to a map index, or -1.</summary>
     public int FindByLookupName(string lookupName) =>

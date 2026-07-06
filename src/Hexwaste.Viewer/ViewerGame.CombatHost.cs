@@ -65,13 +65,66 @@ public sealed partial class ViewerGame
     }
 
     /// <summary>Wield a carried weapon: clear every in-hand flag in the bag, then set the new item's
-    /// right hand (_inven_wield HAND_RIGHT) so <see cref="EquippedWeapon"/> returns it. P43.</summary>
+    /// right hand (_inven_wield HAND_RIGHT) so <see cref="EquippedWeapon"/> returns it. P43.
+    /// P118: the AI switch also updates the idle art + draw anim (_invenWieldFunc animate=true).</summary>
     public void EquipWeapon(MapObject critter, MapObject weaponItem)
     {
         List<MapObject> bag = critter == _dude?.Dude ? _dudeInventory : critter.Inventory;
         foreach (MapObject it in bag)
             it.Flags &= ~(MapObject.FlagInLeftHand | MapObject.FlagInRightHand);
         weaponItem.Flags |= MapObject.FlagInRightHand;
+        SetWieldedWeaponArt(critter, SafeProto(weaponItem.Pid), animate: true);
+    }
+
+    private const int AnimTakeOut = 38;  // ANIM_TAKE_OUT (animation.h)
+    private const int AnimPutAway = 39;  // ANIM_PUT_AWAY
+
+    /// <summary>P118: stamp (or clear) a critter's idle-fid weapon nibble on wield/unwield, with
+    /// the draw/holster transition — ported from fallout2-ce src/inventory.cc _invenWieldFunc
+    /// (:3269, the hand==activeHand tail) / _invenUnwieldFunc (:3417). The armed STAND art is the
+    /// fid's weapon code; a missing armed-art set degrades to the unarmed fid (the engine refuses
+    /// the wield outright — Hexwaste's combat model is flag-driven, so refusing would desync).
+    /// DOCUMENTED SIMPLIFICATION: fo2ce sequences put-away THEN take-out when switching weapon to
+    /// weapon; Hexwaste's animator plays one action at a time, so the most relevant single
+    /// transition plays (take-out on ready, put-away on stow), plus the put-away char sfx.</summary>
+    public void SetWieldedWeaponArt(MapObject critter, ProtoInfo? weaponProto, bool animate)
+    {
+        if (Fid.Type(critter.Fid) is not ObjectType.Critter)
+            return;
+
+        int oldCode = Fid.WeaponCode(critter.Fid);
+        int newCode = weaponProto?.Weapon?.AnimationCode ?? 0;
+        int armedStand = Fid.Build(ObjectType.Critter, Fid.Index(critter.Fid), 0, newCode);
+        if (newCode != 0 && !_vfs.Exists(_artIndex.GetFrmPath(armedStand)))
+        {
+            newCode = 0; // no armed art for this critter — keep the unarmed stand
+            armedStand = Fid.Build(ObjectType.Critter, Fid.Index(critter.Fid), 0, 0);
+        }
+        if (newCode == oldCode)
+            return;
+
+        if (animate)
+        {
+            if (newCode != 0) // draw: ANIM_TAKE_OUT with the NEW weapon's code
+            {
+                int takeOut = Fid.Build(ObjectType.Critter, Fid.Index(critter.Fid), AnimTakeOut, newCode);
+                if (_vfs.Exists(_artIndex.GetFrmPath(takeOut)))
+                    _animator.PlayActionOnce(critter, takeOut);
+            }
+            else if (oldCode != 0) // holster: ANIM_PUT_AWAY with the OLD weapon's code
+            {
+                int putAway = Fid.Build(ObjectType.Critter, Fid.Index(critter.Fid), AnimPutAway, oldCode);
+                if (_vfs.Exists(_artIndex.GetFrmPath(putAway)))
+                    _animator.PlayActionOnce(critter, putAway);
+            }
+            // the holster foley (inventory.cc:3379/3443 sfxBuildCharName(ANIM_PUT_AWAY))
+            if (oldCode != 0 && Formats.Sound.SfxName.CharName(
+                    _artIndex.CritterBaseName(critter.Fid), AnimPutAway,
+                    Formats.Sound.SfxName.CharacterSoundEffect.Unused, oldCode) is { } holsterSfx)
+                _audio?.PlaySfx(holsterSfx);
+        }
+
+        critter.Fid = armedStand;
     }
 
     /// <summary>Loaded rounds; -1 sentinel hydrates from the proto capacity
