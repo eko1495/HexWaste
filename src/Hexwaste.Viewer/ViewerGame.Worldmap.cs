@@ -100,7 +100,6 @@ public sealed partial class ViewerGame
                 _activeTravel = (new Formats.Map.TravelLeg(Worldmap, _cities.Areas, _mapList,
                     _worldPosX, _worldPosY, area.WorldX, area.WorldY, _clock.Ticks, _wmRng,
                     getGlobal, _dudeLevel, luck, outdoorsman, Difficulty, WorldFog, _scriptHost?.Car), area);
-                _travelCadence = new Formats.Map.TerrainCadence();
                 _travelStepAccumMs = 0;
                 _worldmapOpen = true;
                 return;
@@ -129,9 +128,11 @@ public sealed partial class ViewerGame
         ArriveAt(area, rolled);
     }
 
-    /// <summary>Advance the animated worldmap dot (phase-17 M2): accumulate wall-time and,
-    /// each cadence tick, let <see cref="Formats.Map.TerrainCadence"/> decide whether the
-    /// dot steps one pixel (slow terrain holds it). On an encounter or arrival the leg ends
+    /// <summary>Advance the animated worldmap dot (phase-17 M2): accumulate wall-time and run
+    /// one <see cref="Formats.Map.TravelLeg.Step"/> per travel tick. P120: the terrain cadence
+    /// lives inside the leg now — a mountain tick may not move the dot but still costs the
+    /// flat 30 game-minutes (worldmap.cc walk loop: wmGameTimeIncrement(18000) per iteration
+    /// whether or not wmPartyWalkingStep advanced). On an encounter or arrival the leg ends
     /// and the shared handlers run. Paused while an avoid prompt is up; no-op otherwise.</summary>
     private void StepAnimatedTravel(double elapsedMs)
     {
@@ -142,10 +143,6 @@ public sealed partial class ViewerGame
         while (_travelStepAccumMs >= TravelTickMs && _activeTravel is { } active)
         {
             _travelStepAccumMs -= TravelTickMs;
-            int difficulty = Worldmap.TerrainTravelDifficultyAt(active.Leg.X, active.Leg.Y);
-            if (!_travelCadence.Tick(difficulty))
-                continue; // slow terrain: the dot lingers this tick
-
             Formats.Map.TravelStep s = active.Leg.Step();
             _clock.Ticks += Formats.Map.WorldmapTravel.PathfinderTicks( // P79 Pathfinder
                 Formats.Map.WorldmapTravel.TicksPerStep, DudePerkRank(Formats.Perks.PerkId.Pathfinder));
@@ -239,9 +236,10 @@ public sealed partial class ViewerGame
         }
 
         _worldmapOpen = false;
-        // ResolveLeg already advanced the clock per pixel-step across the whole leg;
-        // only the first travel of a game (no prior worldPos → no roll) needs the flat
-        // estimate, else the clock double-counts the trip.
+        // ResolveLeg already advanced the clock per walk-loop tick across the whole leg
+        // (P120: terrain-paced — mountain ticks cost time without moving); only the first
+        // travel of a game (no prior worldPos → no roll) needs the flat estimate, else the
+        // clock double-counts the trip.
         if (!rolled)
             _clock.AdvanceHours(8);
         // Record the dude's worldmap whereabouts so a save round-trips it
@@ -277,7 +275,6 @@ public sealed partial class ViewerGame
     /// <summary>The in-flight animated leg + its destination; null = not travelling. Update
     /// drains <see cref="Formats.Map.TravelLeg.Step"/> over wall-time (phase-17 M2).</summary>
     private (Formats.Map.TravelLeg Leg, WorldArea Dest)? _activeTravel;
-    private Formats.Map.TerrainCadence _travelCadence = new();
     private double _travelStepAccumMs;
     private const double TravelTickMs = 30; // wall-time per cadence tick (the dot's base pace)
 

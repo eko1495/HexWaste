@@ -144,6 +144,38 @@ public class WorldmapTravelTests
     }
 
     [GameDataFact]
+    public void MountainTerrainCostsMoreTravelTimeThanDesert()
+    {
+        // P120: one Step() = one fo2ce walk-loop tick (flat 18000 game-ticks), and the pixel
+        // advance is cadence-gated by terrain difficulty (wmPartyWalkingStep :4312 gated by
+        // _terrainCounter, wmGameTimeIncrement(18000) per iteration :3103). Two 20-pixel
+        // diagonal legs verified terrain-pure against the shipped worldmap.txt: the Mountain
+        // one (difficulty 2 → 3 pixels per 4 ticks) needs 26 ticks, the Desert one
+        // (difficulty 1) exactly 20. Tick counts are cadence-only — RNG-independent.
+        using var vfs = GameFileSystem.Open(GameData.RequiredDir);
+        WorldmapFile worldmap = WorldmapFile.Parse(Encoding.Latin1.GetString(vfs.ReadAllBytes(@"data\worldmap.txt")));
+        CityList cities = CityList.Load(vfs);
+        MapList mapList = MapList.Load(vfs);
+
+        Assert.Equal(2, worldmap.TerrainTravelDifficultyAt(184, 133)); // Mountain
+        Assert.Equal(1, worldmap.TerrainTravelDifficultyAt(400, 230)); // Desert
+
+        int TicksToArrive(int sx, int sy, int dx, int dy)
+        {
+            var leg = new TravelLeg(worldmap, cities.Areas, mapList, sx, sy, dx, dy,
+                startClockTicks: 302400, new SystemCombatRng(2), _ => 0,
+                dudeLevel: 1, luck: 5, outdoorsman: 0, difficulty: GameDifficulty.Normal);
+            int ticks = 0;
+            while (!leg.Arrived && ticks < 200) { leg.Step(); ticks++; } // walk THROUGH encounters
+            Assert.Equal(ticks * (long)WorldmapTravel.TicksPerStep, leg.TicksAdded);
+            return ticks;
+        }
+
+        Assert.Equal(26, TicksToArrive(184, 133, 204, 153)); // 20 px of Mountain
+        Assert.Equal(20, TicksToArrive(400, 230, 420, 250)); // 20 px of Desert
+    }
+
+    [GameDataFact]
     public void ResolveEncounterMapPicksATransientMapFromTheTablePool()
     {
         using var vfs = GameFileSystem.Open(GameData.RequiredDir);

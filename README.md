@@ -129,8 +129,9 @@ Prebuilt self-contained builds (Linux x64 / Windows x64) are produced by
 - **Barter**: real shopkeeper trade (Tubby's stock box and all) at the
   engine's price formula.
 - **Worldmap**: click-to-travel between areas (`maps.txt`/`city.txt`) — a party
-  dot crosses the map, paced by terrain (mountains slow it), and the trip can be
-  saved/resumed mid-walk. The map is fogged: subtiles you haven't been near stay
+  dot crosses the map, paced by terrain: crossing mountains genuinely costs more
+  game time (and car fuel) per pixel, exactly like the original's walk loop, not
+  just a slower animation. The trip can be saved/resumed mid-walk. The map is fogged: subtiles you haven't been near stay
   black, ones you've glimpsed are dimmed, and the corridors you've walked are
   clear — and hidden sub-areas (Car Outta Gas, the toxic caves) only put a marker
   on the map once you've explored near them. The wasteland bites — travel rolls

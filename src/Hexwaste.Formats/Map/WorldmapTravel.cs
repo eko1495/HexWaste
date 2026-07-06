@@ -10,13 +10,14 @@ namespace Hexwaste.Formats.Map;
 /// dependency is a <c>Hexwaste.Formats</c> type, so the whole leg is unit-testable
 /// under a deterministic <see cref="ICombatRng"/>.
 ///
-/// Ported from fallout2-ce src/worldmap.cc (the per-pixel walk + the encounter roll
-/// per step + the known-area suppression) — the same chain the live <c>TravelTo</c>
-/// and the <c>--travel-from</c> demo drive.
+/// Ported from fallout2-ce src/worldmap.cc (the walk-loop tick: terrain-gated pixel
+/// advance + flat game time + the encounter roll, plus the known-area suppression) —
+/// the same chain the live <c>TravelTo</c> and the <c>--travel-from</c> demo drive.
 /// </summary>
 public static class WorldmapTravel
 {
-    /// <summary>30 game-minutes per worldmap pixel-step (worldmap.cc travel cost).</summary>
+    /// <summary>30 game-minutes per walk-loop tick (wmGameTimeIncrement(18000), worldmap.cc:3103 —
+    /// per LOOP ITERATION whether or not the terrain cadence advanced a pixel; P120).</summary>
     public const int TicksPerStep = 18000;
 
     /// <summary>worldmap.cc:4179 wmGameTimeIncrement: the Pathfinder perk shaves rank×25% off travel time.
@@ -144,6 +145,13 @@ public sealed class TravelLeg
     private readonly int _dx, _dy, _sx, _sy;
     private readonly CarState? _car;
     private readonly int _carStride;
+    private readonly WorldmapFile _worldmap;
+    // P120 terrain travel-time: the per-pixel pacing lives INSIDE the leg now — one Step() is
+    // one fo2ce walk-loop tick, and the pixel advance is cadence-gated per terrain difficulty
+    // (wmPartyWalkingStep, worldmap.cc:4312). fo2ce's _terrainCounter is a static that runs
+    // across the whole session; ours restarts per leg (documented — desert is unaffected, a
+    // mountain leg can differ by at most one skip-tick of phase).
+    private readonly TerrainCadence _cadence = new();
     private int _x, _y, _err, _guard;
 
     public int X => _x;
@@ -168,6 +176,7 @@ public sealed class TravelLeg
                 + (getGlobal(CarState.GvarRenoUpgrade) != 0 ? 1 : 0)
                 + (getGlobal(CarState.GvarSuperCar) != 0 ? 3 : 0)
             : 1;
+        _worldmap = worldmap;
         _enc = new WorldEncounters(worldmap, rng, startX, startY);
         _areas = areas;
         _mapList = mapList;
@@ -191,19 +200,26 @@ public sealed class TravelLeg
         _fog?.MarkRadiusVisited(startX, startY); // reveal where the leg begins (phase-22)
     }
 
-    /// <summary>Advance one pixel-step toward the destination, rolling an encounter on the
-    /// new pixel (suppressed near a known city). Returns the step's outcome. No-ops once the
-    /// leg has arrived (or the 4000-step guard trips).</summary>
+    /// <summary>Advance ONE walk-loop tick toward the destination (worldmap.cc:3025-3110):
+    /// the pixel advance is cadence-gated by the current subtile's terrain difficulty
+    /// (wmPartyWalkingStep :4312 — a mountain tick may move nothing), then the clock gains a
+    /// flat 18000 ticks and ONE encounter roll runs at the resulting pixel (the roll's own
+    /// Δ3 movement anchor makes an unmoved-tick roll a free no-op, :3331). So hard terrain
+    /// costs MORE GAME TIME per pixel — 4/(5−difficulty)× — while encounter chance stays
+    /// distance-anchored (P120; desert difficulty 1 advances every tick, unchanged).
+    /// No-ops once the leg has arrived (or the 4000-tick guard trips).</summary>
     public TravelStep Step()
     {
         if (Arrived || _guard >= 4000)
             return new TravelStep(_x, _y, null, null, true);
 
         _guard++;
-        // A car covers _carStride pixels per Step but rolls/ticks/burns exactly ONCE (worldmap.cc:3025-3083);
-        // on foot _carStride == 1, so the advance→roll→tick order + RNG draws are byte-identical.
+        // A car covers up to _carStride pixels per tick but rolls/ticks/burns exactly ONCE
+        // (worldmap.cc:3025-3083); each stride unit is its own wmPartyWalkingStep, so each
+        // gets its own cadence check. On foot _carStride == 1.
         for (int i = 0; i < _carStride && !Arrived; i++)
-            AdvanceOnePixel();
+            if (_cadence.Tick(_worldmap.TerrainTravelDifficultyAt(_x, _y)))
+                AdvanceOnePixel();
         TicksAdded += WorldmapTravel.TicksPerStep;
 
         bool outOfGas = false;
@@ -236,13 +252,14 @@ public sealed class TravelLeg
     }
 }
 
-/// <summary>The worldmap dot's per-pixel pacing, ported from fallout2-ce wmPartyWalkingStep
-/// (_terrainCounter cycles 1..4, advancing the dot one pixel only when
+/// <summary>The worldmap party's per-tick pacing, ported from fallout2-ce wmPartyWalkingStep
+/// (_terrainCounter cycles 1..4, advancing one pixel only when
 /// <c>_terrainCounter / terrainDifficulty >= 1</c>). Higher terrain difficulty = fewer ticks
-/// advance = a slower dot over mountains (1/2/3/4 -> 4/3/2/1 of every 4 ticks step). The
+/// advance = slower over mountains (1/2/3/4 -> 4/3/2/1 of every 4 ticks step). The
 /// counter is continuous across the journey, NOT reset per pixel (the engine's static
-/// _terrainCounter starts at 1). PURE pacing — it does NOT touch the game clock or the
-/// encounter rolls, so animation speed is independent of encounter fidelity (phase-17 M1).</summary>
+/// _terrainCounter starts at 1). P120: this now runs INSIDE <see cref="TravelLeg.Step"/> —
+/// each Step is one walk-loop tick costing flat game time, so terrain difficulty directly
+/// scales travel time per pixel (it was viewer-side dot animation only from phase-17 M1).</summary>
 public sealed class TerrainCadence
 {
     private int _counter = 1; // worldmap.cc:752 static _terrainCounter = 1

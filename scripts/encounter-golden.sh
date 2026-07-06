@@ -43,8 +43,9 @@ SCENARIOS=(
   # (the engine's isWalking) — no worldmap re-click; here the resumed leg rolls again.
   "travel-resume|--travel-resume 204 143 1 --rng-seed 2"
   # P17-M2: the ANIMATED travel path (the moving dot) drains the SAME leg as the sync
-  # resolve — same encounter + worldPos as travel-arroyo-den — while terrain cadence makes
-  # cadence-ticks (26) exceed pixel-steps (20): mountains hold the dot some ticks.
+  # resolve — same encounter + worldPos as travel-arroyo-den. P120: the terrain cadence lives
+  # inside TravelLeg.Step (one Step = one walk-loop tick costing flat 18000 game-ticks), so
+  # ticks exceed pixels over the mountain stretch AND clockAdv = ticks*18000.
   "travel-step|--travel-step 184 133 1 --rng-seed 2"
   # P17-M4: saving MID-travel round-trips the dot worldPos + the in-flight destination
   # (load resumes toward it) — a documented divergence from the engine's drop-stopped reload.
