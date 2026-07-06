@@ -1376,22 +1376,68 @@ public sealed partial class ViewerGame
     //  Called-shot click dialog (P49-M1)
     // ====================================================================
     //
-    // Replaces the V-key aim CYCLE with a click dialog (the engine's CALLED.frm body-part
-    // picker, combat.cc:5476 calledShotSelectHitLocation): V opens it, 1-9 / click a row picks
-    // a hit location, Esc cancels. Each row shows the location's to-hit penalty (the defining
-    // per-location stat, combat.cc:172 hit_location_penalty). The location feeds the unchanged
-    // TryAttack(target, AimLocation) path (penalty + crit-table lookup). DIVERGENCE: a single-
-    // column text list, not the authentic CALLED.frm critter-pic overlay (art residual, the
-    // Skilldex text-then-art pattern); the live per-part to-hit % is a residual (penalty shown).
+    // Replaces the V-key aim CYCLE with the engine's called-shot window (combat.cc:5476
+    // calledShotSelectHitLocation): V opens it, 1-9 / click a location picks, Esc/cancel closes.
+    // P119: the authentic art — interface FRM 118 background (504×309), the target critter's
+    // ANIM_CALLED_SHOT_PIC (64) portrait at (168,31), location names from combat.msg
+    // (1000 + 10·alias + location, hitLocationGetName :5437), live to-hit rendered with the
+    // FRM-82 digit strip (_print_tohit :5419), cancel button FRMs 8/9 at (210,268). The location
+    // feeds the unchanged TryAttack(target, AimLocation) path. DIVERGENCES (documented): the
+    // window sets the PERSISTENT AimLocation (Hexwaste's pre-attack aim mode) instead of arming a
+    // single attack, so key 9 = "uncalled" clears the aim (no such row in the original); the text
+    // list remains as the missing-art residual.
 
     private bool _aimDialogOpen;
+    // The critter the window was opened over — fo2ce passes it into the window; the pic,
+    // name set, and to-hit all key off it (null = no live %, generic names).
+    private MapObject? _aimDialogTarget;
+
+    private const int CalledShotBgFrmId = 118;      // the window background (combat.cc:5510)
+    private const int CalledShotDigitsFrmId = 82;   // the 9×17 to-hit digit strip (:5422)
+    private const int CalledShotCancelUpFrmId = 8;  // small red button (:5535)
+    private const int CalledShotCancelDownFrmId = 9;
+    private const int CalledShotW = 504, CalledShotH = 309; // CALLED_SHOT_WINDOW_* (:52)
+    private static readonly int[] CalledShotRowY = [122, 188, 251, 316]; // _call_ty (:1886)
 
     // The dialog rows -> AimLocation values, in the engine's CALLED.frm button order
     // (head/eyes/right-arm/right-leg, then torso/groin/left-arm/left-leg — combat.cc:1894-1907),
     // then uncalled. AimNames/LocationPenalty are indexed by the AimLocation value.
     private static readonly int[] AimDialogOrder = { 0, 6, 2, 4, 3, 7, 1, 5, 8 };
 
-    private void OpenAimDialog() => _aimDialogOpen = true;
+    private void OpenAimDialog()
+    {
+        _aimDialogOpen = true;
+        // Capture the target once, like the window's critter param (combat.cc:5476); the dialog
+        // must not retarget as the mouse moves underneath it.
+        _aimDialogTarget = _hoveredObject is { } h && h != _dude?.Dude
+            && Fid.PidType(h.Pid) == (int)ObjectType.Critter ? h : null;
+        // P119 probe (new prefix — golden-safe): STATE-only art status, no game text.
+        Console.WriteLine($"calledshot-art: bg={InterfaceFrm(CalledShotBgFrmId) is not null}"
+            + $" digits={InterfaceFrm(CalledShotDigitsFrmId) is not null}"
+            + $" cancel={InterfaceFrm(CalledShotCancelUpFrmId) is not null}"
+            + $" pic={(_aimDialogTarget is { } t ? CalledShotPic(t) is not null : false)}"
+            + $" alias={(_aimDialogTarget is { } t2 ? _artIndex.CritterAlias(t2.Fid) : -1)}");
+    }
+
+    /// <summary>The target's called-shot portrait (ANIM_CALLED_SHOT_PIC = 64, art suffix "na"),
+    /// or null when the art doesn't ship for this critter (fo2ce just skips the blit, :5525).</summary>
+    private Texture2D? CalledShotPic(MapObject critter)
+    {
+        try { return _frmCache.GetTexture(Fid.Build(ObjectType.Critter, Fid.Index(critter.Fid), 64)); }
+        catch (Exception) { return null; }
+    }
+
+    /// <summary>The hit-location display name: combat.msg 1000 + 10·alias + location
+    /// (hitLocationGetName, combat.cc:5437) read from the user's game data at runtime;
+    /// the Hexwaste-authored AimName is the missing-msg fallback.</summary>
+    private string HitLocationName(MapObject? critter, int loc)
+    {
+        if (critter is not null
+            && LazyMsg(@"text\english\game\combat.msg", ref _combatMsgTried, ref _combatMsg) is { } msg
+            && msg.GetText(1000 + 10 * _artIndex.CritterAlias(critter.Fid) + loc) is { } name)
+            return name;
+        return AimName(loc);
+    }
 
     private Rectangle AimDialogPanelRect()
     {
@@ -1424,7 +1470,40 @@ public sealed partial class ViewerGame
             return;
         AimLocation = AimDialogOrder[row];
         _aimDialogOpen = false;
+        _audio?.PlaySfx("ICSXXXX1"); // the pick confirmation (combat.cc:5636)
         Log($"Aiming: {AimName(AimLocation)}.");
+    }
+
+    /// <summary>The window's top-left in screen space (centered; fo2ce centers X and pins Y=20 at
+    /// 640×480 / centers otherwise, :5492-5496 — we always center, documented).</summary>
+    private Point CalledShotWindowPos() => new(
+        (GraphicsDevice.Viewport.Width - CalledShotW) / 2,
+        Math.Max(0, (GraphicsDevice.Viewport.Height - CalledShotH) / 2));
+
+    /// <summary>The location button rect for dialog row 0..7 — left column rows 0-3 at window-local
+    /// x=33, right column rows 4-7 at x=341, y=_call_ty−90, 128×20 (buttonCreate :5576/5583).</summary>
+    private Rectangle CalledShotButtonRect(int row)
+    {
+        Point p = CalledShotWindowPos();
+        return new Rectangle(p.X + (row < 4 ? 33 : 341), p.Y + CalledShotRowY[row % 4] - 90, 128, 20);
+    }
+
+    private Rectangle CalledShotCancelRect()
+    {
+        Point p = CalledShotWindowPos();
+        return new Rectangle(p.X + 210, p.Y + 268, 15, 16); // :5549-5553
+    }
+
+    /// <summary>Row 0..7 under the mouse, 8 for cancel, −1 otherwise (art layout); falls back to
+    /// the text rows when the background FRM is missing.</summary>
+    private int CalledShotHitAt(int mx, int my)
+    {
+        if (InterfaceFrm(CalledShotBgFrmId) is null)
+            return AimDialogRowAt(mx, my);
+        for (int i = 0; i < 8; i++)
+            if (CalledShotButtonRect(i).Contains(mx, my))
+                return i;
+        return CalledShotCancelRect().Contains(mx, my) ? 8 : -1;
     }
 
     private void HandleAimDialogInput(MouseState mouse, KeyboardState keyboard)
@@ -1441,26 +1520,89 @@ public sealed partial class ViewerGame
                 return;
             }
         if (mouse.LeftButton == ButtonState.Pressed && _previousMouse.LeftButton == ButtonState.Released
-            && AimDialogRowAt(mouse.X, mouse.Y) is int clicked && clicked >= 0)
-            SelectAimRow(clicked);
+            && CalledShotHitAt(mouse.X, mouse.Y) is int clicked && clicked >= 0)
+        {
+            bool artMode = InterfaceFrm(CalledShotBgFrmId) is not null;
+            if (artMode && clicked == 8)
+                _aimDialogOpen = false; // the cancel button closes without changing the aim
+            else
+                SelectAimRow(clicked);
+        }
+    }
+
+    /// <summary>Render a 0-99 to-hit with the FRM-82 digit strip (9×17 glyphs at x=9·digit;
+    /// the 6-wide dash at x=108 doubled for "no value") — _print_tohit (combat.cc:5419).</summary>
+    private void DrawCalledShotToHit(Texture2D digits, int x, int y, int? toHit)
+    {
+        if (toHit is { } pct)
+        {
+            int clamped = Math.Clamp(pct, 0, 99);
+            _spriteBatch.Draw(digits, new Vector2(x, y), new Rectangle(9 * (clamped / 10), 0, 9, 17), Color.White);
+            _spriteBatch.Draw(digits, new Vector2(x + 9, y), new Rectangle(9 * (clamped % 10), 0, 9, 17), Color.White);
+        }
+        else
+        {
+            _spriteBatch.Draw(digits, new Vector2(x, y), new Rectangle(108, 0, 6, 17), Color.White);
+            _spriteBatch.Draw(digits, new Vector2(x + 9, y), new Rectangle(108, 0, 6, 17), Color.White);
+        }
     }
 
     private void DrawAimDialog()
     {
         if (!_aimDialogOpen || _fontRenderer is null)
             return;
+        Texture2D? bg = InterfaceFrm(CalledShotBgFrmId);
+        Texture2D? digits = InterfaceFrm(CalledShotDigitsFrmId);
+        if (bg is null || digits is null)
+        {
+            DrawAimDialogFallback();
+            return;
+        }
+
+        Point p = CalledShotWindowPos();
+        _spriteBatch.Draw(bg, new Vector2(p.X, p.Y), Color.White);
+        if (_aimDialogTarget is { } target && CalledShotPic(target) is { } pic)
+            _spriteBatch.Draw(pic, new Vector2(p.X + 168, p.Y + 31), Color.White); // :5530
+
+        MouseState mouse = Mouse.GetState();
+        int hovered = CalledShotHitAt(mouse.X, mouse.Y);
+        var normal = new Color(0, 252, 0);   // _colorTable[992] (green)
+        var hot = new Color(252, 0, 0);      // _colorTable[31744] (red, _draw_loc_on_)
+        for (int i = 0; i < 8; i++)
+        {
+            int loc = AimDialogOrder[i];
+            int rowY = p.Y + CalledShotRowY[i % 4] - 86;
+            string name = HitLocationName(_aimDialogTarget, loc);
+            Color c = i == hovered || loc == AimLocation ? hot : normal;
+            if (i < 4)
+                _fontRenderer.Draw(_spriteBatch, name, new Vector2(p.X + 74, rowY), c);
+            else
+                _fontRenderer.Draw(_spriteBatch, name,
+                    new Vector2(p.X + 431 - _fontRenderer.MeasureWidth(name), rowY), c);
+            int? pct = _aimDialogTarget is not null ? _combat.PreviewToHit(_aimDialogTarget, loc) : null;
+            DrawCalledShotToHit(digits, p.X + (i < 4 ? 33 : 453), rowY, pct);
+        }
+
+        bool cancelPressed = mouse.LeftButton == ButtonState.Pressed
+            && CalledShotCancelRect().Contains(mouse.X, mouse.Y);
+        if (InterfaceFrm(cancelPressed ? CalledShotCancelDownFrmId : CalledShotCancelUpFrmId) is { } cancel)
+            _spriteBatch.Draw(cancel, new Vector2(p.X + 210, p.Y + 268), Color.White);
+    }
+
+    /// <summary>The pre-P119 text list, kept as the missing-art residual.</summary>
+    private void DrawAimDialogFallback()
+    {
         _panelPixel ??= CreatePixel();
         Rectangle p = AimDialogPanelRect();
         _spriteBatch.Draw(_panelPixel, p, new Color(8, 16, 8, 240));
         var green = new Color(0, 252, 0);
         var hot = new Color(252, 252, 84);
-        _fontRenderer.Draw(_spriteBatch, "AIM - pick a hit location (1-9 / click, Esc cancel)",
+        _fontRenderer!.Draw(_spriteBatch, "AIM - pick a hit location (1-9 / click, Esc cancel)",
             new Vector2(p.X + 12, p.Y + 8), Color.LightGray);
         int hovered = AimDialogRowAt(Mouse.GetState().X, Mouse.GetState().Y);
-        // P52-M4: the LIVE per-location to-hit % against the aimed-at critter (the hovered target the
-        // V key opens the dialog for). Recomputed per row via the same CombatEngine math the attack
-        // uses; shown alongside the static penalty when a critter is targeted.
-        MapObject? aimTarget = _hoveredObject is { } h && h != _dude?.Dude ? h : null;
+        // P52-M4: the LIVE per-location to-hit % against the captured target, via the same
+        // CombatEngine math the attack uses; shown alongside the static penalty.
+        MapObject? aimTarget = _aimDialogTarget;
         for (int i = 0; i < AimDialogOrder.Length; i++)
         {
             int loc = AimDialogOrder[i];

@@ -82,6 +82,36 @@ public sealed class ArtIndex(GameFileSystem vfs)
         return index >= 0 && index < _critterShouldRun.Length && _critterShouldRun[index] != 0;
     }
 
+    private int[]? _critterAlias;
+
+    /// <summary>The critters.lst ALIAS field (2nd comma value) — the index of the critter whose
+    /// hit-location name set this critter shares (combat.msg 1000 + 10·alias + location), ported
+    /// from fallout2-ce src/art.cc artInit (:233-245 "_anon_alias[i] = atoi(sep1+1)") +
+    /// _art_alias_num (:888). A comma-less line falls back to _art_vault_guy_num — the "hmwarr"
+    /// tribal-male row (:224). (P119 called-shot window.)</summary>
+    public int CritterAlias(int fid)
+    {
+        if (Fid.Type(fid) is not ObjectType.Critter)
+            return 0;
+        if (_critterAlias is null)
+        {
+            int vaultGuy = Math.Max(0, FindCritterIndex("hmwarr"));
+            using Stream stream = vfs.OpenRead(@"art\critters\critters.lst");
+            using var reader = new StreamReader(stream);
+            var aliases = new List<int>();
+            while (reader.ReadLine() is { } line)
+            {
+                int sep1 = line.IndexOf(',');
+                int sep2 = sep1 < 0 ? -1 : line.IndexOf(',', sep1 + 1);
+                string field = sep1 < 0 ? "" : sep2 < 0 ? line[(sep1 + 1)..] : line[(sep1 + 1)..sep2];
+                aliases.Add(sep1 < 0 ? vaultGuy : int.TryParse(field.Trim(), out int alias) ? alias : vaultGuy);
+            }
+            _critterAlias = [.. aliases];
+        }
+        int index = Fid.Index(fid);
+        return index >= 0 && index < _critterAlias.Length ? _critterAlias[index] : 0;
+    }
+
     /// <summary>The critters.lst base name for a critter FID (e.g. "hfprim"), or null.
     /// The 2nd char encodes gender ('m'/'f') — used for gender-correct sfx.</summary>
     public string? CritterBaseName(int fid)

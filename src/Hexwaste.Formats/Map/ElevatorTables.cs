@@ -47,6 +47,28 @@ public static class ElevatorTables
         [(62, 0, 13901), (63, 1, 17923), (0, 0, -1), (0, 0, -1)],         // 23 Redding Wanamingo mine
     ];
 
+    /// <summary>gElevatorBackgrounds (elevator.cc:65): per-type (background, panel) art\intrface
+    /// list indices; panel −1 = the background already carries the button column. The shared
+    /// button/gauge art is <see cref="ButtonDownFrmId"/>/<see cref="ButtonUpFrmId"/>/<see cref="GaugeFrmId"/>
+    /// (gElevatorFrmIds, elevator.cc:58).</summary>
+    public static readonly (int BackgroundFrmId, int PanelFrmId)[] Backgrounds =
+    [
+        (143, -1), (143, 150), (144, -1), (144, 145), (146, -1), (146, 147), //  0..5
+        (146, -1), (146, 151), (148, -1), (146, -1), (146, -1), (146, 147),  //  6..11
+        (388, -1), (143, 150), (148, -1), (148, -1), (148, -1), (143, 150),  // 12..17
+        (143, 150), (143, 150), (143, 150), (143, 150), (143, 150), (143, 150), // 18..23
+    ];
+
+    public const int ButtonDownFrmId = 141; // ebut_in.frm
+    public const int ButtonUpFrmId = 142;   // ebut_out.frm
+    public const int GaugeFrmId = 149;      // gaj000.frm — 13 vertically stacked slices
+
+    /// <summary>The gauge strip has 13 slices; a level maps to slice (int)(level * 12/(levels−1))
+    /// (elevatorSelectLevel :384-392). The full sweep runs at 276.92307 ms per slice unit
+    /// (:425-427: delay = v43·276.92307 per v43-sized step → constant slice rate).</summary>
+    public const int GaugeSlices = 13;
+    public const double GaugeMsPerSlice = 276.92307;
+
     /// <summary>gElevatorLevelLabels (elevator.cc:273): the printed label char per button ('\0' =
     /// slot unused). These double as the keyboard shortcuts in the live picker.</summary>
     public static readonly char[][] LevelLabels =

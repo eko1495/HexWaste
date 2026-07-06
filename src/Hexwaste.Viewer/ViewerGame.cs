@@ -772,6 +772,11 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
         /// map_update) for Ms simulated milliseconds in 10 ms steps, MID action sequence — lets a
         /// script-driven cutscene (the Modoc shotgun wedding) play out between probes. STATE-only.</summary>
         public sealed record PumpMs(int Ms) : StartupAction;
+        /// <summary>P119 QA: open the elevator level picker UI directly (art verification —
+        /// no gameplay effect until a button is picked).</summary>
+        public sealed record ElevatorOpen(int Type, int Level) : StartupAction;
+        /// <summary>P119 QA: open the called-shot window over the critter at Hex (art verification).</summary>
+        public sealed record AimOpen(int Hex) : StartupAction;
         /// <summary>P116 (fix B QA): report the game_ui_disable input-lock flag (STATE-only).</summary>
         public sealed record UiProbe : StartupAction;
         /// <summary>P116 (fix B QA): report ScriptCanSee (the obj_can_see_obj seam) from the critter
@@ -1942,9 +1947,10 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
         }
 
         // P113 (item 5): the elevator level picker is modal — it owns input until a level or Esc.
+        // P119: it also owns the in-flight gauge ride, which ignores input until the teleport.
         if (_elevatorPicker is not null)
         {
-            UpdateElevatorPicker(keyboard);
+            UpdateElevatorPicker(keyboard, mouse, gameTime);
             _previousMouse = mouse;
             _previousKeyboard = keyboard;
             base.Update(gameTime);

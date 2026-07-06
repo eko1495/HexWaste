@@ -52,6 +52,24 @@ public class P113FidelityTests
     }
 
     [Fact]
+    public void ElevatorBackgroundsTableMatchesTheEngine()
+    {
+        // P119: gElevatorBackgrounds (elevator.cc:65) — one (background, panel) pair per type,
+        // parallel to Levels/Descriptions/LevelLabels. Spot rows: 0 = bare BoS column (143,−1),
+        // 1 = BoS surface with the G/1 panel (143,150), 12 = the Sierra service lift's own art
+        // (388,−1); shared button/gauge FRMs (elevator.cc:58).
+        Assert.Equal(ElevatorTables.Levels.Length, ElevatorTables.Backgrounds.Length);
+        Assert.Equal((143, -1), ElevatorTables.Backgrounds[0]);
+        Assert.Equal((143, 150), ElevatorTables.Backgrounds[1]);
+        Assert.Equal((388, -1), ElevatorTables.Backgrounds[12]);
+        Assert.Equal((143, 150), ElevatorTables.Backgrounds[13]); // Klamath toxic caves (G/1)
+        Assert.Equal(141, ElevatorTables.ButtonDownFrmId);
+        Assert.Equal(142, ElevatorTables.ButtonUpFrmId);
+        Assert.Equal(149, ElevatorTables.GaugeFrmId);
+        Assert.Equal(13, ElevatorTables.GaugeSlices);
+    }
+
+    [Fact]
     public void ScopeRangePerkPenalizesInsideMinRange()
     {
         // SCOPE_RANGE: dist < 8 → dist += 8 (a close shot is penalized), instead of the PE bonus.

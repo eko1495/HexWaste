@@ -189,9 +189,12 @@ Prebuilt self-contained builds (Linux x64 / Windows x64) are produced by
   window chrome. Every
   panel and menu is fully mouse-navigable — click a row in the inventory/loot/barter/
   trade lists (PgUp/PgDn page past the 9th item) or in the Pip-Boy/Options menus; the
-  keyboard shortcuts still work alongside. The called-shot picker shows the live to-hit
-  % per body part, and with the Empathy perk your dialogue options are tinted by the
-  NPC's reaction. Maps fade in from black as you travel between them.
+  keyboard shortcuts still work alongside. The called-shot picker is the real
+  body-diagram window — the target's wireframe called-shot portrait with per-species
+  part names and the live to-hit % rendered in the original digit bezels — and
+  elevators open their authentic per-location panel art with the animated floor
+  gauge sweeping during the ride. With the Empathy perk your dialogue options are
+  tinted by the NPC's reaction. Maps fade in from black as you travel between them.
 
 ## Controls
 

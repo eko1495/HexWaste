@@ -439,6 +439,16 @@ for (int i = 0; i < args.Length; i++)
             // P1-M2: exercise the recurring 600-tick map_update heartbeat N times (deterministic cadence).
             actions.Add(new ViewerGame.StartupAction.MapUpdateHeartbeatProbe(int.Parse(args[++i])));
             break;
+        case "--elevator-open" when i + 1 < args.Length: // P119 QA: open the picker UI for type[:level]
+        {
+            string[] eo = args[++i].Split(':');
+            actions.Add(new ViewerGame.StartupAction.ElevatorOpen(int.Parse(eo[0]),
+                eo.Length > 1 ? int.Parse(eo[1]) : 0));
+            break;
+        }
+        case "--aim-open" when i + 1 < args.Length: // P119 QA: open the called-shot window at <hex>
+            actions.Add(new ViewerGame.StartupAction.AimOpen(int.Parse(args[++i])));
+            break;
         case "--pump-ms" when i + 1 < args.Length:
             // P116 (fix B QA): run the per-frame pump mid-sequence so scripted cutscenes play out.
             actions.Add(new ViewerGame.StartupAction.PumpMs(int.Parse(args[++i])));

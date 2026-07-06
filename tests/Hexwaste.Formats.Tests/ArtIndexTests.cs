@@ -40,6 +40,57 @@ public class CritterArtRealGameDataTests
     }
 
     [GameDataFact]
+    public void CritterAliasParsesTheSecondListField()
+    {
+        // P119 (called-shot window): the critters.lst 2nd comma field is the hit-location
+        // name-set alias (art.cc artInit :233-245 + _art_alias_num :888). Numeric fixtures read
+        // from the shipped list: index 1 aliases 21; index 47 (a two-field line) aliases 11;
+        // index 59 (the radscorpion seen live via --aim-open) aliases itself; the bare
+        // comma-less line 1 (index 0) falls back to the "hmwarr" row (index 62, the
+        // _art_vault_guy_num default, art.cc:224).
+        using var vfs = GameFileSystem.Open(GameData.RequiredDir);
+        var art = new ArtIndex(vfs);
+
+        Assert.Equal(21, art.CritterAlias(Fid.Build(ObjectType.Critter, 1)));
+        Assert.Equal(11, art.CritterAlias(Fid.Build(ObjectType.Critter, 47)));
+        Assert.Equal(59, art.CritterAlias(Fid.Build(ObjectType.Critter, 59)));
+        Assert.Equal(62, art.CritterAlias(Fid.Build(ObjectType.Critter, 0)));
+        Assert.Equal(0, art.CritterAlias(Fid.Build(ObjectType.Scenery, 1))); // non-critters
+    }
+
+    [GameDataFact]
+    public void ElevatorInterfaceFrmsAllResolve()
+    {
+        // P119: every FRM the elevator tables reference must exist in art\intrface (a bad list
+        // index would silently drop the picker to the text fallback), and the gauge strip must
+        // slice cleanly into its 13 sub-images (elevator.cc:384 divides the height by 13).
+        using var vfs = GameFileSystem.Open(GameData.RequiredDir);
+        var art = new ArtIndex(vfs);
+
+        var ids = new HashSet<int>
+        {
+            Map.ElevatorTables.ButtonDownFrmId,
+            Map.ElevatorTables.ButtonUpFrmId,
+            Map.ElevatorTables.GaugeFrmId,
+        };
+        foreach ((int bg, int panel) in Map.ElevatorTables.Backgrounds)
+        {
+            ids.Add(bg);
+            if (panel >= 0)
+                ids.Add(panel);
+        }
+        foreach (int id in ids)
+        {
+            string path = art.GetFrmPath(Fid.Build(ObjectType.Interface, id));
+            Assert.True(vfs.Exists(path), $"interface FRM {id} -> {path} not found");
+        }
+
+        FrmFile gauge = FrmFile.Load(vfs.ReadAllBytes(
+            art.GetFrmPath(Fid.Build(ObjectType.Interface, Map.ElevatorTables.GaugeFrmId))));
+        Assert.Equal(0, gauge.Directions[0][0].Height % 13);
+    }
+
+    [GameDataFact]
     public void ResolvesAndLoadsStandingCritterFrm()
     {
         using var vfs = GameFileSystem.Open(GameData.RequiredDir);

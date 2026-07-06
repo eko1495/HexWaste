@@ -487,6 +487,28 @@ public sealed partial class ViewerGame
                         + $"halfIntervalFires={halfIntervalFires} totalFires={totalFires}");
                     break;
                 }
+                case StartupAction.ElevatorOpen(var eoType, var eoLevel):
+                {
+                    // P119 QA: open the picker UI directly (art check; screenshot captures it).
+                    int eoMap = _mapList.GetIndexByFileName(_currentMapName);
+                    _elevatorPicker = (eoType, Formats.Map.ElevatorTables.CurrentButton(eoType, eoMap, eoLevel),
+                        Formats.Map.ElevatorTables.Levels[eoType]);
+                    (int eoBg, int eoPanel) = Formats.Map.ElevatorTables.Backgrounds[eoType];
+                    Console.WriteLine($"elevator-art: type={eoType} current={_elevatorPicker.Value.Current}"
+                        + $" bg={eoBg}:{InterfaceFrm(eoBg) is not null}"
+                        + $" panel={eoPanel}:{InterfaceFrm(eoPanel) is not null}"
+                        + $" buttons={InterfaceFrm(Formats.Map.ElevatorTables.ButtonUpFrmId) is not null}"
+                        + $" gauge={InterfaceFrm(Formats.Map.ElevatorTables.GaugeFrmId) is not null}");
+                    break;
+                }
+                case StartupAction.AimOpen(var aoHex):
+                {
+                    // P119 QA: hover-capture the critter at the hex, then the same open the V key runs.
+                    _hoveredObject = _solidObjects[_elevation].FirstOrDefault(o =>
+                        o.HexTile == aoHex && Fid.PidType(o.Pid) == (int)ObjectType.Critter);
+                    OpenAimDialog();
+                    break;
+                }
                 case StartupAction.PumpMs(var pumpMs):
                 {
                     // P116 (fix B QA): the same per-frame pump the post-action AdvanceCyclingMs loop
