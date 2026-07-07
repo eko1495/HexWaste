@@ -1,5 +1,44 @@
 # Changelog
 
+## v0.13.0 — 2026-07-07 — every ledger closed
+
+The whole post-v0.12 arc: the endgame/QA closeout, two door-pathing and four
+fidelity batches, the item pipelines, and a six-phase run that finished every
+remaining backlog item. Nothing tracked is open.
+
+- **Quests, verified**: a static bytecode census over all 1263 shipped scripts
+  proves 107 of the 110 Pip-Boy quests completable end to end; the other three
+  are the original game's own content bugs, pinned by test. New quest-golden
+  e2e suite; per-map script-proc census tooling.
+- **The Highwayman, whole**: buy it, drive it (terrain drains real fuel), pop
+  the trunk (persistent storage), see it parked on the town map where you left
+  it, and watch the animated car monitor with its fuel bar on the worldmap.
+- **The worldmap, dressed**: the authentic chrome window — a scrolling 1:1 map
+  view behind the real frame, city circles + hotspot markers, the alphabetized
+  town-tab rail with quick-travel buttons, the date/time readout, the day/night
+  dial — and the TOWN/WORLD switch flips to each city's townmap with clickable
+  district entrances. Crossing mountains genuinely costs more game time per
+  pixel, exactly like the original's walk loop.
+- **Authentic pickers**: the elevator panel (per-location art, animated floor
+  gauge, ride sound), the called-shot body-diagram window (target wireframe,
+  per-species part names, live to-hit in the original digit bezels), and the
+  chargen name/age plates with their pop-up editors.
+- **Talking heads react**: script mood nudges shift a head between its good/
+  neutral/bad animation families with the proper transitions, and voiced lines
+  lip-sync with the matching phoneme set.
+- **Combat & world fidelity**: NPCs run in combat (per-routine gates), weapons
+  draw/holster with armed idle art, doors/containers/pickups/elevators make
+  their real sounds — attenuated by distance and Perception when off-screen —
+  and roofs hide per building via flood fill instead of a global toggle.
+- **Item pipelines**: self-use scripted items, using items ON critters (medical
+  bags, drugs on a target), charged items (Geiger counter, motion sensor,
+  Stealth Boy invisibility), usable explosives, and NPC drug/heal AI.
+- **Engine hardening**: script module globals persist across procs for the map
+  visit (the New Reno prizefight coordinator pattern), exploit gates (in-combat
+  inventory AP cost, Pipboy combat block, authentic rest rules, worldmap
+  unreachable in combat), a stale-handle diagnostic guarding future content,
+  and the outline-texture cache now evicts with its FRMs (the last known leak).
+
 ## v0.12.0 — 2026-06-16 — make the chrome click, then watch the world move
 
 The arc beyond v0.11: UI completeness, worldmap authenticity, and the final

@@ -185,6 +185,16 @@ public sealed class FrmCache(GameFileSystem vfs, ArtIndex artIndex, GraphicsDevi
             return;
         if (_entries.Remove(oldest.Value, out Entry? entry))
             DisposeTextures(entry);
+        // P127: outline silhouettes ride their FRM out of the cache — they were never
+        // evicted before, the last known (memory-only) leak. The scan is cheap: outlines
+        // exist only for hover/selection art, a handful at a time.
+        List<(int Fid, int Frame, int Rotation)> stale =
+            [.. _outlines.Keys.Where(k => k.Fid == oldest.Value)];
+        foreach ((int, int, int) key in stale)
+        {
+            if (_outlines.Remove(key, out Texture2D? outline))
+                outline.Dispose();
+        }
         _lru.RemoveLast();
     }
 

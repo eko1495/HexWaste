@@ -2298,6 +2298,12 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
         if (IsKeyPressed(keyboard, Keys.Z))
             RestToHeal();
 
+        // P127: mid-combat saving is DELIBERATELY unguarded — engine-faithful. fo2ce's
+        // combat turn loop routes keys through gameHandleKey(keyCode, isInCombatMode=true)
+        // (combat.cc:3179) and the save cases (KEY_CTRL_S/F4/F6, game.cc:878-906) ignore
+        // the flag entirely (unlike the Pipboy, which refuses in combat). On LOAD, fo2ce
+        // ends any restored combat (_combat_over_from_load, loadsave.cc:1703) — Hexwaste
+        // reaches the same observable state by not serializing combat at all.
         if (IsKeyPressed(keyboard, Keys.F5))
             SaveGame();
         if (IsKeyPressed(keyboard, Keys.F9))
