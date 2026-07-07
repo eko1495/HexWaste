@@ -6,6 +6,7 @@ using Hexwaste.Formats.Proto;
 string? gameDir = null;
 string mapName = "artemple.map";
 bool questCensus = false;
+int questPathsGvar = -2; // -2 = off, -1 = all quests, >= 0 = one gvar
 
 for (int i = 0; i < args.Length; i++)
 {
@@ -15,17 +16,70 @@ for (int i = 0; i < args.Length; i++)
         mapName = args[++i];
     else if (args[i] == "--quest-census")
         questCensus = true;
+    else if (args[i] == "--quest-paths")
+        questPathsGvar = i + 1 < args.Length && !args[i + 1].StartsWith("--") ? int.Parse(args[++i]) : -1;
 }
 
 if (gameDir is null)
 {
-    Console.Error.WriteLine("usage: ProcAnalyze --game-dir <dir> (--map <mapname> | --quest-census)");
+    Console.Error.WriteLine("usage: ProcAnalyze --game-dir <dir> (--map <mapname> | --quest-census | --quest-paths [gvar])");
     return 1;
 }
 
 using GameFileSystem vfs = GameFileSystem.Open(gameDir);
 var protos = new ProtoDatabase(vfs);
 ScriptList scriptList = ScriptList.Load(vfs);
+
+// P128 quest-path finder: for each quest gvar, find the writer scripts, attribute each
+// completing write to its PROCEDURE, and — when the writer proc is reachable from
+// talk_p_proc over the static dialog graph (giq/gsay_option + call edges) — print the
+// option-pick chain that reaches it. The fixture-authoring guide for the campaign-QA
+// arc. STATE-only output: script file names, proc identifiers, gvar numbers, ordinals.
+if (questPathsGvar != -2)
+{
+    IReadOnlyList<Quest> quests;
+    using (Stream qs = vfs.OpenRead(@"data\quests.txt"))
+        quests = QuestLog.Parse(qs);
+    if (questPathsGvar >= 0)
+        quests = [.. quests.Where(q => q.Gvar == questPathsGvar)];
+
+    // Scan every script once; keep per-script results for the wanted gvars.
+    var wanted = quests.Select(q => q.Gvar).ToHashSet();
+    var findings = new List<(string Script, QuestPathScan.Result Scan, QuestPathScan.ConstWrite Write)>();
+    for (int idx = 0; idx < scriptList.Count; idx++)
+    {
+        if (scriptList.GetName(idx) is not { } name || scriptList.GetScriptPath(idx) is not { } path
+            || !vfs.Exists(path))
+            continue;
+        QuestPathScan.Result scan;
+        try { scan = QuestPathScan.Scan(vfs.ReadAllBytes(path)); }
+        catch (InvalidDataException) { continue; }
+        foreach (QuestPathScan.ConstWrite w in scan.Writes)
+            if (wanted.Contains(w.Gvar))
+                findings.Add((name, scan, w));
+    }
+
+    foreach (Quest q in quests)
+    {
+        var mine = findings.Where(f => f.Write.Gvar == q.Gvar).ToList();
+        Console.WriteLine($"quest gvar={q.Gvar} display>={q.DisplayThreshold} completed>={q.CompletedThreshold}"
+            + $" writes={mine.Count}");
+        foreach ((string script, QuestPathScan.Result scan, QuestPathScan.ConstWrite w) in mine
+                     .OrderByDescending(f => f.Write.Value))
+        {
+            string procName = scan.Program.Procedures[w.Proc].Name;
+            string reach;
+            int talk = scan.Program.FindProcedure("talk_p_proc");
+            if (talk >= 0 && QuestPathScan.FindPath(scan, talk, w.Proc) is { } path)
+                reach = path.Count == 0 ? "IS talk_p_proc" : "talk_p_proc " + string.Join(" ", path);
+            else
+                reach = $"non-dialog (trigger = {procName})";
+            string marker = w.Value >= q.CompletedThreshold ? "COMPLETES" : "advances ";
+            Console.WriteLine($"  {marker} {script}: {procName} := {w.Value}  [{reach}]");
+        }
+    }
+    return 0;
+}
 
 // P124 quest-QA sweep: the whole-game quest-completion census. Every scripts.lst entry's
 // bytecode is scanned for set_global_var writes (GlobalWriteScan); each quests.txt row is
