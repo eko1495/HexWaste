@@ -786,6 +786,8 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
         /// <summary>P125 QA: open the worldmap with the current town's townmap sub-view showing;
         /// Enter >= 0 also picks that entrance.</summary>
         public sealed record TownmapOpen(int Enter = -1) : StartupAction;
+        /// <summary>P130 QA: open the Preferences panel (art/layout verification).</summary>
+        public sealed record PreferencesOpen : StartupAction;
         /// <summary>P119 QA: open the called-shot window over the critter at Hex (art verification).</summary>
         public sealed record AimOpen(int Hex) : StartupAction;
         /// <summary>P116 (fix B QA): report the game_ui_disable input-lock flag (STATE-only).</summary>
@@ -2143,17 +2145,28 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
 
         // Options / pause menu (Esc or the OPT button): S save, L load, M main menu,
         // Q quit to desktop, Esc/D resume (options.cc showOptions key set).
+        // P130: the Preferences panel is modal over the options menu.
+        if (_preferencesOpen)
+        {
+            UpdatePreferences(keyboard, mouse);
+            _previousMouse = mouse;
+            _previousKeyboard = keyboard;
+            base.Update(gameTime);
+            return;
+        }
+
         if (_optionsOpen)
         {
             // A row click fires the same action its keyboard shortcut does (P15 M3):
-            // 0 Save, 1 Load, 2 Main Menu, 3 Quit, 4 Resume.
+            // 0 Save, 1 Load, 2 Preferences, 3 Main Menu, 4 Quit, 5 Resume.
             int orow = mouse.LeftButton == ButtonState.Pressed && _previousMouse.LeftButton == ButtonState.Released
                 ? OptionsRowAt(mouse.X, mouse.Y) : -1;
             if (IsKeyPressed(keyboard, Keys.S) || orow == 0) { _optionsOpen = false; OpenSaveLoad(SaveLoadMode.Save); }
             else if (IsKeyPressed(keyboard, Keys.L) || orow == 1) { _optionsOpen = false; OpenSaveLoad(SaveLoadMode.Load); }
-            else if (IsKeyPressed(keyboard, Keys.M) || orow == 2) { _optionsOpen = false; QuitToMainMenu(); }
-            else if (IsKeyPressed(keyboard, Keys.Q) || orow == 3) Exit();
-            else if (IsKeyPressed(keyboard, Keys.Escape) || IsKeyPressed(keyboard, Keys.D) || orow == 4) _optionsOpen = false;
+            else if (IsKeyPressed(keyboard, Keys.P) || orow == 2) { _optionsOpen = false; OpenPreferences(); }
+            else if (IsKeyPressed(keyboard, Keys.M) || orow == 3) { _optionsOpen = false; QuitToMainMenu(); }
+            else if (IsKeyPressed(keyboard, Keys.Q) || orow == 4) Exit();
+            else if (IsKeyPressed(keyboard, Keys.Escape) || IsKeyPressed(keyboard, Keys.D) || orow == 5) _optionsOpen = false;
 
             _previousMouse = mouse;
             _previousKeyboard = keyboard;
@@ -5525,6 +5538,7 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
             DrawPipboy();
             DrawAutomap();
             DrawOptions();
+            DrawPreferences(); // P130
             DrawSaveLoad();
             DrawAimDialog();
             DrawTactics();

@@ -23,6 +23,20 @@ public sealed class AudioManager : IDisposable
     private string? _musicTrack;
     private bool _enabled = true;
 
+    // P130: the master volume, on fo2ce's 0..32767 scale (VOLUME_MAX). Scales every sfx +
+    // the music instance; the Preferences slider drives it. Music re-applies live.
+    private const int VolumeMax = 32767;
+    private int _masterVolume = VolumeMax;
+    public int MasterVolume => _masterVolume;
+    private float MasterFactor => Math.Clamp(_masterVolume / (float)VolumeMax, 0f, 1f);
+
+    public void SetMasterVolume(int fo2ceScale)
+    {
+        _masterVolume = Math.Clamp(fo2ceScale, 0, VolumeMax);
+        if (_music is not null)
+            _music.Volume = MasterFactor;
+    }
+
     public AudioManager(GameFileSystem vfs, string gameDir)
     {
         _vfs = vfs;
@@ -49,7 +63,7 @@ public sealed class AudioManager : IDisposable
                 _sfxCache[name] = effect;
             }
 
-            effect?.Play(0.5f * Math.Clamp(gain, 0f, 1f), 0f, 0f);
+            effect?.Play(0.5f * Math.Clamp(gain, 0f, 1f) * MasterFactor, 0f, 0f);
         }
         catch (Exception ex) when (ex is NoAudioHardwareException or InvalidOperationException)
         {
@@ -156,7 +170,7 @@ public sealed class AudioManager : IDisposable
                 return;
             _music = effect.CreateInstance();
             _music.IsLooped = true;
-            _music.Volume = 0.35f;
+            _music.Volume = 0.35f * MasterFactor; // P130: music honors the master slider
             _music.Play();
         }
         catch (Exception ex) when (ex is NoAudioHardwareException or InvalidOperationException)

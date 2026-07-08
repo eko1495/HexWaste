@@ -1096,7 +1096,7 @@ public sealed partial class ViewerGame
     // The options/pause menu rows, top to bottom — index is the dispatch key shared by
     // DrawOptions (render), OptionsRowAt (hit-test) and the click handler.
     private static readonly string[] OptionsItems =
-        ["Save Game  (S)", "Load Game  (L)", "Main Menu  (M)", "Quit  (Q)", "Resume  (Esc)"];
+        ["Save Game  (S)", "Load Game  (L)", "Preferences  (P)", "Main Menu  (M)", "Quit  (Q)", "Resume  (Esc)"];
 
     // The clickable rect for the index-th options row — origin + spacing mirror DrawOptions
     // exactly (the FRM-dim fallback keeps it valid before the art loads).

@@ -501,6 +501,11 @@ public sealed partial class ViewerGame
                         + $" gauge={InterfaceFrm(Formats.Map.ElevatorTables.GaugeFrmId) is not null}");
                     break;
                 }
+                case StartupAction.PreferencesOpen:
+                    OpenPreferences();
+                    Console.WriteLine($"prefs: open backed=[{string.Join(",",
+                        Formats.GamePreferences.Settings.Where(s => s.Backed).Select(s => s.Key))}]");
+                    break;
                 case StartupAction.TownmapOpen(var tmEnter):
                 {
                     // P125 QA: worldmap + the current area's townmap sub-view (art check);
