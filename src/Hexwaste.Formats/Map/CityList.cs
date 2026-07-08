@@ -32,6 +32,11 @@ public sealed class WorldArea
     /// townmap view art; -1 = no townmap (wmConfigInit :2410). (P125.)</summary>
     public int TownmapArtIdx { get; init; } = -1;
 
+    /// <summary>city.txt townmap_label_art_idx — the art\intrface index of the town's
+    /// worldmap TAB label graphic (worldmap.cc labelFid :2437); -1 = draw the name as text.
+    /// (P131.)</summary>
+    public int LabelArtIdx { get; init; } = -1;
+
     public List<AreaEntrance> Entrances { get; } = [];
 }
 
@@ -60,6 +65,7 @@ public sealed class CityList
         string size = "Medium";
         bool startsOn = false;
         int townmapArt = -1;
+        int labelArt = -1;
         List<AreaEntrance> entrances = [];
 
         void Flush()
@@ -75,6 +81,7 @@ public sealed class CityList
                 Size = size,
                 StartsOn = startsOn,
                 TownmapArtIdx = townmapArt,
+                LabelArtIdx = labelArt,
             };
             area.Entrances.AddRange(entrances);
             list._areas.Add(area);
@@ -96,6 +103,7 @@ public sealed class CityList
                 size = "Medium";
                 startsOn = false;
                 townmapArt = -1;
+                labelArt = -1;
                 entrances = [];
                 continue;
             }
@@ -130,6 +138,10 @@ public sealed class CityList
             else if (key.Equals("townmap_art_idx", StringComparison.OrdinalIgnoreCase))
             {
                 townmapArt = ParseOr(value, -1); // P125: the townmap view art
+            }
+            else if (key.Equals("townmap_label_art_idx", StringComparison.OrdinalIgnoreCase))
+            {
+                labelArt = ParseOr(value, -1); // P131: the worldmap tab label FRM
             }
             else if (key.StartsWith("entrance_", StringComparison.OrdinalIgnoreCase))
             {

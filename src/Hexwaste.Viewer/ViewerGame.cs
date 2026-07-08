@@ -423,14 +423,31 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
                 is { Length: > 0 } m ? m : "You can't leave combat right now.");
     }
     private Formats.Text.MessageFile? _traitMsg; private bool _traitMsgTried;
+
+    /// <summary>P131: the localization language (fallout2.cfg [system] language, default
+    /// "english"). Hexwaste has no config file, so it's a --language CLI flag; the GOG data
+    /// ships english-only, making this forward-looking infra for a localized install. Backed
+    /// by the process-wide <see cref="Formats.Localization"/> so the Formats path builders
+    /// (proto/dialog messages) localize too.</summary>
+    public string Language
+    {
+        get => Formats.Localization.Language;
+        set => Formats.Localization.Language = value;
+    }
+
+    /// <summary>Redirect a canonical "text\english\..." path to the active language (a no-op
+    /// for english → the goldens stay byte-identical).</summary>
+    public string Localize(string path) => Formats.Localization.Localize(path);
+
     private Formats.Text.MessageFile? LazyMsg(string path, ref bool tried, ref Formats.Text.MessageFile? cache)
     {
         if (!tried)
         {
             tried = true;
-            if (_vfs.Exists(path))
+            string localized = Localize(path);
+            if (_vfs.Exists(localized))
             {
-                using Stream s = _vfs.OpenRead(path);
+                using Stream s = _vfs.OpenRead(localized);
                 cache = Formats.Text.MessageFile.Load(s);
             }
         }
@@ -6465,7 +6482,7 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
         string name = movieId >= 0 && movieId < names.Length ? names[movieId] : $"movie{movieId}";
         var lines = new List<string> { $"[ {name}.mve ]" };
 
-        string svePath = $@"text\english\cuts\{name}.sve";
+        string svePath = Localize($@"text\english\cuts\{name}.sve");
         if (_vfs.Exists(svePath))
         {
             try

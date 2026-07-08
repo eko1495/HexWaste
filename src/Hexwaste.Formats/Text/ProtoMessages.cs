@@ -46,7 +46,7 @@ public sealed class ProtoMessages(GameFileSystem vfs, ProtoDatabase protos)
         if (_files[type] is { } cached)
             return cached;
 
-        string path = $@"text\english\game\{FileNames[type]}";
+        string path = Localization.Localize($@"text\english\game\{FileNames[type]}"); // P131
         if (!vfs.Exists(path))
             return null;
 

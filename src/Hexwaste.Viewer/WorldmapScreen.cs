@@ -367,7 +367,13 @@ public sealed class WorldmapScreen : IDisposable
             int idx = TabsOffset + row;
             if (idx >= towns.Count)
                 break;
-            _font?.Draw(spriteBatch, towns[idx].Name, new Vector2(o.X + 530, o.Y + 141 + TabRowH * row), dark);
+            // P131: the town's per-city label FRM (city.txt townmap_label_art_idx) is the
+            // authentic tab graphic (wmRefreshTabs :6274 blits labelFid); the text name is
+            // the missing-art fallback.
+            if (towns[idx].LabelArtIdx >= 0 && Frm(towns[idx].LabelArtIdx) is { } label)
+                spriteBatch.Draw(label, new Vector2(o.X + 519, o.Y + 138 + TabRowH * row), Color.White);
+            else
+                _font?.Draw(spriteBatch, towns[idx].Name, new Vector2(o.X + 530, o.Y + 141 + TabRowH * row), dark);
         }
         if (Frm(TabsEdgeFrm) is { } edge)
             spriteBatch.Draw(edge, new Vector2(o.X + 501, o.Y + 135), Color.White);

@@ -58,5 +58,5 @@ public sealed class ScriptList
 
     /// <summary>Dialog .msg path for a message_str list id (1-based scripts.lst index).</summary>
     public string? GetDialogMessagePath(int messageListId) =>
-        GetName(messageListId - 1) is { } name ? $@"text\english\dialog\{name}.msg" : null;
+        GetName(messageListId - 1) is { } name ? Localization.Localize($@"text\english\dialog\{name}.msg") : null; // P131
 }

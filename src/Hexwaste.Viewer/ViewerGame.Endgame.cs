@@ -80,7 +80,7 @@ public sealed partial class ViewerGame
     /// 0.08 s/char (endgame.cc:686 fallback); StartCurrentSlide rescales them to the real ACM duration.</summary>
     private void LoadEndgameSubtitles(EndgameSlide slide, string baseName)
     {
-        string path = $@"text\english\cuts\{baseName}.txt";
+        string path = Localize($@"text\english\cuts\{baseName}.txt");
         var subs = new List<string>();
         if (_vfs.Exists(path))
         {
@@ -263,7 +263,7 @@ public sealed partial class ViewerGame
             g => _scriptHost.GlobalVars.GetValueOrDefault(g, 0),
             _ => false, _dudeLevel, (lo, hi) => rng.Next(lo, hi + 1));
         string baseName = pick[(pick.LastIndexOfAny(['\\', '/']) + 1)..];
-        string subPath = $@"text\english\cuts\{baseName}.txt";
+        string subPath = Localize($@"text\english\cuts\{baseName}.txt");
         if (!_vfs.Exists(subPath))
             return;
         var text = new StringBuilder();
