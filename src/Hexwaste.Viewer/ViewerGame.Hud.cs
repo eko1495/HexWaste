@@ -254,7 +254,57 @@ public sealed partial class ViewerGame
         if (Environment.GetEnvironmentVariable("HEXWASTE_HUD_DEBUG") == "1")
             foreach (HudButton b in HudButtons())
                 _spriteBatch.Draw(_panelPixel, new Rectangle(o.X + b.Local.X, o.Y + b.Local.Y, b.Local.Width, b.Local.Height), new Color(255, 0, 0, 90));
+
+        DrawIndicatorPills(o);
     }
+
+    /// <summary>P129: the indicator bar — the little status boxes plugged in a chain above
+    /// the interface bar's left edge (interface.cc indicatorBarRefresh :2302). Box art =
+    /// intrface FRM 126; labels from intrface.msg (SNEAK 100, LEVEL 101, ADDICT 102,
+    /// POISONED 103, RADIATED 104) at runtime, red for the bad ones (_colorTable[31744])
+    /// and green for sneak/level (992); boxes overlap by the 3px connector; display order
+    /// = the indicator enum (:71-76, the qsort at :2342). States: withdrawal active
+    /// (ADDICT — Hexwaste's addiction model), sneaking, unspent skill points / pending
+    /// perk picks (LEVEL — the engine clears its flag on the char screen; ours reflects
+    /// the live bank, documented), poison &gt; 0, radiation &gt; 65 (:2329/:2335).</summary>
+    private void DrawIndicatorPills(Point o)
+    {
+        if (_dude is null || _fontRenderer is null || InterfaceFrm(126) is not { } box)
+            return;
+
+        var pills = new List<(int Msg, bool Bad)>();
+        if (_withdrawalBonus.Any(b => b != 0))
+            pills.Add((102, true));  // ADDICT
+        if (_sneak.FlagSet)          // the persistent DUDE_STATE_SNEAKING toggle, not the per-roll result
+            pills.Add((100, false)); // SNEAK
+        if (_unspentSkillPoints > 0 || AvailablePerkPicks() > 0)
+            pills.Add((101, false)); // LEVEL
+        if (_dude.Dude.Poison > 0)
+            pills.Add((103, true));  // POISONED
+        if (_dude.Dude.Radiation > 65)
+            pills.Add((104, true));  // RADIATED
+        if (pills.Count == 0)
+            return;
+
+        var red = new Color(252, 0, 0);
+        var green = new Color(0, 252, 0);
+        for (int i = 0; i < pills.Count; i++)
+        {
+            int x = o.X + i * (box.Width - 3); // the 3px connector overlap
+            int y = o.Y - box.Height;
+            _spriteBatch.Draw(box, new Vector2(x, y), Color.White);
+            string label = LazyMsg(@"text\english\game\intrface.msg",
+                ref _intrfaceMsgTried, ref _intrfaceMsg)?.GetText(pills[i].Msg) ?? "";
+            if (label.Length > 0)
+                _fontRenderer.Draw(_spriteBatch, label, new Vector2(
+                    x + (box.Width - _fontRenderer.MeasureWidth(label)) / 2,
+                    y + (24 - _fontRenderer.LineHeight) / 2), // the engine's odd 24px centering (:2255)
+                    pills[i].Bad ? red : green);
+        }
+    }
+
+    private Formats.Text.MessageFile? _intrfaceMsg;
+    private bool _intrfaceMsgTried;
 
     /// <summary>Weapon attack-mode label from the proto's primary attack-anim nibble
     /// (extendedFlags &amp; 0xF; item.cc _attack_anim) — SWING/THRUST/SINGLE/BURST/etc.</summary>

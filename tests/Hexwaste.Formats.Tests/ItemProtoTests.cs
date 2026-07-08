@@ -34,6 +34,20 @@ public class ItemProtoTests
         Assert.Equal(8, jacket.Armor.ArmorClass);
         Assert.Equal(20, jacket.Armor.DamageResistance[0]);
         Assert.Equal(0, jacket.Armor.DamageThreshold[0]);
+        // P129: the appearance FIDs parse after DR/DT — the jacket re-bases the dude to a
+        // real critter art index (male/female both present for wearable armor); the trailing
+        // perk id is a valid perk or -1 (none).
+        Assert.True(jacket.Armor.MaleFid > 0, "leather jacket has no male appearance fid");
+        Assert.True(jacket.Armor.FemaleFid > 0, "leather jacket has no female appearance fid");
+        Assert.InRange(jacket.Armor.Perk, -1, 200);
+
+        // Metal Armor (pid 2): AC 10 and its own gendered appearance (the Temple pid used in
+        // the P129 armor-art screenshot); distinct art from the jacket.
+        ProtoInfo metal = protos.Get(2);
+        Assert.NotNull(metal.Armor);
+        Assert.Equal(10, metal.Armor.ArmorClass);
+        Assert.True(metal.Armor.MaleFid > 0);
+        Assert.NotEqual(jacket.Armor.MaleFid, metal.Armor.MaleFid);
 
         // Stimpak (pid 40): stats[0] = -2 (random range), heals current HP
         // (stat 35) by amounts[0]..amounts[1].

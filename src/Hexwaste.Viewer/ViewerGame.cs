@@ -1841,6 +1841,11 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
         KeyboardState keyboard = Keyboard.GetState();
         MouseState mouse = Mouse.GetState();
 
+        // P129: an armor change re-bases the dude's sprite (deferred one frame so the
+        // callers' FlagWorn bookkeeping settles regardless of call order).
+        if (_armorArtDirty)
+            UpdateDudeArmorArt();
+
         // P87: advance the talking-head fidget on a wall-time tick while a head dialog is open (Draw-only
         // state — never read by the headless transcript goldens). Reset when no head is shown.
         if (EffectiveHeadId() >= 0)
@@ -2921,6 +2926,7 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
         InsertSorted(_solidObjects[_elevation], dude);
         _camera.SetCenter(dude.HexTile);
         RevealAround(dude.HexTile); // automap fog: reveal the spawn surroundings (P20-M2)
+        UpdateDudeArmorArt(); // P129: the dude respawns per map — re-base to the worn armor's look
     }
 
     private const int PerkSilentRunning = 15; // PERK_SILENT_RUNNING (perk_defs.h)
@@ -4152,6 +4158,47 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
         bonus[Formats.Combat.CritterStat.ArmorClass] += sign * armor.ArmorClass;
         bonus[Formats.Combat.CritterStat.DamageThreshold] += sign * armor.DamageThreshold[0];
         bonus[Formats.Combat.CritterStat.DamageResistance] += sign * armor.DamageResistance[0];
+        _armorArtDirty = true; // P129: the sprite follows the armor — recomputed next frame,
+                               // after the caller finishes its FlagWorn bookkeeping
+    }
+
+    // ---- P129: armor appearance — the dude's base art follows worn armor ----------------
+    private bool _armorArtDirty;
+
+    /// <summary>Re-base the dude's sprite to the worn armor's gendered appearance FID —
+    /// ported from fallout2-ce inventory.cc _invenWieldFunc's armor branch (:3289-3301)
+    /// + _adjust_fid (:2582): base = armor male/female fid (−1 → the natural jumpsuit),
+    /// anim/weapon/rotation nibbles preserved; a missing armored-art + weapon-nibble
+    /// combination degrades to weapon 0 (the P118 rule). DUDE-ONLY, like the engine —
+    /// NPC armor changes stats, never art.</summary>
+    private void UpdateDudeArmorArt()
+    {
+        _armorArtDirty = false;
+        if (_dude is null)
+            return;
+        bool female = _dudeGcd?.Stats.BaseStats[34] == 1;
+        int baseIdx = _artIndex.FindCritterIndex(female ? "hfjmps" : "hmjmps");
+        if (baseIdx < 0)
+            baseIdx = Fid.Index(_dude.Dude.Fid); // no jumpsuit art shipped — keep the current base
+        MapObject? worn = _dudeInventory.FirstOrDefault(i => (i.Flags & MapObject.FlagWorn) != 0);
+        if (worn is not null && SafeProto(worn.Pid)?.Armor is { } armor)
+        {
+            int armorFid = female ? armor.FemaleFid : armor.MaleFid;
+            if (armorFid >= 0)
+                baseIdx = armorFid & 0xFFF;
+        }
+
+        MapObject dude = _dude.Dude;
+        if (Fid.Index(dude.Fid) == baseIdx)
+            return;
+        int newFid = Fid.Build(ObjectType.Critter, baseIdx, Fid.AnimType(dude.Fid), Fid.WeaponCode(dude.Fid));
+        if (!_vfs.Exists(_artIndex.GetFrmPath(newFid)))
+            newFid = Fid.Build(ObjectType.Critter, baseIdx, Fid.AnimType(dude.Fid), 0); // P118 degrade
+        if (_vfs.Exists(_artIndex.GetFrmPath(newFid)))
+        {
+            dude.Fid = newFid;
+            Console.WriteLine($"armor-art: base={baseIdx} fid=0x{newFid:X7}"); // new prefix — golden-safe
+        }
     }
 
     /// <summary>P109: the closed, unlocked, walk-thru door at a tile — one the dude may path

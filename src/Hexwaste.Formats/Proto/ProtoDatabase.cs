@@ -107,7 +107,12 @@ public sealed record AmmoProtoStats(
 
 /// <summary>Armor payload (protoItemDataRead ITEM_TYPE_ARMOR): AC then
 /// DR[7] then DT[7], by damage type (0 = normal).</summary>
-public sealed record ArmorProtoStats(int ArmorClass, int[] DamageResistance, int[] DamageThreshold);
+/// <summary>Armor payload (protoItemDataRead ITEM_TYPE_ARMOR): AC + per-damage-type DR/DT,
+/// then the armor PERK id (worn-armor perk like Powered Armor's — parsed, wiring is a
+/// residual) and the gendered appearance FIDs the dude's sprite re-bases to while worn
+/// (P129; −1 = no appearance change, inventory.cc _adjust_fid/_invenWieldFunc).</summary>
+public sealed record ArmorProtoStats(int ArmorClass, int[] DamageResistance, int[] DamageThreshold,
+    int Perk = -1, int MaleFid = -1, int FemaleFid = -1);
 
 /// <summary>Drug payload (protoItemDataRead ITEM_TYPE_DRUG, proto.cc:1570-1581): three affected
 /// stats + the immediate <see cref="Amounts"/>, then the two delayed kicks
@@ -257,9 +262,12 @@ public sealed class ProtoDatabase(GameFileSystem vfs)
                     // ported from fallout2-ce src/proto.cc protoItemDataRead()
                     switch (subType)
                     {
-                        case 0: // ITEM_TYPE_ARMOR: AC, DR[7], DT[7]
+                        case 0: // ITEM_TYPE_ARMOR: AC, DR[7], DT[7], perk, maleFid, femaleFid
                             armor = new ArmorProtoStats(reader.ReadInt32(),
-                                reader.ReadInt32Array(7), reader.ReadInt32Array(7));
+                                reader.ReadInt32Array(7), reader.ReadInt32Array(7),
+                                Perk: reader.ReadInt32(),
+                                MaleFid: reader.ReadInt32(),
+                                FemaleFid: reader.ReadInt32());
                             break;
                         case 2: // ITEM_TYPE_DRUG (proto.cc:1570-1581): stat[3], amount[3], then the 9 trailing
                             // ints (dur1, amount1[3], dur2, amount2[3], addiction trio). Read order verbatim.
