@@ -803,6 +803,8 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
         /// <summary>P125 QA: open the worldmap with the current town's townmap sub-view showing;
         /// Enter >= 0 also picks that entrance.</summary>
         public sealed record TownmapOpen(int Enter = -1) : StartupAction;
+        /// <summary>P135 QA: ride elevator Type to Button directly (in-place-switch test).</summary>
+        public sealed record ElevatorRide(int Type, int Button) : StartupAction;
         /// <summary>P130 QA: open the Preferences panel (art/layout verification).</summary>
         public sealed record PreferencesOpen : StartupAction;
         /// <summary>P119 QA: open the called-shot window over the critter at Hex (art verification).</summary>

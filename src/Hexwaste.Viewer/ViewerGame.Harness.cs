@@ -501,6 +501,15 @@ public sealed partial class ViewerGame
                         + $" gauge={InterfaceFrm(Formats.Map.ElevatorTables.GaugeFrmId) is not null}");
                     break;
                 }
+                case StartupAction.ElevatorRide(var erType, var erButton):
+                {
+                    // P135 QA: the current-map floor determines whether it's an in-place switch.
+                    int before = _elevation;
+                    RideElevator(erType, erButton, startButton: 0, playSfx: false);
+                    Console.WriteLine($"elevator-ride-test: elevBefore={before} elevAfter={_elevation}"
+                        + $" onMap={_currentMapName}");
+                    break;
+                }
                 case StartupAction.PreferencesOpen:
                     OpenPreferences();
                     Console.WriteLine($"prefs: open backed=[{string.Join(",",

@@ -101,9 +101,10 @@ public sealed partial class ViewerGame
             o.ElevatorType >= 0 && (o.Pid == ElevatorStubPid || window.Contains(o.HexTile)));
     }
 
-    /// <summary>Teleport the dude to the picked floor (scripts.cc:926-999): same map + elevation →
-    /// reposition facing SE; otherwise a map transition to (map, elevation, tile). Same-map-different-
-    /// elevation reloads the map (a documented simplification — fo2ce does an in-place mapSetElevation).</summary>
+    /// <summary>Teleport the dude to the picked floor (scripts.cc:926-999): a same-map ride —
+    /// same elevation OR a different one — repositions the dude IN PLACE (fo2ce mapSetElevation,
+    /// no reload), preserving all script/delta state since you never left the map; a cross-MAP
+    /// ride is a full transition.</summary>
     private void RideElevator(int type, int button, int startButton, bool playSfx = true)
     {
         (int map, int elevation, int tile) = ElevatorTables.Descriptions[type][button];
@@ -117,15 +118,48 @@ public sealed partial class ViewerGame
 
         const int rotationSe = 2; // ROTATION_SE — the dude always arrives facing SE
         int currentMap = _mapList.GetIndexByFileName(_currentMapName);
-        if (map == currentMap && elevation == _elevation && _dude is not null)
+        if (map == currentMap && _dude is not null
+            && elevation is >= 0 and < MapFile.ElevationCount && _map.Elevations[elevation] is not null)
         {
-            _dude.Dude.HexTile = Formats.Map.Placement.FreeTileNear(tile, t => _blockedTiles.Contains(t));
-            _dude.Dude.Rotation = rotationSe;
-            _camera.SetCenter(_dude.Dude.HexTile);
-            RebuildBlockedTiles(_dude.Dude);
+            // P135: in-place floor switch (fo2ce mapSetElevation) — no map reload. All
+            // elevations' objects + scripts are already resident from LoadMap, so this only
+            // moves the dude to the new elevation's draw/collide lists and re-derives the
+            // per-elevation view (blocked tiles, lighting, roofs).
+            Console.WriteLine($"elevator-inplace: elev {_elevation}->{elevation} (no reload)"); // P135, golden-safe
+            SwitchElevationInPlace(elevation, Formats.Map.Placement.FreeTileNear(tile, t => _blockedTiles.Contains(t)), rotationSe);
             return;
         }
         ApplyTransition(new MapDestination(map, tile, elevation, rotationSe));
+    }
+
+    /// <summary>Move the dude to a (possibly different) elevation of the CURRENT map without a
+    /// reload — ported from fallout2-ce src/map.cc mapSetElevation + the elevator's same-map
+    /// servicing (scripts.cc:926-999). The other elevations are already loaded (LoadMap fills
+    /// every <c>_solidObjects[e]</c>), so this re-homes the dude object and rebuilds the
+    /// elevation-scoped render state; script VMs, LVARs and deltas are untouched (you never
+    /// left the map). (P135.)</summary>
+    private void SwitchElevationInPlace(int newElevation, int tile, int rotation)
+    {
+        if (_dude is null)
+            return;
+        if (newElevation != _elevation)
+        {
+            _solidObjects[_elevation].Remove(_dude.Dude);
+            _elevation = newElevation;
+            InsertSorted(_solidObjects[_elevation], _dude.Dude);
+            _lastRoofSquare = -2; // force UpdateHiddenRoofs to recompute for the new floor
+        }
+        _dude.Dude.HexTile = tile;
+        _dude.Dude.Rotation = Math.Clamp(rotation, 0, 5);
+        // Keep hex z-order after the tile move.
+        _solidObjects[_elevation].Remove(_dude.Dude);
+        InsertSorted(_solidObjects[_elevation], _dude.Dude);
+        RebuildBlockedTiles(_dude.Dude);
+        RebuildLighting();     // re-spread from the new elevation's light sources + the dude
+        UpdateHiddenRoofs();   // per-building roof hide for the new floor
+        _camera.SetCenter(tile);
+        _camera.PanX = 0;
+        _camera.PanY = 0;
     }
 
     /// <summary>The picker window's top-left screen position (the art centered like

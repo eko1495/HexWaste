@@ -450,6 +450,10 @@ for (int i = 0; i < args.Length; i++)
         case "--aim-open" when i + 1 < args.Length: // P119 QA: open the called-shot window at <hex>
             actions.Add(new ViewerGame.StartupAction.AimOpen(int.Parse(args[++i])));
             break;
+        case "--elevator-ride" when i + 2 < args.Length: // P135 QA: ride elevator <type> <button>
+            actions.Add(new ViewerGame.StartupAction.ElevatorRide(int.Parse(args[i + 1]), int.Parse(args[i + 2])));
+            i += 2;
+            break;
         case "--prefs": // P130 QA: open the Preferences panel
             actions.Add(new ViewerGame.StartupAction.PreferencesOpen());
             break;
