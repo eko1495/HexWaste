@@ -193,6 +193,11 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
     /// <summary>P133: the full-screen MVE cutscene player (play_gmovie), when the .mve decodes.</summary>
     private MviePlayer? _moviePlayer;
 
+    /// <summary>P133 debug: the cutscene browser (F10) — a list of every art\cuts\*.mve to preview.</summary>
+    private bool _cutsceneMenuOpen;
+    private int _cutsceneMenuIndex;
+    private List<string>? _cutsceneNames;
+
     /// <summary>scripts.lst index per party member — their follow script gets
     /// re-bound on every map (fresh sid via AllocateSid).</summary>
     private readonly Dictionary<MapObject, int> _partyScriptIndex = [];
@@ -812,6 +817,8 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
         /// <summary>P133 QA: decode art\cuts\&lt;Name&gt;.mve headlessly and report dims + frame count +
         /// audio format (proves the codec + player pipeline without a display). STATE-only.</summary>
         public sealed record PlayMovie(string Name) : StartupAction;
+        /// <summary>P133 QA: open the debug cutscene browser (F10) and report the movie list.</summary>
+        public sealed record CutsceneMenu : StartupAction;
         /// <summary>P130 QA: open the Preferences panel (art/layout verification).</summary>
         public sealed record PreferencesOpen : StartupAction;
         /// <summary>P119 QA: open the called-shot window over the critter at Hex (art verification).</summary>
@@ -1956,6 +1963,51 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
             return;
         }
 
+        // P133 debug: the cutscene browser (F10). Up/Down or mouse-hover moves the highlight,
+        // Enter/click previews it (hands off to the movie player), Esc/F10 closes.
+        if (_cutsceneMenuOpen)
+        {
+            List<string> names = CutsceneNames();
+            if (names.Count == 0)
+            {
+                _cutsceneMenuOpen = false;
+            }
+            else
+            {
+                if (IsKeyPressed(keyboard, Keys.Up))
+                    _cutsceneMenuIndex = (_cutsceneMenuIndex + names.Count - 1) % names.Count;
+                if (IsKeyPressed(keyboard, Keys.Down))
+                    _cutsceneMenuIndex = (_cutsceneMenuIndex + 1) % names.Count;
+
+                // Mouse hover selects a row; a click on it plays it.
+                (float firstRowY, float rowH) = CutsceneListLayout(names.Count);
+                int cx = GraphicsDevice.Viewport.Width / 2;
+                int hover = -1;
+                if (Math.Abs(mouse.X - cx) < 220)
+                {
+                    int row = (int)((mouse.Y - firstRowY) / rowH);
+                    if (row >= 0 && row < names.Count)
+                        hover = row;
+                }
+                if (hover >= 0)
+                    _cutsceneMenuIndex = hover;
+
+                bool clickPlay = hover >= 0 && mouse.LeftButton == ButtonState.Pressed
+                    && _previousMouse.LeftButton == ButtonState.Released;
+                if (IsKeyPressed(keyboard, Keys.Enter) || clickPlay)
+                {
+                    _moviePlayer = MviePlayer.TryOpen(GraphicsDevice, _vfs, names[_cutsceneMenuIndex], _audio);
+                    _cutsceneMenuOpen = false;
+                }
+                if (IsKeyPressed(keyboard, Keys.Escape) || IsKeyPressed(keyboard, Keys.F10))
+                    _cutsceneMenuOpen = false;
+            }
+            _previousMouse = mouse;
+            _previousKeyboard = keyboard;
+            base.Update(gameTime);
+            return;
+        }
+
         // Movie caption card: any key OR a mouse click dismisses it (the engine skips a movie on key/click).
         if (_movieCard is not null)
         {
@@ -2372,6 +2424,13 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
             SaveGame();
         if (IsKeyPressed(keyboard, Keys.F9))
             LoadGame();
+
+        // P133 debug: F10 opens the cutscene browser (preview any art\cuts\*.mve).
+        if (IsKeyPressed(keyboard, Keys.F10))
+        {
+            _cutsceneMenuOpen = true;
+            _cutsceneMenuIndex = 0;
+        }
 
         // Dialog mode swallows all input.
         if (_dialog is not null)
@@ -6545,6 +6604,35 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
         else
             foreach (string line in lines)
                 Log(line);
+    }
+
+    /// <summary>P133 debug: every art\cuts\*.mve name in the archives (built once, sorted).
+    /// Backslash paths → strip the dir + .mve manually (Path.* keeps '\' on Linux).</summary>
+    private List<string> CutsceneNames()
+    {
+        if (_cutsceneNames is null)
+        {
+            var set = new SortedSet<string>(StringComparer.OrdinalIgnoreCase);
+            foreach (var arch in _vfs.Archives)
+                foreach (var e in arch.Entries)
+                {
+                    if (!e.Path.EndsWith(".mve", StringComparison.OrdinalIgnoreCase))
+                        continue;
+                    int slash = e.Path.LastIndexOfAny(['\\', '/']);
+                    set.Add(e.Path[(slash + 1)..^4]);
+                }
+            _cutsceneNames = [.. set];
+        }
+        return _cutsceneNames;
+    }
+
+    /// <summary>Shared list geometry for the cutscene browser so Update hit-testing and the HUD
+    /// draw agree: the Y of row 0 and the per-row height, centred in the viewport.</summary>
+    private (float firstRowY, float rowH) CutsceneListLayout(int count)
+    {
+        float rowH = _fontRenderer.LineHeight * 1.35f;
+        float firstRowY = GraphicsDevice.Viewport.Height / 2f - count * rowH / 2f;
+        return (firstRowY, rowH);
     }
 
     /// <summary>Use the armed inventory item on a clicked object — the _protinst_use_item_on

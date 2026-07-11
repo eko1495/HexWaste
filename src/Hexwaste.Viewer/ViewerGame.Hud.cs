@@ -514,6 +514,9 @@ public sealed partial class ViewerGame
             _moviePlayer.Draw(_spriteBatch, _panelPixel, GraphicsDevice.Viewport);
         }
 
+        if (_cutsceneMenuOpen)
+            DrawCutsceneMenu();
+
         if (_movieCard is { } card)
         {
             _panelPixel ??= CreatePixel();
@@ -618,5 +621,39 @@ public sealed partial class ViewerGame
                 y += _fontRenderer.LineHeight;
             }
         }
+    }
+
+    /// <summary>P133 debug: the cutscene browser — a centred list of every art\cuts\*.mve over a
+    /// dark backdrop, the highlighted row in Pip-Boy yellow. Row geometry is shared with the
+    /// Update hit-testing via <see cref="CutsceneListLayout"/>.</summary>
+    private void DrawCutsceneMenu()
+    {
+        _panelPixel ??= CreatePixel();
+        int vw = GraphicsDevice.Viewport.Width, vh = GraphicsDevice.Viewport.Height;
+        _spriteBatch.Draw(_panelPixel, new Rectangle(0, 0, vw, vh), new Color(0, 0, 0, 235));
+
+        List<string> names = CutsceneNames();
+        (float firstRowY, float rowH) = CutsceneListLayout(names.Count);
+        var green = new Color(0, 252, 0);
+        var yellow = new Color(252, 252, 84);
+        var dim = new Color(120, 120, 120);
+
+        const string title = "CUTSCENE ARCHIVE";
+        _fontRenderer.Draw(_spriteBatch, title,
+            new Vector2(vw / 2f - _fontRenderer.MeasureWidth(title) / 2f, firstRowY - rowH * 2f), yellow);
+
+        for (int i = 0; i < names.Count; i++)
+        {
+            string label = names[i].ToLowerInvariant();
+            bool sel = i == _cutsceneMenuIndex;
+            string text = sel ? $"> {label}" : label;
+            _fontRenderer.Draw(_spriteBatch, text,
+                new Vector2(vw / 2f - _fontRenderer.MeasureWidth(text) / 2f, firstRowY + i * rowH),
+                sel ? yellow : green);
+        }
+
+        const string hint = "up/down or hover  -  enter/click to play  -  esc to close";
+        _fontRenderer.Draw(_spriteBatch, hint,
+            new Vector2(vw / 2f - _fontRenderer.MeasureWidth(hint) / 2f, firstRowY + names.Count * rowH + rowH), dim);
     }
 }

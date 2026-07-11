@@ -540,6 +540,13 @@ public sealed partial class ViewerGame
                         _moviePlayer = MviePlayer.TryOpen(GraphicsDevice, _vfs, mvName, _audio);
                     break;
                 }
+                case StartupAction.CutsceneMenu:
+                {
+                    _cutsceneMenuOpen = true;
+                    List<string> cs = CutsceneNames();
+                    Console.WriteLine($"cutscene-menu: {cs.Count} movies [{string.Join(",", cs)}]");
+                    break;
+                }
                 case StartupAction.PreferencesOpen:
                     OpenPreferences();
                     Console.WriteLine($"prefs: open backed=[{string.Join(",",

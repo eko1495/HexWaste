@@ -457,6 +457,9 @@ for (int i = 0; i < args.Length; i++)
         case "--play-movie" when i + 1 < args.Length: // P133 QA: decode art\cuts\<name>.mve headlessly
             actions.Add(new ViewerGame.StartupAction.PlayMovie(args[++i]));
             break;
+        case "--cutscene-menu": // P133 QA: open the debug cutscene browser (F10)
+            actions.Add(new ViewerGame.StartupAction.CutsceneMenu());
+            break;
         case "--prefs": // P130 QA: open the Preferences panel
             actions.Add(new ViewerGame.StartupAction.PreferencesOpen());
             break;
