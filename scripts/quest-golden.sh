@@ -43,6 +43,12 @@ SCENARIOS=(
   # (CombatEngine.Kill → destroy_p_proc) deterministically — the quest logic is real, only the cause of
   # death is a debug shortcut (a fresh test char can't win the boss fight). FULL lifecycle 0→2.
   "quest-kill-ratgod|$CREATE --goto-map klaratcv.map:25486:2 --get-global 390 --kill 25486 --get-global 390 --quest-probe --rng-seed 1"
+  # Refuel Whiskey Bob's still (Klamath, GVAR 198) — FULL lifecycle 0→1→2→5, via the REAL path (no
+  # --set-global). Buy Bob a drink + accept the still job (198→1); carry firewood (pid 286) to the still
+  # shack south of town (klatrap, hex 20131) and use it (use_obj_on_p_proc → 198→2); return to Bob, who
+  # thanks you on greeting (Node950 → 198→5, completed). Caps (41) fund the drink; the option sequence
+  # 2,1,2,1,1,1 is the accept chain. Crosses kladwtwn↔klatrap, proving the quest GVAR persists across maps.
+  "quest-bob-still|$CREATE --goto-map kladwtwn.map --give 41:500 --give 286:2 --get-global 198 --talk-seq 22687 2,1,2,1,1,1 --get-global 198 --goto-map klatrap.map --use-on 286:20131 --get-global 198 --goto-map kladwtwn.map --talk-seq 22687 1 --get-global 198 --quest-probe --rng-seed 1"
 )
 
 dotnet build src/Hexwaste.Viewer -c Debug >/dev/null || { echo "build failed"; exit 2; }

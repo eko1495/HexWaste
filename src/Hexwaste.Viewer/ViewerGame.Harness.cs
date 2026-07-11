@@ -1849,6 +1849,10 @@ public sealed partial class ViewerGame
                             break;
                         Console.WriteLine($"CHOOSE: {choice}");
                         ChooseDialogOption(choice - 1);
+                        // STATE-only navigation aid for fixture authoring: the option count
+                        // reached (or that the dialog closed), no game text.
+                        Console.WriteLine(_dialog is null ? "  round: ended"
+                            : $"  round: opts={_dialog.Options.Count}");
                     }
                     // Close any lingering dialog so the next talk-seq starts clean.
                     _dialog = null;
