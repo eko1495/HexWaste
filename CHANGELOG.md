@@ -1,5 +1,29 @@
 # Changelog
 
+## v0.14.0 — 2026-07-11 — cutscenes play
+
+The headline is full **Interplay MVE video** support: the engine's cutscenes now
+decode and play in-engine. Around it, the gap-batch fidelity run (armor art, the
+Preferences screen, localization) and the campaign-QA path finder.
+
+- **Movies play**: a from-scratch Interplay MVE decoder — the whole `_nfPkDecomp`
+  block codec (all 16 opcodes) plus Interplay DPCM audio — ported literally from
+  fallout2-ce and validated **pixel-exact against ffmpeg across all 13 game
+  cutscenes** (~9,500 frames). `play_gmovie` now plays the real `.mve` full-screen
+  with sound (intro, endings, the temple guardian) instead of a caption card, and
+  an **F10 debug browser** previews any cutscene in the archive.
+- **The dude wears their armor**: the world sprite follows equipped armor
+  (leather / metal / combat / power), and HUD indicator pills show the poisoned /
+  radiated / level-up conditions.
+- **Preferences**: the authentic Preferences screen (Options → Preferences) with
+  backed detail/volume settings and a live master-volume slider.
+- **Localization**: a language switch (`--language`) that substitutes the
+  `text\<lang>\` message files, plus the worldmap town-tab label art.
+- **Campaign QA**: a quest-path finder that traces the dialog/trigger route to
+  each quest's completion flag — the tooling for authoring per-town quest fixtures.
+- **Elevators**: a same-map elevator ride now switches floor **in place** (no map
+  reload), preserving script state and per-map deltas.
+
 ## v0.13.0 — 2026-07-07 — every ledger closed
 
 The whole post-v0.12 arc: the endgame/QA closeout, two door-pathing and four
