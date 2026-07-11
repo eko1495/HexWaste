@@ -22,8 +22,11 @@ The game directory is the install folder containing `master.dat`,
 usual GOG/Steam install paths and a `game-data/` folder next to the
 executable.
 
-Prebuilt self-contained builds (Linux x64 / Windows x64) are produced by
-`scripts/release.sh` — see `docs/RELEASING.md`.
+**Latest release: [v0.14.0 — Interplay MVE video support](https://github.com/eko1495/HexWaste/releases/tag/v0.14.0)** —
+the engine's cutscenes now decode and play in-engine. Prebuilt self-contained
+builds (Linux x64 / Windows x64) are on the
+[releases page](https://github.com/eko1495/HexWaste/releases); see
+`docs/RELEASING.md` to build your own.
 
 ## What works
 
@@ -109,6 +112,12 @@ Prebuilt self-contained builds (Linux x64 / Windows x64) are produced by
   skill tagging, optional traits, a stat/skill description card, and the name/age/sex
   plates with their pop-up editors — type a name, spin the age 16–35), a scrolling
   `credits.txt` roll, and the iconic `death.frm` death screen when you fall.
+- **Cutscenes**: the story movies play as real video — a from-scratch Interplay
+  MVE decoder (the full `_nfPkDecomp` block codec plus Interplay DPCM audio, ported
+  from fallout2-ce and validated pixel-exact against ffmpeg across all 13 game
+  cutscenes) plays them full-screen with sound when a script calls `play_gmovie`
+  (the intro, the temple-guardian dream, the endings), and **F10** opens a browser
+  to preview any cutscene in your game data.
 - **Character**: create your own (name, age, SPECIAL, gender, optional traits, tagged skills)
   in the authentic creation editor, or pick a premade from the selector; level-ups
   grant skill points you spend on the character sheet (C),
@@ -235,6 +244,7 @@ Prebuilt self-contained builds (Linux x64 / Windows x64) are produced by
 | C / K | character sheet (spend level-up skill points) |
 | Z | rest to heal (when no enemies are near) |
 | F5 / F9 | quicksave / quickload (default slot) |
+| F10 | cutscene browser — preview any MVE movie in your game data (↑/↓ or hover, Enter/click to play) |
 | R / Shift+R | reload the equipped gun (2 AP in combat) / unload it (to switch ammo type) |
 | F4 / T / PgUp / PgDn | roofs / walk-cycle / elevation (PgUp/PgDn page an open item panel) |
 | [ / ] | ambient light (night ↔ day) |
