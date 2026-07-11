@@ -139,6 +139,31 @@ public sealed class AudioManager : IDisposable
         _speech?.Stop();
     }
 
+    /// <summary>P133: play a decoded MVE soundtrack (the whole PCM16 buffer submitted once)
+    /// and return the instance so the movie player can stop it on skip/finish. Honors the
+    /// master slider. Returns null if audio is disabled or the backend rejects the buffer.</summary>
+    public SoundEffectInstance? PlayMovieAudio(byte[] pcm16, int sampleRate, bool stereo)
+    {
+        if (!_enabled || pcm16.Length == 0)
+            return null;
+        try
+        {
+            int blockAlign = stereo ? 4 : 2;
+            int aligned = pcm16.Length / blockAlign * blockAlign;
+            var effect = new SoundEffect(pcm16.AsSpan(0, aligned).ToArray(), sampleRate,
+                stereo ? AudioChannels.Stereo : AudioChannels.Mono);
+            SoundEffectInstance inst = effect.CreateInstance();
+            inst.Volume = MasterFactor;
+            inst.Play();
+            return inst;
+        }
+        catch (Exception ex) when (ex is NoAudioHardwareException or InvalidOperationException or ArgumentException)
+        {
+            Console.Error.WriteLine($"movie audio disabled: {ex.Message}");
+            return null;
+        }
+    }
+
     /// <summary>Switches the looping music track (maps.txt music= name, e.g. "07desert").</summary>
     public void PlayMusic(string? track)
     {

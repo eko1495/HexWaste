@@ -186,8 +186,12 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
     private string _createNameEdit = "";
     private int _createAgeSaved;
 
-    /// <summary>Movie caption card (play_gmovie): title + .sve subtitle lines.</summary>
+    /// <summary>Movie caption card (play_gmovie): title + .sve subtitle lines. The fallback
+    /// when the real .mve can't be decoded/played (<see cref="_moviePlayer"/> is the real one).</summary>
     private List<string>? _movieCard;
+
+    /// <summary>P133: the full-screen MVE cutscene player (play_gmovie), when the .mve decodes.</summary>
+    private MviePlayer? _moviePlayer;
 
     /// <summary>scripts.lst index per party member — their follow script gets
     /// re-bound on every map (fresh sid via AllocateSid).</summary>
@@ -805,6 +809,9 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
         public sealed record TownmapOpen(int Enter = -1) : StartupAction;
         /// <summary>P135 QA: ride elevator Type to Button directly (in-place-switch test).</summary>
         public sealed record ElevatorRide(int Type, int Button) : StartupAction;
+        /// <summary>P133 QA: decode art\cuts\&lt;Name&gt;.mve headlessly and report dims + frame count +
+        /// audio format (proves the codec + player pipeline without a display). STATE-only.</summary>
+        public sealed record PlayMovie(string Name) : StartupAction;
         /// <summary>P130 QA: open the Preferences panel (art/layout verification).</summary>
         public sealed record PreferencesOpen : StartupAction;
         /// <summary>P119 QA: open the called-shot window over the critter at Hex (art verification).</summary>
@@ -1923,6 +1930,26 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
                 StartNewGame();
             if (keyboard.IsKeyDown(Keys.Escape))
                 Exit();
+            _previousMouse = mouse;
+            _previousKeyboard = keyboard;
+            base.Update(gameTime);
+            return;
+        }
+
+        // Full-screen MVE cutscene: ticks its own clock; any key or a click skips it (the engine
+        // skips a movie on key/click). Ends when the stream finishes.
+        if (_moviePlayer is not null)
+        {
+            bool keyDown = keyboard.GetPressedKeyCount() > 0 && _previousKeyboard.GetPressedKeyCount() == 0;
+            bool clickDown = mouse.LeftButton == ButtonState.Pressed && _previousMouse.LeftButton == ButtonState.Released;
+            if (keyDown || clickDown)
+                _moviePlayer.Skip();
+            _moviePlayer.Update(gameTime.ElapsedGameTime.TotalMilliseconds);
+            if (_moviePlayer.Finished)
+            {
+                _moviePlayer.Dispose();
+                _moviePlayer = null;
+            }
             _previousMouse = mouse;
             _previousKeyboard = keyboard;
             base.Update(gameTime);
@@ -6509,8 +6536,12 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
         foreach (string line in lines.Skip(1))
             Console.WriteLine($"  sve: {line}");
 
-        if (StartInMenu) // caption card only in interactive sessions
-            _movieCard = lines;
+        if (StartInMenu) // interactive: play the real cutscene if it decodes, else the caption card
+        {
+            _moviePlayer = MviePlayer.TryOpen(GraphicsDevice, _vfs, name, _audio);
+            if (_moviePlayer is null)
+                _movieCard = lines;
+        }
         else
             foreach (string line in lines)
                 Log(line);

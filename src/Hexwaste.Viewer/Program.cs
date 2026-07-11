@@ -454,6 +454,9 @@ for (int i = 0; i < args.Length; i++)
             actions.Add(new ViewerGame.StartupAction.ElevatorRide(int.Parse(args[i + 1]), int.Parse(args[i + 2])));
             i += 2;
             break;
+        case "--play-movie" when i + 1 < args.Length: // P133 QA: decode art\cuts\<name>.mve headlessly
+            actions.Add(new ViewerGame.StartupAction.PlayMovie(args[++i]));
+            break;
         case "--prefs": // P130 QA: open the Preferences panel
             actions.Add(new ViewerGame.StartupAction.PreferencesOpen());
             break;

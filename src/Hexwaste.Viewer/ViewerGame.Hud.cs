@@ -508,6 +508,12 @@ public sealed partial class ViewerGame
             }
         }
 
+        if (_moviePlayer is not null)
+        {
+            _panelPixel ??= CreatePixel();
+            _moviePlayer.Draw(_spriteBatch, _panelPixel, GraphicsDevice.Viewport);
+        }
+
         if (_movieCard is { } card)
         {
             _panelPixel ??= CreatePixel();

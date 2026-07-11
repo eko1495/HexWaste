@@ -510,6 +510,36 @@ public sealed partial class ViewerGame
                         + $" onMap={_currentMapName}");
                     break;
                 }
+                case StartupAction.PlayMovie(var mvName):
+                {
+                    // P133 QA: decode the whole cutscene through the codec (no display needed) and
+                    // report dims + frame count + audio format. Proves the pipeline in CI.
+                    string mvPath = $@"art\cuts\{mvName}.mve";
+                    if (!_vfs.Exists(mvPath))
+                    {
+                        Console.WriteLine($"play-movie: {mvName} NOT FOUND");
+                        break;
+                    }
+                    var mve = Formats.Movie.MveFile.Parse(_vfs.ReadAllBytes(mvPath));
+                    var vid = new Formats.Movie.MveVideo();
+                    int mvFrames = 0;
+                    foreach (Formats.Movie.MveOpcode mvOp in mve.Opcodes)
+                    {
+                        vid.Step(mvOp);
+                        if (vid.FramePresented)
+                            mvFrames++;
+                    }
+                    Formats.Movie.MveAudio.Track? mvTrack = Formats.Movie.MveAudio.Decode(mve);
+                    string mvAudio = mvTrack is null
+                        ? "none"
+                        : $"{mvTrack.Format.SampleRate}Hz {(mvTrack.Format.Stereo ? "stereo" : "mono")} pcm={mvTrack.Pcm16.Length}";
+                    Console.WriteLine($"play-movie: {mvName} {vid.Width}x{vid.Height} frames={mvFrames} audio={mvAudio}");
+                    // With a --screenshot present, also start the real full-screen player so the
+                    // capture shows a rendered frame (golden runs have no screenshot → decode-only).
+                    if (_screenshotPath is not null)
+                        _moviePlayer = MviePlayer.TryOpen(GraphicsDevice, _vfs, mvName, _audio);
+                    break;
+                }
                 case StartupAction.PreferencesOpen:
                     OpenPreferences();
                     Console.WriteLine($"prefs: open backed=[{string.Join(",",
