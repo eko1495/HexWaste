@@ -6,6 +6,7 @@ using Hexwaste.Formats.Proto;
 string? gameDir = null;
 string mapName = "artemple.map";
 bool questCensus = false;
+bool mapObjects = false;
 int questPathsGvar = -2; // -2 = off, -1 = all quests, >= 0 = one gvar
 
 for (int i = 0; i < args.Length; i++)
@@ -16,13 +17,15 @@ for (int i = 0; i < args.Length; i++)
         mapName = args[++i];
     else if (args[i] == "--quest-census")
         questCensus = true;
+    else if (args[i] == "--map-objects")
+        mapObjects = true;
     else if (args[i] == "--quest-paths")
         questPathsGvar = i + 1 < args.Length && !args[i + 1].StartsWith("--") ? int.Parse(args[++i]) : -1;
 }
 
 if (gameDir is null)
 {
-    Console.Error.WriteLine("usage: ProcAnalyze --game-dir <dir> (--map <mapname> | --quest-census | --quest-paths [gvar])");
+    Console.Error.WriteLine("usage: ProcAnalyze --game-dir <dir> (--map <mapname> [--map-objects] | --quest-census | --quest-paths [gvar])");
     return 1;
 }
 
@@ -147,6 +150,29 @@ if (questCensus)
 MapFile map;
 using (Stream stream = vfs.OpenRead($@"maps\{mapName}"))
     map = MapFile.Load(stream, protos);
+
+// --map-objects: the tile-discovery aid for quest-fixture authoring. Lists every scripted
+// object (critter/scenery) as elev/tile/pid/script so a golden can target it by tile via
+// --talk-seq / --kill / --use-on. STATE-only (no game text).
+if (mapObjects)
+{
+    Console.WriteLine($"map-objects: {mapName}");
+    for (int e = 0; e < map.Elevations.Length; e++)
+    {
+        MapElevation? elev = map.Elevations[e];
+        if (elev is null)
+            continue;
+        foreach (MapObject o in elev.Objects.OrderBy(o => o.HexTile))
+        {
+            if (o.Sid < 0 || !map.ScriptsBySid.TryGetValue(o.Sid, out MapScriptRecord? rec)
+                || rec.ScriptListIndex < 0)
+                continue;
+            string script = scriptList.GetName(rec.ScriptListIndex) ?? $"script_{rec.ScriptListIndex}";
+            Console.WriteLine($"  elev={e} tile={o.HexTile} pid={o.Pid} script={script}");
+        }
+    }
+    return 0;
+}
 
 var procInfo = new Dictionary<string, int>
 {
