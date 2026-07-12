@@ -774,6 +774,14 @@ for (int i = 0; i < args.Length; i++)
         case "--set-hour" when i + 1 < args.Length: // P-QA: jump the clock to hour Hh (night-only NPCs)
             actions.Add(new ViewerGame.StartupAction.SetHour(int.Parse(args[++i])));
             break;
+        case "--teleport" when i + 2 < args.Length: // P-QA (escort-sim): move the dude to <tile> <elev>
+            actions.Add(new ViewerGame.StartupAction.Teleport(int.Parse(args[i + 1]), int.Parse(args[i + 2])));
+            i += 2;
+            break;
+        case "--escort-pump" when i + 2 < args.Length: // P-QA (escort-sim): pump <followerTile>'s heartbeat <beats>x
+            actions.Add(new ViewerGame.StartupAction.EscortPump(int.Parse(args[i + 1]), int.Parse(args[i + 2])));
+            i += 2;
+            break;
         case "--game-dir" when i + 1 < args.Length:
             gameDir = args[++i];
             break;

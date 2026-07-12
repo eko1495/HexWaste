@@ -2309,6 +2309,34 @@ public sealed partial class ViewerGame
                     Console.WriteLine($"set-hour: hour={_clock.Hour} day={_clock.Day}");
                     break;
                 }
+                case StartupAction.Teleport(var tpTile, var tpElev) when _dude is not null:
+                {
+                    int tpDest = Formats.Map.Placement.FreeTileNear(tpTile, t => _blockedTiles.Contains(t));
+                    SwitchElevationInPlace(Math.Clamp(tpElev, 0, 2), tpDest, _dude.Dude.Rotation);
+                    Console.WriteLine($"teleport: dude@{_dude.Dude.HexTile} elev={_elevation}");
+                    break;
+                }
+                case StartupAction.EscortPump(var epTile, var epBeats) when _map is not null && _scriptHost is not null:
+                {
+                    MapObject? follower = _map.Elevations.Where(e => e is not null)
+                        .SelectMany(e => e!.Objects)
+                        .FirstOrDefault(o => o.HexTile == epTile && o.Sid != -1);
+                    if (follower is null)
+                    {
+                        Console.WriteLine($"escort-pump: no critter at {epTile}");
+                        break;
+                    }
+                    // The follower's own critter_p_proc catches it up (opCritterAttemptPlacement across
+                    // floors) and fires leave_player when it reaches the delivery point. Pump the
+                    // animator between beats so any opAnimateMoveObjectToTile step resolves.
+                    for (int b = 0; b < epBeats; b++)
+                    {
+                        _scriptHost.RunObjectProc(follower, _map, _dude?.Dude, 0, -1, "critter_p_proc");
+                        _animator.Update(200);
+                    }
+                    Console.WriteLine($"escort-pump: follower@{follower.HexTile}");
+                    break;
+                }
             }
         }
 

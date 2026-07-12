@@ -1006,6 +1006,17 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
         /// <summary>P-QA: set the game clock to hour Hh (0..23, minute 0) on the current day —
         /// a direct jump (no loop), e.g. to make a night-only ghost (Anna) appear for a fixture.</summary>
         public sealed record SetHour(int Hh) : StartupAction;
+        /// <summary>P-QA (escort-sim): teleport the dude to (Tile, Elev) on the current map in
+        /// place. Followers then catch up via their own critter_p_proc (opCritterAttemptPlacement
+        /// across elevations), so a proximity-triggered escort completion (leave_player) fires on
+        /// the next --pump-ms. The physical-walk shortcut, like --give shortcuts item pickup.</summary>
+        public sealed record Teleport(int Tile, int Elev) : StartupAction;
+        /// <summary>P-QA (escort-sim): run the follower critter (found once at FollowerTile, any
+        /// elevation) through its own critter_p_proc Beats times, regardless of the dude's current
+        /// elevation. The follower's script does the real work — opCritterAttemptPlacement to catch
+        /// up across floors, then the proximity-gated leave_player that completes an escort quest.
+        /// Pair with --teleport to place the dude at the delivery point first.</summary>
+        public sealed record EscortPump(int FollowerTile, int Beats) : StartupAction;
     }
 
     public List<StartupAction> StartupActions { get; set; } = [];
@@ -3411,6 +3422,15 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
     /// elevation (which is theirs). Linear scan; called rarely (a script query).</summary>
     private int ElevationOfObject(MapObject obj)
     {
+        // The LIVE draw/collision lists are authoritative — they reflect runtime moves
+        // (PlaceObject / SwitchElevationInPlace across floors), which the static map-data
+        // Elevations[e].Objects lists do not. A critter escorted up/down stairs (or teleported)
+        // must report its NEW elevation so its own script's elevation checks (e.g. an escort
+        // delivery gate) see the truth. Static (never-moved) objects live in both at the same
+        // elevation, so this is a no-op for them.
+        for (int e = 0; e < MapFile.ElevationCount; e++)
+            if (_solidObjects[e]?.Contains(obj) == true || _flatObjects[e]?.Contains(obj) == true)
+                return e;
         if (_map is not null)
             for (int e = 0; e < MapFile.ElevationCount; e++)
                 if (_map.Elevations[e]?.Objects.Contains(obj) == true)

@@ -54,6 +54,13 @@ SCENARIOS=(
   # appear; carrying the locket (item pid 252), giving it (talk opt 2 → Node007 obj_carrying check)
   # sets 551 0→2 (completed) and lays her to rest. Exercises the new --set-hour clock jump.
   "quest-anna-locket|$CREATE --goto-map denbus1.map --give 252:1 --set-hour 2 --get-global 551 --talk-seq 28105 2 --get-global 551 --quest-probe --rng-seed 1"
+  # Rescue Smiley (Klamath, GVAR 197) — the first ESCORT golden, full lifecycle 0→2→3 via the REAL
+  # script path (no --set-global). Smiley (klatoxcv elev1 hex 18651) joins as a team-follower
+  # (dialogue 1,1,1,1,1 → his LVAR follow flag); the escort-sim verbs stand in for the physical walk:
+  # --teleport puts the dude at the elev-0 cave-mouth delivery tile (18335), --escort-pump runs
+  # Smiley's own critter_p_proc so it opCritterAttemptPlacement's him across floors to the dude and
+  # fires leave_player (197→2); returning to Klamath downtown, its map_enter sees 197==2 → 197→3.
+  "quest-smiley-rescue|$CREATE --goto-map klatoxcv.map:18651:1 --talk-seq 18651 1,1,1,1,1 --get-global 197 --teleport 18335 0 --escort-pump 18651 8 --get-global 197 --goto-map kladwtwn.map --get-global 197 --quest-probe --rng-seed 1"
 )
 
 dotnet build src/Hexwaste.Viewer -c Debug >/dev/null || { echo "build failed"; exit 2; }
