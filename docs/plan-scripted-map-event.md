@@ -141,3 +141,28 @@ talk-seq applies the queued `_pendingTransition` (Harness.cs:594) and loads klag
 
 Revised estimate: **S** (W1+W2 free; only W3 + fixtures remain). Next action: the W3 spike —
 dump klagraz objects post-arrival to locate/inspect Torr + the Duntons, then drive the scene.
+
+## 10. Spike results — W3: SUCCESS (102 landed), W4 partial (391 open)
+
+**The scripted-event capability is PROVEN — no new engine subsystem needed.** The klagraz
+confrontation is fully drivable via the real load_map path + existing verbs.
+
+- **New tool `--critters`** (commit 5d18d6a): dumps the current map's live critters
+  (tile/elev/scriptIdx/name/dead) — the runtime counterpart to `--map-objects`. Essential:
+  on arrival, `override_map_start` repositions Torr from his static tile 24572 to **runtime
+  17701** (the Duntons stay at 16315/16715). Without a runtime dump you can't find the actors.
+- **102 (Rustle the brahmin) LANDED — golden `quest-torr-duntons`, lifecycle 0→1→2.** Chain:
+  accept guard (talk 24291 `1,1,1` → load_map(klagraz,13)) → `--pump-ms` applies the transition
+  → side with the Duntons (talk 16315 `1,1,1` → "I'll take care of Torr" → 102:=1) → scare Torr
+  off (talk 17701 opt **2** "I saw Bugmen" → "Torr scampers off into the night" → Node930 →
+  102:=2 + 71:=1). Deterministic (Torr's arrival tile stable); state-only golden.
+- **391 (Rescue Torr): W4 OPEN.** `71:=1` relocates the fled Torr to **klamath.map tile 18108**
+  (found via `--critters`; needs a `--pump-ms` after arriving on klamath to spawn him). He IS
+  talkable there, but a plain `--talk-seq 18108` opens dialogue with **no rounds** — the fled-
+  Torr rescue/join (Node940 → LVAR10 follow flag) has a state/approach gate not yet traced.
+  Once the join fires, the ALREADY-PROVEN escort-sim (`--teleport` to delivery tile 19450 +
+  `--escort-pump`) completes 391:=2. **Remaining work = trace the klamath-Torr join dialogue**
+  (a `--talk-seq`/disasm investigation, ~the cost of one fixture), then apply the escort-sim.
+
+**Net:** the phase's core (scripted map-event capability) is done and validated end-to-end;
+Klamath is 5/6. Only the 391 fled-Torr-join trace + escort remains — bounded, no new subsystem.
