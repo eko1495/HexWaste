@@ -156,13 +156,24 @@ confrontation is fully drivable via the real load_map path + existing verbs.
   → side with the Duntons (talk 16315 `1,1,1` → "I'll take care of Torr" → 102:=1) → scare Torr
   off (talk 17701 opt **2** "I saw Bugmen" → "Torr scampers off into the night" → Node930 →
   102:=2 + 71:=1). Deterministic (Torr's arrival tile stable); state-only golden.
-- **391 (Rescue Torr): W4 OPEN.** `71:=1` relocates the fled Torr to **klamath.map tile 18108**
-  (found via `--critters`; needs a `--pump-ms` after arriving on klamath to spawn him). He IS
-  talkable there, but a plain `--talk-seq 18108` opens dialogue with **no rounds** — the fled-
-  Torr rescue/join (Node940 → LVAR10 follow flag) has a state/approach gate not yet traced.
-  Once the join fires, the ALREADY-PROVEN escort-sim (`--teleport` to delivery tile 19450 +
-  `--escort-pump`) completes 391:=2. **Remaining work = trace the klamath-Torr join dialogue**
-  (a `--talk-seq`/disasm investigation, ~the cost of one fixture), then apply the escort-sim.
+- **391 (Rescue Torr): W4 OPEN — MORE complex than first estimated (correction).** After the
+  scamper, the fled Torr stays on **klagraz** (there is NO klamath.map — the main map is
+  KLAMALL; the earlier "klamath 18108" reading was on a *failed* load, i.e. still klagraz). With
+  `--rng-seed 1` he's deterministically at klagraz 18108 (he wanders, so a seed is required).
+  BUT his `talk_p_proc` only ever yields the guarding greeting ("Torr like Hero Male… Bugmen
+  bad") — the join **Node940** (LVAR10 follow flag) is NOT reached by any obvious path tried:
+  the Dunton-betrayal route (that's 102), the defend-Torr route (`--kill` both Duntons), or
+  plain talk. `refs.py` finds **no direct call/giq_option reference to Node940's offset**, so its
+  trigger is obscure (likely gated on the seasonally/time-gated scorpion-attack sub-event —
+  klagraz map_enter has `month>=3 AND month<5` + `game_time_hour` windows the fresh July game
+  fails — or on activating 391 first via Ardin, whose dialogue is Smiley-centric and needs its
+  own trace). **So 391 is NOT the quick trace §10 first claimed** — it's a dedicated
+  investigation (the scorpion-attack / Ardin-activation mechanism), likely needing `--set-hour`
+  + a season jump. The escort-sim would still finish it once the join fires; the unknown is the
+  join trigger, not the delivery.
 
-**Net:** the phase's core (scripted map-event capability) is done and validated end-to-end;
-Klamath is 5/6. Only the 391 fled-Torr-join trace + escort remains — bounded, no new subsystem.
+**Net (corrected):** the phase's CORE — the scripted map-event / load_map capability — is done
+and validated end-to-end (102 landed). Klamath is **5/6**. 391 remains and is bigger than the
+optimistic §10 estimate: its own trace of the Torr-rescue trigger (scorpion-attack season/time
+gate and/or Ardin activation), not just an escort. No new engine subsystem, but real
+investigation. Recommend treating 391 as a separate task, not a same-session close.
