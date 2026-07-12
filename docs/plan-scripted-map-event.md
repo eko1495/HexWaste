@@ -117,3 +117,27 @@ Unknown / to build (the phase):
 Run the W1 spike: disassemble KCTorr's `talk_p_proc` routing to Node020 (which gvar/visit
 gates it), find the `--talk-seq` option chain, and test whether the load_map transition applies
 headlessly. Everything downstream depends on that go/no-go.
+
+## 9. Spike results — W1 + W2: GO (2241-07-xx)
+
+**W1 (reach Node020): DONE.** `--talk-seq 24291 1,1,1` (greet → "sure I can help guard" → "I'll
+help guard now") IS Node020 — the accept option itself runs `gfade_out; game_time_advance;
+load_map(14, 13)`. Confirmed live: gvar 27 (GVAR_LOAD_MAP_INDEX) reads **13** immediately after
+the dialogue closes. No prior visit / extra gating needed; the first accept warps you.
+
+**W2 (apply the dialogue-deferred transition): GO, and NO CODE NEEDED.** `--pump-ms` after the
+talk-seq applies the queued `_pendingTransition` (Harness.cs:594) and loads klagraz. Proven by
+`--map-update-probe`: `map=kladwtwn.map` before → **`map=klagraz.map`** after `--talk-seq 24291
+1,1,1 --pump-ms 4000`. klagraz map_enter runs (it resets gvar 27 → 0), and
+`newStubbedExternals=0[]` — no unwired external on arrival. The feared W2 bridge is unnecessary.
+
+**So the transition half of the phase is FREE.** The remaining work is W3 only:
+- On klagraz after arrival: gvar 27→0 (map_enter ran), 391/102/71 all still 0, and the static
+  klagraz Torr tile 24572 reports "no critter" — i.e. the map_enter/critter setup has
+  repositioned or not-yet-activated him. **W3 = drive the KCTorr/KCDunton confrontation from
+  this arrived state to `71:=1`.** That's the next spike (per §4 step 2) and holds the real risk
+  (§5: it may need combat / a Dunton dialogue branch). W4/W5 (complete 102+391, record goldens)
+  follow once 71:=1 is reachable.
+
+Revised estimate: **S** (W1+W2 free; only W3 + fixtures remain). Next action: the W3 spike —
+dump klagraz objects post-arrival to locate/inspect Torr + the Duntons, then drive the scene.
