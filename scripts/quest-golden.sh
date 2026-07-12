@@ -61,6 +61,13 @@ SCENARIOS=(
   # Smiley's own critter_p_proc so it opCritterAttemptPlacement's him across floors to the dude and
   # fires leave_player (197→2); returning to Klamath downtown, its map_enter sees 197==2 → 197→3.
   "quest-smiley-rescue|$CREATE --goto-map klatoxcv.map:18651:1 --talk-seq 18651 1,1,1,1,1 --get-global 197 --teleport 18335 0 --escort-pump 18651 8 --get-global 197 --goto-map kladwtwn.map --get-global 197 --quest-probe --rng-seed 1"
+  # Rustle the brahmin (Klamath, GVAR 102) — the first SCRIPTED-EVENT golden, full lifecycle 0→1→2
+  # via the real load_map path. Accepting Torr's guard job (talk 24291 1,1,1) runs load_map(klagraz,
+  # 13); --pump-ms applies the deferred transition (kladwtwn→klagraz). On the fields, siding with the
+  # Duntons (talk 16315 1,1,1 → "I'll take care of Torr") sets 102:=1; scaring Torr off (talk 17701
+  # opt 2, his runtime tile after the override_map_start arrival) → Node930 → 102:=2 + 71:=1 (Torr
+  # flees to the canyon). Exercises the dialogue-triggered scripted map transition end to end.
+  "quest-torr-duntons|$CREATE --goto-map kladwtwn.map --talk-seq 24291 1,1,1 --pump-ms 4000 --talk-seq 16315 1,1,1 --get-global 102 --talk-seq 17701 2 --get-global 102 --get-global 71 --quest-probe --rng-seed 1"
 )
 
 dotnet build src/Hexwaste.Viewer -c Debug >/dev/null || { echo "build failed"; exit 2; }

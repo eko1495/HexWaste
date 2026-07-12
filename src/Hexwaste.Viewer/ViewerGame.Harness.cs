@@ -2316,6 +2316,21 @@ public sealed partial class ViewerGame
                     Console.WriteLine($"teleport: dude@{_dude.Dude.HexTile} elev={_elevation}");
                     break;
                 }
+                case StartupAction.CrittersDump when _map is not null:
+                {
+                    Console.WriteLine($"critters: map={_currentMapName}");
+                    for (int e = 0; e < _solidObjects.Length; e++)
+                        foreach (MapObject o in _solidObjects[e].OrderBy(o => o.HexTile))
+                        {
+                            if (Fid.PidType(o.Pid) != 1) // critters only (type 1)
+                                continue;
+                            int sIdx = o.Sid >= 0 && _map.ScriptsBySid.TryGetValue(o.Sid, out MapScriptRecord? r)
+                                ? r.ScriptListIndex : -1;
+                            Console.WriteLine($"  elev={e} tile={o.HexTile} sid={o.Sid} scriptIdx={sIdx}"
+                                + $" name={ObjectName(o)} dead={o.IsDead}");
+                        }
+                    break;
+                }
                 case StartupAction.EscortPump(var epTile, var epBeats) when _map is not null && _scriptHost is not null:
                 {
                     MapObject? follower = _map.Elevations.Where(e => e is not null)

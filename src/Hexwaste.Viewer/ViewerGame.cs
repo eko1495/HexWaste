@@ -1017,6 +1017,10 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
         /// up across floors, then the proximity-gated leave_player that completes an escort quest.
         /// Pair with --teleport to place the dude at the delivery point first.</summary>
         public sealed record EscortPump(int FollowerTile, int Beats) : StartupAction;
+        /// <summary>P-QA: dump every LIVE critter (tile/elev/scriptIndex/name/dead) on the current
+        /// map — the runtime counterpart to ProcAnalyze --map-objects, for locating event-spawned
+        /// or -repositioned NPCs (e.g. after a scripted load_map arrival). STATE/ID only.</summary>
+        public sealed record CrittersDump : StartupAction;
     }
 
     public List<StartupAction> StartupActions { get; set; } = [];

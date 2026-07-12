@@ -782,6 +782,9 @@ for (int i = 0; i < args.Length; i++)
             actions.Add(new ViewerGame.StartupAction.EscortPump(int.Parse(args[i + 1]), int.Parse(args[i + 2])));
             i += 2;
             break;
+        case "--critters": // P-QA: dump the current map's live critters (tile/elev/script)
+            actions.Add(new ViewerGame.StartupAction.CrittersDump());
+            break;
         case "--game-dir" when i + 1 < args.Length:
             gameDir = args[++i];
             break;
