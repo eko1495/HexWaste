@@ -1003,6 +1003,9 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
         public sealed record ShowInventory : StartupAction; // P67: open the inventory for a screenshot
         public sealed record ShowCharacter(int Sel = 0) : StartupAction; // P82: open the character sheet (Sel = selected EDITOR_* item) for a screenshot
         public sealed record AdvanceDays(int Days) : StartupAction;
+        /// <summary>P-QA: set the game clock to hour Hh (0..23, minute 0) on the current day —
+        /// a direct jump (no loop), e.g. to make a night-only ghost (Anna) appear for a fixture.</summary>
+        public sealed record SetHour(int Hh) : StartupAction;
     }
 
     public List<StartupAction> StartupActions { get; set; } = [];

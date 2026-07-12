@@ -49,6 +49,11 @@ SCENARIOS=(
   # thanks you on greeting (Node950 → 198→5, completed). Caps (41) fund the drink; the option sequence
   # 2,1,2,1,1,1 is the accept chain. Crosses kladwtwn↔klatrap, proving the quest GVAR persists across maps.
   "quest-bob-still|$CREATE --goto-map kladwtwn.map --give 41:500 --give 286:2 --get-global 198 --talk-seq 22687 2,1,2,1,1,1 --get-global 198 --goto-map klatrap.map --use-on 286:20131 --get-global 198 --goto-map kladwtwn.map --talk-seq 22687 1 --get-global 198 --quest-probe --rng-seed 1"
+  # Anna's locket (Den, GVAR 551) — item-return via the REAL dialogue. Anna is a NIGHT-only ghost
+  # (visible when game_time_hour <= 400, set in her map_update_p_proc), so --set-hour 2 makes her
+  # appear; carrying the locket (item pid 252), giving it (talk opt 2 → Node007 obj_carrying check)
+  # sets 551 0→2 (completed) and lays her to rest. Exercises the new --set-hour clock jump.
+  "quest-anna-locket|$CREATE --goto-map denbus1.map --give 252:1 --set-hour 2 --get-global 551 --talk-seq 28105 2 --get-global 551 --quest-probe --rng-seed 1"
 )
 
 dotnet build src/Hexwaste.Viewer -c Debug >/dev/null || { echo "build failed"; exit 2; }

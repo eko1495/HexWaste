@@ -771,6 +771,9 @@ for (int i = 0; i < args.Length; i++)
         case "--advance-days" when i + 1 < args.Length:
             actions.Add(new ViewerGame.StartupAction.AdvanceDays(int.Parse(args[++i])));
             break;
+        case "--set-hour" when i + 1 < args.Length: // P-QA: jump the clock to hour Hh (night-only NPCs)
+            actions.Add(new ViewerGame.StartupAction.SetHour(int.Parse(args[++i])));
+            break;
         case "--game-dir" when i + 1 < args.Length:
             gameDir = args[++i];
             break;

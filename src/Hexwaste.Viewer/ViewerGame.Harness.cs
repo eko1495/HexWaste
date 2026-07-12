@@ -2295,6 +2295,20 @@ public sealed partial class ViewerGame
                     _clock.AdvanceHours(days * 24);
                     Console.WriteLine($"advance: now day {_clock.Day}");
                     break;
+                case StartupAction.SetHour(var hh):
+                {
+                    // Direct clock jump to hh:00 on the current day (no loop). Re-runs map_update
+                    // so time-gated visibility (e.g. Anna's night-ghost spawn) re-evaluates.
+                    long dayStart = _clock.Ticks / Formats.GameClock.TicksPerDay * Formats.GameClock.TicksPerDay;
+                    _clock.Ticks = dayStart + (long)Math.Clamp(hh, 0, 23) * Formats.GameClock.TicksPerHour;
+                    if (_map is not null && _scriptHost is not null)
+                        _scriptHost.RunMapUpdate(_map,
+                            _map.Elevations.Where(e => e is not null).SelectMany(e => e!.Objects)
+                                .Where(o => o.Sid != -1 && o != _dude?.Dude),
+                            _dude?.Dude);
+                    Console.WriteLine($"set-hour: hour={_clock.Hour} day={_clock.Day}");
+                    break;
+                }
             }
         }
 
