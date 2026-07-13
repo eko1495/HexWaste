@@ -80,6 +80,14 @@ SCENARIOS=(
   # bring it right over" → 450:=1, she hands over the meal); deliver to Smitty (denbus1 22137, 2,1
   # → "I brought your meal from Mom's" → Node008 → 450:=3, completed). Crosses denbus2→denbus1.
   "quest-mom-meal|$CREATE --goto-map denbus2.map --get-global 450 --talk-seq 24479 2,1,1 --get-global 450 --goto-map denbus1.map --talk-seq 22137 2,1 --get-global 450 --quest-probe --rng-seed 1"
+  # Collect money from Fred (Den, GVAR 371) — a multi-NPC NEGOTIATION, full lifecycle 0→1→2 via
+  # the real dialogue (no --set-global / no faked caps). Rebecca (denbus1 17662, work option 2,1,1)
+  # sets the Fred-debt task (371:=1); Fred (denbus1 25479, 1,2,2,1,1,2,3 — demand the FULL amount
+  # down his negotiation tree) pays the full $200 (his Node986 item_caps_adjust(200)) + sets the
+  # 446 task bit; back at Rebecca, "About that job… Yes, I did" (2,1,1,1 — the "Yes" option only
+  # appears with caps>=200 AND the 446 bit) → Node011 → 371:=2 completed. The book sub-task (Derek,
+  # desc 205) stays open — 371 is a shared gvar with two display thresholds.
+  "quest-fred-money|$CREATE --goto-map denbus1.map --get-global 371 --talk-seq 17662 2,1,1 --get-global 371 --talk-seq 25479 1,2,2,1,1,2,3 --talk-seq 17662 2,1,1,1 --get-global 371 --quest-probe --rng-seed 1"
 )
 
 dotnet build src/Hexwaste.Viewer -c Debug >/dev/null || { echo "build failed"; exit 2; }
