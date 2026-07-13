@@ -177,3 +177,18 @@ and validated end-to-end (102 landed). Klamath is **5/6**. 391 remains and is bi
 optimistic §10 estimate: its own trace of the Torr-rescue trigger (scorpion-attack season/time
 gate and/or Ardin activation), not just an escort. No new engine subsystem, but real
 investigation. Recommend treating 391 as a separate task, not a same-session close.
+
+## 11. 391 SOLVED — Klamath 6/6 (golden `quest-torr-rescue`, commit d7d4e42)
+
+The §10-corrected "obscure trigger" was actually **quest activation**, not a scorpion-attack
+gate. The join dialogue never appeared because **391 was never active** — it activates via
+**Ardin, Torr's mother** (kladwtwn 22885), and ONLY after `71:=1` displaces Torr. Full path,
+no --set-global:
+1. klagraz event → `71:=1` (the quest-torr-duntons chain: side with Duntons, scare Torr off).
+2. Talk Ardin `1,1,1,1,1,1` ("my boy Torr's missing… he went to the canyon") → `391:=1`.
+3. Go to **KLACANYN**; the canyon Torr now spawns at **15287** — gated on `71:=1` AND `391:=1`
+   (that's why it was "no critter" with only 71). A `--pump-ms` after arrival spawns him.
+4. Talk `1,1` ("let's get out of here") → Node940 → LVAR10 follow flag.
+5. Escort-sim: `--teleport 19450 0` + `--escort-pump 15287 10` → leave_player → `391:=2`.
+Deterministic with `--rng-seed 1` (the event-repositioned tiles are RNG-placed). The escort-sim
++ load_map capability + `--critters` all reused; no new code. **Phase closed; Klamath 6/6.**
