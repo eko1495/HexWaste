@@ -75,6 +75,11 @@ SCENARIOS=(
   # (--teleport to delivery tile 19450 + --escort-pump) fires his leave_player → 391:=2. --rng-seed
   # fixes the event-repositioned tiles. Exercises the load_map event + Ardin activation + escort-sim.
   "quest-torr-rescue|$CREATE --rng-seed 1 --goto-map kladwtwn.map --talk-seq 24291 1,1,1 --pump-ms 4000 --talk-seq 16315 1,1,1 --talk-seq 17701 2 --pump-ms 2000 --goto-map kladwtwn.map --talk-seq 22885 1,1,1,1,1,1 --get-global 391 --goto-map KLACANYN.map --pump-ms 1500 --talk-seq 15287 1,1 --teleport 19450 0 --escort-pump 15287 10 --get-global 391 --quest-probe"
+  # Deliver a meal to Smitty for Mom (Den, GVAR 450) — a clean two-NPC delivery, full lifecycle
+  # 0→1→3 via the real dialogue (no --set-global). Accept from Mom (denbus2 24479, 2,1,1 → "I'll
+  # bring it right over" → 450:=1, she hands over the meal); deliver to Smitty (denbus1 22137, 2,1
+  # → "I brought your meal from Mom's" → Node008 → 450:=3, completed). Crosses denbus2→denbus1.
+  "quest-mom-meal|$CREATE --goto-map denbus2.map --get-global 450 --talk-seq 24479 2,1,1 --get-global 450 --goto-map denbus1.map --talk-seq 22137 2,1 --get-global 450 --quest-probe --rng-seed 1"
 )
 
 dotnet build src/Hexwaste.Viewer -c Debug >/dev/null || { echo "build failed"; exit 2; }
