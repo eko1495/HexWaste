@@ -68,6 +68,13 @@ SCENARIOS=(
   # opt 2, his runtime tile after the override_map_start arrival) → Node930 → 102:=2 + 71:=1 (Torr
   # flees to the canyon). Exercises the dialogue-triggered scripted map transition end to end.
   "quest-torr-duntons|$CREATE --goto-map kladwtwn.map --talk-seq 24291 1,1,1 --pump-ms 4000 --talk-seq 16315 1,1,1 --get-global 102 --talk-seq 17701 2 --get-global 102 --get-global 71 --quest-probe --rng-seed 1"
+  # Rescue Torr (Klamath, GVAR 391) — closes Klamath 6/6. The full chain: the klagraz event
+  # (as in quest-torr-duntons) displaces Torr (71:=1); back in town his mother Ardin (22885,
+  # 1,1,1,1,1,1) asks you to find him → 391:=1; the canyon Torr now appears (KLACANYN 15287, needs
+  # 71:=1 AND 391:=1) → "let's get out of here" (talk 1,1 → Node940 follow flag); the escort-sim
+  # (--teleport to delivery tile 19450 + --escort-pump) fires his leave_player → 391:=2. --rng-seed
+  # fixes the event-repositioned tiles. Exercises the load_map event + Ardin activation + escort-sim.
+  "quest-torr-rescue|$CREATE --rng-seed 1 --goto-map kladwtwn.map --talk-seq 24291 1,1,1 --pump-ms 4000 --talk-seq 16315 1,1,1 --talk-seq 17701 2 --pump-ms 2000 --goto-map kladwtwn.map --talk-seq 22885 1,1,1,1,1,1 --get-global 391 --goto-map KLACANYN.map --pump-ms 1500 --talk-seq 15287 1,1 --teleport 19450 0 --escort-pump 15287 10 --get-global 391 --quest-probe"
 )
 
 dotnet build src/Hexwaste.Viewer -c Debug >/dev/null || { echo "build failed"; exit 2; }
