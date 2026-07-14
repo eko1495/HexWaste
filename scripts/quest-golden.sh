@@ -107,6 +107,13 @@ SCENARIOS=(
   # wrench (384) + pliers (75), her greeting adds "You have tools?" (1,1 → Node023 obj_carrying
   # check on 384+75) → 493:=2.
   "quest-valerie-tools|$CREATE --goto-map vctydwtn.map --get-global 493 --talk-seq 21096 1,1,1,1,1,1,1 --get-global 493 --give 384:1 --give 75:1 --talk-seq 21096 1,1 --get-global 493 --quest-probe --rng-seed 1"
+  # Get a plow for Mr Smith (Vault City, GVAR 80) — a two-NPC purchase chain, 0→3→6. Smith
+  # (vctyctyd 14078), a poor farmer denied VC citizenship, needs a plow; accept (2,1,1) then commit
+  # on a re-talk (4,1,1 → "I'll take the money" → "one's near the Guns & Ammo store" → 80:=3, which
+  # unlocks Harry's plow line). Harry (VCHarry 12513) then offers "You still selling that plow?"
+  # (only at 80>=3); buy it for $800 (2,2,1 → deal → "Drop it off with the Smiths") → 80:=6. Caps
+  # via --give 41:1000. Exercises a gvar-gated cross-NPC option (Harry's line appears only at 80=3).
+  "quest-smith-plow|$CREATE --goto-map vctyctyd.map --get-global 80 --talk-seq 14078 2,1,1 --talk-seq 14078 4,1,1 --get-global 80 --give 41:1000 --talk-seq 12513 2,2,1 --get-global 80 --quest-probe --rng-seed 1"
 )
 
 dotnet build src/Hexwaste.Viewer -c Debug >/dev/null || { echo "build failed"; exit 2; }

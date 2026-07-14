@@ -1,0 +1,7 @@
+get-global: GVAR80 = 0
+get-global: GVAR80 = 3
+get-global: GVAR80 = 6
+quest-item: gvar=480 val=0 display=0 completed=0 loc=1500 desc=130
+quest-item: gvar=619 val=1 display=1 completed=0 loc=1500 desc=140
+quest-item: gvar=80 val=6 display=3 completed=1 loc=1504 desc=500
+quest-probe: quests=110 shown=3
