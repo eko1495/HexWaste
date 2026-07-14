@@ -101,6 +101,12 @@ SCENARIOS=(
   # each → 497:=1; carrying 10 beer (124) + 10 booze (125), her info menu gains opt6 "I have that
   # shipment of alcohol you wanted" (2,6 → Node032, obj_carrying check on 124+125) → 497:=2.
   "quest-lydia-booze|$CREATE --goto-map vctydwtn.map --get-global 497 --talk-seq 26306 1,1,1,1,1,1 --get-global 497 --give 124:10 --give 125:10 --talk-seq 26306 2,6 --get-global 497 --quest-probe --rng-seed 1"
+  # Deliver tools to Valerie (Vault City, GVAR 493) — item-delivery, full lifecycle 0→1→2. The
+  # grumpy VC maintenance worker Valerie (vctydwtn 21096) needs a wrench + pliers for her failing
+  # lathe; down her repair chain (1,1,1,1,1,1,1) she agrees to let you look → 493:=1; carrying the
+  # wrench (384) + pliers (75), her greeting adds "You have tools?" (1,1 → Node023 obj_carrying
+  # check on 384+75) → 493:=2.
+  "quest-valerie-tools|$CREATE --goto-map vctydwtn.map --get-global 493 --talk-seq 21096 1,1,1,1,1,1,1 --get-global 493 --give 384:1 --give 75:1 --talk-seq 21096 1,1 --get-global 493 --quest-probe --rng-seed 1"
 )
 
 dotnet build src/Hexwaste.Viewer -c Debug >/dev/null || { echo "build failed"; exit 2; }
