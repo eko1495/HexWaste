@@ -114,6 +114,13 @@ SCENARIOS=(
   # (only at 80>=3); buy it for $800 (2,2,1 → deal → "Drop it off with the Smiths") → 80:=6. Caps
   # via --give 41:1000. Exercises a gvar-gated cross-NPC option (Harry's line appears only at 80=3).
   "quest-smith-plow|$CREATE --goto-map vctyctyd.map --get-global 80 --talk-seq 14078 2,1,1 --talk-seq 14078 4,1,1 --get-global 80 --give 41:1000 --talk-seq 12513 2,2,1 --get-global 80 --quest-probe --rng-seed 1"
+  # Rescue Amanda's husband Joshua (Vault City, GVAR 459) — a 2-map, 2-NPC quest, 0→1→2→3. NOT an
+  # escort: the "rescue" is a bribe. Amanda (vctyctyd 22673) — her jailed husband is a VC Servant;
+  # 1,1,1,1,1,1 → she names Officer Barkus → 459:=1. Barkus (vctydwtn 14896, the Servant Assignment
+  # Center) — "looking for Joshua…negotiate his release" (1,1,4,1) → his donation tiers; he's greedy
+  # and only the $1000 offer (opt1) frees Joshua → 459:=2. Back to Amanda (greeting → Node019) →
+  # 459:=3 completed. Caps via --give 41:5000. Crosses vctyctyd↔vctydwtn twice.
+  "quest-rescue-joshua|$CREATE --goto-map vctyctyd.map --get-global 459 --talk-seq 22673 1,1,1,1,1,1 --get-global 459 --goto-map vctydwtn.map --give 41:5000 --talk-seq 14896 1,1,4,1,1,1,1 --get-global 459 --goto-map vctyctyd.map --talk-seq 22673 1 --get-global 459 --quest-probe --rng-seed 1"
 )
 
 dotnet build src/Hexwaste.Viewer -c Debug >/dev/null || { echo "build failed"; exit 2; }
