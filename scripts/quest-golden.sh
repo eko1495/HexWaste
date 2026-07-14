@@ -95,6 +95,12 @@ SCENARIOS=(
   # → "Yes, this is it!" → 106:=8 (completed, clears his name). The watch acquire (found in the
   # outhouse) is the --give shortcut, like Anna's locket. 106 is Farrel-side; 105 is Cornelius-side.
   "quest-modoc-watch|$CREATE --goto-map modinn.map --get-global 106 --talk-seq 25088 3,1,1 --get-global 106 --give 257:1 --talk-seq 25088 4,1 --get-global 106 --quest-probe --rng-seed 1"
+  # Deliver beer & booze to Lydia (Vault City, GVAR 497) — first VC golden. Item-delivery, full
+  # lifecycle 0→1→2 via the real dialogue. Lydia (vctydwtn 26306) laments VC's synthetic-only
+  # booze; down the "what's on tap → real alcohol" chain (1,1,1,1,1,1) she asks for a case of ten
+  # each → 497:=1; carrying 10 beer (124) + 10 booze (125), her info menu gains opt6 "I have that
+  # shipment of alcohol you wanted" (2,6 → Node032, obj_carrying check on 124+125) → 497:=2.
+  "quest-lydia-booze|$CREATE --goto-map vctydwtn.map --get-global 497 --talk-seq 26306 1,1,1,1,1,1 --get-global 497 --give 124:10 --give 125:10 --talk-seq 26306 2,6 --get-global 497 --quest-probe --rng-seed 1"
 )
 
 dotnet build src/Hexwaste.Viewer -c Debug >/dev/null || { echo "build failed"; exit 2; }
