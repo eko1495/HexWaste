@@ -88,6 +88,13 @@ SCENARIOS=(
   # appears with caps>=200 AND the 446 bit) → Node011 → 371:=2 completed. The book sub-task (Derek,
   # desc 205) stays open — 371 is a shared gvar with two display thresholds.
   "quest-fred-money|$CREATE --goto-map denbus1.map --get-global 371 --talk-seq 17662 2,1,1 --get-global 371 --talk-seq 25479 1,2,2,1,1,2,3 --talk-seq 17662 2,1,1,1 --get-global 371 --quest-probe --rng-seed 1"
+  # Find Cornelius's gold watch for Farrel (Modoc, GVAR 106) — first Modoc golden. Item-return,
+  # full lifecycle 0→4→8 via the real dialogue. Farrel (modinn 25088), accused of stealing the
+  # watch, hooks the quest via his watch-defense greeting (3,1,1 → "Watch?… Would you help?" →
+  # 106:=4); carrying the gold pocket watch (item 257) his greeting adds opt4 "Is this the watch?"
+  # → "Yes, this is it!" → 106:=8 (completed, clears his name). The watch acquire (found in the
+  # outhouse) is the --give shortcut, like Anna's locket. 106 is Farrel-side; 105 is Cornelius-side.
+  "quest-modoc-watch|$CREATE --goto-map modinn.map --get-global 106 --talk-seq 25088 3,1,1 --get-global 106 --give 257:1 --talk-seq 25088 4,1 --get-global 106 --quest-probe --rng-seed 1"
 )
 
 dotnet build src/Hexwaste.Viewer -c Debug >/dev/null || { echo "build failed"; exit 2; }
