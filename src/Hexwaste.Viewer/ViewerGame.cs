@@ -1017,6 +1017,11 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
         /// up across floors, then the proximity-gated leave_player that completes an escort quest.
         /// Pair with --teleport to place the dude at the delivery point first.</summary>
         public sealed record EscortPump(int FollowerTile, int Beats) : StartupAction;
+        /// <summary>P-QA (quest-driver): auto-drive quest &lt;Gvar&gt; to completion on the current map.
+        /// Finds the map-NPC whose script completes it, pre-gives its obj_carrying items + caps, then
+        /// follows the static quest-path route by matching live dialogue options to it via their target
+        /// procedure index (drift-proof). STATE-only report. See docs/plan-quest-driver.md.</summary>
+        public sealed record QuestDrive(int Gvar) : StartupAction;
         /// <summary>P-QA: dump every LIVE critter (tile/elev/scriptIndex/name/dead) on the current
         /// map — the runtime counterpart to ProcAnalyze --map-objects, for locating event-spawned
         /// or -repositioned NPCs (e.g. after a scripted load_map arrival). STATE/ID only.</summary>

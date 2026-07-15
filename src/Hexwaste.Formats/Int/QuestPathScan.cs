@@ -20,11 +20,16 @@ public static class QuestPathScan
 
     public sealed record ConstWrite(int Proc, int Gvar, int Value);
 
+    /// <summary>An <c>obj_carrying_pid_obj(pid)</c> (0x810D) check inside a procedure — the item
+    /// gate a completing node tests. The quest-driver pre-gives these pids.</summary>
+    public sealed record ItemCheck(int Proc, int Pid);
+
     public sealed record Result(
         IntProgram Program,
         IReadOnlyList<ConstWrite> Writes,
         IReadOnlyList<OptionEdge> Options,
-        IReadOnlyList<(int FromProc, int ToProc)> Calls);
+        IReadOnlyList<(int FromProc, int ToProc)> Calls,
+        IReadOnlyList<ItemCheck> ItemChecks);
 
     public static Result Scan(byte[] data)
     {
@@ -32,6 +37,7 @@ public static class QuestPathScan
         var writes = new List<ConstWrite>();
         var options = new List<OptionEdge>();
         var calls = new List<(int, int)>();
+        var itemChecks = new List<ItemCheck>();
 
         // Per-procedure ranges: bodies are contiguous in body-offset order to EOF
         // (imported procs have no body and are skipped).
@@ -46,14 +52,14 @@ public static class QuestPathScan
             int procIndex = bodies[b].Index;
             int start = bodies[b].Proc.BodyOffset;
             int end = b + 1 < bodies.Count ? bodies[b + 1].Proc.BodyOffset : data.Length;
-            ScanRange(program, data, procIndex, start, end, writes, options, calls);
+            ScanRange(program, data, procIndex, start, end, writes, options, calls, itemChecks);
         }
 
-        return new Result(program, writes, options, calls);
+        return new Result(program, writes, options, calls, itemChecks);
     }
 
     private static void ScanRange(IntProgram program, byte[] data, int procIndex, int start, int end,
-        List<ConstWrite> writes, List<OptionEdge> options, List<(int, int)> calls)
+        List<ConstWrite> writes, List<OptionEdge> options, List<(int, int)> calls, List<ItemCheck> itemChecks)
     {
         // The rolling last-two-push window (like GlobalWriteScan): Tag 0 = not a push.
         (ushort Tag, int Value) prev1 = default, prev2 = default;
@@ -98,6 +104,11 @@ public static class QuestPathScan
                     if (prev1.Tag == 0xC001 && prev1.Value >= 0 && prev1.Value < program.Procedures.Count)
                         calls.Add((procIndex, prev1.Value));
                     break;
+
+                case 0x810D: // obj_carrying_pid_obj(obj, pid): pid is the const pushed immediately before
+                    if (prev1.Tag == 0xC001 && prev1.Value > 0)
+                        itemChecks.Add(new ItemCheck(procIndex, prev1.Value));
+                    break;
             }
             prev2 = prev1;
             prev1 = default;
@@ -116,6 +127,45 @@ public static class QuestPathScan
             catch (InvalidDataException) { return -1; }
         }
         return -1;
+    }
+
+    /// <summary>The shortest node-index route from <paramref name="fromProc"/> to
+    /// <paramref name="toProc"/> over the option + call graph — the sequence of target proc
+    /// indices to reach (excluding the start), or null if unreachable. The quest-driver matches
+    /// LIVE dialogue options to these by <c>OptionProcedure</c> (drift-proof vs. static ordinals).</summary>
+    public static List<int>? FindPathProcs(Result scan, int fromProc, int toProc)
+    {
+        if (fromProc == toProc)
+            return [];
+        var edges = new Dictionary<int, List<int>>();
+        foreach (OptionEdge e in scan.Options)
+            (edges.TryGetValue(e.FromProc, out var l) ? l : edges[e.FromProc] = []).Add(e.ToProc);
+        foreach ((int from, int to) in scan.Calls)
+            (edges.TryGetValue(from, out var l) ? l : edges[from] = []).Add(to);
+
+        var previous = new Dictionary<int, int>();
+        var queue = new Queue<int>();
+        queue.Enqueue(fromProc);
+        var seen = new HashSet<int> { fromProc };
+        while (queue.Count > 0)
+        {
+            int at = queue.Dequeue();
+            foreach (int to in edges.GetValueOrDefault(at, []))
+            {
+                if (!seen.Add(to))
+                    continue;
+                previous[to] = at;
+                if (to == toProc)
+                {
+                    var path = new List<int>();
+                    for (int p = toProc; p != fromProc; p = previous[p])
+                        path.Insert(0, p);
+                    return path;
+                }
+                queue.Enqueue(to);
+            }
+        }
+        return null;
     }
 
     /// <summary>Shortest edge path from <paramref name="fromProc"/> to

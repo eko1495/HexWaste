@@ -2331,6 +2331,9 @@ public sealed partial class ViewerGame
                         }
                     break;
                 }
+                case StartupAction.QuestDrive(var qdGvar) when _map is not null && _scriptHost is not null:
+                    DriveQuest(qdGvar);
+                    break;
                 case StartupAction.EscortPump(var epTile, var epBeats) when _map is not null && _scriptHost is not null:
                 {
                     MapObject? follower = _map.Elevations.Where(e => e is not null)
@@ -2418,5 +2421,126 @@ public sealed partial class ViewerGame
         // harness gets a stdout + exit code without killing a hung window.
         if (StartupActions.Count > 0 && _screenshotPath is null && BenchFrames == 0)
             _exitAfterStartupActions = true;
+    }
+
+    /// <summary>P-QA quest-driver (docs/plan-quest-driver.md): auto-complete quest &lt;gvar&gt; on the
+    /// current map. Finds the NPC whose script writes gvar&gt;=completed, pre-gives that node's
+    /// obj_carrying items (+ caps for buy/bribe branches), then walks the static quest-path route,
+    /// matching each live dialogue option to the route by its target procedure index. STATE-only.</summary>
+    private sealed record DriveCandidate(MapObject Npc, Formats.Int.QuestPathScan.Result Scan,
+        int CompletingProc, string ScriptName);
+
+    private void DriveQuest(int gvar)
+    {
+        if (_map is null || _scriptHost is null)
+            return;
+        int completed = Quests().FirstOrDefault(q => q.Gvar == gvar)?.CompletedThreshold ?? 1;
+        Formats.Int.ScriptList scripts = Formats.Int.ScriptList.Load(_vfs);
+
+        // Every scripted map-NPC whose script WRITES the gvar (activation OR completion) is a
+        // candidate — quests routinely activate at one NPC and complete at another. We drive them
+        // in repeated passes until the gvar completes or a whole pass makes no progress.
+        var candidates = new List<DriveCandidate>();
+        foreach (MapObject o in _map.Elevations.Where(e => e is not null).SelectMany(e => e!.Objects))
+        {
+            if (o.Sid < 0 || Fid.PidType(o.Pid) != 1 || o.IsDead
+                || !_map.ScriptsBySid.TryGetValue(o.Sid, out MapScriptRecord? rec) || rec.ScriptListIndex < 0)
+                continue;
+            string? path = scripts.GetScriptPath(rec.ScriptListIndex);
+            if (path is null || !_vfs.Exists(path))
+                continue;
+            Formats.Int.QuestPathScan.Result s;
+            try { s = Formats.Int.QuestPathScan.Scan(_vfs.ReadAllBytes(path)); }
+            catch (InvalidDataException) { continue; }
+            var w = s.Writes.Where(x => x.Gvar == gvar).OrderByDescending(x => x.Value).FirstOrDefault();
+            if (w is not null)
+                candidates.Add(new DriveCandidate(o, s, w.Proc, scripts.GetName(rec.ScriptListIndex) ?? "?"));
+        }
+        if (candidates.Count == 0)
+        {
+            Console.WriteLine($"quest-drive: gvar={gvar} NO-COMPLETING-NPC on {_currentMapName}");
+            return;
+        }
+
+        // Pre-give the item gates across ALL candidates (union) + a caps float for buy/bribe branches.
+        var pids = candidates
+            .SelectMany(c => c.Scan.ItemChecks
+                .Where(ic => c.Scan.Writes.Any(w => w.Gvar == gvar && (w.Proc == ic.Proc
+                    || Formats.Int.QuestPathScan.FindPathProcs(c.Scan,
+                        c.Scan.Program.FindProcedure("talk_p_proc"), w.Proc)?.Contains(ic.Proc) == true)))
+                .Select(ic => ic.Pid))
+            .Distinct().ToList();
+        foreach (int pid in pids)
+            if (RebuildObject(pid, 10) is { } gi) AddToDudeInventory(gi);
+        if (RebuildObject(41, 5000) is { } caps) AddToDudeInventory(caps);
+
+        int startVal = _scriptHost.GlobalVars.GetValueOrDefault(gvar, 0);
+        var allPicks = new List<string>();
+        DriveCandidate? winner = null;
+        for (int pass = 0; pass < 4 && winner is null; pass++)
+        {
+            int passStart = _scriptHost.GlobalVars.GetValueOrDefault(gvar, 0);
+            foreach (DriveCandidate c in candidates)
+            {
+                int before = _scriptHost.GlobalVars.GetValueOrDefault(gvar, 0);
+                if (before >= completed) { winner = c; break; }
+                List<int> picks = DriveOne(c, gvar, completed);
+                int after = _scriptHost.GlobalVars.GetValueOrDefault(gvar, 0);
+                if (after != before)
+                    allPicks.Add($"{c.Npc.HexTile}:{after}({string.Join("", picks)})");
+                if (after >= completed) { winner = c; break; }
+            }
+            if (winner is null && _scriptHost.GlobalVars.GetValueOrDefault(gvar, 0) == passStart)
+                break; // a full pass with no progress — stuck
+        }
+
+        int endVal = _scriptHost.GlobalVars.GetValueOrDefault(gvar, 0);
+        string who = winner is not null ? $"{winner.Npc.HexTile} {winner.ScriptName}" : "-";
+        Console.WriteLine($"quest-drive: gvar={gvar} start={startVal} end={endVal}"
+            + $" completed={(endVal >= completed ? 1 : 0)} at=[{who}]"
+            + $" items=[{string.Join(",", pids)}] steps=[{string.Join(" ", allPicks)}]");
+    }
+
+    /// <summary>Drive one candidate NPC's dialogue, at each round picking the live option whose
+    /// target procedure is furthest along a route toward the NEXT gvar-advancing write (value &gt;
+    /// the current gvar). Returns the (1-based) picks taken.</summary>
+    private List<int> DriveOne(DriveCandidate c, int gvar, int completed)
+    {
+        var picks = new List<int>();
+        TalkTo(c.Npc);
+        int talk = c.Scan.Program.FindProcedure("talk_p_proc");
+        int guard = 0, stall = 0;
+        while (_dialog is not null && guard++ < 40)
+        {
+            int cur = _scriptHost!.GlobalVars.GetValueOrDefault(gvar, 0);
+            if (cur >= completed)
+                break;
+            // Route toward the nearest write that ADVANCES the gvar (value > current); union the
+            // routes so any option that steps toward a higher write is favoured.
+            var order = new Dictionary<int, int>();
+            foreach (var w in c.Scan.Writes.Where(x => x.Gvar == gvar && x.Value > cur))
+            {
+                List<int>? r = talk >= 0 ? Formats.Int.QuestPathScan.FindPathProcs(c.Scan, talk, w.Proc) : null;
+                if (r is null) continue;
+                for (int i = 0; i < r.Count; i++)
+                    order[r[i]] = Math.Max(order.GetValueOrDefault(r[i], int.MinValue), i);
+                order[w.Proc] = int.MaxValue - 1; // writer nodes rank near-top
+            }
+            IReadOnlyList<int> procs = _dialog.OptionProcedures;
+            int best = -1, bestOrder = int.MinValue;
+            for (int i = 0; i < procs.Count; i++)
+                if (order.TryGetValue(procs[i], out int ord) && ord > bestOrder)
+                    { bestOrder = ord; best = i; }
+            if (best < 0)
+            {
+                if (stall++ >= 1 || procs.Count == 0) break;
+                best = 0; // one greedy step off-route, then bail
+            }
+            else stall = 0;
+            picks.Add(best + 1);
+            ChooseDialogOption(best);
+        }
+        _dialog = null;
+        return picks;
     }
 }

@@ -782,6 +782,9 @@ for (int i = 0; i < args.Length; i++)
             actions.Add(new ViewerGame.StartupAction.EscortPump(int.Parse(args[i + 1]), int.Parse(args[i + 2])));
             i += 2;
             break;
+        case "--quest-drive" when i + 1 < args.Length: // P-QA (quest-driver): auto-complete quest <gvar>
+            actions.Add(new ViewerGame.StartupAction.QuestDrive(int.Parse(args[++i])));
+            break;
         case "--critters": // P-QA: dump the current map's live critters (tile/elev/script)
             actions.Add(new ViewerGame.StartupAction.CrittersDump());
             break;
