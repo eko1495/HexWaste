@@ -265,10 +265,16 @@ dotnet test           # set FALLOUT2_DIR=/path/to/game for the data-backed tests
 # combat or worldmap/encounter code:
 scripts/combat-golden.sh      # combat transcripts (check | record)
 scripts/encounter-golden.sh   # worldmap / encounter / companion / panel state lines
+scripts/quest-golden.sh       # original-game quests driven to completion (state-only)
 ```
 
 The data-backed unit tests skip cleanly when `FALLOUT2_DIR` is unset, so a
 plain `dotnet test` passes without any game assets.
+
+`scripts/quest-golden.sh` drives original-game quests to completion through the
+real script logic (dialogue VM + `set_global_var`, no faking) and locks each as
+a state-only golden. The per-town recipes and mechanics behind them live in
+[`docs/qa-sweep/`](docs/qa-sweep/) — the campaign quest-QA sweep notes.
 
 ## Layout
 
@@ -279,7 +285,7 @@ plain `dotnet test` passes without any game assets.
 - `tools/` — CLI dump/debug tools (DatDump, FrmDump, MapDump)
 - `tests/` — xUnit suite
 - `docs/` — provenance: the research reports and prompts that drove each
-  phase, and `RELEASING.md`
+  phase, `RELEASING.md`, and `qa-sweep/` (the campaign quest-QA town notes)
 
 ## License & attribution
 
