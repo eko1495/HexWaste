@@ -129,3 +129,25 @@ Cornelius's dementia-maze (no resolvable route) on its own.
 Net: the driver **auto-clears the delivery/item-return tier** (the bulk of the easy quests) and
 correctly activates the rest — exactly the force-multiplier intended. It reports `start/end/
 completed/at/items/steps` so a non-completing run scopes the remaining manual work for free.
+
+## 9. Batch census (#1), golden emitter (#2), cross-map (#3) — DONE
+
+Three follow-ups landed, turning the driver into a pipeline:
+
+- **`--quest-drive-all` (#1 batch census):** runs the driver for every quest a current-map NPC
+  writes, printing a `completed / activated / stuck` matrix + per-quest recipe. Example on
+  vctydwtn: `completed=2 activated=1 stuck=3 of 6` — auto-lands 493/497, flags 82 (powerplant),
+  321 (cross-town), 459 (cross-map) as the work. One pass per map = a census.
+- **`quest-drive-cmd:` (#2 golden emitter):** every completing/advancing run prints a runnable
+  harness line — `--goto-map … --give … --talk-seq tile picks …`. Validated: the emitted 497 and
+  450 recipes reproduce fresh (gvar reaches completion). Closes driver → recipe → golden; the
+  operator verifies + commits, no hand-tracing.
+- **`--quest-drive <gvar> <mapCsv>` (#3 cross-map):** hops the town's maps in rounds, driving
+  gvar-writers on each until completion — handles activate-at-A-complete-at-B chains. Validated:
+  **450 (mom-meal) completes across denbus2→denbus1** (Mom activates, Smitty delivers); the
+  emitted cross-map recipe hops `--goto-map` and reproduces fresh. (459 hops correctly but stalls
+  on Barkus's $1000 bribe — the value-branch limit below, not a cross-map failure.)
+
+**Remaining follow-up:** value-branch negotiations (Fred demand-full, Harry $800, Barkus $1000) —
+add a "try each terminal option, keep the one that advances the gvar" fallback to `DriveOne`.
+Additive throughout — all 16 quest goldens byte-identical, 953 Formats tests pass.

@@ -782,8 +782,12 @@ for (int i = 0; i < args.Length; i++)
             actions.Add(new ViewerGame.StartupAction.EscortPump(int.Parse(args[i + 1]), int.Parse(args[i + 2])));
             i += 2;
             break;
-        case "--quest-drive" when i + 1 < args.Length: // P-QA (quest-driver): auto-complete quest <gvar>
-            actions.Add(new ViewerGame.StartupAction.QuestDrive(int.Parse(args[++i])));
+        case "--quest-drive" when i + 1 < args.Length: // P-QA (quest-driver): auto-complete quest <gvar> [mapCsv]
+            actions.Add(new ViewerGame.StartupAction.QuestDrive(int.Parse(args[++i]),
+                i + 1 < args.Length && !args[i + 1].StartsWith("--") ? args[++i] : null));
+            break;
+        case "--quest-drive-all": // P-QA (quest-driver): batch census over the current map's quests
+            actions.Add(new ViewerGame.StartupAction.QuestDriveAll());
             break;
         case "--critters": // P-QA: dump the current map's live critters (tile/elev/script)
             actions.Add(new ViewerGame.StartupAction.CrittersDump());

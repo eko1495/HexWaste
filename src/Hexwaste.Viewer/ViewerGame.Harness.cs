@@ -2331,8 +2331,14 @@ public sealed partial class ViewerGame
                         }
                     break;
                 }
-                case StartupAction.QuestDrive(var qdGvar) when _map is not null && _scriptHost is not null:
-                    DriveQuest(qdGvar);
+                case StartupAction.QuestDrive(var qdGvar, var qdMaps) when _map is not null && _scriptHost is not null:
+                    if (qdMaps is null)
+                        DriveQuest(qdGvar);
+                    else
+                        DriveQuestAcross(qdGvar, qdMaps.Split(',', StringSplitOptions.RemoveEmptyEntries));
+                    break;
+                case StartupAction.QuestDriveAll when _map is not null && _scriptHost is not null:
+                    DriveAllQuests();
                     break;
                 case StartupAction.EscortPump(var epTile, var epBeats) when _map is not null && _scriptHost is not null:
                 {
@@ -2430,18 +2436,97 @@ public sealed partial class ViewerGame
     private sealed record DriveCandidate(MapObject Npc, Formats.Int.QuestPathScan.Result Scan,
         int CompletingProc, string ScriptName);
 
+    /// <summary>Outcome of an auto-drive: gvar movement, the (map, tile, picks) visits that made
+    /// progress, and the item pids given — enough to emit a reproducible harness command.</summary>
+    private sealed record DriveResult(int Gvar, int Start, int End, int Completed, string At,
+        IReadOnlyList<int> Pids, IReadOnlyList<(string Map, int Tile, List<int> Picks)> Visits, bool HadCandidates);
+
+    /// <summary>The reproducible harness command for a completed/advanced drive (#2, golden
+    /// emitter): --goto-map &lt;map&gt; [--give pid:n ...] --talk-seq &lt;tile&gt; &lt;picks&gt; …, hopping
+    /// maps (--goto-map again) for cross-map chains (#3).</summary>
+    private string DriveCommand(DriveResult r)
+    {
+        var sb = new System.Text.StringBuilder();
+        string? curMap = null;
+        bool gaveItems = false;
+        foreach ((string map, int tile, List<int> picks) in r.Visits)
+        {
+            if (map != curMap)
+            {
+                sb.Append(sb.Length > 0 ? " " : "").Append($"--goto-map {map}");
+                curMap = map;
+                if (!gaveItems)
+                {
+                    foreach (int pid in r.Pids) sb.Append($" --give {pid}:10");
+                    if (r.Pids.Count > 0) sb.Append(" --give 41:5000");
+                    gaveItems = true;
+                }
+            }
+            sb.Append($" --talk-seq {tile} {string.Join(",", picks)}");
+        }
+        return sb.ToString();
+    }
+
     private void DriveQuest(int gvar)
+    {
+        DriveResult r = RunDriver(gvar);
+        if (!r.HadCandidates)
+        {
+            Console.WriteLine($"quest-drive: gvar={gvar} NO-COMPLETING-NPC on {_currentMapName}");
+            return;
+        }
+        Console.WriteLine($"quest-drive: gvar={r.Gvar} start={r.Start} end={r.End}"
+            + $" completed={r.Completed} at=[{r.At}] items=[{string.Join(",", r.Pids)}]"
+            + $" steps=[{string.Join(" ", r.Visits.Select(v => $"{v.Tile}({string.Join("", v.Picks)})"))}]");
+        if (r.Visits.Count > 0) // #2: a runnable recipe for whatever it moved
+            Console.WriteLine($"quest-drive-cmd: gvar={r.Gvar} {DriveCommand(r)}");
+    }
+
+    /// <summary>#1 batch census: auto-drive every quest whose gvar a current-map NPC writes, and
+    /// print a completed/activated/stuck matrix + a runnable recipe per moved quest. One pass per
+    /// map turns the tool into a census — harvests the easy tier and scopes the rest.</summary>
+    private void DriveAllQuests()
     {
         if (_map is null || _scriptHost is null)
             return;
+        Formats.Int.ScriptList scripts = Formats.Int.ScriptList.Load(_vfs);
+        // The gvars written by any scripted NPC on this map (candidate quests to try).
+        var mapGvars = new HashSet<int>();
+        foreach (MapObject o in _map.Elevations.Where(e => e is not null).SelectMany(e => e!.Objects))
+        {
+            if (o.Sid < 0 || Fid.PidType(o.Pid) != 1
+                || !_map.ScriptsBySid.TryGetValue(o.Sid, out MapScriptRecord? rec) || rec.ScriptListIndex < 0)
+                continue;
+            string? path = scripts.GetScriptPath(rec.ScriptListIndex);
+            if (path is null || !_vfs.Exists(path)) continue;
+            try { foreach (var w in Formats.Int.QuestPathScan.Scan(_vfs.ReadAllBytes(path)).Writes) mapGvars.Add(w.Gvar); }
+            catch (InvalidDataException) { }
+        }
+        var quests = Quests().Where(q => mapGvars.Contains(q.Gvar)).Select(q => q.Gvar).Distinct().OrderBy(g => g).ToList();
+        Console.WriteLine($"quest-drive-all: map={_currentMapName} quests={quests.Count}");
+        int done = 0, active = 0, stuck = 0;
+        var recipes = new List<string>();
+        foreach (int g in quests)
+        {
+            DriveResult r = RunDriver(g);
+            string state = r.Completed == 1 ? "COMPLETED" : r.End > r.Start ? "activated" : "stuck";
+            if (r.Completed == 1) done++; else if (r.End > r.Start) active++; else stuck++;
+            Console.WriteLine($"  gvar={g} {r.Start}->{r.End} {state} at=[{r.At}]");
+            if (r.Visits.Count > 0) recipes.Add($"quest-drive-cmd: gvar={g} {DriveCommand(r)}");
+        }
+        Console.WriteLine($"quest-drive-all: completed={done} activated={active} stuck={stuck} of {quests.Count}");
+        foreach (string rec in recipes) Console.WriteLine(rec);
+    }
+
+    /// <summary>The driver core (shared by --quest-drive and --quest-drive-all): find map-NPCs
+    /// that write the gvar, pre-give item gates + caps, drive them in passes toward completion.</summary>
+    private DriveResult RunDriver(int gvar)
+    {
         int completed = Quests().FirstOrDefault(q => q.Gvar == gvar)?.CompletedThreshold ?? 1;
         Formats.Int.ScriptList scripts = Formats.Int.ScriptList.Load(_vfs);
 
-        // Every scripted map-NPC whose script WRITES the gvar (activation OR completion) is a
-        // candidate — quests routinely activate at one NPC and complete at another. We drive them
-        // in repeated passes until the gvar completes or a whole pass makes no progress.
         var candidates = new List<DriveCandidate>();
-        foreach (MapObject o in _map.Elevations.Where(e => e is not null).SelectMany(e => e!.Objects))
+        foreach (MapObject o in _map!.Elevations.Where(e => e is not null).SelectMany(e => e!.Objects))
         {
             if (o.Sid < 0 || Fid.PidType(o.Pid) != 1 || o.IsDead
                 || !_map.ScriptsBySid.TryGetValue(o.Sid, out MapScriptRecord? rec) || rec.ScriptListIndex < 0)
@@ -2456,13 +2541,10 @@ public sealed partial class ViewerGame
             if (w is not null)
                 candidates.Add(new DriveCandidate(o, s, w.Proc, scripts.GetName(rec.ScriptListIndex) ?? "?"));
         }
+        int start0 = _scriptHost!.GlobalVars.GetValueOrDefault(gvar, 0);
         if (candidates.Count == 0)
-        {
-            Console.WriteLine($"quest-drive: gvar={gvar} NO-COMPLETING-NPC on {_currentMapName}");
-            return;
-        }
+            return new DriveResult(gvar, start0, start0, start0 >= completed ? 1 : 0, "-", [], [], false);
 
-        // Pre-give the item gates across ALL candidates (union) + a caps float for buy/bribe branches.
         var pids = candidates
             .SelectMany(c => c.Scan.ItemChecks
                 .Where(ic => c.Scan.Writes.Any(w => w.Gvar == gvar && (w.Proc == ic.Proc
@@ -2474,8 +2556,7 @@ public sealed partial class ViewerGame
             if (RebuildObject(pid, 10) is { } gi) AddToDudeInventory(gi);
         if (RebuildObject(41, 5000) is { } caps) AddToDudeInventory(caps);
 
-        int startVal = _scriptHost.GlobalVars.GetValueOrDefault(gvar, 0);
-        var allPicks = new List<string>();
+        var visits = new List<(string Map, int Tile, List<int> Picks)>();
         DriveCandidate? winner = null;
         for (int pass = 0; pass < 4 && winner is null; pass++)
         {
@@ -2486,19 +2567,51 @@ public sealed partial class ViewerGame
                 if (before >= completed) { winner = c; break; }
                 List<int> picks = DriveOne(c, gvar, completed);
                 int after = _scriptHost.GlobalVars.GetValueOrDefault(gvar, 0);
-                if (after != before)
-                    allPicks.Add($"{c.Npc.HexTile}:{after}({string.Join("", picks)})");
+                if (after != before) visits.Add((_currentMapName, c.Npc.HexTile, picks));
                 if (after >= completed) { winner = c; break; }
             }
             if (winner is null && _scriptHost.GlobalVars.GetValueOrDefault(gvar, 0) == passStart)
-                break; // a full pass with no progress — stuck
+                break;
         }
-
         int endVal = _scriptHost.GlobalVars.GetValueOrDefault(gvar, 0);
-        string who = winner is not null ? $"{winner.Npc.HexTile} {winner.ScriptName}" : "-";
-        Console.WriteLine($"quest-drive: gvar={gvar} start={startVal} end={endVal}"
-            + $" completed={(endVal >= completed ? 1 : 0)} at=[{who}]"
-            + $" items=[{string.Join(",", pids)}] steps=[{string.Join(" ", allPicks)}]");
+        string at = winner is not null ? $"{winner.Npc.HexTile} {winner.ScriptName}" : "-";
+        return new DriveResult(gvar, start0, endVal, endVal >= completed ? 1 : 0, at, pids, visits, true);
+    }
+
+    /// <summary>#3 cross-map driver: hop the given maps in sequence (up to a few rounds), running
+    /// the single-map driver on each and accumulating progress, until the quest completes. Handles
+    /// activate-at-A-complete-at-B chains across maps (mom-meal, rescue-joshua, …). The maps are the
+    /// quest's town maps (caller-supplied); state (gvars, inventory) carries across the hops.</summary>
+    private void DriveQuestAcross(int gvar, string[] maps)
+    {
+        if (_scriptHost is null) return;
+        int completed = Quests().FirstOrDefault(q => q.Gvar == gvar)?.CompletedThreshold ?? 1;
+        int start0 = _scriptHost.GlobalVars.GetValueOrDefault(gvar, 0);
+        var allVisits = new List<(string Map, int Tile, List<int> Picks)>();
+        var allPids = new List<int>();
+        string at = "-";
+        for (int round = 0; round < 3; round++)
+        {
+            int roundStart = _scriptHost.GlobalVars.GetValueOrDefault(gvar, 0);
+            foreach (string map in maps)
+            {
+                if (_scriptHost.GlobalVars.GetValueOrDefault(gvar, 0) >= completed) break;
+                LoadMap(map, null);
+                DriveResult r = RunDriver(gvar);
+                allVisits.AddRange(r.Visits);
+                foreach (int p in r.Pids) if (!allPids.Contains(p)) allPids.Add(p);
+                if (r.At != "-") at = r.At;
+            }
+            if (_scriptHost.GlobalVars.GetValueOrDefault(gvar, 0) >= completed) break;
+            if (_scriptHost.GlobalVars.GetValueOrDefault(gvar, 0) == roundStart) break; // no progress
+        }
+        int endVal = _scriptHost.GlobalVars.GetValueOrDefault(gvar, 0);
+        var result = new DriveResult(gvar, start0, endVal, endVal >= completed ? 1 : 0, at, allPids, allVisits, true);
+        Console.WriteLine($"quest-drive: gvar={gvar} start={start0} end={endVal}"
+            + $" completed={result.Completed} at=[{at}] maps=[{string.Join(",", maps)}]"
+            + $" items=[{string.Join(",", allPids)}]");
+        if (allVisits.Count > 0)
+            Console.WriteLine($"quest-drive-cmd: gvar={gvar} {DriveCommand(result)}");
     }
 
     /// <summary>Drive one candidate NPC's dialogue, at each round picking the live option whose

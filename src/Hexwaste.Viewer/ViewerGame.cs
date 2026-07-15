@@ -1021,7 +1021,10 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
         /// Finds the map-NPC whose script completes it, pre-gives its obj_carrying items + caps, then
         /// follows the static quest-path route by matching live dialogue options to it via their target
         /// procedure index (drift-proof). STATE-only report. See docs/plan-quest-driver.md.</summary>
-        public sealed record QuestDrive(int Gvar) : StartupAction;
+        public sealed record QuestDrive(int Gvar, string? Maps = null) : StartupAction;
+        /// <summary>P-QA (quest-driver batch census): auto-drive every quest a current-map NPC writes;
+        /// prints a completed/activated/stuck matrix + a runnable recipe per moved quest.</summary>
+        public sealed record QuestDriveAll : StartupAction;
         /// <summary>P-QA: dump every LIVE critter (tile/elev/scriptIndex/name/dead) on the current
         /// map — the runtime counterpart to ProcAnalyze --map-objects, for locating event-spawned
         /// or -repositioned NPCs (e.g. after a scripted load_map arrival). STATE/ID only.</summary>
