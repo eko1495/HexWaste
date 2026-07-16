@@ -121,6 +121,16 @@ SCENARIOS=(
   # and only the $1000 offer (opt1) frees Joshua → 459:=2. Back to Amanda (greeting → Node019) →
   # 459:=3 completed. Caps via --give 41:5000. Crosses vctyctyd↔vctydwtn twice.
   "quest-rescue-joshua|$CREATE --goto-map vctyctyd.map --get-global 459 --talk-seq 22673 1,1,1,1,1,1 --get-global 459 --goto-map vctydwtn.map --give 41:5000 --talk-seq 14896 1,1,4,1,1,1,1 --get-global 459 --goto-map vctyctyd.map --talk-seq 22673 1 --get-global 459 --quest-probe --rng-seed 1"
+  # --- Quests found + recipes auto-emitted by the --quest-drive-all batch census, then verified
+  # --- fresh (docs/plan-quest-driver.md). Four towns the manual sweep hadn't reached.
+  # Get super repair kit for Skeeter (Gecko, GVAR 393) — item 308 to Skeeter (geckjunk 24893).
+  "quest-skeeter-kit|$CREATE --goto-map geckjunk.map --get-global 393 --give 308:10 --give 41:5000 --talk-seq 24893 1 --get-global 393 --quest-probe --rng-seed 1"
+  # Deliver ten Cat's Paw magazines to Miss Kitty (New Reno, GVAR 501) — item 225 to ncKitty (newr1 23286).
+  "quest-kitty-mags|$CREATE --goto-map newr1.map --get-global 501 --give 225:10 --give 41:5000 --talk-seq 23286 3,1,1,2,1,1 --get-global 501 --quest-probe --rng-seed 1"
+  # The Slag/ghost-farm investigation (Modoc, GVAR 631) — Jo (mcJo, modmain 20143), item 263.
+  "quest-modoc-ghostfarm|$CREATE --goto-map modmain.map --get-global 631 --give 263:10 --give 41:5000 --talk-seq 20143 1,1,3,1,1,1,1,1,1,1,1,2,1 --talk-seq 20143 1 --get-global 631 --quest-probe --rng-seed 1"
+  # Break Manson & Franc out of prison (Broken Hills, GVAR 303) — multi-NPC (hcMarcus 18284), item 456.
+  "quest-bh-jailbreak|$CREATE --goto-map broken1.map --get-global 303 --give 456:10 --give 41:5000 --talk-seq 10685 2,1,1,1 --talk-seq 29285 3,1 --talk-seq 18284 5,1,1 --get-global 303 --quest-probe --rng-seed 1"
 )
 
 dotnet build src/Hexwaste.Viewer -c Debug >/dev/null || { echo "build failed"; exit 2; }
