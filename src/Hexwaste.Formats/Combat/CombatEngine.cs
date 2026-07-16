@@ -2811,9 +2811,12 @@ public sealed class CombatEngine
         }
 
         // P50 attack-who: pick the target by priority. Closest (the default) == the old nearest-hostile.
-        // DOCUMENTED: WhoeverAttackingMe degrades to Closest — Hexwaste has no per-ally whoHitMe tracker.
+        // WhoeverAttackingMe prefers the hostile that last hit this ally (ally.WhoHitMe, the per-critter
+        // whoHitMe tracker added P101) — combat_ai.cc _ai_find_target's whoHitMe preference — and falls back
+        // to Closest when nobody has (PickTarget). Ignored for the other modes, so the default is unchanged.
         List<(int Hp, int Distance, bool HitMe)> ranked = hostiles
-            .Select(h => (_host.GetCritterState(h)?.CurrentHp ?? 0, HexGrid.Distance(ally.HexTile, h.HexTile), false))
+            .Select(h => (_host.GetCritterState(h)?.CurrentHp ?? 0, HexGrid.Distance(ally.HexTile, h.HexTile),
+                ReferenceEquals(ally.WhoHitMe, h)))
             .ToList();
         MapObject target = hostiles[CompanionAi.PickTarget(ai.AttackWho, ranked)];
 

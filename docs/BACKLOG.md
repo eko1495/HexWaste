@@ -38,8 +38,10 @@ reaction meter/head-mood — are both wired (P31/P122). So karma already works w
 it; the "cosmetic" appearance is a CONTENT-slice consequence, not an engine gap. Building "karma
 effects" would mean inventing behavior fo2ce lacks (violates "port, don't guess"). **Closed.**
 
-**A2 — Combat-AI fidelity residuals (the only cluster that still shifts combat outcomes).**
-*Effort M (golden re-records) · medium-high impact.* Core AI is faithful; documented residuals:
+**A2 — Combat-AI fidelity residuals. GROUNDED: real but DELIBERATELY-DEFERRED cuts (2026-07-16).**
+*Effort M (golden re-records) · medium-high impact.* All five are annotated in-code as documented
+divergences/deferrals (not mirages, not accidental gaps) — each is golden-heavy combat-fidelity
+polish, correctly parked. Only pursue if the goal is combat feel. Core AI is faithful; residuals:
 - `_combat_safety` (`combat.cc:2249`) wires only gun-hold-when-teammate-in-LoF; ally-in-LoF
   weapon-switch invalidation + snipe-back is partial (`CombatEngine.cs:2375-2380`).
 - `_combatai_rating` not ported → whoHitMe retaliation is "last-hitter-wins" vs rating-based.
@@ -48,9 +50,12 @@ effects" would mean inventing behavior fo2ce lacks (violates "port, don't guess"
 - Perception-based **disengage** (`_combatai_want_to_stop`, combat_ai.cc site 3) deferred (P113 4.3).
 - `_ai_best_weapon` score omits the weapon-perk ×2 and explosive ×(extras+1) factors.
 
-**A3 — Per-ally whoHitMe tracker (party tactics).** *Effort S-M · low-medium.* Companion
-"Attack whoever's attacking me" degrades to Closest (`Combat/CompanionAi.cs`) — no per-ally
-danger-source tracker. The 7 party-control *settings* + ally AI are otherwise real (P50-P52).
+**A3 — Per-ally whoHitMe tracker (party tactics). GROUNDED + FIXED (2026-07-16).** The claim was
+half-stale: the per-critter `WhoHitMe` tracker *does* exist (added P101, `CombatEngine.cs:1616`),
+but the P50 companion candidate builder still hardcoded `HitMe=false`, so `WhoeverAttackingMe`
+always degraded to Closest. One-line wire-up (`ReferenceEquals(ally.WhoHitMe, h)`) — companions in
+Defensive/Custom now target the hostile that last hit them (combat_ai.cc `_ai_find_target`). Default
+disposition is Closest so goldens unaffected. **Closed.**
 
 **A4 — Poison / radiation counters. MOSTLY ALREADY BUILT — two small gaps fixed (2026-07-16).**
 The research over-reported this too: poison (P35) + radiation (P101/P113) are fully modeled —
@@ -64,10 +69,13 @@ switch (`stat.cc:530`); (2) Pip-Boy "Radiated" was hardcoded false — now `Radi
 (`character_editor.cc:2675`). Golden `drug-radaway` locks RadAway 300→275. **Closed.**
 
 **A5 — Small correctness residuals.** *Effort S each.*
-- Ghost perk's light-gated Sneak bonus is unwired (needs a per-object `objectGetLightIntensity`;
-  the tile light grid exists, the per-object query doesn't — `Perks/PerkRules.cs`).
-- Cross-script **imported-procedure calls throw** (`IntVm.cs:1105`) — a latent crash if any bound
-  script calls an imported proc; worth confirming 0 vanilla scripts hit it (likely, but unverified).
+- Ghost perk's light-gated Sneak bonus is unwired — GROUNDED: a documented cut (`PerkRules.cs:48`)
+  needing a per-object `objectGetLightIntensity`; the tile light grid exists, the per-object query
+  doesn't. Real but deferred (small-medium).
+- Cross-script **imported-procedure calls threw** (`IntVm.cs:1105`) — **GROUNDED + FIXED**: fo2ce's
+  own `opCall` no-ops the imported branch (`interpreter.cc:2044`, `// TODO: Incomplete`), so vanilla
+  never emits a direct call to an imported proc; Hexwaste's throw was strictly less robust than the
+  reference. Now a faithful no-op (falls through). **Closed.**
 - Unwired externals silently return 0 (`IntVm.cs:2094`) — safe for vanilla (0/155 maps), but the
   fallback masks any future gap; a `--strict` mode that logs would be a cheap guardrail.
 - Area-explosion damage is radius+LoS, not the engine ring-spiral (`CombatEngine.cs:1543`).

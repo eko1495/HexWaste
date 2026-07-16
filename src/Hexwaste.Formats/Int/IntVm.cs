@@ -1102,7 +1102,10 @@ public sealed class IntVm
     {
         IntProcedure procedure = ProcedureAt(PopInt());
         if (procedure.IsImported)
-            throw new InvalidDataException($"call of imported procedure {procedure.Name} is not supported.");
+            return; // faithful to fo2ce opCall (interpreter.cc:2044): the imported branch is a TODO no-op —
+                    // execution simply falls through. Vanilla never emits a direct call to an imported proc
+                    // (imports resolve via the export table), so this is unreachable in practice; a no-op is
+                    // strictly more robust than throwing if some mod script ever did.
 
         _instructionPointer = procedure.BodyOffset;
         if (procedure.IsCritical)
