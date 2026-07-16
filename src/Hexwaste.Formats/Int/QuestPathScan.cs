@@ -24,12 +24,27 @@ public static class QuestPathScan
     /// gate a completing node tests. The quest-driver pre-gives these pids.</summary>
     public sealed record ItemCheck(int Proc, int Pid);
 
+    /// <summary>A single-bit test <c>global_var(Gvar) &amp; Mask</c> inside a procedure — the
+    /// pattern a dialog node uses to gate an option on another quest's task bit (e.g. Rebecca's
+    /// turn-in reads <c>446 &amp; 0x100</c>). The quest-driver's bit-level prerequisite resolver
+    /// (P137) matches these to <see cref="BitSet"/>s of the SAME (gvar,mask) — the fix for the
+    /// shared-task-bitfield over-inclusion that sank the gvar-level attempt (plan §10).</summary>
+    public sealed record BitCheck(int Proc, int Gvar, int Mask);
+
+    /// <summary>A single-bit set <c>global_var(Gvar) |= Mask</c> (the read-modify-write
+    /// <c>push G; push G; get_global; push Mask; bitwise_or; set_global</c>) — how one NPC's node
+    /// records it did a sub-task in a shared task bitfield (e.g. Fred's demand-full sets
+    /// <c>446 |= 0x8000</c>). Matched to a completer's <see cref="BitCheck"/> by exact mask.</summary>
+    public sealed record BitSet(int Proc, int Gvar, int Mask);
+
     public sealed record Result(
         IntProgram Program,
         IReadOnlyList<ConstWrite> Writes,
         IReadOnlyList<OptionEdge> Options,
         IReadOnlyList<(int FromProc, int ToProc)> Calls,
-        IReadOnlyList<ItemCheck> ItemChecks);
+        IReadOnlyList<ItemCheck> ItemChecks,
+        IReadOnlyList<BitCheck> BitChecks,
+        IReadOnlyList<BitSet> BitSets);
 
     public static Result Scan(byte[] data)
     {
@@ -47,15 +62,76 @@ public static class QuestPathScan
             .OrderBy(t => t.Proc.BodyOffset)
             .ToList();
 
+        var bitChecks = new List<BitCheck>();
+        var bitSets = new List<BitSet>();
+
         for (int b = 0; b < bodies.Count; b++)
         {
             int procIndex = bodies[b].Index;
             int start = bodies[b].Proc.BodyOffset;
             int end = b + 1 < bodies.Count ? bodies[b + 1].Proc.BodyOffset : data.Length;
             ScanRange(program, data, procIndex, start, end, writes, options, calls, itemChecks);
+            ScanBits(data, procIndex, start, end, bitChecks, bitSets);
         }
 
-        return new Result(program, writes, options, calls, itemChecks);
+        return new Result(program, writes, options, calls, itemChecks, bitChecks, bitSets);
+    }
+
+    // Opcodes for the bit-level patterns (interpreter.h): a normalized op word is 0x8000 | (word & 0x3FF).
+    private const int OP_GET_GLOBAL = 0x80C5, OP_SET_GLOBAL = 0x80C6;
+    private const int OP_BITWISE_AND = 0x8040, OP_BITWISE_OR = 0x8041;
+
+    /// <summary>Second pass over one proc body: decode to a flat (isPush, value) token stream and
+    /// match the two single-bit patterns exactly (P137 bit-level prerequisite analysis).
+    /// <para>BitCheck  <c>global(G) &amp; MASK</c>: push G, get_global, push MASK, bitwise_and.</para>
+    /// <para>BitSet <c>global(G) |= MASK</c>: push G, push G, get_global, push MASK, bitwise_or,
+    /// set_global (the RMW confirms the same G on both the get and the set).</para></summary>
+    private static void ScanBits(byte[] data, int procIndex, int start, int end,
+        List<BitCheck> bitChecks, List<BitSet> bitSets)
+    {
+        // Decode the body into tokens: (IsPush, Value) — Value = operand for a push, else the
+        // normalized opcode word. Non-push non-op words (locals/inline) become op tokens too, which
+        // simply never complete a pattern.
+        var toks = new List<(bool IsPush, int Value)>();
+        int pc = start;
+        while (pc + 2 <= end)
+        {
+            ushort word = (ushort)((data[pc] << 8) | data[pc + 1]);
+            pc += 2;
+            if ((word & 0x8000) == 0) { toks.Add((false, word)); continue; }
+            if ((word & 0x3FF) == 0x001) // push: 4-byte operand follows
+            {
+                if (pc + 4 > end) break;
+                int operand = (data[pc] << 24) | (data[pc + 1] << 16) | (data[pc + 2] << 8) | data[pc + 3];
+                pc += 4;
+                toks.Add((true, operand));
+                continue;
+            }
+            toks.Add((false, 0x8000 | (word & 0x3FF)));
+        }
+
+        for (int i = 0; i < toks.Count; i++)
+        {
+            // BitCheck: push G, get_global, push MASK, bitwise_and
+            if (i + 3 < toks.Count
+                && toks[i].IsPush
+                && !toks[i + 1].IsPush && toks[i + 1].Value == OP_GET_GLOBAL
+                && toks[i + 2].IsPush
+                && !toks[i + 3].IsPush && toks[i + 3].Value == OP_BITWISE_AND)
+            {
+                bitChecks.Add(new BitCheck(procIndex, toks[i].Value, toks[i + 2].Value));
+            }
+            // BitSet: push G, push G, get_global, push MASK, bitwise_or, set_global
+            if (i + 5 < toks.Count
+                && toks[i].IsPush && toks[i + 1].IsPush && toks[i].Value == toks[i + 1].Value
+                && !toks[i + 2].IsPush && toks[i + 2].Value == OP_GET_GLOBAL
+                && toks[i + 3].IsPush
+                && !toks[i + 4].IsPush && toks[i + 4].Value == OP_BITWISE_OR
+                && !toks[i + 5].IsPush && toks[i + 5].Value == OP_SET_GLOBAL)
+            {
+                bitSets.Add(new BitSet(procIndex, toks[i].Value, toks[i + 3].Value));
+            }
+        }
     }
 
     private static void ScanRange(IntProgram program, byte[] data, int procIndex, int start, int end,

@@ -227,3 +227,35 @@ one code fix: `DriveCommand` now emits the `-` sentinel for a zero-pick step (wa
 arg → `int.Parse("")` throws → bogus `?->?`); the recipe is now well-formed and replays to a
 clean `0->0`, correctly classified as a false-positive rather than an ambiguous crash. These two
 belong to the future "real campaign-state fixtures" track, not the clean-start golden suite.
+
+## 12. Bit-level prerequisite driver — DONE (cracks the negotiation-prereq tier; §10's real fix)
+
+The bit-level analysis §10 called for, now built and proven end-to-end on 371 (Fred→Rebecca).
+
+**Static analysis** (`QuestPathScan`): two new captures, hermetic + real-data tested.
+- `BitCheck(proc, gvar, mask)` — `global(G) & MASK` (push G, get_global, push MASK, bitwise_and).
+- `BitSet(proc, gvar, mask)` — `global(G) |= MASK` RMW (push G, push G, get_global, push MASK,
+  bitwise_or, set_global). The mask is captured exactly.
+- New `ProcAnalyze --bit-scan [gvar]`: dumps every (gvar,mask) with a CHECK and a SET across all
+  scripts. The ground truth: `gvar=446 mask=0x8000 set-by=[dcFred] checked-by=[dcRebecc]` — a clean
+  1:1, where gvar-level detection saw 37 NPCs on the shared 446 bitfield (§10). The mask disambiguates.
+
+**Driver integration** (`RunDriver`): route-generic via a `DriveGoal` (gvar goal | bit goal — the
+gvar path stays byte-identical). For each completer, collect the foreign `(gvar,mask)` bit-CHECKS
+on the route to its write, find map-NPCs that SET that exact bit → prerequisites, drive them.
+Three things made it reproducible (each found by a concrete failure):
+1. **Activation cap.** While a prereq bit is unset, cap the writer goal at the DISPLAY (activation)
+   threshold. Without it the completer jumps to an UNGATED refuse/abort branch (Rebecca's Node988
+   := 2) that "completes" the gvar via tie-retry exploration but doesn't replay — a false positive.
+   Capping lets the completer only activate, opening the prereq's own gate (Fred's demand-full needs
+   the quest live); once bits are set we uncap and complete via the real gated branch (Node011).
+2. **Dialogue-reachability filter.** Drop prereqs whose bit-set is in a non-dialogue proc
+   (`destroy_p_proc` etc. — Fred's 445 & 0x400 fires on his death). An undriveable prereq would
+   jam prereqsPending() forever, keeping the completer capped at activation.
+3. **Order = writers then prereqs**, matching the manual Rebecca→Fred→Rebecca sequence.
+
+**Result:** `--quest-drive 371` now auto-drives `17662(activate) → 25479(Fred) → 17662(complete)`,
+REPLAY-VERIFIED 0→2 (the harvest guard). Locked as golden `quest-rebecca-prereq` (suite = 25, all
+byte-identical). No regression: 106/497/493/551/393 still auto-complete; 953 Formats tests pass
+(+3 new bit-level tests). The negotiation-prerequisite tier the gvar-level attempt couldn't reach
+is now driveable. Remaining stuck-tier (New Reno deep sub-menus, non-bit prereqs) is separate work.

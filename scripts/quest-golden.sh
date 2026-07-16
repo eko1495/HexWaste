@@ -141,6 +141,11 @@ SCENARIOS=(
   "quest-sf-elron|$CREATE --goto-map sfelronb.map --get-global 485 --give 476:10 --give 41:5000 --talk-seq 15469 2 --get-global 485 --quest-probe --rng-seed 1"
   # SF spleen quest (GVAR_SAN_FRAN_SPLEEN 367 → 9) — sftanker 23085 (also completable via dnslvrun 26310).
   "quest-sf-spleen|$CREATE --goto-map sftanker.map --get-global 367 --talk-seq 23085 1,1,1 --get-global 367 --quest-probe --rng-seed 1"
+  # --- P137 bit-level prerequisite (the negotiation tier the gvar-level driver couldn't crack).
+  # Rebecca's 371 completion gates on Fred's demand-full task bit: Fred SETS 446 & 0x8000, Rebecca
+  # CHECKS it. Auto-discovered by --quest-drive 371 (drives Rebecca-activate → Fred → Rebecca-complete)
+  # and replay-verified. A distinct, shorter path than the manual quest-fred-money above.
+  "quest-rebecca-prereq|$CREATE --goto-map denbus1.map --give 471:10 --give 41:5000 --get-global 371 --talk-seq 17662 2,1,1 --talk-seq 25479 - --talk-seq 17662 2,1 --get-global 371 --quest-probe --rng-seed 1"
 )
 
 dotnet build src/Hexwaste.Viewer -c Debug >/dev/null || { echo "build failed"; exit 2; }

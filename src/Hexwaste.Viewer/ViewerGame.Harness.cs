@@ -2436,6 +2436,37 @@ public sealed partial class ViewerGame
     private sealed record DriveCandidate(MapObject Npc, Formats.Int.QuestPathScan.Result Scan,
         int CompletingProc, string ScriptName);
 
+    /// <summary>What a drive pass steers toward. Two flavors: a quest-gvar goal (reach the
+    /// completed threshold, routing to value-advancing writes) and a bit goal (set one task bit
+    /// that a completer checks — the P137 prerequisite driver). Delegate-based so the gvar path
+    /// stays byte-identical to the pre-refactor driver.</summary>
+    private sealed class DriveGoal
+    {
+        public required Func<int> Progress;                  // monotone advance signal
+        public required int Target;                          // Progress() >= Target ⇒ reached
+        public required Func<int, IEnumerable<int>> Targets; // progressNow ⇒ goal procs to route to
+        public bool Reached => Progress() >= Target;
+    }
+
+    /// <summary>Steer toward completing quest <paramref name="gvar"/> via candidate <paramref name="c"/>'s
+    /// value-advancing writes — the original driver behavior, now expressed as a goal.</summary>
+    private DriveGoal GvarGoal(DriveCandidate c, int gvar, int completed) => new()
+    {
+        Progress = () => _scriptHost!.GlobalVars.GetValueOrDefault(gvar, 0),
+        Target = completed,
+        Targets = cur => c.Scan.Writes.Where(x => x.Gvar == gvar && x.Value > cur).Select(x => x.Proc),
+    };
+
+    /// <summary>Steer toward setting bit <paramref name="mask"/> of task gvar <paramref name="g"/>
+    /// (reached once the bit is set) by routing to the node that does <c>g |= mask</c> — the P137
+    /// prerequisite: e.g. driving Fred's demand-full to set <c>446 &amp; 0x8000</c> that Rebecca reads.</summary>
+    private DriveGoal BitGoal(int g, int mask, int bitSetProc) => new()
+    {
+        Progress = () => (_scriptHost!.GlobalVars.GetValueOrDefault(g, 0) & mask) != 0 ? 1 : 0,
+        Target = 1,
+        Targets = _ => [bitSetProc],
+    };
+
     /// <summary>Outcome of an auto-drive: gvar movement, the (map, tile, picks) visits that made
     /// progress, and the item pids given — enough to emit a reproducible harness command.</summary>
     private sealed record DriveResult(int Gvar, int Start, int End, int Completed, string At,
@@ -2528,7 +2559,8 @@ public sealed partial class ViewerGame
         int completed = Quests().FirstOrDefault(q => q.Gvar == gvar)?.CompletedThreshold ?? 1;
         Formats.Int.ScriptList scripts = Formats.Int.ScriptList.Load(_vfs);
 
-        var candidates = new List<DriveCandidate>();
+        // Scan every scripted living critter on the map once (map object → script scan + name).
+        var scripted = new List<(MapObject O, Formats.Int.QuestPathScan.Result S, string Name)>();
         foreach (MapObject o in _map!.Elevations.Where(e => e is not null).SelectMany(e => e!.Objects))
         {
             if (o.Sid < 0 || Fid.PidType(o.Pid) != 1 || o.IsDead
@@ -2540,13 +2572,46 @@ public sealed partial class ViewerGame
             Formats.Int.QuestPathScan.Result s;
             try { s = Formats.Int.QuestPathScan.Scan(_vfs.ReadAllBytes(path)); }
             catch (InvalidDataException) { continue; }
+            scripted.Add((o, s, scripts.GetName(rec.ScriptListIndex) ?? "?"));
+        }
+
+        var candidates = new List<DriveCandidate>();
+        foreach ((MapObject o, Formats.Int.QuestPathScan.Result s, string name) in scripted)
+        {
             var w = s.Writes.Where(x => x.Gvar == gvar).OrderByDescending(x => x.Value).FirstOrDefault();
             if (w is not null)
-                candidates.Add(new DriveCandidate(o, s, w.Proc, scripts.GetName(rec.ScriptListIndex) ?? "?"));
+                candidates.Add(new DriveCandidate(o, s, w.Proc, name));
         }
         int start0 = _scriptHost!.GlobalVars.GetValueOrDefault(gvar, 0);
         if (candidates.Count == 0)
             return new DriveResult(gvar, start0, start0, start0 >= completed ? 1 : 0, "-", [], [], false);
+
+        // P137 bit-level prerequisites: a completer may gate its completing branch on another NPC's
+        // task bit (Rebecca reads 446 & 0x8000, which only Fred sets). Collect the foreign (gvar,mask)
+        // bit-CHECKS on the route to each completer's write, then find map-NPCs whose script SETS that
+        // exact bit — driving them first opens the completer's gated branch. The mask is what makes
+        // this precise: gvar-level detection over-includes on shared task bitfields (plan §10).
+        int talkP(Formats.Int.QuestPathScan.Result s) => s.Program.FindProcedure("talk_p_proc");
+        var neededBits = new HashSet<(int G, int Mask)>();
+        foreach (DriveCandidate c in candidates)
+            foreach (var w in c.Scan.Writes.Where(x => x.Gvar == gvar))
+            {
+                var route = new HashSet<int>(
+                    Formats.Int.QuestPathScan.FindPathProcs(c.Scan, talkP(c.Scan), w.Proc) ?? []) { w.Proc };
+                foreach (var bc in c.Scan.BitChecks.Where(b => b.Gvar != gvar && route.Contains(b.Proc)))
+                    neededBits.Add((bc.Gvar, bc.Mask));
+            }
+        var prereqs = new List<(DriveCandidate Cand, int G, int Mask)>();
+        if (neededBits.Count > 0)
+            foreach ((MapObject o, Formats.Int.QuestPathScan.Result s, string name) in scripted)
+                foreach (var bs in s.BitSets.Where(b => neededBits.Contains((b.Gvar, b.Mask))))
+                {
+                    // Only DIALOGUE-reachable bit-sets are driveable. A bit set in destroy_p_proc /
+                    // combat_p_proc (e.g. Fred's 445 & 0x400 on death) can't be driven via talk and
+                    // would jam prereqsPending() forever, keeping the completer capped at activation.
+                    if (Formats.Int.QuestPathScan.FindPathProcs(s, talkP(s), bs.Proc) is null) continue;
+                    prereqs.Add((new DriveCandidate(o, s, bs.Proc, name), bs.Gvar, bs.Mask));
+                }
 
         var pids = candidates
             .SelectMany(c => c.Scan.ItemChecks
@@ -2559,21 +2624,46 @@ public sealed partial class ViewerGame
             if (RebuildObject(pid, 10) is { } gi) AddToDudeInventory(gi);
         if (RebuildObject(41, 5000) is { } caps) AddToDudeInventory(caps);
 
+        int display = Quests().FirstOrDefault(q => q.Gvar == gvar)?.DisplayThreshold ?? 1;
+        int bitsSet() => prereqs.Count(p => (_scriptHost.GlobalVars.GetValueOrDefault(p.G, 0) & p.Mask) != 0);
+        bool prereqsPending() => prereqs.Any(p => (_scriptHost.GlobalVars.GetValueOrDefault(p.G, 0) & p.Mask) == 0);
         var visits = new List<(string Map, int Tile, List<int> Picks)>();
         DriveCandidate? winner = null;
         for (int pass = 0; pass < 4 && winner is null; pass++)
         {
             int passStart = _scriptHost.GlobalVars.GetValueOrDefault(gvar, 0);
+            int passBits = bitsSet();
+            // 1) drive the quest-gvar writers. While a prerequisite bit is still unset, CAP the goal
+            //    at the display (activation) threshold: a completer often has an UNGATED refuse/abort
+            //    branch that "completes" the gvar (Rebecca's Node988 := 2) — jumping to it here would
+            //    win falsely before the prerequisite (Fred) is driven and is not reproducible. Capping
+            //    lets the completer only activate the quest, so the prereq's own gate (Fred's
+            //    demand-full needs the quest live) opens; once bits are set we uncap and complete via
+            //    the real, now-reachable gated branch (Node011 behind 446 & 0x8000).
+            int target = prereqsPending() ? Math.Min(display, completed) : completed;
             foreach (DriveCandidate c in candidates)
             {
                 int before = _scriptHost.GlobalVars.GetValueOrDefault(gvar, 0);
                 if (before >= completed) { winner = c; break; }
-                List<int> picks = DriveOne(c, gvar, completed);
+                List<int> picks = DriveOne(c, GvarGoal(c, gvar, target));
                 int after = _scriptHost.GlobalVars.GetValueOrDefault(gvar, 0);
                 if (after != before) visits.Add((_currentMapName, c.Npc.HexTile, picks));
                 if (after >= completed) { winner = c; break; }
             }
-            if (winner is null && _scriptHost.GlobalVars.GetValueOrDefault(gvar, 0) == passStart)
+            if (winner is not null) break;
+            // 2) drive any prerequisite whose task bit isn't set yet (opens a completer's gated branch
+            //    next pass). Done AFTER the writers so the quest is active first (Fred's demand-full
+            //    needs Rebecca's quest live), matching the manual Rebecca→Fred→Rebecca order.
+            foreach ((DriveCandidate cand, int g, int mask) in prereqs)
+            {
+                if ((_scriptHost.GlobalVars.GetValueOrDefault(g, 0) & mask) != 0) continue;
+                List<int> picks = DriveOne(cand, BitGoal(g, mask, cand.CompletingProc));
+                if ((_scriptHost.GlobalVars.GetValueOrDefault(g, 0) & mask) != 0)
+                    visits.Add((_currentMapName, cand.Npc.HexTile, picks));
+            }
+            // stop only when a full pass moved neither the quest gvar nor any prerequisite bit.
+            if (winner is null && _scriptHost.GlobalVars.GetValueOrDefault(gvar, 0) == passStart
+                && bitsSet() == passBits)
                 break;
         }
         int endVal = _scriptHost.GlobalVars.GetValueOrDefault(gvar, 0);
@@ -2621,12 +2711,12 @@ public sealed partial class ViewerGame
     /// (#4): the greedy route-follow can't tell apart options that target the SAME node (haggle
     /// amounts, bribe tiers — Fred/Harry/Barkus), so when the greedy run stalls at such a tie we
     /// retry the conversation picking each tied option and keep the one that advances the gvar.</summary>
-    private List<int> DriveOne(DriveCandidate c, int gvar, int completed)
+    private List<int> DriveOne(DriveCandidate c, DriveGoal goal)
     {
-        int cur0 = _scriptHost!.GlobalVars.GetValueOrDefault(gvar, 0);
-        (List<int> picks, List<(int Round, List<int> Tied)> branches) = DrivePass(c, gvar, completed, []);
-        if (_scriptHost.GlobalVars.GetValueOrDefault(gvar, 0) >= completed || _scriptHost.GlobalVars.GetValueOrDefault(gvar, 0) > cur0)
-            return picks; // completed, or at least advanced — good enough for this pass
+        int p0 = goal.Progress();
+        (List<int> picks, List<(int Round, List<int> Tied)> branches) = DrivePass(c, goal, []);
+        if (goal.Reached || goal.Progress() > p0)
+            return picks; // reached, or at least advanced — good enough for this pass
 
         // Value-branch retry: at the first tie (≥2 options to the same best node), try each
         // alternative, replaying the greedy prefix then the alternative, then resuming greedy.
@@ -2636,20 +2726,20 @@ public sealed partial class ViewerGame
             {
                 if (alt == picks.ElementAtOrDefault(round) - 1) continue; // the one greedy already took
                 var forced = picks.Take(round).Select(p => p - 1).Append(alt).ToList();
-                (List<int> tryPicks, _) = DrivePass(c, gvar, completed, forced);
-                if (_scriptHost.GlobalVars.GetValueOrDefault(gvar, 0) > cur0)
-                    return tryPicks; // this alternative advanced the gvar
+                (List<int> tryPicks, _) = DrivePass(c, goal, forced);
+                if (goal.Progress() > p0)
+                    return tryPicks; // this alternative advanced the goal
             }
         }
         return picks;
     }
 
     /// <summary>One dialogue pass: make the <paramref name="forced"/> option picks (0-based) first,
-    /// then continue greedily toward the nearest gvar-advancing write. Returns the (1-based) picks
-    /// taken and the rounds that had a tie (≥2 options to the same best route node) — the
-    /// value-branch candidates for the search wrapper.</summary>
+    /// then continue greedily toward the nearest node that advances <paramref name="goal"/>. Returns
+    /// the (1-based) picks taken and the rounds that had a tie (≥2 options to the same best route
+    /// node) — the value-branch candidates for the search wrapper.</summary>
     private (List<int> Picks, List<(int Round, List<int> Tied)> Branches) DrivePass(
-        DriveCandidate c, int gvar, int completed, IReadOnlyList<int> forced)
+        DriveCandidate c, DriveGoal goal, IReadOnlyList<int> forced)
     {
         var picks = new List<int>();
         var branches = new List<(int, List<int>)>();
@@ -2658,17 +2748,17 @@ public sealed partial class ViewerGame
         int guard = 0, stall = 0;
         while (_dialog is not null && guard++ < 40)
         {
-            if (_scriptHost!.GlobalVars.GetValueOrDefault(gvar, 0) >= completed)
+            if (goal.Reached)
                 break;
-            int cur = _scriptHost.GlobalVars.GetValueOrDefault(gvar, 0);
+            int cur = goal.Progress();
             var order = new Dictionary<int, int>();
-            foreach (var w in c.Scan.Writes.Where(x => x.Gvar == gvar && x.Value > cur))
+            foreach (int target in goal.Targets(cur))
             {
-                List<int>? r = talk >= 0 ? Formats.Int.QuestPathScan.FindPathProcs(c.Scan, talk, w.Proc) : null;
+                List<int>? r = talk >= 0 ? Formats.Int.QuestPathScan.FindPathProcs(c.Scan, talk, target) : null;
                 if (r is null) continue;
                 for (int i = 0; i < r.Count; i++)
                     order[r[i]] = Math.Max(order.GetValueOrDefault(r[i], int.MinValue), i);
-                order[w.Proc] = int.MaxValue - 1;
+                order[target] = int.MaxValue - 1;
             }
             IReadOnlyList<int> procs = _dialog.OptionProcedures;
             int best = -1, bestOrder = int.MinValue;

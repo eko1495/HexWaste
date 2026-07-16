@@ -8,6 +8,7 @@ string mapName = "artemple.map";
 bool questCensus = false;
 bool mapObjects = false;
 int questPathsGvar = -2; // -2 = off, -1 = all quests, >= 0 = one gvar
+int bitScanGvar = -2;    // -2 = off, -1 = all task gvars, >= 0 = one gvar
 
 for (int i = 0; i < args.Length; i++)
 {
@@ -21,6 +22,8 @@ for (int i = 0; i < args.Length; i++)
         mapObjects = true;
     else if (args[i] == "--quest-paths")
         questPathsGvar = i + 1 < args.Length && !args[i + 1].StartsWith("--") ? int.Parse(args[++i]) : -1;
+    else if (args[i] == "--bit-scan")
+        bitScanGvar = i + 1 < args.Length && !args[i + 1].StartsWith("--") ? int.Parse(args[++i]) : -1;
 }
 
 if (gameDir is null)
@@ -32,6 +35,43 @@ if (gameDir is null)
 using GameFileSystem vfs = GameFileSystem.Open(gameDir);
 var protos = new ProtoDatabase(vfs);
 ScriptList scriptList = ScriptList.Load(vfs);
+
+// P137 bit-scan: dump every single-bit task-flag CHECK (global(G) & mask) and SET (global(G) |= mask)
+// across all scripts, grouped by (gvar,mask). The ground-truth for the bit-level prerequisite
+// resolver — a CHECK in one script's completer + a SET of the SAME (gvar,mask) in another script's
+// node is a cross-NPC prerequisite the gvar-level analysis (plan §10) couldn't distinguish.
+if (bitScanGvar != -2)
+{
+    var checks = new List<(string Script, int Gvar, int Mask)>();
+    var sets = new List<(string Script, int Gvar, int Mask)>();
+    for (int idx = 0; idx < scriptList.Count; idx++)
+    {
+        if (scriptList.GetName(idx) is not { } name || scriptList.GetScriptPath(idx) is not { } path
+            || !vfs.Exists(path))
+            continue;
+        QuestPathScan.Result scan;
+        try { scan = QuestPathScan.Scan(vfs.ReadAllBytes(path)); }
+        catch { continue; }
+        foreach (QuestPathScan.BitCheck c in scan.BitChecks)
+            if (bitScanGvar < 0 || c.Gvar == bitScanGvar) checks.Add((name, c.Gvar, c.Mask));
+        foreach (QuestPathScan.BitSet s in scan.BitSets)
+            if (bitScanGvar < 0 || s.Gvar == bitScanGvar) sets.Add((name, s.Gvar, s.Mask));
+    }
+    // Only (gvar,mask) pairs with BOTH a check and a set are cross-NPC prerequisites of interest.
+    var setKeys = sets.Select(s => (s.Gvar, s.Mask)).ToHashSet();
+    var checkKeys = checks.Select(c => (c.Gvar, c.Mask)).ToHashSet();
+    foreach ((int Gvar, int Mask) key in setKeys.Intersect(checkKeys)
+                 .OrderBy(k => k.Gvar).ThenBy(k => k.Mask))
+    {
+        string setters = string.Join(",", sets.Where(s => (s.Gvar, s.Mask) == key)
+            .Select(s => s.Script).Distinct());
+        string checkers = string.Join(",", checks.Where(c => (c.Gvar, c.Mask) == key)
+            .Select(c => c.Script).Distinct());
+        Console.WriteLine($"bit-scan: gvar={key.Gvar} mask=0x{key.Mask:X} " +
+            $"set-by=[{setters}] checked-by=[{checkers}]");
+    }
+    return 0;
+}
 
 // P128 quest-path finder: for each quest gvar, find the writer scripts, attribute each
 // completing write to its PROCEDURE, and — when the writer proc is reachable from
