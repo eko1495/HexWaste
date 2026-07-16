@@ -27,10 +27,13 @@ NEW recipe-verified completions (not already goldens): 4 quests
 - **380** reddown (`GVAR_REDDING_*`) — driver end=3, replay 0->0. The value-branch tie-break
   advanced the gvar while EXPLORING a terminal option; the recorded picks don't reproduce it.
   (This is the same 380 the first census flagged as a batch false-positive — still not real.)
-- **481** GVAR_NCR_BRAHMN_QST (redment) & **488** GVAR_V13_GORIS_QST (vault13) — real quests,
-  but the completer writes the gvar on node-ENTRY with zero option picks, so the emitted recipe
-  is a degenerate empty `--talk-seq <tile>` that does not replay. **Flagged for manual review**
-  (need a valid pick sequence / first-talk trigger). Not forced into a golden.
+- **481** GVAR_NCR_BRAHMN_QST (redment) & **488** GVAR_V13_GORIS_QST (vault13) — real quests
+  whose completer writes via `talk_p_proc` (on dialogue OPEN, hence zero picks). **RESOLVED**
+  (plan §11a): both are prerequisite-gated — 488 fires only inside the Goris party-join branch
+  when `global(488)==1` (needs the V13 deathclaw storyline); 481's Node006 is reached only past
+  a reputation / prior brahmin-drive gate. Neither completes from a clean start, and faking the
+  prerequisite is forbidden → no golden; they belong to the future campaign-state fixture track.
+  Emitter hardened to emit the `-` (zero-pick) sentinel so such recipes are well-formed CLI.
 
 ## Interpretation of the stuck tail (183)
 

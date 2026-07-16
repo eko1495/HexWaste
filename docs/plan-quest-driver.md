@@ -207,5 +207,23 @@ only if the gvar advances to the driver-reported value in a clean process. This 
 
 **Flagged for manual review (not forced):** 481 GVAR_NCR_BRAHMN_QST + 488 GVAR_V13_GORIS_QST are
 real quests whose completer writes the gvar on node-entry with zero option picks — the recipe
-emitter produces an empty `--talk-seq <tile>` that doesn't replay. They need a first-talk trigger
+emitter produced an empty `--talk-seq <tile>` that doesn't replay. They need a first-talk trigger
 or a valid pick sequence; correctly excluded by the replay guard rather than shipped broken.
+
+### §11a — the two flagged quests RESOLVED (prereq-gated, not goldenable; emitter hardened)
+
+Disassembled both completers (`tools/int_disasm.py`). Both write via `talk_p_proc` (fires on
+dialogue OPEN, hence "zero picks"), and both are **prerequisite-gated**, not emitter bugs:
+- **488 (Goris):** `ocGoris.talk_p_proc` writes `488:=2` only inside the *Goris-joins-the-party*
+  branch (right after `party_add` + the join cutscene) and only `if global(488)==1`. Recruiting
+  Goris requires the Vault 13 deathclaw storyline state — deep prior campaign state.
+- **481 (NCR brahmin):** `scdrvpay.Node006` writes `481:=2` unconditionally *once reached*, but
+  `talk_p_proc` only calls Node006 after a reputation / prior brahmin-drive gate; a clean talk
+  never reaches it (verified 0->0).
+
+Neither completes from a clean start, and the standing rule forbids `--set-global`-faking the
+prerequisites in a golden — so **no new golden**; the replay guard's exclusion was correct. The
+one code fix: `DriveCommand` now emits the `-` sentinel for a zero-pick step (was an empty pick
+arg → `int.Parse("")` throws → bogus `?->?`); the recipe is now well-formed and replays to a
+clean `0->0`, correctly classified as a false-positive rather than an ambiguous crash. These two
+belong to the future "real campaign-state fixtures" track, not the clean-start golden suite.

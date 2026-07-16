@@ -2462,7 +2462,10 @@ public sealed partial class ViewerGame
                     gaveItems = true;
                 }
             }
-            sb.Append($" --talk-seq {tile} {string.Join(",", picks)}");
+            // A zero-pick step is a talk_p_proc/call completer that fires on dialogue OPEN (no
+            // option chosen); emit the "-" sentinel so the recipe stays well-formed CLI (an empty
+            // pick arg makes --talk-seq's int.Parse throw → a bogus ?->? instead of a clean replay).
+            sb.Append($" --talk-seq {tile} {(picks.Count > 0 ? string.Join(",", picks) : "-")}");
         }
         return sb.ToString();
     }
