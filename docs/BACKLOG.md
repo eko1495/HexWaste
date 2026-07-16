@@ -23,16 +23,20 @@ rendering-fidelity polish, and (D) doc housekeeping. Plus the explicitly out-of-
 
 ## Tier A — genuinely unbuilt / partial engine gaps (small, high-value)
 
-**A1 — Karma / reputation EFFECTS. THE one behavioral hole.** *Effort M · highest impact.*
-Karma & town reputation are tracked, saved, exposed as PC-stats, and shown as title readouts —
-but they change *nothing* the player experiences. `reaction_influence` (0x80B3), the opcode that
-feeds karma/rep into NPC dialogue reactions, is **arity-stubbed only** (declared in
-`ExternalArity.cs:41`, no `case` in `IntVm.cs` → pops args, pushes stub, no-op). Barter confirms
-it: `Combat/BarterMath.cs:17` "reaction modifier out of PoC scope" (rank-gated inert at 0). The
-in-dialogue fidget mood is driven by hand-authored per-reply values, not the player's karma.
-Wiring `reaction_influence` + the reaction→giq gate + barter reaction modifier makes karma matter.
-Pairs with: no script auto-*awards* karma/rep on kills/quests (the ending slideshow is content-
-gated on exactly these GVARs, so most per-location outcome slides never fire).
+**A1 — Karma / reputation EFFECTS. ~~THE one behavioral hole.~~ VERIFIED FAITHFUL — NOT A GAP
+(2026-07-16).** The initial research flagged this as the top engine hole; grounding it against
+`reference/fallout2-ce` proved the opposite. `_reaction_influence_()` (`reaction.cc:39`) is
+*itself a no-op that returns 0* in the real engine — so Hexwaste's arity-stub of the 0x80B3 opcode
+is faithful, not a defect. The engine never auto-awards karma (nothing in `combat.cc`/`critter.cc`;
+the only `GVAR_PLAYER_REPUTATION` write-hook in `game.cc:1003` is an sfall-only "You gained N
+karma" *message*, not a mechanic). `PC_STAT_KARMA` (stat 4) and `GVAR_PLAYER_REPUTATION` (global 0)
+are separate read-only stores (`stat.cc:605`) — exactly how Hexwaste holds them (`_dudeKarma` +
+`Gv(0)`, `ViewerGame.cs:1441/530`). Karma/reputation *effects* in FO2 are entirely SCRIPT-driven:
+scripts read the values (`get_pc_stat`/`get_global_var`, all exposed) and branch or set the
+per-critter reaction var; the engine's only roles — expose the stats and show the dialogue
+reaction meter/head-mood — are both wired (P31/P122). So karma already works wherever content uses
+it; the "cosmetic" appearance is a CONTENT-slice consequence, not an engine gap. Building "karma
+effects" would mean inventing behavior fo2ce lacks (violates "port, don't guess"). **Closed.**
 
 **A2 — Combat-AI fidelity residuals (the only cluster that still shifts combat outcomes).**
 *Effort M (golden re-records) · medium-high impact.* Core AI is faithful; documented residuals:
@@ -116,13 +120,17 @@ misled by stale strategy docs. *Effort S.*
 
 ## Recommendation
 
-Two coherent directions, pick by goal:
+A1 was investigated first and **closed as faithful-not-a-gap** (see above) — a useful reminder
+that "karma is cosmetic" is a content-slice symptom, not an engine defect. With A1 out, the two
+coherent directions are:
 
-- **"Make the engine's own systems complete"** → **A1 (karma/reputation effects)** is the single
-  highest-value item: it's the one behavioral system that's cosmetic-only today, and it also feeds
-  the (already-built) ending slideshow. Then A2 (combat-AI residuals) for combat feel.
+- **"Make the engine's own systems complete"** → **A4 (poison/radiation counters)** is now the
+  strongest genuinely-unbuilt, self-contained engine gap with a clear fo2ce reference
+  (`queue.cc` poison/radiation events + `critter.cc` rad thresholds). Then **A2 (combat-AI
+  residuals)** for combat feel (golden-heavy). A5's imported-proc-call throw is worth a quick
+  audit (latent crash if any vanilla script hits it).
 - **"Finish the campaign / land more quests"** → **B1 (deep sub-menu routing)** unlocks the most
   quests (~76 New Reno + SF/NCR), then B2 (cross-map bit-prereq) generalizes the P137 win.
 
-A1 and B1 are independent and both high-value; A1 is more self-contained (one subsystem, clear
-fo2ce reference in `game_dialog.cc`/`scripts.cc`), B1 is more open-ended (router search redesign).
+Both A4 and B1 are real and independent; A4 is self-contained (one subsystem, clear reference),
+B1 is more open-ended (router search redesign) but higher user-facing value.
