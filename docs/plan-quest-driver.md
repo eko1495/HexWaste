@@ -161,3 +161,26 @@ prerequisite gvars as progress signals, and (b) route through multi-level sub-me
 generalization, deferred. The census still flags these correctly as activated/stuck.
 
 Additive throughout — all 16 quest goldens byte-identical, 953 Formats tests pass.
+
+## 10. Prerequisite-gvar generalization — ATTEMPTED, reverted (bit-level is the real fix)
+
+Tried to crack the marquee negotiations (371/80/459) by broadening the driver's progress signal
+from just the quest gvar to its PREREQUISITE gvars — a gvar the completing node READS that another
+quest-NPC WRITES (Fred sets the 446 task bit; Rebecca's turn-in reads it). Built the supporting
+static analysis: `QuestPathScan.GvarReads` (0x80C5 reads) and precise `RmwWrites` (the
+`get_global(G) → bitwise(0x8040/41) → set_global` read-modify-write a task bit compiles to — a
+const-VALUE-less write `ConstWrite` can't see). Threaded a `progress` set through the driver.
+
+**Result: reverted.** It works mechanically (with the correct bitwise opcodes it DID detect 446
+and make Fred a candidate) but hits a FUNDAMENTAL over-inclusion: the task-bit gvars (445/446/452)
+are **shared bitfields touched by dozens of NPCs** across many quests, so "gvar the completer
+reads that another NPC writes" pulls in ~37 candidates (every Den addict) and regresses 371 to
+end=0. The delivery-tier completers stayed green, but the net was a regression on the target
+quests, so it's not shippable.
+
+**The real fix is BIT-LEVEL, not gvar-level:** track WHICH bit of 446 the completer checks
+(`446 & 0x8000`) vs which bit Fred sets (`446 |= 0x8000`), and treat as a prerequisite only the
+NPC that sets the SAME bit. That needs mask-tracking through the RMW/AND sequences and matching
+masks across scripts — a materially larger analysis. Deferred as its own task; the driver remains
+at the known-good #1–#4 (auto-completes the delivery/item-return tier, correctly activates the
+rest, flags negotiations as the work). The census (§9) still scopes these precisely.
