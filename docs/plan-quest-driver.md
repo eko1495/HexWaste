@@ -184,3 +184,28 @@ NPC that sets the SAME bit. That needs mask-tracking through the RMW/AND sequenc
 masks across scripts — a materially larger analysis. Deferred as its own task; the driver remains
 at the known-good #1–#4 (auto-completes the delivery/item-return tier, correctly activates the
 rest, flags negotiations as the work). The census (§9) still scopes these precisely.
+
+## 11. Full-map harvest — DONE (4 new goldens, +the false-positive guard hardened)
+
+Ran the driver across **all 155 maps** (`scripts/quest-harvest.sh`), not just the 22 town hubs.
+Two phases: DISCOVER (`--quest-drive-all` per map → every gvar a map's NPCs write + status) then
+VERIFY (fresh single `--quest-drive <gvar>` per non-golden candidate). Results in
+`docs/qa-sweep/harvest.md`: 56 quest-bearing maps, 233 driver runs, batch completed=20/
+activated=30/stuck=183.
+
+**The key hardening:** the driver's OWN `completed=1` is not trustworthy on value-branch quests —
+tie-breaking (#4) mutates persistent gvar state while EXPLORING terminal options, so the driver
+sees completion but the recorded picks don't reproduce it. So VERIFY doesn't trust the driver: it
+extracts the emitted recipe and **replays it standalone** (exactly what a golden does), accepting
+only if the gvar advances to the driver-reported value in a clean process. This caught 380
+(reddown) again — driver end=3, replay 0->0 — plus two degenerate empty-pick recipes.
+
+**4 new recipe-verified goldens** (surfaces the hub census never reached), added to
+`scripts/quest-golden.sh` (suite now 24, all byte-identical):
+- **195** GVAR_NCR_VORTIS_QUEST_STATE (ncrent), **332** GVAR_REDDING_EXCAVATOR_CHIP (redment),
+  **485** GVAR_NCR_ENLONE_LETTER_QST (sfelronb), **367** GVAR_SAN_FRAN_SPLEEN (sftanker+dnslvrun).
+
+**Flagged for manual review (not forced):** 481 GVAR_NCR_BRAHMN_QST + 488 GVAR_V13_GORIS_QST are
+real quests whose completer writes the gvar on node-entry with zero option picks — the recipe
+emitter produces an empty `--talk-seq <tile>` that doesn't replay. They need a first-talk trigger
+or a valid pick sequence; correctly excluded by the replay guard rather than shipped broken.

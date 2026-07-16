@@ -131,6 +131,16 @@ SCENARIOS=(
   "quest-modoc-ghostfarm|$CREATE --goto-map modmain.map --get-global 631 --give 263:10 --give 41:5000 --talk-seq 20143 1,1,3,1,1,1,1,1,1,1,1,2,1 --talk-seq 20143 1 --get-global 631 --quest-probe --rng-seed 1"
   # Break Manson & Franc out of prison (Broken Hills, GVAR 303) — multi-NPC (hcMarcus 18284), item 456.
   "quest-bh-jailbreak|$CREATE --goto-map broken1.map --get-global 303 --give 456:10 --give 41:5000 --talk-seq 10685 2,1,1,1 --talk-seq 29285 3,1 --talk-seq 18284 5,1,1 --get-global 303 --quest-probe --rng-seed 1"
+  # --- Quests found by the FULL-MAP harvest (scripts/quest-harvest.sh across all 155 maps, then
+  # --- recipe-replay-verified). Surfaces the 22-hub census never reached (NCR, Redding mine, SF).
+  # NCR Vortis quest (GVAR_NCR_VORTIS_QUEST_STATE 195) — ncrVortis (ncrent 10518), item 343.
+  "quest-ncr-vortis|$CREATE --goto-map ncrent.map --get-global 195 --give 343:10 --give 41:5000 --talk-seq 10518 2,1,1,1 --talk-seq 10518 1 --get-global 195 --quest-probe --rng-seed 1"
+  # Redding excavator chip (GVAR_REDDING_EXCAVATOR_CHIP 332) — redment 15875/16306, item 422.
+  "quest-redding-chip|$CREATE --goto-map redment.map --get-global 332 --give 422:10 --give 41:5000 --talk-seq 15875 4,3,1,1,1,1,1 --talk-seq 16306 4,1,1,1 --get-global 332 --quest-probe --rng-seed 1"
+  # SF Elron/Lo Pan letter (GVAR_NCR_ENLONE_LETTER_QST 485) — sfelronb 15469, item 476.
+  "quest-sf-elron|$CREATE --goto-map sfelronb.map --get-global 485 --give 476:10 --give 41:5000 --talk-seq 15469 2 --get-global 485 --quest-probe --rng-seed 1"
+  # SF spleen quest (GVAR_SAN_FRAN_SPLEEN 367 → 9) — sftanker 23085 (also completable via dnslvrun 26310).
+  "quest-sf-spleen|$CREATE --goto-map sftanker.map --get-global 367 --talk-seq 23085 1,1,1 --get-global 367 --quest-probe --rng-seed 1"
 )
 
 dotnet build src/Hexwaste.Viewer -c Debug >/dev/null || { echo "build failed"; exit 2; }

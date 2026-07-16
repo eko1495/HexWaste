@@ -51,3 +51,5 @@ maps.txt
 # Python
 __pycache__/
 *.pyc
+.harvest-log/
+docs/qa-sweep/harvest-recipes.txt
