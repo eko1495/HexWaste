@@ -2614,22 +2614,50 @@ public sealed partial class ViewerGame
             Console.WriteLine($"quest-drive-cmd: gvar={gvar} {DriveCommand(result)}");
     }
 
-    /// <summary>Drive one candidate NPC's dialogue, at each round picking the live option whose
-    /// target procedure is furthest along a route toward the NEXT gvar-advancing write (value &gt;
-    /// the current gvar). Returns the (1-based) picks taken.</summary>
+    /// <summary>Drive one candidate NPC's dialogue toward completion, with a value-branch search
+    /// (#4): the greedy route-follow can't tell apart options that target the SAME node (haggle
+    /// amounts, bribe tiers — Fred/Harry/Barkus), so when the greedy run stalls at such a tie we
+    /// retry the conversation picking each tied option and keep the one that advances the gvar.</summary>
     private List<int> DriveOne(DriveCandidate c, int gvar, int completed)
     {
+        int cur0 = _scriptHost!.GlobalVars.GetValueOrDefault(gvar, 0);
+        (List<int> picks, List<(int Round, List<int> Tied)> branches) = DrivePass(c, gvar, completed, []);
+        if (_scriptHost.GlobalVars.GetValueOrDefault(gvar, 0) >= completed || _scriptHost.GlobalVars.GetValueOrDefault(gvar, 0) > cur0)
+            return picks; // completed, or at least advanced — good enough for this pass
+
+        // Value-branch retry: at the first tie (≥2 options to the same best node), try each
+        // alternative, replaying the greedy prefix then the alternative, then resuming greedy.
+        foreach ((int round, List<int> tied) in branches)
+        {
+            foreach (int alt in tied)
+            {
+                if (alt == picks.ElementAtOrDefault(round) - 1) continue; // the one greedy already took
+                var forced = picks.Take(round).Select(p => p - 1).Append(alt).ToList();
+                (List<int> tryPicks, _) = DrivePass(c, gvar, completed, forced);
+                if (_scriptHost.GlobalVars.GetValueOrDefault(gvar, 0) > cur0)
+                    return tryPicks; // this alternative advanced the gvar
+            }
+        }
+        return picks;
+    }
+
+    /// <summary>One dialogue pass: make the <paramref name="forced"/> option picks (0-based) first,
+    /// then continue greedily toward the nearest gvar-advancing write. Returns the (1-based) picks
+    /// taken and the rounds that had a tie (≥2 options to the same best route node) — the
+    /// value-branch candidates for the search wrapper.</summary>
+    private (List<int> Picks, List<(int Round, List<int> Tied)> Branches) DrivePass(
+        DriveCandidate c, int gvar, int completed, IReadOnlyList<int> forced)
+    {
         var picks = new List<int>();
+        var branches = new List<(int, List<int>)>();
         TalkTo(c.Npc);
         int talk = c.Scan.Program.FindProcedure("talk_p_proc");
         int guard = 0, stall = 0;
         while (_dialog is not null && guard++ < 40)
         {
-            int cur = _scriptHost!.GlobalVars.GetValueOrDefault(gvar, 0);
-            if (cur >= completed)
+            if (_scriptHost!.GlobalVars.GetValueOrDefault(gvar, 0) >= completed)
                 break;
-            // Route toward the nearest write that ADVANCES the gvar (value > current); union the
-            // routes so any option that steps toward a higher write is favoured.
+            int cur = _scriptHost.GlobalVars.GetValueOrDefault(gvar, 0);
             var order = new Dictionary<int, int>();
             foreach (var w in c.Scan.Writes.Where(x => x.Gvar == gvar && x.Value > cur))
             {
@@ -2637,23 +2665,35 @@ public sealed partial class ViewerGame
                 if (r is null) continue;
                 for (int i = 0; i < r.Count; i++)
                     order[r[i]] = Math.Max(order.GetValueOrDefault(r[i], int.MinValue), i);
-                order[w.Proc] = int.MaxValue - 1; // writer nodes rank near-top
+                order[w.Proc] = int.MaxValue - 1;
             }
             IReadOnlyList<int> procs = _dialog.OptionProcedures;
             int best = -1, bestOrder = int.MinValue;
+            var tied = new List<int>();
             for (int i = 0; i < procs.Count; i++)
-                if (order.TryGetValue(procs[i], out int ord) && ord > bestOrder)
-                    { bestOrder = ord; best = i; }
-            if (best < 0)
+            {
+                if (!order.TryGetValue(procs[i], out int ord)) continue;
+                if (ord > bestOrder) { bestOrder = ord; best = i; tied = [i]; }
+                else if (ord == bestOrder) tied.Add(i);
+            }
+            int roundIdx = picks.Count;
+            if (roundIdx < forced.Count)
+                best = forced[roundIdx]; // replay the forced prefix / alternative
+            else if (best < 0)
             {
                 if (stall++ >= 1 || procs.Count == 0) break;
-                best = 0; // one greedy step off-route, then bail
+                best = 0;
             }
-            else stall = 0;
+            else
+            {
+                stall = 0;
+                if (tied.Count > 1) branches.Add((roundIdx, tied)); // a value-branch tie
+            }
+            if (best < 0 || best >= procs.Count) break;
             picks.Add(best + 1);
             ChooseDialogOption(best);
         }
         _dialog = null;
-        return picks;
+        return (picks, branches);
     }
 }

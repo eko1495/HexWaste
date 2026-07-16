@@ -148,6 +148,16 @@ Three follow-ups landed, turning the driver into a pipeline:
   emitted cross-map recipe hops `--goto-map` and reproduces fresh. (459 hops correctly but stalls
   on Barkus's $1000 bribe — the value-branch limit below, not a cross-map failure.)
 
-**Remaining follow-up:** value-branch negotiations (Fred demand-full, Harry $800, Barkus $1000) —
-add a "try each terminal option, keep the one that advances the gvar" fallback to `DriveOne`.
+**#4 value-branch tie-breaking (partial):** `DriveOne` now records rounds with a TIE (≥2 options
+to the same best route node — the haggle/bribe menus) and, when the greedy pass doesn't advance,
+retries picking each tied option, keeping the one that moves the gvar. Sound + additive
+(regression-free: 106/497/493/551 and cross-map 450 still auto-complete). BUT it doesn't crack
+the marquee negotiations (371 Fred / 80 Harry / 459 Barkus) for two deeper reasons found in
+testing: (a) some value-branches advance a PREREQUISITE gvar (Fred's demand-full sets the 446
+task bit, not the quest gvar 371 — the driver watches 371 and sees no movement), and (b) the
+menus sit behind DEEP navigation the greedy doesn't always reach (Barkus: building→center→
+Joshua→negotiate→tier). Cracking these needs the driver to (a) track the completing node's
+prerequisite gvars as progress signals, and (b) route through multi-level sub-menus — a larger
+generalization, deferred. The census still flags these correctly as activated/stuck.
+
 Additive throughout — all 16 quest goldens byte-identical, 953 Formats tests pass.
