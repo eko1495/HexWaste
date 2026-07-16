@@ -1,0 +1,2 @@
+rad-probe: rad=300 band=2 days=0 pending=0 hp=44->44 bonus=[] dead=0
+drug-probe: pid=48 minutes=0 pending=2 bonus=[] poison=0 rad=275

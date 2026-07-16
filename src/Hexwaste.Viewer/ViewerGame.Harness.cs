@@ -953,7 +953,7 @@ public sealed partial class ViewerGame
                         .Where(s => _drugBonus[s] != 0)
                         .Select(s => $"{s}={_drugBonus[s]}");
                     Console.WriteLine($"drug-probe: pid={drugPid} minutes={drugMinutes} pending={_pendingDrugEvents.Count} "
-                        + $"bonus=[{string.Join(",", bonus)}]");
+                        + $"bonus=[{string.Join(",", bonus)}] poison={_dude?.Dude.Poison ?? 0} rad={_dude?.Dude.Radiation ?? 0}");
                     break;
                 }
                 case StartupAction.AddictProbe(var adPid, var adSeed, var adMinutes) when _dude is not null && _scriptHost is not null:

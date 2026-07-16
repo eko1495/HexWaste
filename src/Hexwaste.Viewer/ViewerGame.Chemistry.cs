@@ -67,10 +67,11 @@ public sealed partial class ViewerGame
     /// <summary>
     /// ported from item.cc _perform_drug_effect (:2639): additively apply a drug's per-stat amounts.
     /// stats[0] == -2 → the first real stat (stats[1]) takes a random range amounts[0]..amounts[1]
-    /// (immediate only; the stimpak heal). stat 35 = current HP (heal/cost, clamped, GameOver on ≤0);
-    /// 0..34 = a SPECIAL/derived BonusStats bonus (mirrored into _drugBonus for save re-apply). stats ≥36
-    /// (poison/rad counters) are out of scope (documented — only Mentats' minor rad bump). Returns whether
-    /// anything changed (the "Nothing happens" gate). The -2 random roll is the ONLY RNG draw.
+    /// (immediate only; the stimpak heal). Per critterSetBonusStat's non-SAVEABLE switch (stat.cc:530):
+    /// stat 35 = current HP (heal/cost, clamped, GameOver on ≤0); stat 36 = poison → critterAdjustPoison;
+    /// stat 37 = radiation → critterAdjustRadiation (this is how RadAway/antidote/healing-powder work);
+    /// 0..34 = a SPECIAL/derived BonusStats bonus (mirrored into _drugBonus for save re-apply). Returns
+    /// whether anything changed (the "Nothing happens" gate). The -2 random roll is the ONLY RNG draw.
     /// </summary>
     private bool ApplyDrugEffect(int[] stats, int[] amounts, bool immediate)
     {
@@ -100,6 +101,16 @@ public sealed partial class ViewerGame
             {
                 _dudeGcd.Stats.BonusStats[stat] += amt;
                 _drugBonus[stat] += amt;
+                changed = true;
+            }
+            else if (stat == 36 && amt != 0) // STAT_CURRENT_POISON_LEVEL → critterAdjustPoison (antidote, healing powder)
+            {
+                ApplyPoison(_dude.Dude, amt);
+                changed = true;
+            }
+            else if (stat == 37 && amt != 0) // STAT_CURRENT_RADIATION_LEVEL → critterAdjustRadiation (RadAway)
+            {
+                ApplyRadiation(_dude.Dude, amt);
                 changed = true;
             }
         }

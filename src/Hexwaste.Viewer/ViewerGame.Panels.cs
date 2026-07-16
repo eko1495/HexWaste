@@ -139,7 +139,7 @@ public sealed partial class ViewerGame
             bool[] bad =
             [
                 _dude.Dude.Poison > 0,                                              // 312 Poisoned
-                false,                                                              // 313 Radiated (not modeled)
+                _dude.Dude.Radiation > 0,                                           // 313 Radiated (critterGetRadiation != 0)
                 (res & Formats.Combat.CriticalTables.DamBlind) != 0,                // 314 Eye Damage
                 (res & Formats.Combat.CriticalTables.DamCripArmRight) != 0,         // 315 Crippled R Arm
                 (res & Formats.Combat.CriticalTables.DamCripArmLeft) != 0,          // 316 Crippled L Arm

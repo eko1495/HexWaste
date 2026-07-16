@@ -52,9 +52,16 @@ effects" would mean inventing behavior fo2ce lacks (violates "port, don't guess"
 "Attack whoever's attacking me" degrades to Closest (`Combat/CompanionAi.cs`) — no per-ally
 danger-source tracker. The 7 party-control *settings* + ally AI are otherwise real (P50-P52).
 
-**A4 — Poison / radiation counters.** *Effort M · low-medium.* Poison & rad accumulation are not
-modeled (`ViewerGame.Chemistry.cs:72`; Pip-Boy "Radiated" hardcoded false, `Panels.cs:142`); only
-Mentats' minor rad bump exists. A real progression consequence that's currently absent.
+**A4 — Poison / radiation counters. MOSTLY ALREADY BUILT — two small gaps fixed (2026-07-16).**
+The research over-reported this too: poison (P35) + radiation (P101/P113) are fully modeled —
+counters on the dude, `AdjustPoison`/`AdjustRadiation` with resistance, the `10*(505-5·p)` poison
+tick + the radiation band/endurance-roll/7-day-heal/rad-death model (`RadiationTables`), the
+`poison`/`radiation_inc`/`radiation_dec`/`get_poison` externals wired, `get_critter_stat` 36/37,
+save/load, HUD + Pip-Boy "Poisoned". Two genuine remainders, now **fixed**: (1) the drug pipeline
+excluded stats 36/37, so RadAway/antidote/healing-powder were inert for their signature effect —
+now routed through `ApplyPoison`/`ApplyRadiation` per fo2ce `critterSetBonusStat`'s non-SAVEABLE
+switch (`stat.cc:530`); (2) Pip-Boy "Radiated" was hardcoded false — now `Radiation != 0`
+(`character_editor.cc:2675`). Golden `drug-radaway` locks RadAway 300→275. **Closed.**
 
 **A5 — Small correctness residuals.** *Effort S each.*
 - Ghost perk's light-gated Sneak bonus is unwired (needs a per-object `objectGetLightIntensity`;

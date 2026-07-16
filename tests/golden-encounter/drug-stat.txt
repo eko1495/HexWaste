@@ -1,3 +1,3 @@
-drug-probe: pid=87 minutes=0 pending=2 bonus=[0=2,2=3,5=2]
-drug-probe: pid=87 minutes=400 pending=1 bonus=[0=-2,2=-1,5=-2]
-drug-probe: pid=87 minutes=700 pending=0 bonus=[]
+drug-probe: pid=87 minutes=0 pending=2 bonus=[0=2,2=3,5=2] poison=0 rad=0
+drug-probe: pid=87 minutes=400 pending=1 bonus=[0=-2,2=-1,5=-2] poison=0 rad=0
+drug-probe: pid=87 minutes=700 pending=0 bonus=[] poison=0 rad=0

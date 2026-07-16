@@ -318,6 +318,10 @@ SCENARIOS=(
   # pending 1); at +700 (total 1100) dur2 restored it to zero (pending 0). No golden gives/uses a stat
   # drug, so all other goldens stay byte-identical (the -2 stimpak heal RNG is unchanged).
   "drug-stat|--character combat --map arcaves.map --give 87 --use-item 87 --drug-probe 87 0 --drug-probe 87 400 --drug-probe 87 700 --rng-seed 1"
+  # A4 (P137): a drug's poison/radiation stat routes through critterAdjustPoison/Radiation (stat.cc:530
+  # critterSetBonusStat non-SAVEABLE switch). RadAway (pid 48, stat 37 = -25 rad) cures radiation via the
+  # item pipeline; before this it was inert. rad 300 -> 275 (band 2). The drug-probe now reports poison/rad.
+  "drug-radaway|--character combat --map arcaves.map --rad-probe 300 0 --give 48 --use-item 48 --drug-probe 48 0 --rng-seed 1"
   # P38 drug addiction + withdrawal (item.cc _item_d_take_drug addiction tail :2822 + the
   # EVENT_TYPE_WITHDRAWAL onset/recovery chain). --addict-probe <pid> <seed> <gameMin> seeds the
   # ISOLATED addiction RNG, gives+uses the drug (the faithful roll), advances the clock, fires
@@ -622,7 +626,7 @@ SCENARIOS=(
 
 # Keep only the deterministic transcript lines (drop map-load / animate / stub /
 # dialog-text noise — NEVER capture REPLY/OPTION game-asset strings).
-FILTER='^(encounter|travel-from|companion|dismiss-persist|trade:|party:|party-count:|set-global:|hud-click:|use-skill:|has-skill:|steal:|maxhp:|hurt:|rest:|automap:|reveal:|taunt:|weapon-mode:|panel-click:|menu-click:|travel-resume:|travel-step:|travel-save-mid:|worldmap-fog:|weight:|iq-probe:|death-probe:|trait-probe:|perk-probe:|perk-pick:|combat-walk:|light:|map-update:|map-update-heartbeat:|drag-equip:|save-slot:|load-slot:|slots:|aim-click:|tactics:|reg-anim:|encounter-fight:|brawl:|brawl-watch:|sneak-probe:|sneak-roll:|backstab-probe:|detect-probe:|karma-probe:|set-karma:|rep-title:|town-rep:|karma-titles:|get-global:|place-probe:|reg-anim-move:|critter-state:|hurt-too-much:|run-probe:|outline:|ac-dodge:|sfx-probe:|reaction-probe:|combat-proc:|combat-proc-hit:|combat-over:|car-probe:|car-travel:|car-outofgas:|quest-item:|quest-probe:|holodisk-item:|holodisk-probe:|poison-tick:|multihex-probe:|drug-probe:|addict-probe:|kills-probe:|book:|ammo-select:|unload:|ai-heal-probe:|ai-drug-probe:|ai-weapon-probe:|swap-hand:|weapon-switch:|float-text:|speech-probe:|smoke:|scenery-use@|party-probe:|awareness-probe:|action-menu@|  spawn|  flat|  wait:|  follow:|  dismiss:|  rejoin:)'
+FILTER='^(encounter|travel-from|companion|dismiss-persist|trade:|party:|party-count:|set-global:|hud-click:|use-skill:|has-skill:|steal:|maxhp:|hurt:|rest:|automap:|reveal:|taunt:|weapon-mode:|panel-click:|menu-click:|travel-resume:|travel-step:|travel-save-mid:|worldmap-fog:|weight:|iq-probe:|death-probe:|trait-probe:|perk-probe:|perk-pick:|combat-walk:|light:|map-update:|map-update-heartbeat:|drag-equip:|save-slot:|load-slot:|slots:|aim-click:|tactics:|reg-anim:|encounter-fight:|brawl:|brawl-watch:|sneak-probe:|sneak-roll:|backstab-probe:|detect-probe:|karma-probe:|set-karma:|rep-title:|town-rep:|karma-titles:|get-global:|place-probe:|reg-anim-move:|critter-state:|hurt-too-much:|run-probe:|outline:|ac-dodge:|sfx-probe:|reaction-probe:|combat-proc:|combat-proc-hit:|combat-over:|car-probe:|car-travel:|car-outofgas:|quest-item:|quest-probe:|holodisk-item:|holodisk-probe:|poison-tick:|rad-probe:|multihex-probe:|drug-probe:|addict-probe:|kills-probe:|book:|ammo-select:|unload:|ai-heal-probe:|ai-drug-probe:|ai-weapon-probe:|swap-hand:|weapon-switch:|float-text:|speech-probe:|smoke:|scenery-use@|party-probe:|awareness-probe:|action-menu@|  spawn|  flat|  wait:|  follow:|  dismiss:|  rejoin:)'
 
 echo "Building viewer..."
 dotnet build src/Hexwaste.Viewer -c Debug >/dev/null || { echo "build failed"; exit 2; }
