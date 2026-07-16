@@ -85,11 +85,25 @@ switch (`stat.cc:530`); (2) Pip-Boy "Radiated" was hardcoded false — now `Radi
 Per the project's own analysis, the bulk of "finishing the game" is per-quest playtest/QA, not
 engine code. 25 quest goldens locked; census baseline: 56 quest-bearing maps, batch stuck=183.
 
-**B1 — Deep sub-menu routing. Biggest single lever.** *Effort L.* The greedy dialogue router
-only picks the nearest on-route option; it can't descend multi-level menus
-(building→center→NPC→negotiate→tier, e.g. Barkus 459). This is the dominant New Reno failure mode
-(~76 of the 183 stuck runs) + SF/NCR negotiation menus. Converts newr2 (11/11 stuck), sfchina
-(5/5) from stuck to driveable.
+**B1 — Deep sub-menu routing. INVESTIGATED — the premise was wrong; almost no real targets
+(2026-07-16).** The hypothesis was that New Reno's ~76 stuck runs are single-NPC deep menus the
+greedy can't descend. Grounding the actual failures disproved it. The newr1 stuck tail is:
+**7 of 10 combat-gated** (`damage_p_proc` completions — the crime-family war; ncSalMen/ncBisMen/
+ncMorMen/ncWriTee/ncCasBou — these need `--kill`, i.e. B3, not routing), and the dialog ones
+(286 `WRIGHT_MYSTERY`, 343 `SAD`, 547 `WESTIN_SNUFF`) are **multi-NPC investigation chains**, not
+deep menus: a QDTRACE of the driver on 286 shows `onGraph=[]` every round — the completing NPC's
+intro options don't touch the quest gvar *at all* (the quest is advanced by *other* NPCs/events;
+this NPC only closes it once investigation state is accumulated elsewhere). So there is no
+single-NPC dialogue path to route, deep or otherwise. A reverse-BFS distance-field router (score
+every proc that can reach a gvar-write, vs one shortest path) was tried and **reverted**: it
+regressed 497 (the single-path ORDERING matters — a flat distance picks a nearer-but-wrong branch)
+and didn't help the targets (`onGraph=[]` means reverse-BFS finds nothing reachable either).
+
+**Re-scoped real levers for the NR/SF stuck tail:** (1) **B3 — driver-invoked `--kill`** for the
+`damage_p_proc` family-war quests (the majority of the NR tail). (2) **A multi-NPC investigation
+driver** (a much larger cross-map state-accumulation engine — talk NPC-A → advance a stage-gvar →
+talk NPC-B → … → completer) — this is the genuine hard problem, materially bigger than B2's
+bit-prereq. Neither is "deep sub-menu routing." B1 as originally framed is **closed as a non-lever**.
 
 **B2 — Cross-map bit-prerequisite driver.** *Effort M.* Combine the existing cross-map hop (§9 #3)
 with the P137 bit-level prereq tracking (§12) so activate-at-A / bit-set-at-B / complete-at-C
@@ -135,17 +149,21 @@ misled by stale strategy docs. *Effort S.*
 
 ## Recommendation
 
-A1 was investigated first and **closed as faithful-not-a-gap** (see above) — a useful reminder
-that "karma is cosmetic" is a content-slice symptom, not an engine defect. With A1 out, the two
-coherent directions are:
+Nearly every proposed item was investigated and either closed-as-faithful (A1 karma), found
+already-built (A4 poison/rad, ~95%), fixed as a one-liner (A3 whoHitMe, A5a imported-proc), or
+disproven as a lever (B1 deep-menu). The engine + single-NPC quest-driver are essentially complete.
+What remains, honestly, is:
 
-- **"Make the engine's own systems complete"** → **A4 (poison/radiation counters)** is now the
-  strongest genuinely-unbuilt, self-contained engine gap with a clear fo2ce reference
-  (`queue.cc` poison/radiation events + `critter.cc` rad thresholds). Then **A2 (combat-AI
-  residuals)** for combat feel (golden-heavy). A5's imported-proc-call throw is worth a quick
-  audit (latent crash if any vanilla script hits it).
-- **"Finish the campaign / land more quests"** → **B1 (deep sub-menu routing)** unlocks the most
-  quests (~76 New Reno + SF/NCR), then B2 (cross-map bit-prereq) generalizes the P137 win.
+- **B3 — driver-invoked combat (`--kill`)** for the `damage_p_proc` quests (the majority of the
+  New Reno stuck tail is the crime-family war, completed by combat not dialogue). The clearest
+  remaining quest-coverage lever, and mechanically small (the harness already has `--kill`; teach
+  the driver to detect a combat-triggered completion and emit it).
+- **A multi-NPC investigation-chain driver** — the genuine large frontier: quests advanced across
+  several NPCs/events accumulating a stage-gvar (New Reno mysteries, SF). Materially bigger than
+  B2's bit-prereq; the true "months of QA" residue.
+- **A2 / A5b / A5c** — real but deliberately-deferred combat/rendering fidelity polish (golden-heavy).
 
-Both A4 and B1 are real and independent; A4 is self-contained (one subsystem, clear reference),
-B1 is more open-ended (router search redesign) but higher user-facing value.
+If the goal is more quest coverage, **B3** is the tractable next step. If it's engine fidelity,
+**A2** (combat feel). Otherwise the project is at a natural banking point — the substantive gaps
+are closed.
+
