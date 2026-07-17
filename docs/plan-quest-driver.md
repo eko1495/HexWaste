@@ -259,3 +259,40 @@ REPLAY-VERIFIED 0→2 (the harvest guard). Locked as golden `quest-rebecca-prere
 byte-identical). No regression: 106/497/493/551/393 still auto-complete; 953 Formats tests pass
 (+3 new bit-level tests). The negotiation-prerequisite tier the gvar-level attempt couldn't reach
 is now driveable. Remaining stuck-tier (New Reno deep sub-menus, non-bit prereqs) is separate work.
+
+## 13. Investigation-chain driver (New Reno mysteries) — GROUNDED, checkpoint (not built)
+
+Grounded 286 (GVAR_NEW_RENO_WRIGHT_MYSTERY) — the archetype "investigation" quest — to size the
+work. The mechanism IS the P137 bit-prerequisite pattern, but at a scale that needs several new
+subsystems, with no incremental payoff.
+
+**What 286 actually is:** a 37-write murder mystery. The completer (ncOrvill) accuses the murderer
+via `talk_p_proc → Node018 → Node988 := 2`, and each accuse option is GATED on evidence bits in the
+shared New Reno flag fields — `314` (GVAR_NEW_RENO_FLAG_1) and `345` (FLAG_2). Each bit has a
+specific setter (`314 & 0x20` ← ncRenesc, `345 & 0x2` ← ncJules, `345 & 0x4` ← ncJimmyJ, …) — a
+clean P137-style relationship, so the shared-bitfield §10 wall does NOT apply (the mask disambiguates).
+
+**Why the current P137 driver can't do it (measured with a QDTRACE):**
+- On newr2, prereq gathering found `neededBits=[314&0x4000, 314&0x40]` but `prereqsOnMap=[]` — **the
+  evidence-bit setters are on OTHER New Reno maps** (the prereq loop only searches the current map's
+  critters). Cross-map prereq resolution is missing.
+- Only 2 of the many accuse-gate bits were found: `FindPathProcs` returns ONE shortest path to ONE
+  completing write, so BitChecks on the rest of the gate (and other completers) are missed. Complete
+  (full-subtree) bit gathering is missing.
+- Reaching `286 := 1` (accept the investigation) is a 7-hop `Node004 → … → Node015` dialogue path.
+- Which suspect to accuse is quest-specific (depends on which evidence you gathered) — not a clean
+  mechanical driver decision.
+
+**Honest scope:** completing an investigation quest needs the confluence of (1) full-subtree
+multi-bit prereq gathering, (2) cross-map prereq resolution (drive bit-setters on other maps, then
+return), (3) deep-activation navigation, and (4) quest-specific accusation logic. Crucially there is
+**no incremental payoff** — all four are required before ANY investigation quest completes, so it
+can't be delivered in validated slices. That makes it a large, multi-session build with real
+convergence risk, for a handful of quests — several of which are ALSO combat-completable
+(`damage_p_proc := 2` on the suspects, i.e. the B3/kill path once the culprit is known).
+
+**Recommendation / checkpoint:** do NOT sink into a speculative build. The quest-driver is at a
+strong, honest state — it auto-completes the delivery/item-return tier, the single-bit-prerequisite
+negotiations (P137), and the unconditional-kill quests (P138/B3), and correctly flags the rest. The
+investigation tier is the remaining frontier and is genuinely large; take it on only as a dedicated
+multi-session effort with eyes open, or bank here.

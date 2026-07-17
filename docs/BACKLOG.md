@@ -165,9 +165,11 @@ What remains, honestly, is:
   needing activate-then-kill the driver only does when both are on one map. `damage_p_proc` quests
   (the crime-family war) are NOT covered — `--kill` fires `destroy_p_proc`, not `damage_p_proc`;
   those need a hurt-to-threshold verb, separate. Run the harvest to enumerate the clean kill-wins.
-- **A multi-NPC investigation-chain driver** — the genuine large frontier: quests advanced across
-  several NPCs/events accumulating a stage-gvar (New Reno mysteries, SF). Materially bigger than
-  B2's bit-prereq; the true "months of QA" residue.
+- **A multi-NPC investigation-chain driver** — GROUNDED (plan §13): the archetype 286 Wright-mystery
+  is P137-style bit-prereqs but needs FOUR subsystems together — full-subtree multi-bit gathering,
+  cross-map prereq resolution, deep-activation navigation, and quest-specific accusation — with NO
+  incremental payoff (all required before any investigation quest completes). A large multi-session
+  build with convergence risk, for a handful of quests (several also combat-completable). Deferred.
 - **A2 / A5b / A5c** — real but deliberately-deferred combat/rendering fidelity polish (golden-heavy).
 
 If the goal is more quest coverage, **B3** is the tractable next step. If it's engine fidelity,
