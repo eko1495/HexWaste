@@ -43,6 +43,10 @@ SCENARIOS=(
   # (CombatEngine.Kill → destroy_p_proc) deterministically — the quest logic is real, only the cause of
   # death is a debug shortcut (a fresh test char can't win the boss fight). FULL lifecycle 0→2.
   "quest-kill-ratgod|$CREATE --goto-map klaratcv.map:25486:2 --get-global 390 --kill 25486 --get-global 390 --quest-probe --rng-seed 1"
+  # B3 (P138): the quest-driver's KILL pass auto-completes a destroy_p_proc quest. Killing Metzger
+  # (denbus2 15278) fires his destroy_p_proc → GVAR_QUEST_VIC_DEVICE (100) := 2 (the aggressive Vic-
+  # rescue path). --kill now finds the completer on ANY elevation, so a plain --goto-map replays. 0→2.
+  "quest-kill-metzger|$CREATE --goto-map denbus2.map --get-global 100 --kill 15278 --get-global 100 --quest-probe --rng-seed 1"
   # Refuel Whiskey Bob's still (Klamath, GVAR 198) — FULL lifecycle 0→1→2→5, via the REAL path (no
   # --set-global). Buy Bob a drink + accept the still job (198→1); carry firewood (pid 286) to the still
   # shack south of town (klatrap, hex 20131) and use it (use_obj_on_p_proc → 198→2); return to Bob, who

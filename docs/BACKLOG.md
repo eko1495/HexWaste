@@ -154,10 +154,17 @@ already-built (A4 poison/rad, ~95%), fixed as a one-liner (A3 whoHitMe, A5a impo
 disproven as a lever (B1 deep-menu). The engine + single-NPC quest-driver are essentially complete.
 What remains, honestly, is:
 
-- **B3 — driver-invoked combat (`--kill`)** for the `damage_p_proc` quests (the majority of the
-  New Reno stuck tail is the crime-family war, completed by combat not dialogue). The clearest
-  remaining quest-coverage lever, and mechanically small (the harness already has `--kill`; teach
-  the driver to detect a combat-triggered completion and emit it).
+- **B3 — driver-invoked combat (`--kill`). DONE for `destroy_p_proc` (2026-07-17).** The driver now
+  has a KILL pass: if dialogue doesn't finish a quest and the completer's write is in
+  `destroy_p_proc`, it fires that critter's death path (`CombatEngine.Kill → destroy_p_proc →
+  set_global_var`) and keeps the ones that advance the gvar, emitting `--kill <tile>`. Also fixed
+  `--kill` to find the completer on ANY elevation (the Rat God is on klaratcv elev 2), so kill
+  recipes replay without threading elevation. Auto-completes 390 (Rat God) and 100 (kill Metzger →
+  Vic device); golden `quest-kill-metzger` locks it. **Caveat:** *unconditional*-kill quests are few
+  — many `destroy_p_proc` writes are gated on prior activation (474 Kill Darion, the 454 gang war),
+  needing activate-then-kill the driver only does when both are on one map. `damage_p_proc` quests
+  (the crime-family war) are NOT covered — `--kill` fires `destroy_p_proc`, not `damage_p_proc`;
+  those need a hurt-to-threshold verb, separate. Run the harvest to enumerate the clean kill-wins.
 - **A multi-NPC investigation-chain driver** — the genuine large frontier: quests advanced across
   several NPCs/events accumulating a stage-gvar (New Reno mysteries, SF). Materially bigger than
   B2's bit-prereq; the true "months of QA" residue.

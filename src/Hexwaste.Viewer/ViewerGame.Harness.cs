@@ -819,7 +819,15 @@ public sealed partial class ViewerGame
                     // RunDestroyProc → its destroy_p_proc), so a kill-quest GVAR fires deterministically
                     // without winning a fair boss fight. The QUEST logic (destroy_p_proc → set_global_var)
                     // is real; only the cause of death is a debug shortcut.
-                    MapObject? victim = CritterAt(killHex, includeFlat: true);
+                    // Search the current elevation first, then ALL elevations — a kill-quest completer
+                    // (the Rat God on klaratcv elev 2, a cave boss) need not share the dude's elevation,
+                    // and destroy_p_proc fires on the critter regardless. Makes B3 --kill recipes replay
+                    // without threading the completer's elevation through --goto-map.
+                    MapObject? victim = CritterAt(killHex, includeFlat: true)
+                        ?? Enumerable.Range(0, Formats.Map.MapFile.ElevationCount)
+                            .SelectMany(e => (_solidObjects[e] ?? []).Concat(_flatObjects[e] ?? []))
+                            .FirstOrDefault(o => o.HexTile == killHex
+                                && Fid.Type(o.Fid) is ObjectType.Critter && !o.IsDead);
                     if (victim is null) { Console.Error.WriteLine($"kill: no critter at {killHex}"); break; }
                     _combat.Kill(victim, _dude?.Dude);
                     Console.WriteLine($"kill: pid=0x{victim.Pid:X}@{killHex} dead={(victim.IsDead ? 1 : 0)}");
@@ -2470,7 +2478,7 @@ public sealed partial class ViewerGame
     /// <summary>Outcome of an auto-drive: gvar movement, the (map, tile, picks) visits that made
     /// progress, and the item pids given — enough to emit a reproducible harness command.</summary>
     private sealed record DriveResult(int Gvar, int Start, int End, int Completed, string At,
-        IReadOnlyList<int> Pids, IReadOnlyList<(string Map, int Tile, List<int> Picks)> Visits, bool HadCandidates);
+        IReadOnlyList<int> Pids, IReadOnlyList<(string Map, int Tile, List<int> Picks, bool Kill)> Visits, bool HadCandidates);
 
     /// <summary>The reproducible harness command for a completed/advanced drive (#2, golden
     /// emitter): --goto-map &lt;map&gt; [--give pid:n ...] --talk-seq &lt;tile&gt; &lt;picks&gt; …, hopping
@@ -2480,7 +2488,7 @@ public sealed partial class ViewerGame
         var sb = new System.Text.StringBuilder();
         string? curMap = null;
         bool gaveItems = false;
-        foreach ((string map, int tile, List<int> picks) in r.Visits)
+        foreach ((string map, int tile, List<int> picks, bool kill) in r.Visits)
         {
             if (map != curMap)
             {
@@ -2493,10 +2501,13 @@ public sealed partial class ViewerGame
                     gaveItems = true;
                 }
             }
-            // A zero-pick step is a talk_p_proc/call completer that fires on dialogue OPEN (no
-            // option chosen); emit the "-" sentinel so the recipe stays well-formed CLI (an empty
-            // pick arg makes --talk-seq's int.Parse throw → a bogus ?->? instead of a clean replay).
-            sb.Append($" --talk-seq {tile} {(picks.Count > 0 ? string.Join(",", picks) : "-")}");
+            if (kill)
+                sb.Append($" --kill {tile}"); // B3: a destroy_p_proc completer — fire its death path
+            else
+                // A zero-pick step is a talk_p_proc/call completer that fires on dialogue OPEN (no
+                // option chosen); emit the "-" sentinel so the recipe stays well-formed CLI (an empty
+                // pick arg makes --talk-seq's int.Parse throw → a bogus ?->? instead of a clean replay).
+                sb.Append($" --talk-seq {tile} {(picks.Count > 0 ? string.Join(",", picks) : "-")}");
         }
         return sb.ToString();
     }
@@ -2511,7 +2522,7 @@ public sealed partial class ViewerGame
         }
         Console.WriteLine($"quest-drive: gvar={r.Gvar} start={r.Start} end={r.End}"
             + $" completed={r.Completed} at=[{r.At}] items=[{string.Join(",", r.Pids)}]"
-            + $" steps=[{string.Join(" ", r.Visits.Select(v => $"{v.Tile}({string.Join("", v.Picks)})"))}]");
+            + $" steps=[{string.Join(" ", r.Visits.Select(v => v.Kill ? $"{v.Tile}(kill)" : $"{v.Tile}({string.Join("", v.Picks)})"))}]");
         if (r.Visits.Count > 0) // #2: a runnable recipe for whatever it moved
             Console.WriteLine($"quest-drive-cmd: gvar={r.Gvar} {DriveCommand(r)}");
     }
@@ -2627,7 +2638,7 @@ public sealed partial class ViewerGame
         int display = Quests().FirstOrDefault(q => q.Gvar == gvar)?.DisplayThreshold ?? 1;
         int bitsSet() => prereqs.Count(p => (_scriptHost.GlobalVars.GetValueOrDefault(p.G, 0) & p.Mask) != 0);
         bool prereqsPending() => prereqs.Any(p => (_scriptHost.GlobalVars.GetValueOrDefault(p.G, 0) & p.Mask) == 0);
-        var visits = new List<(string Map, int Tile, List<int> Picks)>();
+        var visits = new List<(string Map, int Tile, List<int> Picks, bool Kill)>();
         DriveCandidate? winner = null;
         for (int pass = 0; pass < 4 && winner is null; pass++)
         {
@@ -2647,7 +2658,7 @@ public sealed partial class ViewerGame
                 if (before >= completed) { winner = c; break; }
                 List<int> picks = DriveOne(c, GvarGoal(c, gvar, target));
                 int after = _scriptHost.GlobalVars.GetValueOrDefault(gvar, 0);
-                if (after != before) visits.Add((_currentMapName, c.Npc.HexTile, picks));
+                if (after != before) visits.Add((_currentMapName, c.Npc.HexTile, picks, false));
                 if (after >= completed) { winner = c; break; }
             }
             if (winner is not null) break;
@@ -2659,13 +2670,34 @@ public sealed partial class ViewerGame
                 if ((_scriptHost.GlobalVars.GetValueOrDefault(g, 0) & mask) != 0) continue;
                 List<int> picks = DriveOne(cand, BitGoal(g, mask, cand.CompletingProc));
                 if ((_scriptHost.GlobalVars.GetValueOrDefault(g, 0) & mask) != 0)
-                    visits.Add((_currentMapName, cand.Npc.HexTile, picks));
+                    visits.Add((_currentMapName, cand.Npc.HexTile, picks, false));
             }
             // stop only when a full pass moved neither the quest gvar nor any prerequisite bit.
             if (winner is null && _scriptHost.GlobalVars.GetValueOrDefault(gvar, 0) == passStart
                 && bitsSet() == passBits)
                 break;
         }
+
+        // B3: KILL pass — a quest whose completing write lives in destroy_p_proc completes when the
+        // critter dies (KCRatGod 390, Metzger, the Den gang war 454, Modoc slags, …), not via dialogue.
+        // If dialogue didn't finish it, fire each destroy_p_proc completer's death path (the real
+        // --kill: CombatEngine.Kill → RunDestroyProc → destroy_p_proc → set_global_var) and keep the
+        // ones that actually advance the gvar. Bounded: only the specific completer critters, only
+        // when still short of completion.
+        if (winner is null)
+            foreach (DriveCandidate c in candidates)
+            {
+                int before = _scriptHost.GlobalVars.GetValueOrDefault(gvar, 0);
+                if (before >= completed) { winner = c; break; }
+                if (c.Npc.IsDead
+                    || c.Scan.Program.Procedures[c.CompletingProc].Name != "destroy_p_proc")
+                    continue;
+                _combat.Kill(c.Npc, _dude?.Dude);
+                int after = _scriptHost.GlobalVars.GetValueOrDefault(gvar, 0);
+                if (after != before) visits.Add((_currentMapName, c.Npc.HexTile, [], true));
+                if (after >= completed) { winner = c; break; }
+            }
+
         int endVal = _scriptHost.GlobalVars.GetValueOrDefault(gvar, 0);
         string at = winner is not null ? $"{winner.Npc.HexTile} {winner.ScriptName}" : "-";
         return new DriveResult(gvar, start0, endVal, endVal >= completed ? 1 : 0, at, pids, visits, true);
@@ -2680,7 +2712,7 @@ public sealed partial class ViewerGame
         if (_scriptHost is null) return;
         int completed = Quests().FirstOrDefault(q => q.Gvar == gvar)?.CompletedThreshold ?? 1;
         int start0 = _scriptHost.GlobalVars.GetValueOrDefault(gvar, 0);
-        var allVisits = new List<(string Map, int Tile, List<int> Picks)>();
+        var allVisits = new List<(string Map, int Tile, List<int> Picks, bool Kill)>();
         var allPids = new List<int>();
         string at = "-";
         for (int round = 0; round < 3; round++)
