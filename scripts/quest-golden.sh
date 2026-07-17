@@ -47,6 +47,14 @@ SCENARIOS=(
   # (denbus2 15278) fires his destroy_p_proc → GVAR_QUEST_VIC_DEVICE (100) := 2 (the aggressive Vic-
   # rescue path). --kill now finds the completer on ANY elevation, so a plain --goto-map replays. 0→2.
   "quest-kill-metzger|$CREATE --goto-map denbus2.map --get-global 100 --kill 15278 --get-global 100 --quest-probe --rng-seed 1"
+  # B3 harvest (P138): clean destroy_p_proc kill-wins the driver auto-found across all 155 maps, then
+  # replay-verified. Explicit "kill X" quests + a creature kill — unambiguous kill-completions.
+  # Kill Darion, the Vault 15 raider leader (GVAR_V15_KILL_DARION 474) — vault15 23883. 0→2.
+  "quest-kill-darion|$CREATE --goto-map vault15.map --get-global 474 --kill 23883 --get-global 474 --quest-probe --rng-seed 1"
+  # Kill Elron, the NCR Hubologist leader (GVAR_NCR_KILL_ELRON_QST 486) — ncr1 22886. 0→2.
+  "quest-kill-elron|$CREATE --goto-map ncr1.map --get-global 486 --kill 22886 --get-global 486 --quest-probe --rng-seed 1"
+  # Kill Xarn the deathclaw at Navarro (GVAR_NAVARRO_XARN 554) — navarro 22900. 0→2.
+  "quest-kill-xarn|$CREATE --goto-map navarro.map --get-global 554 --kill 22900 --get-global 554 --quest-probe --rng-seed 1"
   # Refuel Whiskey Bob's still (Klamath, GVAR 198) — FULL lifecycle 0→1→2→5, via the REAL path (no
   # --set-global). Buy Bob a drink + accept the still job (198→1); carry firewood (pid 286) to the still
   # shack south of town (klatrap, hex 20131) and use it (use_obj_on_p_proc → 198→2); return to Bob, who

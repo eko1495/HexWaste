@@ -22,6 +22,25 @@ NEW recipe-verified completions (not already goldens): 4 quests
 | 485 | GVAR_NCR_ENLONE_LETTER_QST | sfelronb | 2 | 15469 |
 | 367 | GVAR_SAN_FRAN_SPLEEN | sftanker (+dnslvrun) | 9 | 23085 |
 
+## B3 KILL-wins (P138 — the driver's destroy_p_proc kill pass, replay-verified)
+
+The kill pass auto-found these across all 155 maps; each `--kill` recipe replays 0→completed
+(the completer's `destroy_p_proc` fires the gvar). Three goldened as unambiguous kill-completions:
+
+| gvar | name | map | 0-> | recipe | goldened |
+|------|------|-----|-----|--------|----------|
+| 474 | GVAR_V15_KILL_DARION | vault15 | 2 | `--kill 23883` | ✓ quest-kill-darion |
+| 486 | GVAR_NCR_KILL_ELRON_QST | ncr1 | 2 | `--kill 22886` | ✓ quest-kill-elron |
+| 554 | GVAR_NAVARRO_XARN | navarro | 2 | `--kill 22900` | ✓ quest-kill-xarn |
+| 100 | GVAR_QUEST_VIC_DEVICE | denbus2 | 2 | `--kill 15278` | ✓ quest-kill-metzger |
+| 292 | GVAR_REDDING_WHORE_CUT | redment (+cowbomb/rndexcow) | 4 | `--kill 16324` | held — semantics |
+| 217 | GVAR_NCR_MIRA_STATE | ncr1 | 5 | `--kill 14866` | held — a "state" gvar |
+
+**292/217 held for review** (task #67): both replay-verify as real quest completions, but the
+gvar names (`WHORE_CUT`, `MIRA_STATE`) suggest a possible fail/side-effect path rather than an
+intended kill objective — unlike the explicit `KILL_DARION`/`KILL_ELRON`. Escort-death
+completions (102 Torr, 197 Smiley) are deliberately NOT harvested (killing the escortee = failure).
+
 ## Correctly rejected by the replay guard (driver said completed, recipe did NOT reproduce)
 
 - **380** reddown (`GVAR_REDDING_*`) — driver end=3, replay 0->0. The value-branch tie-break
