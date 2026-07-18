@@ -22,15 +22,16 @@ public sealed partial class ViewerGame
         id < 0 ? "" : LazyMsg(@"text\english\game\misc.msg", ref _miscMsgTried, ref _miscMsg)?.GetText(id) ?? "";
 
     // The six main-menu buttons in mainmenu.cc enum order (INTRO/NEW GAME/LOAD GAME/OPTIONS/CREDITS/EXIT).
-    // Hotkeys i/n/l/o/c/e (mainmenu.cc:55-62). Mapped to Hexwaste's reality: INTRO + OPTIONS are disabled —
-    // there is no intro .mve movie and no preferences screen (both documented divergences); LOAD GAME opens
-    // the 10-slot picker; CREDITS scrolls credits.txt (M4); NEW GAME enters the character flow.
+    // Hotkeys i/n/l/o/c/e (mainmenu.cc:55-62). All six are live: INTRO plays the iplogo→intro MVE cutscenes
+    // (P132/P133 codec + P139 wiring); NEW GAME enters the character flow; LOAD GAME opens the 10-slot
+    // picker; OPTIONS opens the PREFSCRN Preferences window (P130 + P139 wiring); CREDITS scrolls
+    // credits.txt (M4); EXIT quits.
     private static readonly (int MsgId, char Hotkey, bool Enabled)[] MainMenuButtons =
     [
-        (9, 'i', false),  // INTRO
+        (9, 'i', true),   // INTRO
         (10, 'n', true),  // NEW GAME
         (11, 'l', true),  // LOAD GAME
-        (12, 'o', false), // OPTIONS
+        (12, 'o', true),  // OPTIONS
         (13, 'c', true),  // CREDITS
         (14, 'e', true),  // EXIT
     ];
@@ -132,20 +133,34 @@ public sealed partial class ViewerGame
             ActivateMainMenuButton(_menuHover);
     }
 
-    /// <summary>Dispatch a main-menu button (shared by keyboard + mouse). INTRO/OPTIONS log "not available".</summary>
+    /// <summary>Dispatch a main-menu button (shared by keyboard + mouse). All six are live.</summary>
     private void ActivateMainMenuButton(int i)
     {
-        if (i < 0 || i >= MainMenuButtons.Length)
+        if (i < 0 || i >= MainMenuButtons.Length || !MainMenuButtons[i].Enabled)
             return;
         _audio?.PlaySfx("nmselec0"); // mainmenu.cc:322 click sfx
         switch (i)
         {
+            case 0: PlayIntroMovies(); break;                               // INTRO → iplogo → intro cutscenes
             case 1: _menu = MenuState.CharacterPick; _menuIndex = 0; _premadeSel = 0; break; // NEW GAME
             case 2: OpenSaveLoad(SaveLoadMode.Load); break;                 // LOAD GAME → the 10-slot picker
-            case 4: _menu = MenuState.Credits; _creditsScroll = 0; break; // CREDITS
+            case 3: OpenPreferences(fromMenu: true); break;                 // OPTIONS → the PREFSCRN window
+            case 4: _menu = MenuState.Credits; _creditsScroll = 0; break;   // CREDITS
             case 5: Exit(); break;                                          // EXIT
-            default: Console.WriteLine($"menu: \"{MiscMsg(MainMenuButtons[i].MsgId)}\" is not available in this slice"); break;
         }
+    }
+
+    /// <summary>INTRO: play the iplogo → intro MVE cutscenes in sequence (fo2ce main.cc:88-89 plays
+    /// MOVIE_IPLOGO then MOVIE_INTRO). The hoisted movie tick in Update chains the queue; any key/click
+    /// skips. Falls back to the caption card if the codec can't open the .mve.</summary>
+    private void PlayIntroMovies()
+    {
+        _movieQueue.Clear();
+        _moviePlayer = MviePlayer.TryOpen(GraphicsDevice, _vfs, "iplogo", _audio);
+        if (_moviePlayer is null)
+            _moviePlayer = MviePlayer.TryOpen(GraphicsDevice, _vfs, "intro", _audio);
+        else
+            _movieQueue.Enqueue("intro");
     }
 
     // ---- M2: the premade selector (pickchar.frm FID 174 + per-premade portrait + .bio) ----

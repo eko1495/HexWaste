@@ -193,6 +193,10 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
     /// <summary>P133: the full-screen MVE cutscene player (play_gmovie), when the .mve decodes.</summary>
     private MviePlayer? _moviePlayer;
 
+    /// <summary>P139: movies to auto-start after the current one finishes — the INTRO button chains
+    /// iplogo → intro (fo2ce main.cc:88-89 plays MOVIE_IPLOGO then MOVIE_INTRO in sequence).</summary>
+    private readonly Queue<string> _movieQueue = new();
+
     /// <summary>P133 debug: the cutscene browser (F10) — a list of every art\cuts\*.mve to preview.</summary>
     private bool _cutsceneMenuOpen;
     private int _cutsceneMenuIndex;
@@ -691,6 +695,7 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
         /// misc.msg labels + enabled flags), hit-testing each band centre back to prove the geometry
         /// round-trips. Window-independent (local coords), so it is a deterministic data-backed golden.</summary>
         public sealed record MenuProbe : StartupAction;
+        public sealed record MenuActivate(int Index) : StartupAction; // P139: click a main-menu button, report the resulting state
         public sealed record UseSkill(int Skill, int TargetHex) : StartupAction;
         public sealed record RestFor(int Minutes) : StartupAction;
         public sealed record OpenAutomap : StartupAction;
@@ -1930,6 +1935,40 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
         }
         else { _headFrame = 0; _headFrameTimerMs = 0; _activeLip = null; _headTransitionAnim = null; }
 
+        // P139: full-screen MVE cutscene — ticks its own clock in ANY state (incl. the main menu's
+        // INTRO button), so it must run BEFORE the menu-state early-return below. Any key/click skips it
+        // (the engine skips a movie on key/click). On finish, chain the next queued movie (iplogo → intro).
+        if (_moviePlayer is not null)
+        {
+            bool keyDown = keyboard.GetPressedKeyCount() > 0 && _previousKeyboard.GetPressedKeyCount() == 0;
+            bool clickDown = mouse.LeftButton == ButtonState.Pressed && _previousMouse.LeftButton == ButtonState.Released;
+            if (keyDown || clickDown)
+                _moviePlayer.Skip();
+            _moviePlayer.Update(gameTime.ElapsedGameTime.TotalMilliseconds);
+            if (_moviePlayer.Finished)
+            {
+                _moviePlayer.Dispose();
+                _moviePlayer = _movieQueue.Count > 0
+                    ? MviePlayer.TryOpen(GraphicsDevice, _vfs, _movieQueue.Dequeue(), _audio)
+                    : null;
+            }
+            _previousMouse = mouse;
+            _previousKeyboard = keyboard;
+            base.Update(gameTime);
+            return;
+        }
+
+        // P130/P139: the Preferences (PREFSCRN) modal — runs in ANY state (incl. the main menu's OPTIONS
+        // button), so it too precedes the menu-state return. ClosePreferences restores the prior screen.
+        if (_preferencesOpen)
+        {
+            UpdatePreferences(keyboard, mouse);
+            _previousMouse = mouse;
+            _previousKeyboard = keyboard;
+            base.Update(gameTime);
+            return;
+        }
+
         // Main menu / character creation: the world idles underneath. The menu/creation flow plays the
         // engine's menu music (mainmenu.cc → 07desert); PlayMusic de-dups so calling each frame is a no-op.
         // When LOAD GAME opens the 10-slot picker FROM the menu, defer to the _saveLoadOpen handler below so
@@ -1969,25 +2008,6 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
             return;
         }
 
-        // Full-screen MVE cutscene: ticks its own clock; any key or a click skips it (the engine
-        // skips a movie on key/click). Ends when the stream finishes.
-        if (_moviePlayer is not null)
-        {
-            bool keyDown = keyboard.GetPressedKeyCount() > 0 && _previousKeyboard.GetPressedKeyCount() == 0;
-            bool clickDown = mouse.LeftButton == ButtonState.Pressed && _previousMouse.LeftButton == ButtonState.Released;
-            if (keyDown || clickDown)
-                _moviePlayer.Skip();
-            _moviePlayer.Update(gameTime.ElapsedGameTime.TotalMilliseconds);
-            if (_moviePlayer.Finished)
-            {
-                _moviePlayer.Dispose();
-                _moviePlayer = null;
-            }
-            _previousMouse = mouse;
-            _previousKeyboard = keyboard;
-            base.Update(gameTime);
-            return;
-        }
 
         // P133 debug: the cutscene browser (F10). Up/Down or mouse-hover moves the highlight,
         // Enter/click previews it (hands off to the movie player), Esc/F10 closes.
@@ -2268,17 +2288,8 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
         }
 
         // Options / pause menu (Esc or the OPT button): S save, L load, M main menu,
-        // Q quit to desktop, Esc/D resume (options.cc showOptions key set).
-        // P130: the Preferences panel is modal over the options menu.
-        if (_preferencesOpen)
-        {
-            UpdatePreferences(keyboard, mouse);
-            _previousMouse = mouse;
-            _previousKeyboard = keyboard;
-            base.Update(gameTime);
-            return;
-        }
-
+        // Q quit to desktop, Esc/D resume (options.cc showOptions key set). The Preferences (PREFSCRN)
+        // modal that sits over it is handled by the hoisted _preferencesOpen block near the top of Update.
         if (_optionsOpen)
         {
             // A row click fires the same action its keyboard shortcut does (P15 M3):

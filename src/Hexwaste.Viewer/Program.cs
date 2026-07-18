@@ -200,6 +200,10 @@ for (int i = 0; i < args.Length; i++)
             // P83-M1: dump the authentic main-menu button layout (rects + misc.msg labels + hit round-trip).
             actions.Add(new ViewerGame.StartupAction.MenuProbe());
             break;
+        case "--menu-activate" when i + 1 < args.Length:
+            // P139: click main-menu button <i> and report the resulting state (INTRO→movie, OPTIONS→prefs).
+            actions.Add(new ViewerGame.StartupAction.MenuActivate(int.Parse(args[++i])));
+            break;
         case "--quest-probe": // P100 (Point 4): dump the Pip-Boy Archives quest list under the current GVARs
             actions.Add(new ViewerGame.StartupAction.QuestProbe());
             break;

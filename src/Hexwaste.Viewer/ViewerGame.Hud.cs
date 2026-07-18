@@ -539,7 +539,13 @@ public sealed partial class ViewerGame
 
         // P83-M1/M2/M4: the authentic mainmenu.frm / pickchar.frm / credits.txt screens (each with its own
         // black background). Falls through to the plain-text path when the art is absent.
-        if (_menu == MenuState.Credits)
+        // P139: a full-screen movie (drawn above) suppresses the menu chrome so an INTRO started from the
+        // Title screen plays over black, not behind the menu buttons.
+        if (_moviePlayer is not null)
+        {
+            // the movie owns the frame — no menu chrome
+        }
+        else if (_menu == MenuState.Credits)
         {
             DrawCredits();
         }

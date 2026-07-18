@@ -1704,6 +1704,17 @@ public sealed partial class ViewerGame
                     Console.WriteLine($"  copyright=\"{MiscMsg(20)}\"");
                     break;
                 }
+                case StartupAction.MenuActivate(var maIndex):
+                {
+                    // P139: activate a main-menu button from the Title state; report what it opened.
+                    _menu = MenuState.Title;
+                    EnsureMenuArt();
+                    ActivateMainMenuButton(maIndex);
+                    Console.WriteLine($"menu-activate: btn={maIndex} enabled={MainMenuButtons[maIndex].Enabled}"
+                        + $" movie={(_moviePlayer is not null ? 1 : 0)} movieQueue={_movieQueue.Count}"
+                        + $" prefs={(_preferencesOpen ? 1 : 0)} menu={_menu}");
+                    break;
+                }
                 case StartupAction.UseSkill(var useSkill, var skillHex):
                 {
                     // Arm <skill> and apply it to the object at <hex> (self when hex<0):

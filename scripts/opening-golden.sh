@@ -37,6 +37,12 @@ SCENARIOS=(
   "mapupdate-artemple|viewer|--map artemple.map --map-update-probe --rng-seed 1"
   "mapupdate-arvillag|viewer|--map arvillag.map --map-update-probe --rng-seed 1"
   "chain-opening|viewer|--map artemple.map --goto-map arcaves.map --goto-map arvillag.map --goto-map argarden.map --goto-map arbridge.map --rng-seed 1"
+  # P139: all six main-menu buttons are live (INTRO + OPTIONS were disabled by a stale comment). menu-activate
+  # locks the wiring + the enabled=True flag as pure STATE (INTRO opens the iplogo→intro movie queue; OPTIONS
+  # opens the PREFSCRN Preferences window). The label-bearing --menu-probe is NOT goldened — it echoes
+  # misc.msg game strings (the copyright + button labels), which must stay out of the committed fixtures.
+  "menu-intro|viewer|--menu --menu-activate 0"
+  "menu-options|viewer|--menu --menu-activate 3"
 )
 # (Note: new-game GVAR seeding is already covered by encounter-golden.sh's gvar-seed scenario; a plain
 #  --map load intentionally does NOT seed, so a gvar scenario here would just anchor 0/0 — omitted.)
@@ -53,7 +59,7 @@ run() {
     timeout 120 env DISPLAY="${DISPLAY:-:0}" FALLOUT2_DIR="$GAME" \
       dotnet run --project src/Hexwaste.Viewer -c Debug --no-build -- \
       --game-dir "$GAME" --no-audio $args 2>/dev/null \
-      | grep -E "transit:|map-update:|light:|get-global:|lip-probe:|census:"
+      | grep -E "transit:|map-update:|light:|get-global:|lip-probe:|census:|menu-activate:"
   fi
 }
 

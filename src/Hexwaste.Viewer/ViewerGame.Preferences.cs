@@ -15,6 +15,7 @@ namespace Hexwaste.Viewer;
 public sealed partial class ViewerGame
 {
     private bool _preferencesOpen;
+    private bool _prefsFromMenu; // P139: opened from the Title main menu (OPTIONS) → close back to the menu, not the in-game options panel
     private readonly Formats.GamePreferences _preferences = new();
     private int[]? _preferencesSnapshot; // for CANCEL revert
 
@@ -48,9 +49,10 @@ public sealed partial class ViewerGame
         return new Point((vp.Width - (bg?.Width ?? 640)) / 2, (vp.Height - (bg?.Height ?? 480)) / 2);
     }
 
-    private void OpenPreferences()
+    private void OpenPreferences(bool fromMenu = false)
     {
         _preferencesOpen = true;
+        _prefsFromMenu = fromMenu;
         _preferencesSnapshot = [.. _preferences.Values]; // CANCEL restores this
         SyncPreferencesFromGame();
     }
@@ -125,7 +127,11 @@ public sealed partial class ViewerGame
         if (commit)
             ApplyBackedPreferences();
         _preferencesOpen = false;
-        _optionsOpen = true; // back to the options menu, like the engine
+        // In-game: back to the options menu, like the engine. From the Title main menu (P139): just close,
+        // leaving _menu == Title so the main menu re-draws — do NOT open the (game-less) options panel.
+        if (!_prefsFromMenu)
+            _optionsOpen = true;
+        _prefsFromMenu = false;
     }
 
     private void DrawPreferences()
