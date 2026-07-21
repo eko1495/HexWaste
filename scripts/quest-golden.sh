@@ -163,9 +163,9 @@ SCENARIOS=(
   # (vctydwtn 17485) hands over the locked briefcase on accepting (his devotion-test dialogue
   # chain 1,2,1,1,2,2,2 -> create_object 336 -> 321:=1). Reaching Bishop cold is a hostile dead
   # end (his greeting Node always ends in an ambush unless pre-vetted); the real path is via his
-  # guard one floor down (newr2 elev1 17075), whose carrying-336-gated option ("I have a suitcase
-  # for him from Mr. Moore", talk-seq 3) sets the guard-vetted flag and waves you up. Bishop (newr2
-  # elev2 17678) then greets you by the case and takes it (opt1 "Here you go") -> 321:=2, completed.
+  # guard one floor down (newr2 elev1 17075), whose carrying-336-gated accept option (talk-seq 3)
+  # sets the guard-vetted flag and waves you up. Bishop (newr2 elev2 17678) then takes the case via
+  # his accept option (opt1) -> 321:=2, completed.
   # Crosses vctydwtn->newr2 elev1->newr2 elev2, proving the delivery pattern spans towns and floors.
   "quest-moore-briefcase|$CREATE --goto-map vctydwtn.map --get-global 321 --talk-seq 17485 1,2,1,1,2,2,2 --get-global 321 --goto-map newr2.map:17075:1 --talk-seq 17075 3,1 --goto-map newr2.map:17678:2 --get-global 321 --talk-seq 17678 1 --get-global 321 --quest-probe --rng-seed 1"
 )
