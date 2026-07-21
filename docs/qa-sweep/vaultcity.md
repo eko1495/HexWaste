@@ -1,29 +1,40 @@
 
-# Vault City (loc 1504) QA sweep — 3/10 done
+# Vault City (loc 1504) QA sweep — 5/10 done
 
 Fourth campaign-QA town. VC is DELIVERY-heavy (many "bring X to Y" quests = the tractable
 tier), so a good source of quick goldens. Same toolset.
 
-**DONE (2):**
+**DONE (5):**
 - **497** Deliver beer & booze to Lydia — golden `quest-lydia-booze` (1a67282), 0→1→2. Lydia
-  (VCDwnBar, vctydwtn 26306); "what's on tap→real alcohol" chain `1,1,1,1,1,1` → she wants 10
-  each → 497:=1; carry 10 beer (124) + 10 booze (125), info menu opt6 "I have that shipment"
+  (VCDwnBar, vctydwtn 26306); drink-menu → real-alcohol-request chain `1,1,1,1,1,1` → she wants
+  10 each → 497:=1; carry 10 beer (124) + 10 booze (125), info menu opt6 (delivery-ready reply)
   (`2,6` → Node032 obj_carrying 124+125) → 497:=2.
 - **493** Deliver tools to Valerie — golden `quest-valerie-tools` (5bb69f6), 0→1→2. Valerie
   (VCMainWk, vctydwtn 21096, grumpy maintenance); repair chain `1,1,1,1,1,1,1` → 493:=1; carry
-  wrench (384) + pliers (75), greeting `1,1` "You have tools?" (Node023) → 493:=2.
-
+  wrench (384) + pliers (75), greeting `1,1` (tools-delivery prompt, Node023) → 493:=2.
 - **80** Get a plow for Mr Smith — golden `quest-smith-plow` (7518c6b), 0→3→6. 2-NPC purchase
-  chain: Smith (vctyctyd 14078) accept `2,1,1` + commit on re-talk `4,1,1` ("I'll take the money"
-  → 80:=3, unlocks Harry); Harry (VCHarry 12513) offers "still selling that plow?" ONLY at 80>=3,
-  buy for $800 `2,2,1` → "Drop it off with the Smiths" → 80:=6. GOTCHA: the cross-NPC option is
+  chain: Smith (vctyctyd 14078) accept `2,1,1` + commit-to-pay on re-talk `4,1,1` (payment
+  accepted → 80:=3, unlocks Harry); Harry (VCHarry 12513) offers the plow sale ONLY at 80>=3,
+  buy for $800 `2,2,1` → delivery-to-Smiths line → 80:=6. GOTCHA: the cross-NPC option is
   gvar-gated (Harry's plow line hidden until Smith sets 80:=3) — needed the Smith re-talk to
   advance past :=1. Caps via --give 41:1000.
+- **459** Rescue Amanda's husband Joshua — golden `quest-rescue-joshua`, 0→1→3. Amanda (vctyctyd
+  22673) accept chain `1,1,1,1,1,1` → 459:=1; Barkus (vctydwtn 14896) bribe chain
+  `1,1,4,1,1,1,1` with `--give 41:5000` (caps bribe, no dialogue text) → return to Amanda `1` →
+  459:=3.
+- **321** Deliver Moore's briefcase to Bishop in New Reno — golden `quest-moore-briefcase`,
+  0→1→2. Cross-town, 3-stop chain: Moore (VCMoore, vctydwtn 17485) accept chain
+  `1,2,1,1,2,2,2` (script-grants briefcase pid 336) → 321:=1; guard-vetting hop at New Reno
+  elev 1, tile 17075 (carrying-336-gated accept, chain `3,1`); Bishop (ncBishop, newr2 elev 2,
+  tile 17678) chain `1` → 321:=2. GOTCHA (runtime discovery, not visible in the static
+  quest-path trace): Bishop is hostile toward a dude who approaches cold — the guard-vetting hop
+  at 17075 is required first to clear that.
 
-**REMAIN (7):**
+**REMAIN (4):**
 - **85** Deliver jet sample to Dr Troy (VCDrTroy vctyvlt 13084) — STORY-GATED, NOT a cold-boot
-  delivery: Troy only offers "Nothing today" even with jet (item 259) in hand. Needs prior jet/
-  drug-problem context (from the Den/Redding storyline). Skip until that context is settable.
+  delivery: Troy's greeting stays at the no-quest-available baseline even with jet (item 259) in
+  hand. Needs prior jet/drug-problem context (from the Den/Redding storyline). Skip until that
+  context is settable.
 - **89** Deliver Lynette's holodisk to Westin in NCR — STORY-GATED, tier **B4** (campaign-state
   fixture track), NOT reachable from a cold boot. Gate map (Task 2): Westin's own accept option
   (`scwestin.int` `Node001`, msg 113, `=> Node017 => getDisk`) requires exactly `gvar89==1` AND
@@ -41,9 +52,7 @@ tier), so a good source of quick goldens. Same toolset.
   character and none may be faked via `--set-global`. Confirmed empirically: with item 447 given,
   Lynette's hub still shows only the 3 baseline options (ask-questions / citizenship / nevermind)
   — no raiders/Gecko/Bishop-safe branch appears for a cold-boot character.
-- **321** Deliver Moore's briefcase to Bishop in NEW RENO — cross-town (harder).
 - **82** Solve the Gecko powerplant problem — big multi-step (also Gecko quest).
-- **459** Rescue Amanda's husband Joshua — escort (use the escort-sim).
 - **529** Scout 8 sectors around Gecko + enter NCR — worldmap/Stark recon. See **529 verdict**
   below: needs real campaign machinery (the citizenship/conspiracy story arc), not an engine gap.
 
@@ -89,7 +98,9 @@ writers of `gvar79`: the value 5 is set in exactly two places — `vcchet.int` `
 `gvar50 += 10`). Neither is reachable from a cold boot: Chet's critter is **not placed on any of
 Vault City's 4 maps** (`vctydwtn`/`vctyctyd`/`vctycocl`/`vctyvlt` — confirmed via
 `--map-objects` on all four, all elevations; he must be `create_object`-spawned by some other
-hidden-passage trigger not yet found), and Lynette's `Node132` sits at the END of the same
+hidden-passage trigger not yet found — **open lead: Chet's activation/spawn trigger is
+unresearched**, no map or script yet found that `create_object`s him; that's the next thread to
+pull if this arc gets revisited), and Lynette's `Node132` sits at the END of the same
 Bishop-conspiracy arc already documented above (quest 89) as gated on `gvar88`/`gvar82`/`gvar490`
 with no lower-stage writer reachable from a fresh character.
 
@@ -99,8 +110,10 @@ citizenship rank 5, granted only by the same story arc blocking quest 89). Filed
 campaign-state track alongside 89 — re-derive when/if that arc becomes drivable; at that point
 the metarule3-105 wiring (sketch above) is the only remaining engine work, and it is trivial.
 
-**VC tiles (vctydwtn):** Lydia 26306, Valerie 21096. **Item pids:** beer 124, booze 125,
-wrench 384, pliers 75. (Maps: VCTYCTYD courtyard, VCTYDWTN downtown, VCTYCOCL council, VCTYVLT.)
+**VC tiles (vctydwtn):** Lydia 26306, Valerie 21096, Moore 17485. **Other tiles:** Lynette
+(vctycocl) 17100, Bishop (newr2 elev 2) 17678, Westin (ncr3) 17892. **Item pids:** beer 124,
+booze 125, wrench 384, pliers 75, briefcase 336, Lynette holodisk 337, Bishop holodisk 447.
+(Maps: VCTYCTYD courtyard, VCTYDWTN downtown, VCTYCOCL council, VCTYVLT.)
 
 **THE DELIVERY PATTERN (reliable quick win):** navigate the NPC's chat chain to the "I'll get
 it for you" accept (gvar:=1) → `--give <item pids>` → re-talk, the greeting/info menu gains a

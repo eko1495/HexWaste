@@ -17,10 +17,10 @@ game dialogue text is reproduced.
 | Klamath (loc 1502) | [klamath.md](klamath.md) | 6/6 ✅ complete |
 | The Den (loc 1501) | [den.md](den.md) | 5/7 |
 | Modoc (loc 1503) | [modoc.md](modoc.md) | 1/6 |
-| Vault City (loc 1504) | [vaultcity.md](vaultcity.md) | 4/10 |
+| Vault City (loc 1504) | [vaultcity.md](vaultcity.md) | 5/10 |
 | Gecko (loc 1505) | [gecko.md](gecko.md) | surveyed (no clean quick-win) |
 
-16 quest goldens total (plus the pre-existing opening/combat/encounter suites).
+30 quest goldens total (plus the pre-existing opening/combat/encounter suites).
 
 ## How to use these
 
