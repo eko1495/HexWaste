@@ -40,11 +40,11 @@ tier), so a good source of quick goldens. Same toolset.
   (`scwestin.int` `Node001`, msg 113, `=> Node017 => getDisk`) requires exactly `gvar89==1` AND
   `obj_carrying_pid_obj(dude,447)` — that half is fine (447 is the sanctioned `--give` item). The
   blocker is upstream, on Lynette's side: her hub (`vclynett.int` `Node053`, VCLynett vctycocl
-  17100) only offers the "Bishop's safe" reveal option (msg 394, `=> Node136 => Node116/Node119
+  17100) only offers the safe-location reveal option (msg 394, `=> Node136 => Node116/Node119
   => Node119a/Node123`, writes gvar89:=1/2) when `gvar88==5` AND carrying 447. `gvar88` is set to
   5/6/7 only inside `vclynett.int` itself (`Node114`/`Node116`/`Node130` — no lower-stage writes
   anywhere in the script), so stages 1-4 are driven by another script entirely. Worse, even the
-  *prior* "raiders info" options (msg 392/393, requiring `gvar88==4`) and the Gecko-powerplant
+  *prior* raiders-intelligence options (msg 392/393, requiring `gvar88==4`) and the Gecko-powerplant
   topic that leads into them (msg 391, requiring `gvar82==2` or `gvar82>3`, `gvar490==0`) are
   gated on `gvar82` — the SAME gvar that tracks quest **82** (Gecko powerplant, below) already on
   this town's REMAIN list. So 89 is chained behind quest 82's own progress via a shared
