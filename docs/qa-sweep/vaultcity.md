@@ -63,13 +63,23 @@ Static trace (`vcstark.int`, all writers found via `--quest-paths 529`): every w
 Sgt. Stark's own script. `Node054a`/`Node055a`/`Node055b` set `529:=1` (accepted); `Node057`
 sets `529:=2` (COMPLETES for display>=1/completed>=2, +300 caps +350 xp); `Node059a`/`Node059b`
 set `529:=3`; `Node061` sets `529:=4` (COMPLETES for display>=3/completed>=4, +750 xp, an item
-`create_object` pid 59 + 500 caps). `Node054`/`Node055`/`Node064` gate the "scouted enough"
-option on an 7-term AND chain of `metarule3(rule=105, x, y, 0) > 1` calls — rule 105 is
-`METARULE3_WM_SUBTILE_STATE` (`interpreter_extra.cc:1995`, `wmSubTileGetVisitedState`), i.e. the
-worldmap per-subtile UNKNOWN(0)/KNOWN(1)/VISITED(2) fog state at 7 specific world-pixel
-coordinates around Gecko/NCR ((1224,171),(1274,172),(1323,173),(1224,223),(1324,225),
-(1224,274)/(1275,274)/(1325,273) — 3rd triple only in the display>=1 group). `Node055` also
-reads a plain counter `gvar 82 <8 / ==8 / >8` for flavour text (not a gate).
+`create_object` pid 59 + 500 caps). Disassembly (`int_disasm.py`) confirms all three gate nodes —
+`Node054` (accept-gate check), `Node055` (re-check, same option), and `Node064` (the
+general-hub "scouted enough" report option) — each independently AND-chain the *same* 8-term
+`metarule3(rule=105, x, y, 0) > 1` sequence, one term per node, all 8 terms present in each of
+the three: `(1224,171),(1274,172),(1323,173),(1224,223),(1324,225),(1224,274),(1275,274),
+(1325,273)`. Rule 105 is `METARULE3_WM_SUBTILE_STATE` (`interpreter_extra.cc:1995`,
+`wmSubTileGetVisitedState`), i.e. the worldmap per-subtile UNKNOWN(0)/KNOWN(1)/VISITED(2) fog
+state at those 8 world-pixel coordinates around Gecko/NCR. `Node055` also reads a plain counter
+`gvar 82 <8 / ==8 / >8` for flavour text (not a gate) — see the gvar-82 caveat below.
+
+CAVEAT (gvar 82 double duty): `get_global_var` operand confirmed as **82**, the SAME global
+that tracks quest **82** (Gecko powerplant, this town's REMAIN list) — Stark's `Node055` reuses
+it purely for flavour-text branching (`<8`/`==8`/`>8`), unrelated to 529's own completion gate.
+Harmless in practice (quest-82's tracked stage values top out at 3-4 per the 89-entry above, so
+Stark's `>8` branch is unreachable at any *documented* stage value and the `<8` branch always
+fires), but a future reader chasing "gvar 82" must not confuse Stark's flavour read with the
+powerplant quest-stage writes — they are the same variable, two unrelated consumers.
 
 Harness capability for THAT mechanism: already there in spirit. `Hexwaste.Formats.Map.WorldmapFog`
 (`src/Hexwaste.Formats/Map/WorldmapFog.cs`) already ports `wmSubTileGetVisitedState`
