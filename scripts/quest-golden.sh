@@ -76,60 +76,60 @@ SCENARIOS=(
   # Rustle the brahmin (Klamath, GVAR 102) — the first SCRIPTED-EVENT golden, full lifecycle 0→1→2
   # via the real load_map path. Accepting Torr's guard job (talk 24291 1,1,1) runs load_map(klagraz,
   # 13); --pump-ms applies the deferred transition (kladwtwn→klagraz). On the fields, siding with the
-  # Duntons (talk 16315 1,1,1 → "I'll take care of Torr") sets 102:=1; scaring Torr off (talk 17701
+  # Duntons (talk 16315 1,1,1, the side-with-the-Duntons accept) sets 102:=1; scaring Torr off (talk 17701
   # opt 2, his runtime tile after the override_map_start arrival) → Node930 → 102:=2 + 71:=1 (Torr
   # flees to the canyon). Exercises the dialogue-triggered scripted map transition end to end.
   "quest-torr-duntons|$CREATE --goto-map kladwtwn.map --talk-seq 24291 1,1,1 --pump-ms 4000 --talk-seq 16315 1,1,1 --get-global 102 --talk-seq 17701 2 --get-global 102 --get-global 71 --quest-probe --rng-seed 1"
   # Rescue Torr (Klamath, GVAR 391) — closes Klamath 6/6. The full chain: the klagraz event
   # (as in quest-torr-duntons) displaces Torr (71:=1); back in town his mother Ardin (22885,
   # 1,1,1,1,1,1) asks you to find him → 391:=1; the canyon Torr now appears (KLACANYN 15287, needs
-  # 71:=1 AND 391:=1) → "let's get out of here" (talk 1,1 → Node940 follow flag); the escort-sim
+  # 71:=1 AND 391:=1) → his follow-me option (talk 1,1 → Node940 follow flag); the escort-sim
   # (--teleport to delivery tile 19450 + --escort-pump) fires his leave_player → 391:=2. --rng-seed
   # fixes the event-repositioned tiles. Exercises the load_map event + Ardin activation + escort-sim.
   "quest-torr-rescue|$CREATE --rng-seed 1 --goto-map kladwtwn.map --talk-seq 24291 1,1,1 --pump-ms 4000 --talk-seq 16315 1,1,1 --talk-seq 17701 2 --pump-ms 2000 --goto-map kladwtwn.map --talk-seq 22885 1,1,1,1,1,1 --get-global 391 --goto-map KLACANYN.map --pump-ms 1500 --talk-seq 15287 1,1 --teleport 19450 0 --escort-pump 15287 10 --get-global 391 --quest-probe"
   # Deliver a meal to Smitty for Mom (Den, GVAR 450) — a clean two-NPC delivery, full lifecycle
-  # 0→1→3 via the real dialogue (no --set-global). Accept from Mom (denbus2 24479, 2,1,1 → "I'll
-  # bring it right over" → 450:=1, she hands over the meal); deliver to Smitty (denbus1 22137, 2,1
-  # → "I brought your meal from Mom's" → Node008 → 450:=3, completed). Crosses denbus2→denbus1.
+  # 0→1→3 via the real dialogue (no --set-global). Accept from Mom (denbus2 24479, 2,1,1, the
+  # delivery accept → 450:=1, she hands over the meal); deliver to Smitty (denbus1 22137, 2,1,
+  # the meal hand-over option → Node008 → 450:=3, completed). Crosses denbus2→denbus1.
   "quest-mom-meal|$CREATE --goto-map denbus2.map --get-global 450 --talk-seq 24479 2,1,1 --get-global 450 --goto-map denbus1.map --talk-seq 22137 2,1 --get-global 450 --quest-probe --rng-seed 1"
   # Collect money from Fred (Den, GVAR 371) — a multi-NPC NEGOTIATION, full lifecycle 0→1→2 via
   # the real dialogue (no --set-global / no faked caps). Rebecca (denbus1 17662, work option 2,1,1)
   # sets the Fred-debt task (371:=1); Fred (denbus1 25479, 1,2,2,1,1,2,3 — demand the FULL amount
   # down his negotiation tree) pays the full $200 (his Node986 item_caps_adjust(200)) + sets the
-  # 446 task bit; back at Rebecca, "About that job… Yes, I did" (2,1,1,1 — the "Yes" option only
+  # 446 task bit; back at Rebecca, the job-done report chain (2,1,1,1 — the confirm option only
   # appears with caps>=200 AND the 446 bit) → Node011 → 371:=2 completed. The book sub-task (Derek,
   # desc 205) stays open — 371 is a shared gvar with two display thresholds.
   "quest-fred-money|$CREATE --goto-map denbus1.map --get-global 371 --talk-seq 17662 2,1,1 --get-global 371 --talk-seq 25479 1,2,2,1,1,2,3 --talk-seq 17662 2,1,1,1 --get-global 371 --quest-probe --rng-seed 1"
   # Find Cornelius's gold watch for Farrel (Modoc, GVAR 106) — first Modoc golden. Item-return,
   # full lifecycle 0→4→8 via the real dialogue. Farrel (modinn 25088), accused of stealing the
-  # watch, hooks the quest via his watch-defense greeting (3,1,1 → "Watch?… Would you help?" →
-  # 106:=4); carrying the gold pocket watch (item 257) his greeting adds opt4 "Is this the watch?"
-  # → "Yes, this is it!" → 106:=8 (completed, clears his name). The watch acquire (found in the
+  # watch, hooks the quest via his watch-defense greeting (3,1,1, his help-me-find-it ask →
+  # 106:=4); carrying the gold pocket watch (item 257) his greeting adds opt4 (present the
+  # watch → his confirmation) → 106:=8 (completed, clears his name). The watch acquire (found in the
   # outhouse) is the --give shortcut, like Anna's locket. 106 is Farrel-side; 105 is Cornelius-side.
   "quest-modoc-watch|$CREATE --goto-map modinn.map --get-global 106 --talk-seq 25088 3,1,1 --get-global 106 --give 257:1 --talk-seq 25088 4,1 --get-global 106 --quest-probe --rng-seed 1"
   # Deliver beer & booze to Lydia (Vault City, GVAR 497) — first VC golden. Item-delivery, full
   # lifecycle 0→1→2 via the real dialogue. Lydia (vctydwtn 26306) laments VC's synthetic-only
-  # booze; down the "what's on tap → real alcohol" chain (1,1,1,1,1,1) she asks for a case of ten
-  # each → 497:=1; carrying 10 beer (124) + 10 booze (125), her info menu gains opt6 "I have that
-  # shipment of alcohol you wanted" (2,6 → Node032, obj_carrying check on 124+125) → 497:=2.
+  # booze; down the drinks-menu → real-alcohol chain (1,1,1,1,1,1) she asks for a case of ten
+  # each → 497:=1; carrying 10 beer (124) + 10 booze (125), her info menu gains the
+  # shipment-delivery opt6 (2,6 → Node032, obj_carrying check on 124+125) → 497:=2.
   "quest-lydia-booze|$CREATE --goto-map vctydwtn.map --get-global 497 --talk-seq 26306 1,1,1,1,1,1 --get-global 497 --give 124:10 --give 125:10 --talk-seq 26306 2,6 --get-global 497 --quest-probe --rng-seed 1"
   # Deliver tools to Valerie (Vault City, GVAR 493) — item-delivery, full lifecycle 0→1→2. The
   # grumpy VC maintenance worker Valerie (vctydwtn 21096) needs a wrench + pliers for her failing
   # lathe; down her repair chain (1,1,1,1,1,1,1) she agrees to let you look → 493:=1; carrying the
-  # wrench (384) + pliers (75), her greeting adds "You have tools?" (1,1 → Node023 obj_carrying
+  # wrench (384) + pliers (75), her greeting adds the tools-in-hand option (1,1 → Node023 obj_carrying
   # check on 384+75) → 493:=2.
   "quest-valerie-tools|$CREATE --goto-map vctydwtn.map --get-global 493 --talk-seq 21096 1,1,1,1,1,1,1 --get-global 493 --give 384:1 --give 75:1 --talk-seq 21096 1,1 --get-global 493 --quest-probe --rng-seed 1"
   # Get a plow for Mr Smith (Vault City, GVAR 80) — a two-NPC purchase chain, 0→3→6. Smith
   # (vctyctyd 14078), a poor farmer denied VC citizenship, needs a plow; accept (2,1,1) then commit
-  # on a re-talk (4,1,1 → "I'll take the money" → "one's near the Guns & Ammo store" → 80:=3, which
-  # unlocks Harry's plow line). Harry (VCHarry 12513) then offers "You still selling that plow?"
-  # (only at 80>=3); buy it for $800 (2,2,1 → deal → "Drop it off with the Smiths") → 80:=6. Caps
+  # on a re-talk (4,1,1, the take-the-money commit → she points at the gun-store seller → 80:=3,
+  # which unlocks Harry's plow line). Harry (VCHarry 12513) then exposes his plow-sale opener
+  # (only at 80>=3); buy it for $800 (2,2,1 → deal → his deliver-to-the-Smiths close) → 80:=6. Caps
   # via --give 41:1000. Exercises a gvar-gated cross-NPC option (Harry's line appears only at 80=3).
   "quest-smith-plow|$CREATE --goto-map vctyctyd.map --get-global 80 --talk-seq 14078 2,1,1 --talk-seq 14078 4,1,1 --get-global 80 --give 41:1000 --talk-seq 12513 2,2,1 --get-global 80 --quest-probe --rng-seed 1"
   # Rescue Amanda's husband Joshua (Vault City, GVAR 459) — a 2-map, 2-NPC quest, 0→1→2→3. NOT an
   # escort: the "rescue" is a bribe. Amanda (vctyctyd 22673) — her jailed husband is a VC Servant;
   # 1,1,1,1,1,1 → she names Officer Barkus → 459:=1. Barkus (vctydwtn 14896, the Servant Assignment
-  # Center) — "looking for Joshua…negotiate his release" (1,1,4,1) → his donation tiers; he's greedy
+  # Center) — the looking-for-Joshua → negotiate-release chain (1,1,4,1) → his donation tiers; he's greedy
   # and only the $1000 offer (opt1) frees Joshua → 459:=2. Back to Amanda (greeting → Node019) →
   # 459:=3 completed. Caps via --give 41:5000. Crosses vctyctyd↔vctydwtn twice.
   "quest-rescue-joshua|$CREATE --goto-map vctyctyd.map --get-global 459 --talk-seq 22673 1,1,1,1,1,1 --get-global 459 --goto-map vctydwtn.map --give 41:5000 --talk-seq 14896 1,1,4,1,1,1,1 --get-global 459 --goto-map vctyctyd.map --talk-seq 22673 1 --get-global 459 --quest-probe --rng-seed 1"
