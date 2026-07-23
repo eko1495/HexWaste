@@ -216,25 +216,33 @@ SCENARIOS=(
   # denbus1 ELEV1 tile 17062 --use-on 20 -> distill.int use_obj_on_p_proc -> 101:=3. Final report
   # to Frankie (Node012/993 region) -> 101:=4, quest-probe display=2 completed=1.
   "quest-becky-still|$CREATE --goto-map denbus1.map --give 53:1 --use-item 53 --give 41:500 --give 20:1 --get-global 101 --talk-seq 17662 1,1,2 --goto-map denbus2.map --talk-seq 14716 1,1,3,2,1 --get-global 101 --goto-map denbus1.map --talk-seq 17662 1,1,2 --talk-seq 17662 1,1,2 --talk-seq 17662 1,1,2 --talk-seq 17662 1,1,2 --talk-seq 17662 1,2,3 --get-global 445 --get-global 446 --goto-map denbus2.map --talk-seq 14716 1,1,1 --get-global 101 --goto-map denbus1.map:17062:1 --use-on 20:17062 --get-global 101 --goto-map denbus2.map --talk-seq 14716 1 --get-global 101 --quest-probe --rng-seed 1"
-  # Lara's gang war (Den, GVAR 454) - ACCEPT only (quests.txt row: display>=1, completed>=2).
-  # dcLara.int is a shared "Tough Guard" template script reused by several unnamed Den grunts;
-  # the actual 454 stage ladder (traced via ProcAnalyze --quest-paths 454 + operand-level
-  # int_disasm) is: dcLara Node008:=1 (accept the recon job) -> Node016:=2 -> dcMetzge
+  # Lara's gang war (Den, GVAR 454) - FULL lifecycle 0->2->3->4->5->9->11 (quests.txt: all
+  # four display/completed rows land, desc 207/208/209/210, thresholds 1/2/2/2/4/2/6/2). Real
+  # dialogue + one real object interaction throughout, no --set-global anywhere. Ladder (traced
+  # via ProcAnalyze --quest-paths 454 + operand-level int_disasm, node names + gvar values
+  # only): dcLara Node008:=1 (accept the recon job) -> dcLara Node016:=2 -> dcMetzge
   # Node019:=3 (permission) -> dcLara Node023:=4 -> dcTyler Node020:=5 -> dcLara Node027:=6 ->
-  # dcLara Node989:=7 / Node990:=9 (branch off Node030) -> DenBus1/DenBus2 map_update_p_proc:=8
-  # (auto, fires when 454 is 6 or 7) -> terminal :=10/11 via destroy_p_proc on dcTyler/dcMarc/
-  # DCG1Grd/dcG2Grd/dcLara (any elevation) or their map_enter_p_proc/DenBus2 map_exit_p_proc
-  # fallbacks (all forward-only guarded, i.e. only advance if current 454 is lower).
-  # Driven honestly: the guard NPC at denbus1 21514 (dcLara script; his greeting text and
-  # options are 454-state-dependent) gives the recon job and Node008 fires 0->1 for real
-  # (no --set-global). Stage 2 is BLOCKED behind a bit on GVAR445 (0x20000000, read by
-  # dcLara's Node018 to gate the "report success" branch vs. the "Not yet." dead end) that
-  # no dialogue chain, NPC (Metzger, Tyler, Marc, the G1/G2 guards), object (the crates, the
-  # church door/diChcDor once unlocked via Tyler's own "just go in" line, dcStory2) or skill
-  # use found in this session sets - see docs/qa-sweep/den.md for the full dead-end log.
-  # This lands the verified real transition (0->1, quest goes ACTIVE) using the same
-  # accept-only pattern as quest-smitty-carpart/quest-torr-brahmin.
-  "quest-lara-war|$CREATE --goto-map denbus1.map --get-global 454 --talk-seq 21514 1,1,1 --get-global 454 --quest-probe --rng-seed 1"
+  # dcLara Node989:=7 / Node990:=9 (alternate branches off Node030) -> terminal :=10/11 via
+  # destroy_p_proc on dcTyler/dcMarc/DCG1Grd/dcG2Grd/dcLara or their map_enter_p_proc/DenBus2
+  # map_exit_p_proc fallbacks (all forward-only guarded: a write only applies if current 454
+  # is lower).
+  # KEY FINDING (--bit-scan 445 nailed the setter): dcLara's Node018 (the 454==1 greeting)
+  # gates its report-success branch (continuing toward Node016 :=2) on GVAR445 bit 0x20000000.
+  # That bit is set by diCrate.int's use_p_proc (any of the denbus2 graveyard crates, e.g.
+  # tile 21731) - a one-time discovery bonus (+500 xp) on first use, unrelated-looking but
+  # exactly the "find out what's inside" recon: using a crate BEFORE first talking to the
+  # guard at denbus1 21514 unlocks his 3rd greeting option (Node006's msg-281 branch) on the
+  # very first visit, short-circuiting straight to the report (Node011 -> low-IQ branch ->
+  # Node015 -> Node016 :=2) - no return trip needed. From there: dcMetzge (denbus2 15278)
+  # gets a new permission-request option once 454>=2 (msg-401's chain) -> :=3; back to the
+  # denbus1 21514 guard for the follow-up (msg-411 branch) -> :=4; dcTyler (denbus2 24534)
+  # gets a new greeting once 454>=4, his chain (msg-451 branch) -> :=5; back to the denbus1
+  # 21514 guard again (msg-471 branch, then msg-491's accept option) -> :=6, then immediately
+  # -> :=9 (the Node030 opt0/Node990 branch - no further choice needed, dialogue ends). A
+  # `--pump-ms` after re-entering denbus2 fires the map_enter_p_proc completion fallback
+  # (msg-401's scripted resolution) -> :=11 (good outcome) with NO --kill required in this
+  # branch - the scripted event resolves the war off-screen once 454==9.
+  "quest-lara-war|$CREATE --goto-map denbus2.map:21731:0 --use-hex 21731 --goto-map denbus1.map --get-global 454 --talk-seq 21514 1,1,1,1,1,1,3 --get-global 454 --goto-map denbus2.map --talk-seq 15278 2,2,2,2 --get-global 454 --goto-map denbus1.map --talk-seq 21514 1,1,2 --get-global 454 --goto-map denbus2.map --talk-seq 24534 1,1,1 --get-global 454 --goto-map denbus1.map --talk-seq 21514 1,1,1 --get-global 454 --goto-map denbus2.map --pump-ms 3000 --get-global 454 --quest-probe --rng-seed 1"
 )
 
 dotnet build src/Hexwaste.Viewer -c Debug >/dev/null || { echo "build failed"; exit 2; }

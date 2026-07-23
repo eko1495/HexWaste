@@ -1,6 +1,14 @@
 get-global: GVAR454 = 0
-get-global: GVAR454 = 1
+get-global: GVAR454 = 2
+get-global: GVAR454 = 3
+get-global: GVAR454 = 4
+get-global: GVAR454 = 5
+get-global: GVAR454 = 9
+get-global: GVAR454 = 11
 quest-item: gvar=480 val=0 display=0 completed=0 loc=1500 desc=130
 quest-item: gvar=619 val=1 display=1 completed=0 loc=1500 desc=140
-quest-item: gvar=454 val=1 display=1 completed=0 loc=1501 desc=207
-quest-probe: quests=110 shown=3
+quest-item: gvar=454 val=11 display=1 completed=1 loc=1501 desc=207
+quest-item: gvar=454 val=11 display=2 completed=1 loc=1501 desc=208
+quest-item: gvar=454 val=11 display=4 completed=1 loc=1501 desc=209
+quest-item: gvar=454 val=11 display=6 completed=1 loc=1501 desc=210
+quest-probe: quests=110 shown=6
