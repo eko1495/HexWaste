@@ -199,6 +199,23 @@ SCENARIOS=(
   # his accept option (opt1) -> 321:=2, completed.
   # Crosses vctydwtn->newr2 elev1->newr2 elev2, proving the delivery pattern spans towns and floors.
   "quest-moore-briefcase|$CREATE --goto-map vctydwtn.map --get-global 321 --talk-seq 17485 1,2,1,1,2,2,2 --get-global 321 --goto-map newr2.map:17075:1 --talk-seq 17075 3,1 --goto-map newr2.map:17678:2 --get-global 321 --talk-seq 17678 1 --get-global 321 --quest-probe --rng-seed 1"
+  # Sabotage Becky's still for Frankie (Den, GVAR 101) - full lifecycle 0->1->2->3->4, real
+  # dialogue only (no --set-global on 101 or 445/446). THE SNAG (documented in task-1-report.md):
+  # Frankie's price-branch option that starts this quest is gated by giq_option(iq=6, ...) -
+  # ported semantics in reference/fallout2-ce src/interpreter_extra.cc _op_giq_option: a POSITIVE
+  # iq arg requires critterGetStat(dude, STAT_INTELLIGENCE) + Smooth Talker rank >= iq, checked
+  # BEFORE the option is even added - silently, no error. The standard $CREATE character has
+  # Intelligence 5, one short, so the option never appears even once the 445/101 bit-conditions
+  # are satisfied. Fix: a temporary Mentats (pid 53) dose (+INT) raises the dude to 6, satisfying
+  # the check as a legitimate in-game action (not a stat edit) - $CREATE itself stays standard.
+  # Chain: Rebecca (denbus1 17662) sells a $5 drink (need caps + the Mentats dose to unlock
+  # Frankie's option) -> Frankie (denbus2 14716) price-branch accept -> 101:=1. Rebecca's reveal
+  # ("why so cheap") is gated on her OWN local var (drinks bought >= 4, not a global) - buy 4 more
+  # $5 drinks, then ask; she reveals the still (446|=0x8000000, NOT the 445 bit the spec guessed).
+  # Report to Frankie -> 101:=2, he pays $100 + hands his crowbar (pid 20, sanctioned --give) ->
+  # denbus1 ELEV1 tile 17062 --use-on 20 -> distill.int use_obj_on_p_proc -> 101:=3. Final report
+  # to Frankie (Node012/993 region) -> 101:=4, quest-probe display=2 completed=1.
+  "quest-becky-still|$CREATE --goto-map denbus1.map --give 53:1 --use-item 53 --give 41:500 --give 20:1 --get-global 101 --talk-seq 17662 1,1,2 --goto-map denbus2.map --talk-seq 14716 1,1,3,2,1 --get-global 101 --goto-map denbus1.map --talk-seq 17662 1,1,2 --talk-seq 17662 1,1,2 --talk-seq 17662 1,1,2 --talk-seq 17662 1,1,2 --talk-seq 17662 1,2,3 --get-global 445 --get-global 446 --goto-map denbus2.map --talk-seq 14716 1,1,1 --get-global 101 --goto-map denbus1.map:17062:1 --use-on 20:17062 --get-global 101 --goto-map denbus2.map --talk-seq 14716 1 --get-global 101 --quest-probe --rng-seed 1"
 )
 
 dotnet build src/Hexwaste.Viewer -c Debug >/dev/null || { echo "build failed"; exit 2; }

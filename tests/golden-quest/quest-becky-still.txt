@@ -1,0 +1,11 @@
+get-global: GVAR101 = 0
+get-global: GVAR101 = 1
+get-global: GVAR445 = 131072
+get-global: GVAR446 = 134217728
+get-global: GVAR101 = 2
+get-global: GVAR101 = 3
+get-global: GVAR101 = 4
+quest-item: gvar=480 val=0 display=0 completed=0 loc=1500 desc=130
+quest-item: gvar=619 val=1 display=1 completed=0 loc=1500 desc=140
+quest-item: gvar=101 val=4 display=2 completed=1 loc=1501 desc=201
+quest-probe: quests=110 shown=3
