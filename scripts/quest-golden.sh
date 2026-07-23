@@ -118,6 +118,17 @@ SCENARIOS=(
   # tiles (--kill, real destroy_p_proc) before reporting is what flips the bit; reporting early
   # (bit unset) would instead land the undone completion (:=3, not exercised here — real path only).
   "quest-modoc-rats|$CREATE --goto-map modinn.map --get-global 110 --talk-seq 25088 2,2,1 --get-global 110 --goto-map modgard.map --kill 14494 --kill 14696 --kill 16892 --kill 17098 --kill 17680 --kill 18684 --kill 21899 --kill 22894 --kill 23887 --kill 24087 --goto-map modinn.map --talk-seq 25088 2,2 --get-global 110 --quest-probe --rng-seed 1"
+  # Cornelius's side of the watch quest (Modoc, GVAR 105) — third Modoc golden, the OTHER half of
+  # the shared watch quest (106 is Farrel-side). The activation write (105:=4) is gated behind a
+  # dedicated Cornelius sub-branch (his own "ask more questions" loop → an accusation-acceptance
+  # node), reached BEFORE the Farrel accusation and BEFORE the watch is carried (his greeting's
+  # topic list is only offered while both quest gvars are still 0). Once 105 is activated, accusing
+  # Farrel (106:=4) and returning to Cornelius carrying the watch reaches his second-visit greeting,
+  # whose report option now finds 105 already in its activated range and completes both 105:=8 and
+  # 106:=8 together (the same node Farrel's own golden uses for 106, but the completion write it
+  # makes for 105 depends on 105's value going in — untouched, it stalls at 105:=3, which is what
+  # >15 earlier attempts hit). Full lifecycle 0→4→8, real dialogue only.
+  "quest-cornelius-watch|$CREATE --goto-map modinn.map --get-global 105 --talk-seq 13490 1,1,5,3,1 --get-global 105 --give 257:1 --talk-seq 25088 3,1,1 --get-global 106 --talk-seq 13490 2 --get-global 105 --get-global 106 --quest-probe --rng-seed 1"
   # Deliver beer & booze to Lydia (Vault City, GVAR 497) — first VC golden. Item-delivery, full
   # lifecycle 0→1→2 via the real dialogue. Lydia (vctydwtn 26306) laments VC's synthetic-only
   # booze; down the drinks-menu → real-alcohol chain (1,1,1,1,1,1) she asks for a case of ten
