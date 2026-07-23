@@ -75,21 +75,29 @@ doing it before the first Lara conversation even short-circuits her greeting to 
 already-know branch on the very first visit, skipping a return trip.
 
 **Full driven route** (state/IDs only — see `scripts/quest-golden.sh` for the exact command):
-open a denbus2 graveyard crate (21731) → talk to the denbus1 21514 guard (accept + the
+open a denbus2 graveyard crate (21731) → talk to Lara at denbus1 21514 (accept + the
 already-know report chain, her Node006/Node011/Node015/Node016 nodes) → 454:=2 → Metzger
 (denbus2 15278) has a new greeting option once 454>=2 (his permission chain) → 454:=3 → back to
-the 21514 guard (his follow-up chain) → 454:=4 → dcTyler (denbus2 24534) has a new greeting
-once 454>=4 (his own chain) → 454:=5 → back to the 21514 guard again (his report chain, then
-his accept-the-plan option) → 454:=6, then immediately → 454:=9 (Node030's opt0/Node990 branch
+Lara (her follow-up chain) → 454:=4 → dcTyler (denbus2 24534) has a new greeting
+once 454>=4 (his own chain) → 454:=5 → back to Lara again (her report chain, then
+her accept-the-plan option) → 454:=6, then immediately → 454:=9 (Node030's opt0/Node990 branch
 fires with no further choice) → re-enter denbus2 and `--pump-ms` → the map_enter_p_proc
 completion fallback fires → 454:=11. Verified deterministic across repeat runs with
 `--rng-seed 1` (byte-identical `--get-global`/`quest-item`/`quest-probe` output both times).
+
+**Coverage note:** the golden exercises the `GVAR445` bit `0x20000000` set/check path implicitly
+(via the crate-first ordering above) — there is no standalone `--get-global 445` probe in the
+recorded fixture, deliberately, to avoid a re-record. The `:=7`/`:=8` alternate combat branch
+and the `destroy_p_proc` writes on dcTyler/dcMarc/DCG1Grd/dcG2Grd/dcLara remain uncovered by
+this golden; a future variant golden could drive the `:=7` branch with `--kill` for that
+coverage.
 
 **Den NPC tiles (--map-objects):** DCMom denbus2 24479, DCSmitty denbus1 22137, dcRebecc
 denbus1 17662, DCFranki denbus2 14716, DCAnna denbus1 28105, dcFred denbus1 25479, dcDerek
 denbus2 29694, DCMetzge (free-vic), dcLara denbus1 21514, diCrate (graveyard) denbus2 21731.
 
-**Item pids:** meal=468, locket=252, book(Lavender Flower)=471, explosive=384/20/75, Mentats=53.
+**Item pids:** meal=468, locket=252, book(Lavender Flower)=471, still-sabotage pids (diStill
+use_obj_on)=384/20/75, Mentats=53.
 
 **PATTERN CONFIRMED, town closed 7/7:** the "easy" quests (deliveries, item-returns,
 single-accept) landed in ~15-30 min each with the toolset; the remainder were per-quest
