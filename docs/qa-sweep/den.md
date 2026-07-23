@@ -1,5 +1,5 @@
 
-# Den (loc 1501) QA sweep — 6/7 done
+# Den (loc 1501) QA sweep — COMPLETE, 7/7 done
 
 The second campaign-QA town (after [[klamath-qa-sweep]] closed 6/6). Same toolset
 (--map-objects, int_disasm.py, --critters, the round-nav aid, escort-sim, set-hour).
@@ -24,15 +24,15 @@ The second campaign-QA town (after [[klamath-qa-sweep]] closed 6/6). Same toolse
   quests.txt rows (display 1/2/4/6, each completed at +1) land at val=11. See below for the
   full ladder + the key that unblocks it.
 
-**REMAIN (1, deep multi-step — task #56):**
-- **101** Sabotage Becky's still — FULLY REVERSE-ENGINEERED (task #56 has the full recipe), but
-  driving it live is finicky. Chain: buy Rebecca's $5 drink → 445|0x20000 (persists cross-map);
-  Frankie's whiskey node offers opt 173 "why costlier than Becky?" gated (445&0x20000)&&!(445&16)
-  &&(101==0) → 101:=1; Rebecca still-reveal → 445|16; Frankie report → 101:=2 + $100 + "destroy
-  it"; use explosive (pid 384/20/75) on Becky's still (diStill, denbus1 ELEV1 tile 17062) when
-  101==2 → 101:=3 (complete, thresh>=3). LIVE SNAG: Frankie's "$20 a shot" node showed opts
-  171/172/174 not 173 despite 445=0x20000 — a dialogue-graph disambiguation to resolve. Becky's
-  still ≠ Bob's Klamath still (198). Item can be --give'd. ~45-60min to finish.
+- **101** Sabotage Becky's still — **DONE, golden `quest-becky-still` (96eea68), FULL
+  0→1→2→3→4.** Chain: Rebecca (denbus1 17662) $5 drinks → 445|=0x20000, and her reveal
+  (gated on her LVAR7 drink-counter >=4) → 446|=0x8000000; Frankie (denbus2 14716) price
+  branch (msg 173) gated (445&0x20000)&&!(446&0x8000000)&&(101==0) → 101:=1; Rebecca reveal
+  → Frankie report → 101:=2; explosive (diStill use_obj_on accepts pids 384/20/75) on the
+  still (denbus1 ELEV1 tile 17062) at 101==2 → 101:=3; Frankie post-destruction report →
+  101:=4. THE OLD SNAG RESOLVED: msg-173 option carries a silent `giq_option iq=6` gate
+  (min INT 6; the standard test char is INT 5) — passed honestly via one Mentats dose
+  (pid 53, real chem pipeline). Recipe uses 5 drinks for margin (true threshold 4).
 
 ### 454 — Lara's gang war (session detail)
 
