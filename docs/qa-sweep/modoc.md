@@ -1,6 +1,6 @@
 
 # Modoc (loc 1503) QA sweep — 5/5 landable done (105, 106, 110, 631, 693); 108 is a pinned vanilla
-# gap excluded from the denominator (see VC 529 for the same dual-threshold-note pattern)
+# gap excluded from the denominator
 
 Third campaign-QA town (after [[klamath-qa-sweep]] 6/6, [[den-qa-sweep]] 5/7). Same toolset
 (--map-objects, int_disasm, --critters, round-nav, escort-sim, set-hour).
@@ -13,16 +13,21 @@ Third campaign-QA town (after [[klamath-qa-sweep]] 6/6, [[den-qa-sweep]] 5/7). S
   105 = Cornelius-side.
 - **105** Cornelius's side of the same watch quest — golden `quest-cornelius-watch`, 0→4→8. The
   activation write (105:=4) sits behind a dedicated Cornelius sub-branch (mcCornel Node010→Node001
-  "ask more questions" loop→Node017→Node018→Node019, its own accusation-acceptance chain) that is
-  ONLY offered while both 105 and 106 are still 0 — i.e. it must be taken BEFORE accusing Farrel
-  and BEFORE the watch (257) is carried. Once 105:=4, accusing Farrel (106:=4, same chain as 106's
-  golden) and returning to Cornelius carrying the watch reaches his post-first-visit greeting
-  (mcCornel Node002, entered because a per-critter visit counter is now nonzero); its report option
-  (mcCornel Node024/Node025, the same node Farrel's completion shares) reads 105's CURRENT value
-  before writing — 105<4 stalls at :=3 (undone), 105 in [4,7) completes to :=8. The >15 prior
-  attempts always did the Farrel/watch steps first, so 105 was still 0 and every completion
-  attempt landed on the :=3 stall — this is what unblocked it. Full lifecycle 0→4→8, real dialogue
-  only; disasm-driven (mccornel.int giq_option operand trace, no --set-global).
+  "ask more questions" loop→Node017→Node018→Node019, its own accusation-acceptance chain). The real
+  Node001 guard (0x35a2–0x35c2 in mccornel.int) is `105==0 OR 106==0` (inclusive-or), not "both 105
+  and 106 are still 0" — the branch stays reachable while 105==0 regardless of Farrel's (106) state.
+  In practice the LANDED scenario talks Cornelius first (that ordering is sufficient and
+  replay-proven), but it is not script-required by the guard itself. Once 105:=4, accusing Farrel
+  (106:=4, same chain as 106's golden) and returning to Cornelius carrying the watch reaches his
+  post-first-visit greeting (mcCornel Node002, entered because a per-critter visit counter is now
+  nonzero); its report option (mcCornel Node024/Node025, the same node Farrel's completion shares)
+  reads 105's CURRENT value before writing — 105<4 stalls at :=3 (undone), 105 in [4,7) completes to
+  :=8. The >15 prior attempts always did the Farrel/watch steps first, so 105 was still 0 and every
+  completion attempt landed on the :=3 stall — this is what unblocked it. A parallel activation
+  branch, mcCornel Node016→Node020 (and Node021→Node022), writes 105:=4 under the same Node001 guard
+  as the documented Node017→Node018→Node019 chain — two flavor routes to the same effect. Full
+  lifecycle 0→4→8, real dialogue only; disasm-driven (mccornel.int giq_option operand trace, no
+  --set-global).
 - **110** Farrel's garden rats — golden `quest-modoc-rats` (788f8b7), 0→4→8. Same greeting as 106,
   other branch (2,2,1). Completion discriminator is a shared per-map rat counter (mcRat, 10
   instances on modgard) decremented in destroy_p_proc; hitting zero sets GVAR 297 bit 0x80, which
@@ -44,13 +49,13 @@ Third campaign-QA town (after [[klamath-qa-sweep]] 6/6, [[den-qa-sweep]] 5/7). S
 
 **VANILLA GAP (excluded from the landable denominator):**
 - **108** Tell Karl in the Den it's OK to come back — `ProcAnalyze --quest-paths 108` reports
-  `writes=0` across all 1263 scripts (re-verified this session); the P124 quest-census
-  (`--quest-census`) independently pins gvar 108 as one of its 3 vanilla content gaps (alongside
-  396 power-plant and the capped 370 Jet-source), with a spot-check line confirming
+  `writes=0` across all 1263 scripts (re-verified 2026-07-23); the P124 quest-census
+  (`ProcAnalyze --quest-census`) independently pins gvar 108 as one of its 3 vanilla content gaps
+  (alongside 396 power-plant and the capped 370 Jet-source), with a spot-check line confirming
   `constWrites=0 values=[] scripts=[]`. No script in the shipped game ever sets this gvar — the
-  quest is unfinishable by design, not by an engine limitation. No golden is possible; not counted
-  in Modoc's landable total. See [[p124-quest-census]] and `docs/qa-sweep/census.md` for the
-  cross-town ledger (same treatment as VC's 529 dual-threshold note).
+  quest is unfinishable by design, not by an engine limitation. No golden is possible; counted 6
+  quests for Modoc; 5 landable — all landed — plus 108, a pinned vanilla gap no script can complete.
+  See [[p124-quest-census]] (P124 quest census — pinned vanilla gaps 108/396/370).
 
 **Tiles/items:** Farrel modinn 25088, Cornelius modinn 13490, garden rats modgard (14494 14696
 16892 17098 17680 18684 21899 22894 23887), molerat modshit 9901. Watch = item 257. Balthas
