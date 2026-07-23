@@ -152,6 +152,15 @@ SCENARIOS=(
   "quest-kitty-mags|$CREATE --goto-map newr1.map --get-global 501 --give 225:10 --give 41:5000 --talk-seq 23286 3,1,1,2,1,1 --get-global 501 --quest-probe --rng-seed 1"
   # The Slag/ghost-farm investigation (Modoc, GVAR 631) — Jo (mcJo, modmain 20143), item 263.
   "quest-modoc-ghostfarm|$CREATE --goto-map modmain.map --get-global 631 --give 263:10 --give 41:5000 --talk-seq 20143 1,1,3,1,1,1,1,1,1,1,1,2,1 --talk-seq 20143 1 --get-global 631 --quest-probe --rng-seed 1"
+  # Jonny missing (Modoc, GVAR 693) — full lifecycle 0->1->2 via the real dialogue (no --set-global).
+  # Balthas (mcBaltha, modmain 12323) has a personal-topic greeting branch that surfaces the missing-
+  # son thread and activates 693:=1; that branch is gated on live Perception >=6 in the script (a real
+  # stat check, not IQ). The fixed chargen SPECIAL is 5/5/5/5/5/5/5, so the option is hidden until a
+  # Mentats dose (pid 53, +1 PE while active) is actually taken — the sanctioned --give + a real
+  # --use-item, not --set-global faking. Activate (1,1,1,2). Completion is the found-BB-gun branch:
+  # item pid 261 (found at the bottom of the old well) carried back to Balthas and reported on his
+  # follow-up greeting (1,1) -> 693:=2, completed. No live Jonny/Vegeir NPC needed for this route.
+  "quest-jonny-rescue|$CREATE --give 53:1 --use-item 53 --give 261:1 --goto-map modmain.map --get-global 693 --talk-seq 12323 1,1,1,2 --get-global 693 --talk-seq 12323 1,1 --get-global 693 --quest-probe --rng-seed 1"
   # Break Manson & Franc out of prison (Broken Hills, GVAR 303) — multi-NPC (hcMarcus 18284), item 456.
   "quest-bh-jailbreak|$CREATE --goto-map broken1.map --get-global 303 --give 456:10 --give 41:5000 --talk-seq 10685 2,1,1,1 --talk-seq 29285 3,1 --talk-seq 18284 5,1,1 --get-global 303 --quest-probe --rng-seed 1"
   # --- Quests found by the FULL-MAP harvest (scripts/quest-harvest.sh across all 155 maps, then
