@@ -4,7 +4,7 @@
 The second campaign-QA town (after [[klamath-qa-sweep]] closed 6/6). Same toolset
 (--map-objects, int_disasm.py, --critters, the round-nav aid, escort-sim, set-hour).
 
-**DONE (4/7):**
+**DONE (7/7):**
 - **100** Free Vic — `quest-free-vic` (pre-existing).
 - **550** Get car part for Smitty — `quest-smitty-carpart` (activation, pre-existing).
 - **551** Return Anna's locket — `quest-anna-locket` (--set-hour night ghost + item 252).
@@ -15,7 +15,7 @@ The second campaign-QA town (after [[klamath-qa-sweep]] closed 6/6). Same toolse
 - **371** Collect money from Fred — **DONE golden `quest-fred-money` (23cf96f), 0→1→2.** Rebecca
   (denbus1 17662, work `2,1,1`) sets the Fred task; Fred (denbus1 25479, `1,2,2,1,1,2,3` = demand
   the FULL amount, NOT the $100 partial) pays $200 via his Node986 + sets the 446 bit; Rebecca
-  turn-in `2,1,1,1` — the "Yes, I did" option appears ONLY with caps>=200 AND the 446 bit → 371:=2.
+  turn-in `2,1,1,1` — the confirm-payment option appears ONLY with caps>=200 AND the 446 bit → 371:=2.
   KEY: plain --give of caps/book does NOT complete (needs the real negotiation to set the bit); the
   demand-full branch (not accept-partial) is what pays 200. Book sub-task (Derek, desc 205) still
   open — 371 is a shared gvar (two display thresholds), 205 could be a later fixture via item 471.
@@ -87,13 +87,14 @@ completion fallback fires → 454:=11. Verified deterministic across repeat runs
 
 **Den NPC tiles (--map-objects):** DCMom denbus2 24479, DCSmitty denbus1 22137, dcRebecc
 denbus1 17662, DCFranki denbus2 14716, DCAnna denbus1 28105, dcFred denbus1 25479, dcDerek
-denbus2 29694, DCMetzge (free-vic).
+denbus2 29694, DCMetzge (free-vic), dcLara denbus1 21514, diCrate (graveyard) denbus2 21731.
 
-**Item pids:** meal=468, locket=252, book(Lavender Flower)=471.
+**Item pids:** meal=468, locket=252, book(Lavender Flower)=471, explosive=384/20/75, Mentats=53.
 
-**PATTERN CONFIRMED (2nd town):** the "easy" quests (deliveries, item-returns, single-accept)
-land in ~15-30 min each with the toolset; the remainder are per-quest investigations
-(bitfield-gated turn-ins, cross-NPC knowledge chains, combat questlines) at ~30-60 min. No
-shortcut to bulk fixtures — but every quest IS completable via the real path with the tools.
+**PATTERN CONFIRMED, town closed 7/7:** the "easy" quests (deliveries, item-returns,
+single-accept) landed in ~15-30 min each with the toolset; the remainder were per-quest
+investigations (bitfield-gated turn-ins, cross-NPC knowledge chains, combat questlines) at
+~30-60 min each. No shortcut to bulk fixtures — every quest was completable via the real path
+with the tools; none pinned as a vanilla gap.
 
 Related: [[klamath-qa-sweep]], [[p128-quest-path-finder]], [[p124-quest-census]].

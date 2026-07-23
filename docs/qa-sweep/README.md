@@ -15,12 +15,12 @@ game dialogue text is reproduced.
 | Town | File | Landed |
 | --- | --- | --- |
 | Klamath (loc 1502) | [klamath.md](klamath.md) | 6/6 ✅ complete |
-| The Den (loc 1501) | [den.md](den.md) | 5/7 |
+| The Den (loc 1501) | [den.md](den.md) | 7/7 ✅ complete |
 | Modoc (loc 1503) | [modoc.md](modoc.md) | 5/5 ✅ complete (+1 pinned vanilla gap, 108) |
 | Vault City (loc 1504) | [vaultcity.md](vaultcity.md) | 5/10 |
 | Gecko (loc 1505) | [gecko.md](gecko.md) | surveyed (no clean quick-win) |
 
-33 quest goldens total (plus the pre-existing opening/combat/encounter suites).
+35 quest goldens total (plus the pre-existing opening/combat/encounter suites).
 
 ## How to use these
 
