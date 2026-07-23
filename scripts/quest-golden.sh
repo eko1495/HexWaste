@@ -121,8 +121,8 @@ SCENARIOS=(
   # Cornelius's side of the watch quest (Modoc, GVAR 105) — third Modoc golden, the OTHER half of
   # the shared watch quest (106 is Farrel-side). The activation write (105:=4) is gated behind a
   # dedicated Cornelius sub-branch (his own "ask more questions" loop → an accusation-acceptance
-  # node), reached BEFORE the Farrel accusation and BEFORE the watch is carried (his greeting's
-  # topic list is only offered while both quest gvars are still 0). Once 105 is activated, accusing
+  # node), driven here BEFORE the Farrel accusation (the Node001 guard is 105==0 OR 106==0 —
+  # Cornelius-first is the replay-proven ordering, not script-required). Once 105 is activated, accusing
   # Farrel (106:=4) and returning to Cornelius carrying the watch reaches his second-visit greeting,
   # whose report option now finds 105 already in its activated range and completes both 105:=8 and
   # 106:=8 together (the same node Farrel's own golden uses for 106, but the completion write it
