@@ -158,7 +158,7 @@ SCENARIOS=(
   # stat check, not IQ). The fixed chargen SPECIAL is 5/5/5/5/5/5/5, so the option is hidden until a
   # Mentats dose (pid 53, +1 PE while active) is actually taken — the sanctioned --give + a real
   # --use-item, not --set-global faking. Activate (1,1,1,2). Completion is the found-BB-gun branch:
-  # item pid 261 (found at the bottom of the old well) carried back to Balthas and reported on his
+  # item pid 261 (origin: mcbaltha msg 172) carried back to Balthas and reported on his
   # follow-up greeting (1,1) -> 693:=2, completed. No live Jonny/Vegeir NPC needed for this route.
   "quest-jonny-rescue|$CREATE --give 53:1 --use-item 53 --give 261:1 --goto-map modmain.map --get-global 693 --talk-seq 12323 1,1,1,2 --get-global 693 --talk-seq 12323 1,1 --get-global 693 --quest-probe --rng-seed 1"
   # Break Manson & Franc out of prison (Broken Hills, GVAR 303) — multi-NPC (hcMarcus 18284), item 456.

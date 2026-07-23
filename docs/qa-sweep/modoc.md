@@ -21,7 +21,7 @@ Third campaign-QA town (after [[klamath-qa-sweep]] 6/6, [[den-qa-sweep]] 5/7). S
   writes 693:=1) gated on live Perception ≥6 — a real script stat check, not IQ. The mandated
   chargen SPECIAL is 5/5/5/5/5/5/5 (PE=5), so the branch is hidden by default; cleared honestly by
   giving + using a Mentats dose (pid 53, +1 PE while active — a real in-game mechanic, not
-  --set-global). Completion is the found-BB-gun branch: item pid 261 (bottom of the old well)
+  --set-global). Completion is the found-BB-gun branch: item pid 261 (origin: mcbaltha msg 172)
   carried back to Balthas, reported on his follow-up greeting → 693:=2, completed. The real Jonny/
   Vegeir NPCs live on the Ghost Town maps (gstfarm/gstcav1/gstcav2 — NOT any "mod*"-named map;
   the modmain mcJonny/mcBaltha placements are decoy/hidden objects destroyed on map entry) and
