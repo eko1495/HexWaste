@@ -108,8 +108,8 @@ SCENARIOS=(
   # outhouse) is the --give shortcut, like Anna's locket. 106 is Farrel-side; 105 is Cornelius-side.
   "quest-modoc-watch|$CREATE --goto-map modinn.map --get-global 106 --talk-seq 25088 3,1,1 --get-global 106 --give 257:1 --talk-seq 25088 4,1 --get-global 106 --quest-probe --rng-seed 1"
   # Clear the garden rats for Farrel (Modoc, GVAR 110) — second Modoc golden, same NPC's OTHER
-  # branch off his shared greeting (chain 2,2,1 vs the watch branch's 3,1,1). Accepting his "help
-  # around here" ask (2,2) activates the quest 0→4 (his Node994 accept). The discriminator between
+  # branch off his shared greeting (chain 2,2,1 vs the watch branch's 3,1,1). Accepting his
+  # vermin-help ask (2,2) activates the quest 0→4 (his Node994 accept). The discriminator between
   # the two completion writes (:=3 undone / :=8 confirmed) is NOT tracked in Farrel's own script:
   # each garden-rat critter (mcRat, 10 instances on modgard) decrements a shared per-map counter on
   # its destroy_p_proc; when the counter reaches zero the last rat's death sets GVAR 297 bit 0x80
@@ -120,7 +120,7 @@ SCENARIOS=(
   "quest-modoc-rats|$CREATE --goto-map modinn.map --get-global 110 --talk-seq 25088 2,2,1 --get-global 110 --goto-map modgard.map --kill 14494 --kill 14696 --kill 16892 --kill 17098 --kill 17680 --kill 18684 --kill 21899 --kill 22894 --kill 23887 --kill 24087 --goto-map modinn.map --talk-seq 25088 2,2 --get-global 110 --quest-probe --rng-seed 1"
   # Cornelius's side of the watch quest (Modoc, GVAR 105) — third Modoc golden, the OTHER half of
   # the shared watch quest (106 is Farrel-side). The activation write (105:=4) is gated behind a
-  # dedicated Cornelius sub-branch (his own "ask more questions" loop → an accusation-acceptance
+  # dedicated Cornelius sub-branch (his own more-questions topic loop → an accusation-acceptance
   # node), driven here BEFORE the Farrel accusation (the Node001 guard is 105==0 OR 106==0 —
   # Cornelius-first is the replay-proven ordering, not script-required). Once 105 is activated, accusing
   # Farrel (106:=4) and returning to Cornelius carrying the watch reaches his second-visit greeting,

@@ -38,6 +38,10 @@ quests with their known blockers, so each resumes without re-investigation.
 - Harness verbs: `--talk-seq`, `--give`, `--kill`, `--use-on`, `--set-hour` (night NPCs),
   `--teleport` + `--escort-pump` (escort-sim), `--critters` (runtime critter dump),
   `--pump-ms` (timed events / scripted map transitions).
+- `--quest-probe`'s `quest-item ... completed=1` is a derived boolean (has the gvar crossed the
+  completed threshold, yes/no) — the actual display/completed thresholds a quest's gvar is judged
+  against live in `quests.txt` (loc, desc, display, completed columns); check them there when
+  writing town notes rather than assuming completed=1 means the gvar itself is 1.
 
 ### The reliable "delivery" pattern
 

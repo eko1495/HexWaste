@@ -1,6 +1,5 @@
 
-# Modoc (loc 1503) QA sweep — 5/5 landable done (105, 106, 110, 631, 693); 108 is a pinned vanilla
-# gap excluded from the denominator
+# Modoc (loc 1503) QA sweep — 5/5 landable done (105, 106, 110, 631, 693); 108 is a pinned vanilla gap excluded from the denominator
 
 Third campaign-QA town (after [[klamath-qa-sweep]] 6/6, [[den-qa-sweep]] 5/7). Same toolset
 (--map-objects, int_disasm, --critters, round-nav, escort-sim, set-hour).
@@ -13,7 +12,7 @@ Third campaign-QA town (after [[klamath-qa-sweep]] 6/6, [[den-qa-sweep]] 5/7). S
   105 = Cornelius-side.
 - **105** Cornelius's side of the same watch quest — golden `quest-cornelius-watch`, 0→4→8. The
   activation write (105:=4) sits behind a dedicated Cornelius sub-branch (mcCornel Node010→Node001
-  "ask more questions" loop→Node017→Node018→Node019, its own accusation-acceptance chain). The real
+  more-questions topic loop→Node017→Node018→Node019, its own accusation-acceptance chain). The real
   Node001 guard (0x35a2–0x35c2 in mccornel.int) is `105==0 OR 106==0` (inclusive-or), not "both 105
   and 106 are still 0" — the branch stays reachable while 105==0 regardless of Farrel's (106) state.
   In practice the LANDED scenario talks Cornelius first (that ordering is sufficient and
@@ -32,15 +31,25 @@ Third campaign-QA town (after [[klamath-qa-sweep]] 6/6, [[den-qa-sweep]] 5/7). S
   other branch (2,2,1). Completion discriminator is a shared per-map rat counter (mcRat, 10
   instances on modgard) decremented in destroy_p_proc; hitting zero sets GVAR 297 bit 0x80, which
   Farrel's report option branches on for the confirmed (:=8) vs undone (:=3) write.
-- **631** Ghost farm / Slag investigation — golden `quest-modoc-ghostfarm` (see quest-golden.sh),
-  drives Jo (mcJo, modmain 20143) with item pid 263.
-- **693** Jonny missing — golden `quest-jonny-rescue`, 0→1→2 (display≥1, completed≥1). Balthas
+- **631** Ghost farm / Slag investigation — golden `quest-modoc-ghostfarm`, 0→3 (completed). Jo
+  (mcJo, modmain 20143); caps + item pid 263 (`--give 263:10 --give 41:5000`) precede a single
+  long option chain (`--talk-seq 20143 1,1,3,1,1,1,1,1,1,1,1,2,1`) that walks Jo's whole
+  accept-through-report branch in one pass, then a re-talk (`1`) settles her follow-up greeting;
+  `--get-global 631` brackets the run and the fixture shows 631 land directly at 0→3 (no
+  intermediate value observed between the two samples). `--quest-probe` reports two Pip-Boy
+  entries off this one gvar — desc 400 and desc 406, both display≥1/completed≥1 — a shared-gvar,
+  two-quest-log-line shape like 371's Fred/Derek split.
+- **693** Jonny missing — golden `quest-jonny-rescue`, 0→1→2 (display≥1, completed≥2). Balthas
   (mcBaltha, modmain 12323) has a personal-topic greeting branch (surfaces the missing-son thread,
   writes 693:=1) gated on live Perception ≥6 — a real script stat check, not IQ. The mandated
   chargen SPECIAL is 5/5/5/5/5/5/5 (PE=5), so the branch is hidden by default; cleared honestly by
   giving + using a Mentats dose (pid 53, +1 PE while active — a real in-game mechanic, not
   --set-global). Completion is the found-BB-gun branch: item pid 261 (origin: mcbaltha msg 172)
-  carried back to Balthas, reported on his follow-up greeting → 693:=2, completed. The real Jonny/
+  carried back to Balthas, reported on his follow-up greeting → 693:=2, completed. gvar 693 has a
+  second quests.txt row (desc 404, display≥3, completed≥4) alongside this one (desc 403,
+  display≥1, completed≥2) — the alternate direct-rescue route below (:=3/:=4) is what that second
+  row covers, which is why taking it would surface a second Pip-Boy line rather than completing
+  this one. The real Jonny/
   Vegeir NPCs live on the Ghost Town maps (gstfarm/gstcav1/gstcav2 — NOT any "mod*"-named map;
   the modmain mcJonny/mcBaltha placements are decoy/hidden objects destroyed on map entry) and
   offer an alternate (unbanked) direct-rescue route reaching 693:=3 via Jonny's father-name quiz
