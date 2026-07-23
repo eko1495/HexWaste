@@ -57,10 +57,12 @@ Third campaign-QA town (after [[klamath-qa-sweep]] 6/6, [[den-qa-sweep]] 5/7). S
   quests for Modoc; 5 landable — all landed — plus 108, a pinned vanilla gap no script can complete.
   See [[p124-quest-census]] (P124 quest census — pinned vanilla gaps 108/396/370).
 
-**Tiles/items:** Farrel modinn 25088, Cornelius modinn 13490, garden rats modgard (14494 14696
-16892 17098 17680 18684 21899 22894 23887), molerat modshit 9901. Watch = item 257. Balthas
-modmain 12323, BB gun = item 261, Mentats = item 53. Real Jonny gstcav2 24517, real Vegeir
-gstcav1 26502 (Ghost Town maps, not the "mod*" set).
+**Tiles/items:** Farrel modinn 25088, Cornelius modinn 13490, garden rats modgard — 10 mcRat
+tiles (14494 14696 16892 17098 17680 18684 21899 22894 23887 24087), no molerat involved (an
+earlier sweep note citing a modshit molerat tile was wrong — the golden's `--kill` list above
+is the runtime-verified set). Watch = item 257. Balthas modmain 12323, BB gun = item 261,
+Mentats = item 53. Real Jonny gstcav2 24517, real Vegeir gstcav1 26502 (Ghost Town maps, not
+the "mod*" set).
 
 **PATTERN (3rd town):** confirmed again — a couple clean item-return/delivery wins per town, the
 rest multi-step. Quest goldens now span Klamath(6)+Den(5→ has extras)+Modoc(105/106/110/631/693)
