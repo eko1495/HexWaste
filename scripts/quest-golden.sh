@@ -107,6 +107,17 @@ SCENARIOS=(
   # watch → his confirmation) → 106:=8 (completed, clears his name). The watch acquire (found in the
   # outhouse) is the --give shortcut, like Anna's locket. 106 is Farrel-side; 105 is Cornelius-side.
   "quest-modoc-watch|$CREATE --goto-map modinn.map --get-global 106 --talk-seq 25088 3,1,1 --get-global 106 --give 257:1 --talk-seq 25088 4,1 --get-global 106 --quest-probe --rng-seed 1"
+  # Clear the garden rats for Farrel (Modoc, GVAR 110) — second Modoc golden, same NPC's OTHER
+  # branch off his shared greeting (chain 2,2,1 vs the watch branch's 3,1,1). Accepting his "help
+  # around here" ask (2,2) activates the quest 0→4 (his Node994 accept). The discriminator between
+  # the two completion writes (:=3 undone / :=8 confirmed) is NOT tracked in Farrel's own script:
+  # each garden-rat critter (mcRat, 10 instances on modgard) decrements a shared per-map counter on
+  # its destroy_p_proc; when the counter reaches zero the last rat's death sets GVAR 297 bit 0x80
+  # once (one-time bonus xp guard). Farrel's report option (opt2 off his post-activation greeting)
+  # branches on that same 297 bit to pick the confirmed completion — 110:=8. Killing all ten rat
+  # tiles (--kill, real destroy_p_proc) before reporting is what flips the bit; reporting early
+  # (bit unset) would instead land the undone completion (:=3, not exercised here — real path only).
+  "quest-modoc-rats|$CREATE --goto-map modinn.map --get-global 110 --talk-seq 25088 2,2,1 --get-global 110 --goto-map modgard.map --kill 14494 --kill 14696 --kill 16892 --kill 17098 --kill 17680 --kill 18684 --kill 21899 --kill 22894 --kill 23887 --kill 24087 --goto-map modinn.map --talk-seq 25088 2,2 --get-global 110 --quest-probe --rng-seed 1"
   # Deliver beer & booze to Lydia (Vault City, GVAR 497) — first VC golden. Item-delivery, full
   # lifecycle 0→1→2 via the real dialogue. Lydia (vctydwtn 26306) laments VC's synthetic-only
   # booze; down the drinks-menu → real-alcohol chain (1,1,1,1,1,1) she asks for a case of ten
