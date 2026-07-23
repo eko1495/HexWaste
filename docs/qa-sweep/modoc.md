@@ -1,15 +1,28 @@
 
-# Modoc (loc 1503) QA sweep — 4/6 done (106, 110, 631, 693)
+# Modoc (loc 1503) QA sweep — 5/5 landable done (105, 106, 110, 631, 693); 108 is a pinned vanilla
+# gap excluded from the denominator (see VC 529 for the same dual-threshold-note pattern)
 
 Third campaign-QA town (after [[klamath-qa-sweep]] 6/6, [[den-qa-sweep]] 5/7). Same toolset
 (--map-objects, int_disasm, --critters, round-nav, escort-sim, set-hour).
 
-**DONE (4):**
+**DONE (5):**
 - **106** Find Cornelius's gold watch for Farrel — golden `quest-modoc-watch` (b9bea33), 0→4→8.
   Farrel (modinn 25088), accused of the theft, hooks it via his watch-defense greeting
   option chain (opt3,1,1 → 106:=4); carry the gold watch (item **257**) → his greeting gains an
   opt4 confirm route → 106:=8. Watch = --give shortcut (found in the outhouse). 106 = Farrel-side;
-  105 = Cornelius-side (advances to 3 when 106 done).
+  105 = Cornelius-side.
+- **105** Cornelius's side of the same watch quest — golden `quest-cornelius-watch`, 0→4→8. The
+  activation write (105:=4) sits behind a dedicated Cornelius sub-branch (mcCornel Node010→Node001
+  "ask more questions" loop→Node017→Node018→Node019, its own accusation-acceptance chain) that is
+  ONLY offered while both 105 and 106 are still 0 — i.e. it must be taken BEFORE accusing Farrel
+  and BEFORE the watch (257) is carried. Once 105:=4, accusing Farrel (106:=4, same chain as 106's
+  golden) and returning to Cornelius carrying the watch reaches his post-first-visit greeting
+  (mcCornel Node002, entered because a per-critter visit counter is now nonzero); its report option
+  (mcCornel Node024/Node025, the same node Farrel's completion shares) reads 105's CURRENT value
+  before writing — 105<4 stalls at :=3 (undone), 105 in [4,7) completes to :=8. The >15 prior
+  attempts always did the Farrel/watch steps first, so 105 was still 0 and every completion
+  attempt landed on the :=3 stall — this is what unblocked it. Full lifecycle 0→4→8, real dialogue
+  only; disasm-driven (mccornel.int giq_option operand trace, no --set-global).
 - **110** Farrel's garden rats — golden `quest-modoc-rats` (788f8b7), 0→4→8. Same greeting as 106,
   other branch (2,2,1). Completion discriminator is a shared per-map rat counter (mcRat, 10
   instances on modgard) decremented in destroy_p_proc; hitting zero sets GVAR 297 bit 0x80, which
@@ -29,18 +42,15 @@ Third campaign-QA town (after [[klamath-qa-sweep]] 6/6, [[den-qa-sweep]] 5/7). S
   (Node014, Balthas answer, no skill roll) — not needed once the BB-gun report already completes
   the quest; left as a documented alternate, not a second golden.
 
-**REMAIN (task #58 tracks Modoc):**
-- **105** Cornelius's watch = SAME QUEST AS 106 (mcCornel Node024 sets BOTH 105:=8 + 106:=8).
-  Already covered by the 106 golden. Tried hard to land 105 separately (~15 nav attempts):
-  Cornelius (modinn 13490) is a deliberately-scatterbrained dementia-LOOP. With the watch (257)
-  carried AND Farrel's accusation heard (Farrel 3,1,1 → 106:=4), Cornelius `2,1,1` reaches an
-  8-option greeting with opt6 "found it at Farrel's" (frame) + opt7 "industrious rat made off"
-  (truth). BUT both only set 106:=8 and leave 105 at 3 (below its display>=4!) — Cornelius stays
-  suspicious ("what are you doing with that?"), you keep the watch. The real 105-completing node
-  (Node024, where he TAKES the watch happy) is behind a different option whose LIVE index ≠ the
-  static-graph opt2 (IQ-filter ordinal drift, P128 caveat) — not landed. VERDICT: watch quest is
-  covered by 106; 105 is the alternate same-quest side, finicky, low marginal value. Parked.
-- **108** Tell Karl in the Den it's OK to come back (check: was 108 a P124 vanilla gap? verify).
+**VANILLA GAP (excluded from the landable denominator):**
+- **108** Tell Karl in the Den it's OK to come back — `ProcAnalyze --quest-paths 108` reports
+  `writes=0` across all 1263 scripts (re-verified this session); the P124 quest-census
+  (`--quest-census`) independently pins gvar 108 as one of its 3 vanilla content gaps (alongside
+  396 power-plant and the capped 370 Jet-source), with a spot-check line confirming
+  `constWrites=0 values=[] scripts=[]`. No script in the shipped game ever sets this gvar — the
+  quest is unfinishable by design, not by an engine limitation. No golden is possible; not counted
+  in Modoc's landable total. See [[p124-quest-census]] and `docs/qa-sweep/census.md` for the
+  cross-town ledger (same treatment as VC's 529 dual-threshold note).
 
 **Tiles/items:** Farrel modinn 25088, Cornelius modinn 13490, garden rats modgard (14494 14696
 16892 17098 17680 18684 21899 22894 23887), molerat modshit 9901. Watch = item 257. Balthas
@@ -48,6 +58,7 @@ modmain 12323, BB gun = item 261, Mentats = item 53. Real Jonny gstcav2 24517, r
 gstcav1 26502 (Ghost Town maps, not the "mod*" set).
 
 **PATTERN (3rd town):** confirmed again — a couple clean item-return/delivery wins per town, the
-rest multi-step. Quest goldens now span Klamath(6)+Den(5→ has extras)+Modoc(106/110/631/693)+opening.
+rest multi-step. Quest goldens now span Klamath(6)+Den(5→ has extras)+Modoc(105/106/110/631/693)
++opening; Modoc closes at 5/5 landable + 1 pinned vanilla gap (108).
 
 Related: [[klamath-qa-sweep]], [[den-qa-sweep]], [[p128-quest-path-finder]].
