@@ -216,6 +216,25 @@ SCENARIOS=(
   # denbus1 ELEV1 tile 17062 --use-on 20 -> distill.int use_obj_on_p_proc -> 101:=3. Final report
   # to Frankie (Node012/993 region) -> 101:=4, quest-probe display=2 completed=1.
   "quest-becky-still|$CREATE --goto-map denbus1.map --give 53:1 --use-item 53 --give 41:500 --give 20:1 --get-global 101 --talk-seq 17662 1,1,2 --goto-map denbus2.map --talk-seq 14716 1,1,3,2,1 --get-global 101 --goto-map denbus1.map --talk-seq 17662 1,1,2 --talk-seq 17662 1,1,2 --talk-seq 17662 1,1,2 --talk-seq 17662 1,1,2 --talk-seq 17662 1,2,3 --get-global 445 --get-global 446 --goto-map denbus2.map --talk-seq 14716 1,1,1 --get-global 101 --goto-map denbus1.map:17062:1 --use-on 20:17062 --get-global 101 --goto-map denbus2.map --talk-seq 14716 1 --get-global 101 --quest-probe --rng-seed 1"
+  # Lara's gang war (Den, GVAR 454) - ACCEPT only (quests.txt row: display>=1, completed>=2).
+  # dcLara.int is a shared "Tough Guard" template script reused by several unnamed Den grunts;
+  # the actual 454 stage ladder (traced via ProcAnalyze --quest-paths 454 + operand-level
+  # int_disasm) is: dcLara Node008:=1 (accept the recon job) -> Node016:=2 -> dcMetzge
+  # Node019:=3 (permission) -> dcLara Node023:=4 -> dcTyler Node020:=5 -> dcLara Node027:=6 ->
+  # dcLara Node989:=7 / Node990:=9 (branch off Node030) -> DenBus1/DenBus2 map_update_p_proc:=8
+  # (auto, fires when 454 is 6 or 7) -> terminal :=10/11 via destroy_p_proc on dcTyler/dcMarc/
+  # DCG1Grd/dcG2Grd/dcLara (any elevation) or their map_enter_p_proc/DenBus2 map_exit_p_proc
+  # fallbacks (all forward-only guarded, i.e. only advance if current 454 is lower).
+  # Driven honestly: the guard NPC at denbus1 21514 (dcLara script; his greeting text and
+  # options are 454-state-dependent) gives the recon job and Node008 fires 0->1 for real
+  # (no --set-global). Stage 2 is BLOCKED behind a bit on GVAR445 (0x20000000, read by
+  # dcLara's Node018 to gate the "report success" branch vs. the "Not yet." dead end) that
+  # no dialogue chain, NPC (Metzger, Tyler, Marc, the G1/G2 guards), object (the crates, the
+  # church door/diChcDor once unlocked via Tyler's own "just go in" line, dcStory2) or skill
+  # use found in this session sets - see docs/qa-sweep/den.md for the full dead-end log.
+  # This lands the verified real transition (0->1, quest goes ACTIVE) using the same
+  # accept-only pattern as quest-smitty-carpart/quest-torr-brahmin.
+  "quest-lara-war|$CREATE --goto-map denbus1.map --get-global 454 --talk-seq 21514 1,1,1 --get-global 454 --quest-probe --rng-seed 1"
 )
 
 dotnet build src/Hexwaste.Viewer -c Debug >/dev/null || { echo "build failed"; exit 2; }
