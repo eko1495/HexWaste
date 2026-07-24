@@ -245,7 +245,7 @@ SCENARIOS=(
   # branch - the scripted event resolves the war off-screen once 454==9.
   "quest-lara-war|$CREATE --goto-map denbus2.map:21731:0 --use-hex 21731 --goto-map denbus1.map --get-global 454 --talk-seq 21514 1,1,1,1,1,1,3 --get-global 454 --goto-map denbus2.map --talk-seq 15278 2,2,2,2 --get-global 454 --goto-map denbus1.map --talk-seq 21514 1,1,2 --get-global 454 --goto-map denbus2.map --talk-seq 24534 1,1,1 --get-global 454 --goto-map denbus1.map --talk-seq 21514 1,1,1 --get-global 454 --goto-map denbus2.map --pump-ms 3000 --get-global 454 --quest-probe --rng-seed 1"
   # B4 arc centerpiece: Gecko powerplant (GVAR 82) + the VC citizenship grant (GVAR 79/81).
-  # Lynette (vctycocl 17100) "become a Citizen" branch -> the alternate-commitment offer (msg 339)
+  # Lynette (vctycocl 17100) citizenship-hub branch (msg 252) -> the alternate-commitment offer (msg 339)
   # -> accept the Gecko job (82 0->2, active). Harold (GECKSETL 16705) explains the
   # plant's coolant-valve near-meltdown and the missing Hydroelectric Magnetosphere Regulator
   # part (82->5, informational). McClure (vctycocl 13922, "Bureaucrat 1"/Senior Councilor)

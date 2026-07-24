@@ -5,7 +5,7 @@ Fifth campaign-QA town. UNLIKE Vault City (delivery-heavy), Gecko's other 5 ques
 harder tier — surveyed but none is a clean single-interaction delivery/item-return:
 
 - **82** Solve the Gecko powerplant problem — golden `quest-gecko-powerplant` (B4 session),
-  0→2→5→6→7→9. Cross-town, 4-NPC chain: Lynette (vctycocl 17100) "become a Citizen" hub
+  0→2→5→6→7→9. Cross-town, 4-NPC chain: Lynette (vctycocl 17100) citizenship-hub option (msg 252)
   option → the alternate-commitment offer (msg 339) → accept the Gecko job (`2,3` then
   `2,1,1,1,2,1`, 82:=2 active). Harold (GECKSETL 16705) explains the coolant-valve near-
   meltdown + the missing Hydroelectric Magnetosphere Regulator part (`2,1,1,1,1,1,1,1,1,3`,
