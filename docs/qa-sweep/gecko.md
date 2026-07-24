@@ -22,6 +22,13 @@ harder tier — surveyed but none is a clean single-interaction delivery/item-re
   already (circular); McClure's Node046 is the only *live* grant path. See vaultcity.md for
   the 79:=5/88:=5 gate (NOT reached by this golden — traced but genuinely story-gated behind
   the separate Bishop-conspiracy/quest-89 arc).
+
+  **Update (B4 Task 2/4):** 88:=5 is now landed — driven by golden `quest-lynette-holodisk`
+  (`gvar88` reaches 6, `gvar89` COMPLETES at 4), see vaultcity.md's 89 detail appendix and 529
+  verdict. Only 79:=5 (gated on Lynette's `Node132`/`Node130a`, `lvar8>10` via `Node123`'s
+  msg-733 option) remains open — the true `lvar8` accumulation trigger was traced to several
+  candidate parent nodes (`103,105,106,113,115,123`) but not confirmed reachable; see
+  vaultcity.md's B4 Task 3 update for the open lead.
 - **396** Repair the powerplant — VANILLA GAP (never written, per [[p124-quest-census]]). Skip.
 - **397** Optimize the powerplant — GsTerm use_obj_on_p_proc (use an item on the reactor terminal).
 - **393** Super repair kit for Skeeter — GCSkeetr Node915 checks carry item **308**; but the

@@ -4,7 +4,7 @@
 Fourth campaign-QA town. VC is DELIVERY-heavy (many "bring X to Y" quests = the tractable
 tier), so a good source of quick goldens. Same toolset.
 
-**DONE (5):**
+**DONE (7):**
 - **497** Deliver beer & booze to Lydia — golden `quest-lydia-booze` (1a67282), 0→1→2. Lydia
   (VCDwnBar, vctydwtn 26306); drink-menu → real-alcohol-request chain `1,1,1,1,1,1` → she wants
   10 each → 497:=1; carry 10 beer (124) + 10 booze (125), info menu opt6 (delivery-ready reply)
@@ -29,15 +29,23 @@ tier), so a good source of quick goldens. Same toolset.
   tile 17678) chain `1` → 321:=2. GOTCHA (runtime discovery, not visible in the static
   quest-path trace): Bishop is hostile toward a dude who approaches cold — the guard-vetting hop
   at 17075 is required first to clear that.
+- **89** Deliver Lynette's holodisk to Westin in NCR — golden `quest-lynette-holodisk` (B4 Task
+  2), 0→1→3→4 (COMPLETES). Cross-town chain through the Raiders2.map special encounter
+  (`gvar88`) and NCR's SCWestin; full gate trace in the **89 detail** appendix below.
+- **82** Solve the Gecko powerplant problem — golden `quest-gecko-powerplant` (B4 arc),
+  0→2→5→6→7→9, cross-town VC/Gecko chain; also grants VC Citizenship (79:=4, 81:=1) via
+  McClure; full recipe in [[gecko-qa-sweep]], VC-side summary in the **82 detail** appendix below.
 
 **REMAIN (2):**
 - **85** Deliver jet sample to Dr Troy (VCDrTroy vctyvlt 13084) — STORY-GATED, gate now FULLY
   TRACED (B4 Task 4, no golden landed — see **85 verdict** below for the precise resume path).
 - **529** Scout 8 sectors around Gecko + enter NCR — worldmap/Stark recon. See **529 verdict**
   below: needs real campaign machinery (the citizenship/conspiracy story arc), not an engine gap.
+  Note: `quests.txt` loc 1504 has 10 rows over 9 distinct gvars — 529 spans TWO rows (desc 508 =
+  its 1/2 tier, desc 509 = its 3/4 tier), which is why this file enumerates 9 quests against a
+  /10 denominator; that mismatch is expected, not a miscount.
 
-**DONE (+1): 89** Deliver Lynette's holodisk to Westin in NCR — golden `quest-lynette-holodisk`
-(B4 Task 2), 0→1→3→4 (COMPLETES). Task 1's trace above correctly found no vc/vi/gc/gs writer for
+**89 detail (B4 Task 2):** Task 1's trace above correctly found no vc/vi/gc/gs writer for
 `gvar88` values 1-4, but stopped short of the real setter: a full 1885-script sweep (not just the
 VC/Gecko set) found it in `raiders2.int`'s `map_update_p_proc` — the **Raiders2.map** special-
 encounter map (a real, loadable 3-elevation map, not just a stub). Unconditional on
@@ -53,8 +61,13 @@ mercenary critters' (`icMerc`/`icMrcCpt`/`icScout`) own `destroy_p_proc`, itself
 `GVAR_RAIDERS_COUNT` (377, seeded to 18 by the map's roster) dropping to `<=5` — i.e. the raiders
 encounter must be substantially fought through (`source_obj==dude` on each kill), not merely
 visited. `--kill` drives this the same sanctioned way as the existing kill-quest goldens (real
-`destroy_p_proc`, only the cause-of-death is a debug shortcut); 14 of the 17 raiders on the map
-are killed to cross the threshold.
+`destroy_p_proc`, only the cause-of-death is a debug shortcut); the golden's driven kill list is
+14 tiles (task-2-report.md's "downstream contract"), i.e. 14 of the 17 raider critter objects
+actually found placed on the map — one more than the 13 kills strictly needed to cross `377<=5`
+from its seed of 18 (18−13=5), a margin kill rather than a miscount. The 18-seed-vs-17-placed-
+objects gap itself is not reconciled by any B4 report on hand — noted here as an observed,
+unexplained delta (possibly a roster entry that isn't materialized as a killable object) rather
+than invented away.
 
 With `gvar373` bit 0 set, Lynette's hub's raiders-intel branch now runs
 `Node107→Node072→Node110→Node111→Node114` (`88:=5`). `Node114` itself checks
@@ -71,10 +84,8 @@ Returning to Lynette with `89==3` unlocks `Node125`'s `gvar89==3`-gated option �
 grant) remains untraced/unlanded — it needs `Node130a`'s `CHA>7` roll on top of everything above,
 out of this task's scope; 529's Stark-recon gate (needing `gvar79==5`) is therefore still open.
 
-**DONE (+1): 82** Solve the Gecko powerplant problem — golden `quest-gecko-powerplant` (B4 arc),
-0→2→5→6→7→9, cross-town VC/Gecko chain; also grants VC Citizenship (79:=4, 81:=1) via McClure.
-Full recipe in [[gecko-qa-sweep]] (this is filed as a Gecko-town quest; VC's McClure/Lynette/
-Randal legs are the VC side of the same cross-town chain).
+**82 detail (B4 arc):** filed as a Gecko-town quest ([[gecko-qa-sweep]] has the full recipe);
+VC's McClure/Lynette/Randal legs are the VC side of the same cross-town chain.
 
 **85 verdict (B4 Task 4, 2026-07-24): NOT landed within the 30-min drive timebox — gate fully
 disassembled, precise resume path recorded (state/IDs only).**
@@ -213,9 +224,9 @@ got:
    (stat index 3) +1, alongside INT+2/PER+2. `ApplyDrugEffect`'s per-stat `+=` has no stacking
    cap, so 3 doses (real `--give`/`--use-item`, the sanctioned test-plumbing for a legitimately
    obtainable consumable) raise CHA from the template's 5 to 8 — verified live (a temporary
-   diagnostic print, not committed, showed CHA 6→7→8 across the three doses). "Mirrored Shades"
+   diagnostic print, not committed, showed CHA 6→7→8 across the three doses). Mirrored Shades
    (pid 433, also checked per the sketch) carry NO drug/armor stat payload in the real data — the
-   item's own description ("makes you feel cool") is confirmed flavor-only, not a real CHA route.
+   item's own description (`pro_item.msg` 43301) is confirmed flavor-only, not a real CHA route.
 3. **`lvar8>10` is the one gate NOT closed.** `lvar8` on Lynette's own script instance is
    incremented (unconditionally, `+1`, no cap) by a scattered set of side-nodes
    (`Node011a/b/c`, `012c`, `018a`, `032a`, `038a`, `052a`, `076b`, `081b`, `082a`, `089a`,
