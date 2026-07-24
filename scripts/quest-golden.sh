@@ -264,6 +264,31 @@ SCENARIOS=(
   # confirmed via full call-graph trace of vclynett.int, not a guess. See docs/qa-sweep/
   # gecko.md and vaultcity.md for the traced gate detail (B4 Task 2 territory).
   "quest-gecko-powerplant|$CREATE --goto-map vctycocl.map --talk-seq 17100 2,3 --talk-seq 17100 2,1,1,1,2,1 --get-global 82 --goto-map GECKSETL.map --talk-seq 16705 2,1,1,1,1,1,1,1,1,3 --get-global 82 --goto-map vctycocl.map --talk-seq 13922 1,2,3,5,1,2,1 --get-global 82 --goto-map vctydwtn.map --talk-seq 23077 1,3,1,3 --get-global 82 --goto-map GECKPWPL.map --talk-seq 24063 1,2,1,1,1 --get-global 82 --goto-map vctycocl.map --talk-seq 13922 1,5,2 --get-global 82 --get-global 88 --get-global 79 --get-global 81 --quest-probe --rng-seed 1"
+  # B4 Task 2: Lynette's holodisk to Westin (GVAR 89), 0->1->3->4, resuming the Task-1
+  # end-state (82=9, 79=4, 81=1, 88=0). RESOLVED the open 88:=4 lead: NO vc/vi/gc/gs script
+  # writes it (Task-1's trace was right) - the real setter is the map_update_p_proc of the
+  # Raiders2.map special encounter (map script `raiders2.int`), unconditional on dude
+  # elevation==2 and GVAR88<4 - reached with a plain --goto-map, no dialogue at all. GATE
+  # CHAIN below Node114 (88:=5) was NOT simply "gvar88==4": the hub's own raiders-intel topic
+  # (Node107) branches on GVAR_RAIDERS_FLAGS (373) bit0, which is a genuine cross-script bit
+  # (`--bit-scan 373`) set only by the Raiders2.map mercenary critters' own destroy_p_proc,
+  # gated on a shared GVAR_RAIDERS_COUNT (377, starts at 18) dropping to <=5 - i.e. the raiders
+  # encounter must be substantially fought through (source_obj==dude on each kill), not just
+  # visited. `--kill` drives this the same sanctioned way as the existing kill-quest goldens
+  # (real destroy_p_proc, debug-shortcut cause of death only); 14 of the 17 raiders are killed
+  # to cross the <=5 threshold. Once GVAR373 bit0 is set, Lynette's hub offers the raiders-info
+  # topic's real branch (Node107->Node072->Node110->Node111->Node114, 88:=5); Node114 checks
+  # obj_carrying_pid_obj(dude,447) (Bishop's Holodisk, NOT yet held on first visit) and falls
+  # to a flavor branch. --give 447:1 (combat/steal-gated acquisition, sanctioned per the VC-321
+  # precedent) then unlocks the hub's msg-394 reveal (88==5 && carrying 447) -> Node136->Node116
+  # (88:=6) ->Node119->Node123 (89:=1). SCWestin (ncr3 17892, displays as "McGee") offers his
+  # own accept option gated GVAR89==1 && carrying 447; picking it calls `getDisk` directly
+  # (89:=3, consumes the item). Returning to Lynette with 89==3 unlocks Node125's opt (89==3
+  # exactly) -> Node129: 89:=4 (COMPLETES; also GVAR484:=2). End state: 88=6, 89=4, 79=4, 81=1,
+  # 82=9. No --set-global anywhere; no VC-citizen hostility triggered (raiders are a legitimate
+  # hostile faction, distinct from the 79:=6 town-hostility guard). State/ID only, no dialogue
+  # text. Full gate trace + tile/pid list in docs/qa-sweep/vaultcity.md.
+  "quest-lynette-holodisk|$CREATE --goto-map vctycocl.map --talk-seq 17100 2,3 --talk-seq 17100 2,1,1,1,2,1 --goto-map GECKSETL.map --talk-seq 16705 2,1,1,1,1,1,1,1,1,3 --goto-map vctycocl.map --talk-seq 13922 1,2,3,5,1,2,1 --goto-map vctydwtn.map --talk-seq 23077 1,3,1,3 --goto-map GECKPWPL.map --talk-seq 24063 1,2,1,1,1 --goto-map vctycocl.map --talk-seq 13922 1,5,2 --goto-map Raiders2.map:11509:2 --get-global 88 --kill 12288 --kill 12310 --kill 16487 --kill 17087 --kill 17089 --kill 18510 --kill 18905 --kill 19298 --kill 19910 --kill 20101 --kill 21509 --kill 22311 --kill 24108 --kill 24708 --get-global 373 --goto-map vctycocl.map --talk-seq 17100 3,1,1,1,1,1,2 --get-global 88 --give 447:1 --talk-seq 17100 3,1,2,2,2 --get-global 88 --get-global 89 --goto-map ncr3.map --talk-seq 17892 3 --get-global 89 --goto-map vctycocl.map --talk-seq 17100 3,4 --get-global 89 --get-global 88 --get-global 484 --quest-probe --rng-seed 1"
 )
 
 dotnet build src/Hexwaste.Viewer -c Debug >/dev/null || { echo "build failed"; exit 2; }
