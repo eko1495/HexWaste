@@ -244,6 +244,26 @@ SCENARIOS=(
   # (the map script's own resolution message) -> :=11 (good outcome) with NO --kill required in this
   # branch - the scripted event resolves the war off-screen once 454==9.
   "quest-lara-war|$CREATE --goto-map denbus2.map:21731:0 --use-hex 21731 --goto-map denbus1.map --get-global 454 --talk-seq 21514 1,1,1,1,1,1,3 --get-global 454 --goto-map denbus2.map --talk-seq 15278 2,2,2,2 --get-global 454 --goto-map denbus1.map --talk-seq 21514 1,1,2 --get-global 454 --goto-map denbus2.map --talk-seq 24534 1,1,1 --get-global 454 --goto-map denbus1.map --talk-seq 21514 1,1,1 --get-global 454 --goto-map denbus2.map --pump-ms 3000 --get-global 454 --quest-probe --rng-seed 1"
+  # B4 arc centerpiece: Gecko powerplant (GVAR 82) + the VC citizenship grant (GVAR 79/81).
+  # Lynette (vctycocl 17100) "become a Citizen" branch -> the alternate ("substantial way")
+  # offer -> accept the Gecko job (82 0->2, active). Harold (GECKSETL 16705) explains the
+  # plant's coolant-valve near-meltdown and the missing Hydroelectric Magnetosphere Regulator
+  # part (82->5, informational). McClure (vctycocl 13922, "Bureaucrat 1"/Senior Councilor)
+  # confirms VC has the part and sends the dude to Randal for it (82->6). Randal (vctydwtn
+  # 23077, "Trader 1"/Chief Amenities Officer) hands over the Hy-Mag part (82->7, no --give
+  # needed - script-granted). Festus the reactor ghoul (GECKPWPL 24063) installs it (82->9,
+  # completed: quests.txt display>=2/completed>=8) - +4250 xp, dude reaches level 3. Back to
+  # McClure with the "I repaired Gecko's plant" report (only visible once 82>=9) grants VC
+  # Citizenship directly: 79 0->4, 81 0->1. GOTCHA: Lynette's OWN citizenship-grant node
+  # (076b/076c, 79:=4) is unreachable dialogue-dead-code (its only caller requires 79==4/5
+  # already); McClure's Node046 is the real, live grant path. 79:=5 (Lynette Node132) and
+  # 88:=5 (Lynette Node114) are NOT reached here - both sit downstream of the separate
+  # Bishop-conspiracy/quest-89 (Lynette's holodisk to Westin) chain: Node114's own hub gate
+  # needs GVAR88==4 with no drivable writer anywhere in the VC script set, and the item-338
+  # shortcut into the finale (Node130) needs GVAR89==3 (Westin's getDisk, cross-town NCR) -
+  # confirmed via full call-graph trace of vclynett.int, not a guess. See docs/qa-sweep/
+  # gecko.md and vaultcity.md for the traced gate detail (B4 Task 2 territory).
+  "quest-gecko-powerplant|$CREATE --goto-map vctycocl.map --talk-seq 17100 2,3 --talk-seq 17100 2,1,1,1,2,1 --get-global 82 --goto-map GECKSETL.map --talk-seq 16705 2,1,1,1,1,1,1,1,1,3 --get-global 82 --goto-map vctycocl.map --talk-seq 13922 1,2,3,5,1,2,1 --get-global 82 --goto-map vctydwtn.map --talk-seq 23077 1,3,1,3 --get-global 82 --goto-map GECKPWPL.map --talk-seq 24063 1,2,1,1,1 --get-global 82 --goto-map vctycocl.map --talk-seq 13922 1,5,2 --get-global 82 --get-global 88 --get-global 79 --get-global 81 --quest-probe --rng-seed 1"
 )
 
 dotnet build src/Hexwaste.Viewer -c Debug >/dev/null || { echo "build failed"; exit 2; }

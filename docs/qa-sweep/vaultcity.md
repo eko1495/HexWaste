@@ -30,7 +30,7 @@ tier), so a good source of quick goldens. Same toolset.
   quest-path trace): Bishop is hostile toward a dude who approaches cold — the guard-vetting hop
   at 17075 is required first to clear that.
 
-**REMAIN (4):**
+**REMAIN (3):**
 - **85** Deliver jet sample to Dr Troy (VCDrTroy vctyvlt 13084) — STORY-GATED, NOT a cold-boot
   delivery: Troy's greeting stays at the no-quest-available baseline even with jet (item 259) in
   hand. Needs prior jet/drug-problem context (from the Den/Redding storyline). Skip until that
@@ -46,15 +46,46 @@ tier), so a good source of quick goldens. Same toolset.
   anywhere in the script), so stages 1-4 are driven by another script entirely. Worse, even the
   *prior* raiders-intelligence options (msg 392/393, requiring `gvar88==4`) and the Gecko-powerplant
   topic that leads into them (msg 391, requiring `gvar82==2` or `gvar82>3`, `gvar490==0`) are
-  gated on `gvar82` — the SAME gvar that tracks quest **82** (Gecko powerplant, below) already on
-  this town's REMAIN list. So 89 is chained behind quest 82's own progress via a shared
-  raiders/Bishop-conspiracy arc; none of gvar82/88/490 are settable by dialogue alone from a fresh
-  character and none may be faked via `--set-global`. Confirmed empirically: with item 447 given,
-  Lynette's hub still shows only the 3 baseline options (ask-questions / citizenship / nevermind)
-  — no raiders/Gecko/Bishop-safe branch appears for a cold-boot character.
-- **82** Solve the Gecko powerplant problem — big multi-step (also Gecko quest).
+  gated on `gvar82` — the SAME gvar that tracks quest **82** (Gecko powerplant, landed — see below)
+  now separately closed by the B4 golden. So 89 is chained behind quest 82's own progress via a
+  shared raiders/Bishop-conspiracy arc; none of gvar82/88/490 are settable by dialogue alone from a
+  fresh character and none may be faked via `--set-global`. Confirmed empirically: with item 447
+  given, Lynette's hub still shows only the 3 baseline options (ask-questions / citizenship /
+  nevermind) — no raiders/Gecko/Bishop-safe branch appears for a cold-boot character.
+
+  **B4 Task 1 update (2026-07-24, post-82-completion):** with `gvar82` now at 9 (quest 82 landed,
+  golden `quest-gecko-powerplant`), Lynette's hub DOES gain the "About the Gecko power plant..."
+  option (msg 391) and its "repaired it" follow-up — this branches into a citizenship-friction
+  scene (she's upset McClure "gave away" a bargaining chip) that ends at `gvar79:=4`-equivalent
+  dialogue text but does **not** itself write any gvar (verified: `gvar79`/`81`/`88` all stayed 0
+  through that entire branch in isolation). The REAL, reachable 79:=4 + 81:=1 grant instead comes
+  from **McClure directly**: `vcmclure.int` `Node008` gains a msg-134 option
+  ("I repaired Gecko's plant") once `gvar82>=9`, routing through `Node008b` (`lvar8==0` gate,
+  true on first visit) to `Node046`, which unconditionally sets `79:=4`/`81:=1` (unless `79` is
+  already 4 or 5). This is now driven end-to-end in the `quest-gecko-powerplant` golden.
+
+  Full call-graph trace of `vclynett.int` (every `giq_option`/`gsay_option` target plus the
+  internal `call`-idiom edges, not just the visible menu) confirms `gvar79:=5` (`Node132`) and
+  `gvar88:=5` (`Node114`) remain unreached and are genuinely story-gated, not a missed dialogue
+  ordinal: **every** path into `Node114` requires either `gvar88==4` (searched all of
+  `vclynett.int` — zero writers exist anywhere for values 1-4) or `gvar81==1` (reachable, per
+  above) **plus** a `roll_vs_skill` pass at `Node107a`, which itself is only reachable through the
+  same `gvar88==4` dead end. The one alternate entry into the finale (`Node129`→`Node130`, which
+  sets `88:=7` directly, skipping 5/6) requires `gvar89==3` (Westin's `getDisk`, cross-town NCR)
+  **and** carrying item 338 ("Westin Holodisk", confirmed via `--give 338:1`) — i.e. it requires
+  substantially completing quest 89 first. `Node130a`'s follow-on gate to `Node132` (the actual
+  `79:=5` write) additionally requires `get_local_var(8) > 10 AND Charisma > 7` — our CHA-5 test
+  character fails this outright regardless (a CHA-8+ build would pass, confirmed by inspection,
+  but is moot while the `gvar89==3` prerequisite is itself unmet). **Verdict: 79:=5 and 88:=5 are
+  Task 2 territory** (downstream of quest 89's own Westin delivery), not landable standalone in
+  the Task 1 golden. 79:=4/81:=1 (VC citizenship) IS landed via McClure.
 - **529** Scout 8 sectors around Gecko + enter NCR — worldmap/Stark recon. See **529 verdict**
   below: needs real campaign machinery (the citizenship/conspiracy story arc), not an engine gap.
+
+**DONE (+1): 82** Solve the Gecko powerplant problem — golden `quest-gecko-powerplant` (B4 arc),
+0→2→5→6→7→9, cross-town VC/Gecko chain; also grants VC Citizenship (79:=4, 81:=1) via McClure.
+Full recipe in [[gecko-qa-sweep]] (this is filed as a Gecko-town quest; VC's McClure/Lynette/
+Randal legs are the VC side of the same cross-town chain).
 
 **529 verdict (2026-07-21):** **Outcome 3 — needs real new machinery (a campaign prerequisite
 chain, not an engine subsystem). No code shipped.**
