@@ -7,6 +7,8 @@ get-global: GVAR89 = 3
 get-global: GVAR89 = 4
 get-global: GVAR88 = 6
 get-global: GVAR484 = 2
+get-global: GVAR79 = 4
+get-global: GVAR81 = 1
 quest-item: gvar=480 val=0 display=0 completed=0 loc=1500 desc=130
 quest-item: gvar=619 val=1 display=1 completed=0 loc=1500 desc=140
 quest-item: gvar=82 val=9 display=2 completed=1 loc=1504 desc=503
