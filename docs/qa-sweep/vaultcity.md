@@ -54,15 +54,15 @@ tier), so a good source of quick goldens. Same toolset.
   nevermind) — no raiders/Gecko/Bishop-safe branch appears for a cold-boot character.
 
   **B4 Task 1 update (2026-07-24, post-82-completion):** with `gvar82` now at 9 (quest 82 landed,
-  golden `quest-gecko-powerplant`), Lynette's hub DOES gain the "About the Gecko power plant..."
-  option (msg 391) and its "repaired it" follow-up — this branches into a citizenship-friction
-  scene (she's upset McClure "gave away" a bargaining chip) that ends at `gvar79:=4`-equivalent
-  dialogue text but does **not** itself write any gvar (verified: `gvar79`/`81`/`88` all stayed 0
-  through that entire branch in isolation). The REAL, reachable 79:=4 + 81:=1 grant instead comes
-  from **McClure directly**: `vcmclure.int` `Node008` gains a msg-134 option
-  ("I repaired Gecko's plant") once `gvar82>=9`, routing through `Node008b` (`lvar8==0` gate,
-  true on first visit) to `Node046`, which unconditionally sets `79:=4`/`81:=1` (unless `79` is
-  already 4 or 5). This is now driven end-to-end in the `quest-gecko-powerplant` golden.
+  golden `quest-gecko-powerplant`), Lynette's hub DOES gain the powerplant topic option (msg 391)
+  and its "repaired it" follow-up — this branches into a citizenship-friction scene (she's upset
+  McClure "gave away" a bargaining chip) that ends at `gvar79:=4`-equivalent dialogue text but
+  does **not** itself write any gvar (verified: `gvar79`/`81`/`88` all stayed 0 through that entire
+  branch in isolation). The REAL, reachable 79:=4 + 81:=1 grant instead comes from **McClure
+  directly**: `vcmclure.int` `Node008` gains a msg-134 option (msg 134, the repair-report line)
+  once `gvar82>=9`, routing through `Node008b` (`lvar8==0` gate, true on first visit) to `Node046`,
+  which unconditionally sets `79:=4`/`81:=1` (unless `79` is already 4 or 5). This is now driven
+  end-to-end in the `quest-gecko-powerplant` golden.
 
   Full call-graph trace of `vclynett.int` (every `giq_option`/`gsay_option` target plus the
   internal `call`-idiom edges, not just the visible menu) confirms `gvar79:=5` (`Node132`) and

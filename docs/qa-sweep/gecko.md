@@ -6,7 +6,7 @@ harder tier — surveyed but none is a clean single-interaction delivery/item-re
 
 - **82** Solve the Gecko powerplant problem — golden `quest-gecko-powerplant` (B4 session),
   0→2→5→6→7→9. Cross-town, 4-NPC chain: Lynette (vctycocl 17100) "become a Citizen" hub
-  option → the alternate/"substantial way" offer → accept the Gecko job (`2,3` then
+  option → the alternate-commitment offer (msg 339) → accept the Gecko job (`2,3` then
   `2,1,1,1,2,1`, 82:=2 active). Harold (GECKSETL 16705) explains the coolant-valve near-
   meltdown + the missing Hydroelectric Magnetosphere Regulator part (`2,1,1,1,1,1,1,1,1,3`,
   82:=5, informational only). McClure (VCMClure, vctycocl 13922, greets as "Bureaucrat 1")
@@ -14,7 +14,7 @@ harder tier — surveyed but none is a clean single-interaction delivery/item-re
   (VCRandal, vctydwtn 23077, greets as "Trader 1") hands over the Hy-Mag part directly, no
   `--give` needed — script-granted (`1,3,1,3`, 82:=7). Festus the reactor ghoul (GECKPWPL
   24063) installs it (`1,2,1,1,1`, 82:=9 — completed per quests.txt display≥2/completed≥8;
-  +4250 xp, dude reaches level 3). Back to McClure with the "I repaired Gecko's plant" report
+  +4250 xp, dude reaches level 3). Back to McClure with the repair report (msg 134)
   (only visible once 82≥9, McClure's Node008 msg-134 gate) grants VC Citizenship directly:
   79 0→4, 81 0→1 (`1,5,2`). GOTCHA: Lynette's OWN citizenship-grant node cluster
   (Node076b/076c, also writes 79:=4) is dialogue-DEAD-CODE — full call-graph trace of
