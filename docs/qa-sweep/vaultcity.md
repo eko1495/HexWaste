@@ -1,5 +1,5 @@
 
-# Vault City (loc 1504) QA sweep — 7/10 done
+# Vault City (loc 1504) QA sweep — 7/10 done (B4 arc landed; 85/529 remain open, both precisely gated)
 
 Fourth campaign-QA town. VC is DELIVERY-heavy (many "bring X to Y" quests = the tractable
 tier), so a good source of quick goldens. Same toolset.
@@ -31,10 +31,8 @@ tier), so a good source of quick goldens. Same toolset.
   at 17075 is required first to clear that.
 
 **REMAIN (2):**
-- **85** Deliver jet sample to Dr Troy (VCDrTroy vctyvlt 13084) — STORY-GATED, NOT a cold-boot
-  delivery: Troy's greeting stays at the no-quest-available baseline even with jet (item 259) in
-  hand. Needs prior jet/drug-problem context (from the Den/Redding storyline). Skip until that
-  context is settable.
+- **85** Deliver jet sample to Dr Troy (VCDrTroy vctyvlt 13084) — STORY-GATED, gate now FULLY
+  TRACED (B4 Task 4, no golden landed — see **85 verdict** below for the precise resume path).
 - **529** Scout 8 sectors around Gecko + enter NCR — worldmap/Stark recon. See **529 verdict**
   below: needs real campaign machinery (the citizenship/conspiracy story arc), not an engine gap.
 
@@ -77,6 +75,50 @@ out of this task's scope; 529's Stark-recon gate (needing `gvar79==5`) is theref
 0→2→5→6→7→9, cross-town VC/Gecko chain; also grants VC Citizenship (79:=4, 81:=1) via McClure.
 Full recipe in [[gecko-qa-sweep]] (this is filed as a Gecko-town quest; VC's McClure/Lynette/
 Randal legs are the VC side of the same cross-town chain).
+
+**85 verdict (B4 Task 4, 2026-07-24): NOT landed within the 30-min drive timebox — gate fully
+disassembled, precise resume path recorded (state/IDs only).**
+
+`VCDrTroy` (`vctyvlt` 13084) `talk_p_proc` on a cold-boot character (no party members matching
+its two special-case PIDs, `gvar85==0`, `lvar4==0`, `lvar7==0`) falls through to its `Node044`
+hub unconditionally (the earlier "cold-boot inert" finding was correct for the *default* greeting
+content, but the hub DOES conditionally queue extra options — it isn't a dead end). Among
+`Node044`'s `giq_option` list, msg-291 targets `Node026`, gated
+**`gvar85 < 4 AND gvar370 == 3`** — this is the quest's real accept branch (`Node026` →
+`Node027` → `Node028` → … eventually reaching `Node019`, confirmed via `--writes 85` as the
+node that sets `85:=1`). The other hub options are carrying/stage-gated follow-ons: msg-292 →
+`Node044a` needs `85==2 && obj_is_carrying_obj(dude,259)` (jet pid 259, the actual sample
+hand-off); msg-293/294 are revisit branches for `85==1`/`85==1||85==2`.
+
+`gvar370` (quests.txt loc 1507, the previously-pinned "Jet-source caps at 3 vs 4" vanilla gap
+from `p124-quest-census`) is written **only** by `nhMyron.int` — Myron, New Reno's Jet chemist —
+via a Science-skill-gated dialogue chain: `Node239` sets `370:=1` (unconditional once reached,
+gated only on `370==0`); its own follow-up option to `Node240` (`370:=2`) requires
+`has_skill(dude,12/*Science*/) > 50`; deeper in the same script, `Node131`→`Node132`→`Node133`
+(`370:=3`, unconditional at entry once `370<3`) is reached only through options gated
+`has_skill(dude,12) > 75` (one branch) or `> 80` (an alternate, better-reward branch) earlier in
+the chain. **370==3 is exactly what `Node026` needs — no vanilla gap blocks this specific
+threshold**, only the science-skill climb to reach it.
+
+Checked whether a single fresh `--create` character can clear the `>75` threshold: per
+`SkillSet.Value` (`src/Hexwaste.Formats/Combat/SkillSet.cs`), Science is `def=0, statMod=4,
+stat1=INT(4)`; untagged, `value = 4×INT` (max 40 at INT 10); tagged, `value = 4×INT + basePts + 20`
+where `basePts` is skill points spent post-creation (0 at creation) — so even an INT-10,
+Science-tagged character caps at **60** at the moment of character creation, short of the `>75`
+node-access gate. Closing it needs real skill-point investment from leveling (XP/level-ups spent
+on Science) before visiting Myron, not just a stat/tag choice at `--create` time — out of scope
+for a single timeboxed drive attempt. No `--set-global` was used anywhere in this trace; the gate
+was established purely by static disassembly (`scratch/disasm.py`, `tools/int_disasm.py --writes`).
+
+**Resume path for a future session:** (1) `--create` a Science-tagged build with INT 10 (or plan
+to level once before engaging Myron); (2) locate Myron via `ProcAnalyze --map-objects` on New
+Reno's maps (script `nhMyron.int`, not yet tile-located this session); (3) drive his dialogue to
+`Node133` (`370:=3`) — the `Node239`→`Node240` low-skill leg is easy, the `Node131`/`132` leg is
+the real skill wall; (4) confirm jet (pid 259) is obtainable without `--give`-as-a-crutch (Myron
+himself is the in-fiction source — not yet confirmed which of his nodes hands it over, or whether
+it must be bought/found elsewhere); (5) return to `vctyvlt` 13084, take `Node026`'s option
+(`85:=1`), continue `Node027`→`Node028`→…→`Node019`, then the carrying-259-gated `Node044a`
+branch (`85:=2`) and onward to the `quests.txt` completed threshold (`85>=3`).
 
 **529 verdict (2026-07-21):** **Outcome 3 — needs real new machinery (a campaign prerequisite
 chain, not an engine subsystem). No code shipped.**
@@ -208,6 +250,16 @@ real dialogue click (no state was poked).
 (vctycocl) 17100, Bishop (newr2 elev 2) 17678, Westin (ncr3) 17892. **Item pids:** beer 124,
 booze 125, wrench 384, pliers 75, briefcase 336, Lynette holodisk 337, Bishop holodisk 447.
 (Maps: VCTYCTYD courtyard, VCTYDWTN downtown, VCTYCOCL council, VCTYVLT.)
+
+**B4 arc closeout (Task 4, 2026-07-24):** the Gecko-powerplant/Bishop-conspiracy arc IS now a
+drivable recipe — two goldens (`quest-gecko-powerplant` 82, `quest-lynette-holodisk` 89) land it
+end to end with zero `--set-global`, ending at `82=9, 79=4, 81=1, 88=6, 89=4, 484=2`. One tail
+stays open: `529`'s `gvar79==5` prerequisite (Lynette's `Node132`, needing `lvar8>10` — the one
+gate this arc never closed; see the B4 Task 3 update above for the open lead). `85` (Dr Troy's
+jet sample) is a SEPARATE, unrelated gate — not part of this conspiracy arc at all — now fully
+traced to a cross-town New Reno (Myron/`nhMyron.int`) Science-skill dialogue chain; see the 85
+verdict above for its own resume path. Neither remaining VC quest is an engine gap; both are
+real, precisely-scoped campaign-content investigations for a future session.
 
 **THE DELIVERY PATTERN (reliable quick win):** navigate the NPC's chat chain to the "I'll get
 it for you" accept (gvar:=1) → `--give <item pids>` → re-talk, the greeting/info menu gains a
