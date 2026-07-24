@@ -142,6 +142,68 @@ citizenship rank 5, granted only by the same story arc blocking quest 89). Filed
 campaign-state track alongside 89 — re-derive when/if that arc becomes drivable; at that point
 the metarule3-105 wiring (sketch above) is the only remaining engine work, and it is trivial.
 
+**B4 Task 3 update (2026-07-24): the gate got closer, but NOT reached — hook drafted, verified,
+then reverted (outcome-2: no golden lands without `gvar79==5`, so nothing may commit).**
+
+Starting from Task 1+2's end-state (`82=9, 79=4, 81=1, 88=6, 89=4`), re-traced `Node132`'s gate
+(`Node130a`: `lvar8>10 && CHA>7`) with the disassembler used for Tasks 1-2 (`scratch/disasm.py`
+plus a hand proc-table walk matching `giq_option`'s stack order — `iq, msgListId, msg, proc,
+reaction`, popped in that reverse order — against `vclynett.int`'s procedure table to resolve
+each option's numeric `proc` target to a Node name). Three sub-findings, in order of how far each
+got:
+
+1. **`Node130` (88:=7) IS drivable — new route found.** `Node129` (the same node that completes
+   quest 89, `89:=4`) conditionally queues an extra option — `giq_option` gated on
+   `obj_is_carrying_obj(dude, 338)` ("Westin Holodisk") — leading to `Node130`, which
+   unconditionally destroys the held pid-338 object and sets `88:=7`/`gvar50+=5`. Item 338 is
+   NOT created by `SCWestin.getDisk` (verified by disassembly: `getDisk` only sets `89:=3` and
+   consumes pid 447, no `create_object`). It comes from a **separate** `SCWestin.int` subroutine,
+   `giveDisk` (`create_object(338, ...)` + `add_obj_to_inven`, sets `gvar484:=1`), reachable via
+   `Node017`→`Node018`, itself reachable from `Node001`'s dialogue-option list ONLY in the single
+   turn where `gvar89==1 && obj_is_carrying_obj(dude,447)` is still true (i.e. the SAME visit
+   where `getDisk` fires — one extra dialogue click continues from the getDisk reply into the
+   disk hand-back). Driven end-to-end: after the existing 447-delivery click, one more pick
+   reaches `Node018`, granting pid 338; returning to Lynette and completing `Node129` then shows
+   the extra `Node130` option, which was picked successfully (`88` observed `6→7`).
+2. **CHA>7 IS achievable via the real drug pipeline — no engine change needed.** Confirmed via
+   the actual game data: Mentats (item pid 53, verified via `pro_item.msg` id 5300) has REAL
+   `DrugProtoStats` stats `[4,1,3]`/amounts `[2,2,1]` — i.e. it gives an immediate Charisma
+   (stat index 3) +1, alongside INT+2/PER+2. `ApplyDrugEffect`'s per-stat `+=` has no stacking
+   cap, so 3 doses (real `--give`/`--use-item`, the sanctioned test-plumbing for a legitimately
+   obtainable consumable) raise CHA from the template's 5 to 8 — verified live (a temporary
+   diagnostic print, not committed, showed CHA 6→7→8 across the three doses). "Mirrored Shades"
+   (pid 433, also checked per the sketch) carry NO drug/armor stat payload in the real data — the
+   item's own description ("makes you feel cool") is confirmed flavor-only, not a real CHA route.
+3. **`lvar8>10` is the one gate NOT closed.** `lvar8` on Lynette's own script instance is
+   incremented (unconditionally, `+1`, no cap) by a scattered set of side-nodes
+   (`Node011a/b/c`, `012c`, `018a`, `032a`, `038a`, `052a`, `076b`, `081b`, `082a`, `089a`,
+   `103a`). A live instrumented trace (temporary `set_local_var` logging, not committed) proved
+   these do NOT fire from the standard 4-topic Q&A hub (`Node011`/`012`/`018`/`032`'s PARENTS —
+   asking about the GECK / Vault 13 / "why not live in a vault" / slavery, repeated 15x each,
+   zero `lvar8` writes observed) — the hub's 4 topics are a red herring for this gate. One real
+   trigger WAS found: `Node123` (part of the raiders/Bishop-holodisk reveal, sets `89:=1`) queues
+   a THIRD option, msg 733, gated `has_skill(dude,14)>=75 OR CHA>7`, targeting `Node103a`
+   (an `lvar8++` node) — confirmed by disassembly, but NOT confirmed reachable in practice: the
+   live "reveal" dialogue actually taken during Task 2's driven route does not appear to pass
+   through this exact `Node123` context (the equivalent screen offered only 2 options with no
+   CHA-gated 3rd, even with CHA=8 live) — either a different node entirely presents that reveal
+   in the real flow, or the option's visibility depends on additional state not yet identified.
+   With the effort already spent, the true trigger sequence for accumulating `lvar8` past 10 (11+
+   real increments needed) was NOT located. **Open lead for a future session:** map the FULL set
+   of callers into `Node103a`/`Node089a`/etc. precisely (six different parent nodes were found
+   for `Node103a` alone — `103,105,106,113,115,123` — any one might be the real one under
+   slightly different preconditions than tried here) rather than guessing from the static Q&A
+   hub.
+
+Per the outcome-2 rule (hook lands only with a working golden), the drafted metarule3 rule-105
+wiring (`ScriptHost.SubtileStateProvider` + `IntVm case 0x80E1 rule==105` +
+`ViewerGame`'s `WorldFog.StateAt` binding — ~8 lines, build-verified clean, full 37/37 quest
+suite confirmed byte-identical with it in place) was **reverted, not committed** — `gvar79`
+never reaches 5, so Stark's scouting branch is still never entered and rule 105 is still never
+called by any script. No `--set-global` was used on 79/88/89/81 at any point; the only debug
+shortcuts were the sanctioned `--give`/`--use-item` (real Mentats, real proto data) and one extra
+real dialogue click (no state was poked).
+
 **VC tiles (vctydwtn):** Lydia 26306, Valerie 21096, Moore 17485. **Other tiles:** Lynette
 (vctycocl) 17100, Bishop (newr2 elev 2) 17678, Westin (ncr3) 17892. **Item pids:** beer 124,
 booze 125, wrench 384, pliers 75, briefcase 336, Lynette holodisk 337, Bishop holodisk 447.
