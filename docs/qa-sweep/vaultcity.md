@@ -232,9 +232,9 @@ got:
    incremented (unconditionally, `+1`, no cap) by a scattered set of side-nodes
    (`Node011a/b/c`, `012c`, `018a`, `032a`, `038a`, `052a`, `076b`, `081b`, `082a`, `089a`,
    `103a`). A live instrumented trace (temporary `set_local_var` logging, not committed) proved
-   these do NOT fire from the standard 4-topic Q&A hub (`Node011`/`012`/`018`/`032`'s PARENTS —
-   asking about the GECK / Vault 13 / "why not live in a vault" / slavery, repeated 15x each,
-   zero `lvar8` writes observed) — the hub's 4 topics are a red herring for this gate. One real
+   these do NOT fire from the standard 4-topic Q&A hub (`Node011`/`012`/`018`/`032`'s PARENTS,
+   repeated 15x each, zero `lvar8` writes observed) — the hub's 4 topics are a red herring for
+   this gate. One real
    trigger WAS found: `Node123` (part of the raiders/Bishop-holodisk reveal, sets `89:=1`) queues
    a THIRD option, msg 733, gated `has_skill(dude,14)>=75 OR CHA>7`, targeting `Node103a`
    (an `lvar8++` node) — confirmed by disassembly, but NOT confirmed reachable in practice: the
@@ -266,8 +266,8 @@ Resuming the Task 3 end-state (`82=9,79=4,81=1,88=6,89=4`, CHA=8 via 3 real Ment
 `lvar8` on Lynette's script instance turned out to be incremented by the SAME node family
 reached through her Q&A hub's normal option 1 branch — `Node087→Node099→Node103→Node103a`,
 each visit `+1`, no cap — repeating the identical option sequence (`--talk-seq 17100
-1,3,2,2,1`) 11 times crosses `lvar8>10` (the Task 3 report's search of the 4 GECK/Vault-13/
-"why not a vault"/slavery topics was the wrong branch; the real incrementer sits one level
+1,3,2,2,1`) 11 times crosses `lvar8>10` (the Task 3 report's search of the 4 Q&A-hub topics
+under `Node011`/`012`/`018`/`032` was the wrong branch; the real incrementer sits one level
 into option 1's OWN sub-branch, not a sibling topic). With `lvar8>10 && CHA>7` both true,
 `Node130a`'s gate passes on the next council-hub visit (`--talk-seq 17100 3,4,1,2`) → `Node132`
 fires: `79:=5` (+2500 xp, `81:=1`, `50+=10`).
@@ -276,7 +276,7 @@ With `gvar79==5`, Sgt. Stark (`vctydwtn` 12674) now routes past the generic 2-op
 into his full job hub. Static disassembly of `vcstark.int` (`scratch/disasm.py`, every node
 from the greeting through the completion chain, cross-checked against `VCSTARK.MSG` for
 option-target identification — never for committed text) mapped the exact click path BEFORE
-any live run: greeting → `Node015`(opt1) → `Node016`("job hub", opt2 = the recon-job topic,
+any live run: greeting → `Node015`(opt1) → `Node016` (the job hub; opt2 = the recon-job topic,
 gated `gvar529==0`) → `Node050`(opt1) → `Node051`(opt1) → `Node052`(opt1) → `Node053`(opt1) →
 `Node054` — the accept node, which unconditionally does `mark_area_known(area 5)` (this is
 what makes the 8 sector tiles reachable via `--travel-from ... 5`) and independently AND-chains
@@ -298,7 +298,7 @@ engine's map-enter path already fires one `map_update_p_proc` pass immediately a
 `map_enter_p_proc` (the existing `RunMapEnter`→`RunMapUpdate` order in `ScriptHost.cs`), so a
 plain `--goto-map NCRENT.map` sets `540:=1` with zero dialogue, zero pump needed. With `540==1`
 already true, `Node058`'s row-2 branch goes straight to its success option (opt1 → `Node060`,
-skipping the `Node059` "not yet" detour entirely) → `Node060`(opt1) → `Node060a`(auto,
+skipping the `Node059` incomplete-task detour entirely) → `Node060`(opt1) → `Node060a`(auto,
 fade+call) → `Node061` — `529:=4` (row 2 COMPLETES, +500 caps +750 xp +item pid 59, `50+=3`).
 
 Full Stark click sequence, one continuous conversation: `1,1,2,1,1,1,1,2,1,1,1,1` (12 clicks).

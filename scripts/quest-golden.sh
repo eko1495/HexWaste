@@ -298,7 +298,7 @@ SCENARIOS=(
   # real Mentats doses (pid 53, `--give`/`--use-item`, per the B4 Task 3 drug-pipeline note)
   # satisfies the OTHER half of Node130a's gate; Node132 (Lynette's citizenship-rank-5 grant)
   # then fires 79:=5 on the next council-hub visit (`--talk-seq 17100 3,4,1,2`). With 79==5,
-  # Stark (vctydwtn 12674) offers his "Patrols?" topic's recon-job branch (Node016 opt2 ->
+  # Stark (vctydwtn 12674) exposes the recon-job branch off his job hub (Node016 opt2 ->
   # Node050->Node051->Node052->Node053->Node054): the 8-term metarule3(105,x,y,0) AND-chain
   # over the worldmap subtiles around Gecko/NCR gates 529's completion (the rule-105 hook this
   # commit adds, `ScriptHost.SubtileStateProvider` -> `WorldFog.StateAt`). The 8 coords
@@ -309,7 +309,7 @@ SCENARIOS=(
   # on dude elevation==0 && 540==0) - a dedicated NCR-entrance transition map (`--goto-map
   # NCRENT.map`), NOT `ncr3.map` itself (confirmed by a 1448-script `set_global_var 540` sweep:
   # NCRENT.int is the only writer anywhere in the game data). With 540==1 already set, Stark's
-  # row-2 setup node (Node058) skips its own "not yet" branch and goes straight through
+  # row-2 setup node (Node058) skips its own incomplete-task branch and goes straight through
   # Node060->Node060a->Node061 (529:=4, +500 caps +750 xp +item pid 59) in the SAME visit as row
   # 1's completion (Node054->Node056->Node056a->Node057, 529:=2, +300 caps +350 xp) - the full
   # Stark click sequence is `1,1,2,1,1,1,1,2,1,1,1,1` (12 clicks, static-disasm-verified against
