@@ -289,6 +289,33 @@ SCENARIOS=(
   # hostile faction, distinct from the 79:=6 town-hostility guard). State/ID only, no dialogue
   # text. Full gate trace + tile/pid list in docs/qa-sweep/vaultcity.md.
   "quest-lynette-holodisk|$CREATE --goto-map vctycocl.map --talk-seq 17100 2,3 --talk-seq 17100 2,1,1,1,2,1 --goto-map GECKSETL.map --talk-seq 16705 2,1,1,1,1,1,1,1,1,3 --goto-map vctycocl.map --talk-seq 13922 1,2,3,5,1,2,1 --goto-map vctydwtn.map --talk-seq 23077 1,3,1,3 --goto-map GECKPWPL.map --talk-seq 24063 1,2,1,1,1 --goto-map vctycocl.map --talk-seq 13922 1,5,2 --goto-map Raiders2.map:11509:2 --get-global 88 --kill 12288 --kill 12310 --kill 16487 --kill 17087 --kill 17089 --kill 18510 --kill 18905 --kill 19298 --kill 19910 --kill 20101 --kill 21509 --kill 22311 --kill 24108 --kill 24708 --get-global 373 --goto-map vctycocl.map --talk-seq 17100 3,1,1,1,1,1,2 --get-global 88 --give 447:1 --talk-seq 17100 3,1,2,2,2 --get-global 88 --get-global 89 --goto-map ncr3.map --talk-seq 17892 3 --get-global 89 --goto-map vctycocl.map --talk-seq 17100 3,4 --get-global 89 --get-global 88 --get-global 484 --get-global 79 --get-global 81 --quest-probe --rng-seed 1"
+  # B4 arc CLOSED: Stark's scouting quest (GVAR 529), 0->1->2 (row 1: display>=1/completed>=2)
+  # and 0->3->4 (row 2: display>=3/completed>=4) in ONE Stark conversation, resuming the
+  # lynette-holodisk end-state (82=9,79=4,81=1,88=6,89=4). Closes the last open B4 lead: the
+  # `lvar8>10` gate on Lynette's Node130a (79:=5, citizenship rank 5) turned out to be a plain
+  # farm loop through her Q&A hub's Node087->Node099->Node103->Node103a family (`--talk-seq
+  # 17100 1,3,2,2,1`, the same increment-node repeated) - 11 reps cross lvar8>10; CHA>7 via 3
+  # real Mentats doses (pid 53, `--give`/`--use-item`, per the B4 Task 3 drug-pipeline note)
+  # satisfies the OTHER half of Node130a's gate; Node132 (Lynette's citizenship-rank-5 grant)
+  # then fires 79:=5 on the next council-hub visit (`--talk-seq 17100 3,4,1,2`). With 79==5,
+  # Stark (vctydwtn 12674) offers his "Patrols?" topic's recon-job branch (Node016 opt2 ->
+  # Node050->Node051->Node052->Node053->Node054): the 8-term metarule3(105,x,y,0) AND-chain
+  # over the worldmap subtiles around Gecko/NCR gates 529's completion (the rule-105 hook this
+  # commit adds, `ScriptHost.SubtileStateProvider` -> `WorldFog.StateAt`). The 8 coords
+  # ((1224,171),(1274,172),(1323,173),(1224,223),(1324,225),(1224,274),(1275,274),(1325,273))
+  # are visited via 8 real `--travel-from <x> <y> 5` legs (WorldmapTravel marks the leg's own
+  # start pixel visited, no engine change beyond the metarule3 wire). Row 2 (NCR leg, GVAR 540)
+  # needed one more real find: 540 is set by `NCRENT.map`'s own map_update_p_proc (unconditional
+  # on dude elevation==0 && 540==0) - a dedicated NCR-entrance transition map (`--goto-map
+  # NCRENT.map`), NOT `ncr3.map` itself (confirmed by a 1448-script `set_global_var 540` sweep:
+  # NCRENT.int is the only writer anywhere in the game data). With 540==1 already set, Stark's
+  # row-2 setup node (Node058) skips its own "not yet" branch and goes straight through
+  # Node060->Node060a->Node061 (529:=4, +500 caps +750 xp +item pid 59) in the SAME visit as row
+  # 1's completion (Node054->Node056->Node056a->Node057, 529:=2, +300 caps +350 xp) - the full
+  # Stark click sequence is `1,1,2,1,1,1,1,2,1,1,1,1` (12 clicks, static-disasm-verified against
+  # `vcstark.int` before driving). No `--set-global` anywhere; full trace in
+  # docs/qa-sweep/vaultcity.md's 529 verdict UPDATE.
+  "quest-stark-scout|$CREATE --goto-map vctycocl.map --talk-seq 17100 2,3 --talk-seq 17100 2,1,1,1,2,1 --goto-map GECKSETL.map --talk-seq 16705 2,1,1,1,1,1,1,1,1,3 --goto-map vctycocl.map --talk-seq 13922 1,2,3,5,1,2,1 --goto-map vctydwtn.map --talk-seq 23077 1,3,1,3 --goto-map GECKPWPL.map --talk-seq 24063 1,2,1,1,1 --goto-map vctycocl.map --talk-seq 13922 1,5,2 --give 53:3 --use-item 53 --use-item 53 --use-item 53 --goto-map Raiders2.map:11509:2 --kill 12288 --kill 12310 --kill 16487 --kill 17087 --kill 17089 --kill 18510 --kill 18905 --kill 19298 --kill 19910 --kill 20101 --kill 21509 --kill 22311 --kill 24108 --kill 24708 --goto-map vctycocl.map --talk-seq 17100 3,1,1,1,1,1,3 --give 447:1 --talk-seq 17100 3,1,2,2,2 --talk-seq 17100 1,3,2,2,1 --talk-seq 17100 1,3,2,2,1 --talk-seq 17100 1,3,2,2,1 --talk-seq 17100 1,3,2,2,1 --talk-seq 17100 1,3,2,2,1 --talk-seq 17100 1,3,2,2,1 --talk-seq 17100 1,3,2,2,1 --talk-seq 17100 1,3,2,2,1 --talk-seq 17100 1,3,2,2,1 --talk-seq 17100 1,3,2,2,1 --talk-seq 17100 1,3,2,2,1 --goto-map NCRENT.map --get-global 540 --goto-map ncr3.map --talk-seq 17892 3,1 --goto-map vctycocl.map --talk-seq 17100 3,4,1,2 --get-global 79 --travel-from 1224 171 5 --travel-from 1274 172 5 --travel-from 1323 173 5 --travel-from 1224 223 5 --travel-from 1324 225 5 --travel-from 1224 274 5 --travel-from 1275 274 5 --travel-from 1325 273 5 --goto-map vctydwtn.map --get-global 529 --talk-seq 12674 1,1,2,1,1,1,1,2,1,1,1,1 --get-global 529 --quest-probe --rng-seed 1"
 )
 
 dotnet build src/Hexwaste.Viewer -c Debug >/dev/null || { echo "build failed"; exit 2; }

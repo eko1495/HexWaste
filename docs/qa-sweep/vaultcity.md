@@ -1,10 +1,10 @@
 
-# Vault City (loc 1504) QA sweep — 7/10 done (B4 arc landed; 85/529 remain open, both precisely gated)
+# Vault City (loc 1504) QA sweep — 8/10 done (B4 arc CLOSED; 85 remains open, precisely gated)
 
 Fourth campaign-QA town. VC is DELIVERY-heavy (many "bring X to Y" quests = the tractable
 tier), so a good source of quick goldens. Same toolset.
 
-**DONE (7):**
+**DONE (8):**
 - **497** Deliver beer & booze to Lydia — golden `quest-lydia-booze` (1a67282), 0→1→2. Lydia
   (VCDwnBar, vctydwtn 26306); drink-menu → real-alcohol-request chain `1,1,1,1,1,1` → she wants
   10 each → 497:=1; carry 10 beer (124) + 10 booze (125), info menu opt6 (delivery-ready reply)
@@ -35,15 +35,16 @@ tier), so a good source of quick goldens. Same toolset.
 - **82** Solve the Gecko powerplant problem — golden `quest-gecko-powerplant` (B4 arc),
   0→2→5→6→7→9, cross-town VC/Gecko chain; also grants VC Citizenship (79:=4, 81:=1) via
   McClure; full recipe in [[gecko-qa-sweep]], VC-side summary in the **82 detail** appendix below.
+- **529** Scout 8 sectors around Gecko + enter NCR — golden `quest-stark-scout`, 0→1→2 (row 1)
+  and 0→3→4 (row 2), BOTH rows COMPLETE in one Sgt. Stark conversation. Closes the B4 arc's
+  last open lead (the `lvar8>10` citizenship gate); full trace in the **529 verdict UPDATE**
+  below. Note: `quests.txt` loc 1504 has 10 rows over 9 distinct gvars — 529 spans TWO rows
+  (desc 508 = its 1/2 tier, desc 509 = its 3/4 tier), which is why this file enumerates 9
+  quests against a /10 denominator; that mismatch is expected, not a miscount.
 
-**REMAIN (2):**
+**REMAIN (1):**
 - **85** Deliver jet sample to Dr Troy (VCDrTroy vctyvlt 13084) — STORY-GATED, gate now FULLY
   TRACED (B4 Task 4, no golden landed — see **85 verdict** below for the precise resume path).
-- **529** Scout 8 sectors around Gecko + enter NCR — worldmap/Stark recon. See **529 verdict**
-  below: needs real campaign machinery (the citizenship/conspiracy story arc), not an engine gap.
-  Note: `quests.txt` loc 1504 has 10 rows over 9 distinct gvars — 529 spans TWO rows (desc 508 =
-  its 1/2 tier, desc 509 = its 3/4 tier), which is why this file enumerates 9 quests against a
-  /10 denominator; that mismatch is expected, not a miscount.
 
 **89 detail (B4 Task 2):** Task 1's trace above correctly found no vc/vi/gc/gs writer for
 `gvar88` values 1-4, but stopped short of the real setter: a full 1885-script sweep (not just the
@@ -257,20 +258,70 @@ called by any script. No `--set-global` was used on 79/88/89/81 at any point; th
 shortcuts were the sanctioned `--give`/`--use-item` (real Mentats, real proto data) and one extra
 real dialogue click (no state was poked).
 
+**529 verdict UPDATE (2026-07-26): CLOSED — golden `quest-stark-scout` lands both 529 rows,
+0→1→2 and 0→3→4, in one session. The `lvar8>10` gate (this arc's last open lead) was a plain
+farm loop, not new machinery.**
+
+Resuming the Task 3 end-state (`82=9,79=4,81=1,88=6,89=4`, CHA=8 via 3 real Mentats doses):
+`lvar8` on Lynette's script instance turned out to be incremented by the SAME node family
+reached through her Q&A hub's normal option 1 branch — `Node087→Node099→Node103→Node103a`,
+each visit `+1`, no cap — repeating the identical option sequence (`--talk-seq 17100
+1,3,2,2,1`) 11 times crosses `lvar8>10` (the Task 3 report's search of the 4 GECK/Vault-13/
+"why not a vault"/slavery topics was the wrong branch; the real incrementer sits one level
+into option 1's OWN sub-branch, not a sibling topic). With `lvar8>10 && CHA>7` both true,
+`Node130a`'s gate passes on the next council-hub visit (`--talk-seq 17100 3,4,1,2`) → `Node132`
+fires: `79:=5` (+2500 xp, `81:=1`, `50+=10`).
+
+With `gvar79==5`, Sgt. Stark (`vctydwtn` 12674) now routes past the generic 2-option greeting
+into his full job hub. Static disassembly of `vcstark.int` (`scratch/disasm.py`, every node
+from the greeting through the completion chain, cross-checked against `VCSTARK.MSG` for
+option-target identification — never for committed text) mapped the exact click path BEFORE
+any live run: greeting → `Node015`(opt1) → `Node016`("job hub", opt2 = the recon-job topic,
+gated `gvar529==0`) → `Node050`(opt1) → `Node051`(opt1) → `Node052`(opt1) → `Node053`(opt1) →
+`Node054` — the accept node, which unconditionally does `mark_area_known(area 5)` (this is
+what makes the 8 sector tiles reachable via `--travel-from ... 5`) and independently AND-chains
+the same 8-term `metarule3(105,x,y,0)>1` check documented above. Because this session's
+`--travel-from` legs for all 8 coords run BEFORE the FIRST-EVER Stark visit (reusing
+`WorldmapTravel.Step`'s real leg-start `MarkRadiusVisited`, no engine change beyond the rule-105
+wire itself), the chain is already true on accept, so `Node054`'s own success branch
+(opt2 → `Node056`) fires immediately: `Node056`(opt1) → `Node056a`(auto, fade+call) →
+`Node057` — `529:=2` (row 1 COMPLETES, +300 caps +350 xp) and offers to continue (opt1) →
+`Node058` — row 2's setup node, unconditionally `mark_area_known(area 10)`, then checks
+`gvar540`.
+
+`gvar540` needed one more real find, since neither `ncr3.map` nor Westin's own script
+(`SCWestin.int`) ever write it: a full 1448-script `set_global_var` sweep (every `.int` in
+`master.dat`/`patch000.dat`) found exactly one writer, `NCRENT.int` — a DEDICATED NCR-entrance
+transition map (`NCRENT.MAP`, not one of the four town submaps `ncr1-4.map`), whose
+`map_update_p_proc` sets `540:=1` unconditionally on `dude_elevation==0 && 540==0`. This
+engine's map-enter path already fires one `map_update_p_proc` pass immediately after
+`map_enter_p_proc` (the existing `RunMapEnter`→`RunMapUpdate` order in `ScriptHost.cs`), so a
+plain `--goto-map NCRENT.map` sets `540:=1` with zero dialogue, zero pump needed. With `540==1`
+already true, `Node058`'s row-2 branch goes straight to its success option (opt1 → `Node060`,
+skipping the `Node059` "not yet" detour entirely) → `Node060`(opt1) → `Node060a`(auto,
+fade+call) → `Node061` — `529:=4` (row 2 COMPLETES, +500 caps +750 xp +item pid 59, `50+=3`).
+
+Full Stark click sequence, one continuous conversation: `1,1,2,1,1,1,1,2,1,1,1,1` (12 clicks).
+No `--set-global` anywhere on 79/529/540 or any intermediate gvar; the only debug shortcuts are
+the sanctioned `--give`/`--use-item` (real Mentats) already used in Task 3, plus `--travel-from`
+(real `WorldmapTravel` legs) and `--goto-map NCRENT.map` (a real, loadable map, its
+`map_update_p_proc` doing exactly what the original engine would do on a real border crossing).
+
 **VC tiles (vctydwtn):** Lydia 26306, Valerie 21096, Moore 17485. **Other tiles:** Lynette
 (vctycocl) 17100, Bishop (newr2 elev 2) 17678, Westin (ncr3) 17892. **Item pids:** beer 124,
 booze 125, wrench 384, pliers 75, briefcase 336, Lynette holodisk 337, Bishop holodisk 447.
 (Maps: VCTYCTYD courtyard, VCTYDWTN downtown, VCTYCOCL council, VCTYVLT.)
 
-**B4 arc closeout (Task 4, 2026-07-24):** the Gecko-powerplant/Bishop-conspiracy arc IS now a
-drivable recipe — two goldens (`quest-gecko-powerplant` 82, `quest-lynette-holodisk` 89) land it
-end to end with zero `--set-global`, ending at `82=9, 79=4, 81=1, 88=6, 89=4, 484=2`. One tail
-stays open: `529`'s `gvar79==5` prerequisite (Lynette's `Node132`, needing `lvar8>10` — the one
-gate this arc never closed; see the B4 Task 3 update above for the open lead). `85` (Dr Troy's
-jet sample) is a SEPARATE, unrelated gate — not part of this conspiracy arc at all — now fully
-traced to a cross-town New Reno (Myron/`nhMyron.int`) Science-skill dialogue chain; see the 85
-verdict above for its own resume path. Neither remaining VC quest is an engine gap; both are
-real, precisely-scoped campaign-content investigations for a future session.
+**B4 arc closeout (final, 2026-07-26):** the Gecko-powerplant/Bishop-conspiracy/citizenship arc
+is now a FULLY drivable recipe end to end — three goldens (`quest-gecko-powerplant` 82,
+`quest-lynette-holodisk` 89, `quest-stark-scout` 529) land it with zero `--set-global`, ending
+at `82=9, 79=5, 81=1, 88=6, 89=4, 484=2, 529=4, 540=1`. The metarule3 rule-105
+(`WM_SUBTILE_STATE`) hook drafted-then-reverted in Task 3 is now wired for real (37/37 existing
+goldens stayed byte-identical with it in place before this golden was added). `85` (Dr Troy's
+jet sample) is a SEPARATE, unrelated gate — not part of this conspiracy arc at all — traced to a
+cross-town New Reno (Myron/`nhMyron.int`) Science-skill dialogue chain; see the 85 verdict above
+for its resume path. It is the one remaining VC quest, and it is not an engine gap — a real,
+precisely-scoped campaign-content investigation for a future session.
 
 **THE DELIVERY PATTERN (reliable quick win):** navigate the NPC's chat chain to the "I'll get
 it for you" accept (gvar:=1) → `--give <item pids>` → re-talk, the greeting/info menu gains a

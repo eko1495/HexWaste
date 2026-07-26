@@ -496,6 +496,11 @@ public sealed class ScriptHost(GameFileSystem vfs, ScriptList scripts, Hexwaste.
     /// metarule3 GET_KILL_COUNT (P38). Null → 0 (no kills tracked).</summary>
     public Func<int, int>? KillCountProvider { get; set; }
 
+    /// <summary>The worldmap subtile fog state (0/1/2) at a world-pixel (x, y); host-provided.
+    /// Drives metarule3 rule 105 WM_SUBTILE_STATE (quest 529's scouting gate). Null → 0
+    /// (no worldmap fog model — inert).</summary>
+    public Func<int, int, int>? SubtileStateProvider { get; set; }
+
     /// <summary>The dude's rank in a perk (perkGetRank); host-provided. Drives has_trait(type 0)
     /// (P28-M2). Null → 0 (no perk system).</summary>
     public Func<int, int>? PerkRankProvider { get; set; }
@@ -2071,6 +2076,8 @@ public sealed class ScriptHost(GameFileSystem vfs, ScriptList scripts, Hexwaste.
 
         public int GetPcStat(int stat) => _host.PcStatProvider?.Invoke(stat) ?? 0;
         public int GetKillCount(int killType) => _host.KillCountProvider?.Invoke(killType) ?? 0;
+
+        public int GetSubtileState(int worldX, int worldY) => _host.SubtileStateProvider?.Invoke(worldX, worldY) ?? 0;
 
         public bool CarIsOutOfGas() => _host.Car.IsOutOfGas; // P100 (Point 4): metarule3 110
 

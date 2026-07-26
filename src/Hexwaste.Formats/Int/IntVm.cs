@@ -89,6 +89,11 @@ public interface IVmExternals
     /// Default false so hosts without a car model are unaffected (P100 Point 4).</summary>
     bool CarIsOutOfGas() => false;
 
+    /// <summary>metarule3 rule 105 METARULE3_WM_SUBTILE_STATE (interpreter_extra.cc:1995
+    /// wmSubTileGetVisitedState): the worldmap subtile fog state (0 unknown / 1 known / 2 visited)
+    /// at a world-pixel (x, y). 0 by default → inert (quest 529's scouting gate never passes).</summary>
+    int GetSubtileState(int worldX, int worldY) => 0;
+
     /// <summary>critter_add_trait (opCritterAddTrait): kind 1 sets object
     /// traits (5=aiPacket, 6=team); perks (kind 0) are out of PoC scope.</summary>
     void CritterAddTrait(int objectHandle, int kind, int param, int value) { }
@@ -1674,6 +1679,8 @@ public sealed class IntVm
                     metaResult = _externals.GetKillCount(p1.Raw);
                 else if (rule == 110) // METARULE3_110 car-out-of-gas (interpreter_extra.cc:2052 wmCarIsOutOfGas)
                     metaResult = _externals.CarIsOutOfGas() ? 1 : 0;
+                else if (rule == 105 && p1.Tag == TypeInt && p2.Tag == TypeInt) // METARULE3_WM_SUBTILE_STATE
+                    metaResult = _externals.GetSubtileState(p1.Raw, p2.Raw);
                 PushInt(metaResult);
                 break;
             }

@@ -1448,6 +1448,7 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
                 },
                 PerkRankProvider = perk => Formats.Perks.PerkRules.Rank(_dudePerkRanks, perk),
                 KillCountProvider = kt => kt >= 0 && kt < _killsByType.Length ? _killsByType[kt] : 0, // P38: GET_KILL_COUNT
+                SubtileStateProvider = (wx, wy) => WorldFog.StateAt(wx, wy), // metarule3 rule 105 WM_SUBTILE_STATE (quest 529)
                 SneakFlagProvider = () => _sneak.FlagSet, // P29 A-M0: using_skill(dude, SNEAK)
                 CombatActiveProvider = () => _combat.Phase != Formats.Combat.CombatPhase.Idle, // P34-M1: is_in_combat(0x8128)
                 PoisonRequested = (obj, amount) => ApplyPoison(obj, amount), // P35: poison(0x8122)
