@@ -1,3 +1,4 @@
+get-global: GVAR370 = 0
 get-global: GVAR370 = 3
 get-global: GVAR85 = 0
 get-global: GVAR85 = 4
