@@ -17,10 +17,10 @@ game dialogue text is reproduced.
 | Klamath (loc 1502) | [klamath.md](klamath.md) | 6/6 ✅ complete |
 | The Den (loc 1501) | [den.md](den.md) | 7/7 ✅ complete |
 | Modoc (loc 1503) | [modoc.md](modoc.md) | 5/5 ✅ complete (+1 pinned vanilla gap, 108) |
-| Vault City (loc 1504) | [vaultcity.md](vaultcity.md) | 7/10 (85/529 remain, both precisely gated) |
+| Vault City (loc 1504) | [vaultcity.md](vaultcity.md) | 9/10 (529 double-counted in the /10 denominator; town otherwise complete) |
 | Gecko (loc 1505) | [gecko.md](gecko.md) | 1/6 (82 landed, the B4 arc centerpiece) |
 
-37 quest goldens total (plus the pre-existing opening/combat/encounter suites).
+39 quest goldens total (plus the pre-existing opening/combat/encounter suites).
 
 ## How to use these
 

@@ -1,10 +1,10 @@
 
-# Vault City (loc 1504) QA sweep — 8/10 done (B4 arc CLOSED; 85 remains open, precisely gated)
+# Vault City (loc 1504) QA sweep — 9/10 done (B4 arc CLOSED; 85 CLOSED — town complete modulo the 529 double-row note)
 
 Fourth campaign-QA town. VC is DELIVERY-heavy (many "bring X to Y" quests = the tractable
 tier), so a good source of quick goldens. Same toolset.
 
-**DONE (8):**
+**DONE (9):**
 - **497** Deliver beer & booze to Lydia — golden `quest-lydia-booze` (1a67282), 0→1→2. Lydia
   (VCDwnBar, vctydwtn 26306); drink-menu → real-alcohol-request chain `1,1,1,1,1,1` → she wants
   10 each → 497:=1; carry 10 beer (124) + 10 booze (125), info menu opt6 (delivery-ready reply)
@@ -42,9 +42,11 @@ tier), so a good source of quick goldens. Same toolset.
   (desc 508 = its 1/2 tier, desc 509 = its 3/4 tier), which is why this file enumerates 9
   quests against a /10 denominator; that mismatch is expected, not a miscount.
 
-**REMAIN (1):**
-- **85** Deliver jet sample to Dr Troy (VCDrTroy vctyvlt 13084) — STORY-GATED, gate now FULLY
-  TRACED (B4 Task 4, no golden landed — see **85 verdict** below for the precise resume path).
+- **85** Jet-cure info for Dr Troy — golden `quest-jet-sample`, 0→4 (COMPLETED). See **85
+  verdict** below for the full recipe and the Science-skill-wall resolution.
+
+**REMAIN (0):** town complete — the 529 double-row note in the denominator caveat above is the
+only reason this isn't a plain "10/10".
 
 **89 detail (B4 Task 2):** Task 1's trace above correctly found no vc/vi/gc/gs writer for
 `gvar88` values 1-4, but stopped short of the real setter: a full 1885-script sweep (not just the
@@ -88,49 +90,43 @@ out of this task's scope; 529's Stark-recon gate (needing `gvar79==5`) is theref
 **82 detail (B4 arc):** filed as a Gecko-town quest ([[gecko-qa-sweep]] has the full recipe);
 VC's McClure/Lynette/Randal legs are the VC side of the same cross-town chain.
 
-**85 verdict (B4 Task 4, 2026-07-24): NOT landed within the 30-min drive timebox — gate fully
-disassembled, precise resume path recorded (state/IDs only).**
+**85 verdict (B4 Task 4 close-out, 2026-07-27): LANDED — golden `quest-jet-sample`, 0→4
+(COMPLETED). The Science-skill wall closes with two real, in-fiction levers — no faking.**
 
-`VCDrTroy` (`vctyvlt` 13084) `talk_p_proc` on a cold-boot character (no party members matching
-its two special-case PIDs, `gvar85==0`, `lvar4==0`, `lvar7==0`) falls through to its `Node044`
-hub unconditionally (the earlier "cold-boot inert" finding was correct for the *default* greeting
-content, but the hub DOES conditionally queue extra options — it isn't a dead end). Among
-`Node044`'s `giq_option` list, msg-291 targets `Node026`, gated
-**`gvar85 < 4 AND gvar370 == 3`** — this is the quest's real accept branch (`Node026` →
-`Node027` → `Node028` → … eventually reaching `Node019`, confirmed via `--writes 85` as the
-node that sets `85:=1`). The other hub options are carrying/stage-gated follow-ons: msg-292 →
-`Node044a` needs `85==2 && obj_is_carrying_obj(dude,259)` (jet pid 259, the actual sample
-hand-off); msg-293/294 are revisit branches for `85==1`/`85==1||85==2`.
+`VCDrTroy` (`vctyvlt` 13084) `talk_p_proc` on a cold-boot character falls through to its
+`Node044` hub unconditionally. Among `Node044`'s `giq_option` list, msg-291 targets `Node026`,
+gated **`gvar85 < 4 AND gvar370 == 3`** — the quest's accept branch. `gvar370` is written only
+by `nhMyron.int` (Myron, New Reno's Jet chemist — located this session at `newrst.map` tile
+19327, elevation 1): `Node239`→`Node240` sets `370:=2` (needs `has_skill(dude,12/*Science*/) >
+50`), and deeper in the same script `Node131`→`Node132`→`Node133` sets `370:=3` unconditionally
+at entry, reached only through an option gated `has_skill(dude,12) > 75` (or `> 80`, an
+alternate branch) earlier in the chain.
 
-`gvar370` (quests.txt loc 1507, the previously-pinned "Jet-source caps at 3 vs 4" vanilla gap
-from `p124-quest-census`) is written **only** by `nhMyron.int` — Myron, New Reno's Jet chemist —
-via a Science-skill-gated dialogue chain: `Node239` sets `370:=1` (unconditional once reached,
-gated only on `370==0`); its own follow-up option to `Node240` (`370:=2`) requires
-`has_skill(dude,12/*Science*/) > 50`; deeper in the same script, `Node131`→`Node132`→`Node133`
-(`370:=3`, unconditional at entry once `370<3`) is reached only through options gated
-`has_skill(dude,12) > 75` (one branch) or `> 80` (an alternate, better-reward branch) earlier in
-the chain. **370==3 is exactly what `Node026` needs — no vanilla gap blocks this specific
-threshold**, only the science-skill climb to reach it.
+**Closing the skill wall:** a fresh `--create` (INT 10, Science tagged) caps Science at 60 —
+short of `>75`. Two real levers close the gap, both already sanctioned elsewhere in this
+suite: (1) **real level-up XP** — `CombatEngine.Kill` awards the victim's real proto
+`Experience` through the same `AwardXp` path as any other kill (the mechanism `quest-stark-
+scout`'s raider kills already use); 3 kills at `Raiders2.map` clear the level-2 threshold,
+granting 25 real skill points (`level-up: … skillPoints=25`); (2) **`--spend-skill 12` x11** on
+Science, refused by `SpendSkillPoint` (`src/Hexwaste.Viewer/ViewerGame.cs`) if unearned — pushes
+effective Science 60→82, clearing both the `>75` and `>80` branches with margin. No
+`--grant-xp`, no `--set-global` on 85/370 anywhere.
 
-Checked whether a single fresh `--create` character can clear the `>75` threshold: per
-`SkillSet.Value` (`src/Hexwaste.Formats/Combat/SkillSet.cs`), Science is `def=0, statMod=4,
-stat1=INT(4)`; untagged, `value = 4×INT` (max 40 at INT 10); tagged, `value = 4×INT + basePts + 20`
-where `basePts` is skill points spent post-creation (0 at creation) — so even an INT-10,
-Science-tagged character caps at **60** at the moment of character creation, short of the `>75`
-node-access gate. Closing it needs real skill-point investment from leveling (XP/level-ups spent
-on Science) before visiting Myron, not just a stat/tag choice at `--create` time — out of scope
-for a single timeboxed drive attempt. No `--set-global` was used anywhere in this trace; the gate
-was established purely by static disassembly (`scratch/disasm.py`, `tools/int_disasm.py --writes`).
+**Jet (pid 259) research note:** Myron's own script only hands jet to the dude via a full
+companion-recruit sequence or a death-loot branch — neither exercised here. It IS obtainable via
+a real barter purchase from a New Reno drug-dealer NPC (e.g. `newr1.map` tile 12114,
+`ncDrgDlr.int`, `gdialog_barter`) — confirmed live with `--buy 259` (63 caps). Not needed for
+the landed recipe: with `gvar370==3`, Dr Troy's accept branch (`Node026`→`Node027`→`Node028`→
+`Node029`→`Node055`) completes in one uninterrupted six-click exchange, landing `85:=4` — beyond
+`quests.txt`'s `gvar85: display>=2, completed>=3` (`ProcAnalyze --quest-paths 85`). The
+carrying-259-gated `Node044a` branch (msg-292, needs `85==2`) is a documented ALTERNATE
+completion path, not required by the one actually driven.
 
-**Resume path for a future session:** (1) `--create` a Science-tagged build with INT 10 (or plan
-to level once before engaging Myron); (2) locate Myron via `ProcAnalyze --map-objects` on New
-Reno's maps (script `nhMyron.int`, not yet tile-located this session); (3) drive his dialogue to
-`Node133` (`370:=3`) — the `Node239`→`Node240` low-skill leg is easy, the `Node131`/`132` leg is
-the real skill wall; (4) confirm jet (pid 259) is obtainable without `--give`-as-a-crutch (Myron
-himself is the in-fiction source — not yet confirmed which of his nodes hands it over, or whether
-it must be bought/found elsewhere); (5) return to `vctyvlt` 13084, take `Node026`'s option
-(`85:=1`), continue `Node027`→`Node028`→…→`Node019`, then the carrying-259-gated `Node044a`
-branch (`85:=2`) and onward to the `quests.txt` completed threshold (`85>=3`).
+Recipe (state/IDs only): `--create` INT10/Science-tagged → `Raiders2.map` 3 kills (real XP) →
+`--spend-skill 12` x11 (Science 60→82) → `newrst.map` tile 19327 elev 1, Myron click sequence
+`1,1,1,1,2,1,2,1,1,2,1,1,1` (→ `gvar370:=3`) → `vctyvlt.map`, Dr Troy (tile 13084) click
+sequence `1,1,1,1,1,1` (→ `gvar85:=4`, COMPLETED). Deterministic (verified via a double-run
+diff before recording).
 
 **529 verdict (2026-07-21):** **Outcome 3 — needs real new machinery (a campaign prerequisite
 chain, not an engine subsystem). No code shipped.**

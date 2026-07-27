@@ -316,6 +316,29 @@ SCENARIOS=(
   # `vcstark.int` before driving). No `--set-global` anywhere; full trace in
   # docs/qa-sweep/vaultcity.md's 529 verdict UPDATE.
   "quest-stark-scout|$CREATE --goto-map vctycocl.map --talk-seq 17100 2,3 --talk-seq 17100 2,1,1,1,2,1 --goto-map GECKSETL.map --talk-seq 16705 2,1,1,1,1,1,1,1,1,3 --goto-map vctycocl.map --talk-seq 13922 1,2,3,5,1,2,1 --goto-map vctydwtn.map --talk-seq 23077 1,3,1,3 --goto-map GECKPWPL.map --talk-seq 24063 1,2,1,1,1 --goto-map vctycocl.map --talk-seq 13922 1,5,2 --give 53:3 --use-item 53 --use-item 53 --use-item 53 --goto-map Raiders2.map:11509:2 --kill 12288 --kill 12310 --kill 16487 --kill 17087 --kill 17089 --kill 18510 --kill 18905 --kill 19298 --kill 19910 --kill 20101 --kill 21509 --kill 22311 --kill 24108 --kill 24708 --goto-map vctycocl.map --talk-seq 17100 3,1,1,1,1,1,3 --give 447:1 --talk-seq 17100 3,1,2,2,2 --talk-seq 17100 1,3,2,2,1 --talk-seq 17100 1,3,2,2,1 --talk-seq 17100 1,3,2,2,1 --talk-seq 17100 1,3,2,2,1 --talk-seq 17100 1,3,2,2,1 --talk-seq 17100 1,3,2,2,1 --talk-seq 17100 1,3,2,2,1 --talk-seq 17100 1,3,2,2,1 --talk-seq 17100 1,3,2,2,1 --talk-seq 17100 1,3,2,2,1 --talk-seq 17100 1,3,2,2,1 --goto-map NCRENT.map --get-global 540 --goto-map ncr3.map --talk-seq 17892 3,1 --goto-map vctycocl.map --talk-seq 17100 3,4,1,2 --get-global 79 --travel-from 1224 171 5 --travel-from 1274 172 5 --travel-from 1323 173 5 --travel-from 1224 223 5 --travel-from 1324 225 5 --travel-from 1224 274 5 --travel-from 1275 274 5 --travel-from 1325 273 5 --goto-map vctydwtn.map --get-global 529 --talk-seq 12674 1,1,2,1,1,1,1,2,1,1,1,1 --get-global 529 --quest-probe --rng-seed 1"
+
+  # Dr Troy's jet sample (Vault City, GVAR 85) — the town's last open tail (VC 9/10; 529 is
+  # counted twice in the header denominator). Gate: VCDrTroy (vctyvlt 13084) Node044 hub's
+  # accept option needs gvar85<4 AND gvar370==3. gvar370 is written only by nhMyron.int
+  # (New Reno, newrst.map tile 19327 elev 1): Node239->Node240 (370:=2, needs
+  # has_skill(Science)>50) then, via the has_skill(Science)>75/>80 branch deeper in his
+  # dialogue, Node131->Node132->Node133 (370:=3, unconditional at entry). A fresh --create
+  # caps Science at 60 (INT 10, tagged); the two real levers driven here are (1) real level-up
+  # XP from live combat kills (CombatEngine.Kill -> proto Experience -> AwardXp, the same real
+  # mechanism as quest-stark-scout's raider kills — 3 kills at Raiders2.map already clears the
+  # level-2 threshold, granting 25 real skill points) and (2) --spend-skill on Science (index
+  # 12) x11, refused by SpendSkillPoint if unearned (ViewerGame.cs SpendSkillPoint) — pushing
+  # effective Science from 60 to 82, comfortably over both branch thresholds. No --grant-xp, no
+  # --set-global on 85/370 anywhere. (Research note, not needed by this recipe: jet, pid 259,
+  # is also obtainable via a REAL barter purchase from a New Reno drug-dealer NPC — e.g. newr1
+  # tile 12114 — confirmed live via --buy 259; Myron's own script only hands it over through a
+  # full companion-recruit or a death-loot branch, neither exercised here.) With 370==3, Dr
+  # Troy's hub (vctyvlt 13084) accept branch — Node026->027->028->029->Node055 — completes in
+  # one uninterrupted exchange (six clicks, static-disasm-verified against VCDRTROY.int,
+  # cross-checked live with HEXWASTE_DIALOG_DEBUG), landing 85:=4 (quests.txt gvar85: display>=2,
+  # completed>=3 per --quest-paths 85) — no jet hand-off needed for this branch; carrying pid
+  # 259 only gates an alternate completion option (msg-292/Node044a) not exercised here.
+  "quest-jet-sample|--create 5,5,5,5,10,5,5:12,4,5:0 --goto-map Raiders2.map:11509:2 --kill 12288 --kill 12310 --kill 16487 --spend-skill 12 --spend-skill 12 --spend-skill 12 --spend-skill 12 --spend-skill 12 --spend-skill 12 --spend-skill 12 --spend-skill 12 --spend-skill 12 --spend-skill 12 --spend-skill 12 --goto-map newrst.map:19327:1 --talk-seq 19327 1,1,1,1,2,1,2,1,1,2,1,1,1 --get-global 370 --goto-map vctyvlt.map --get-global 85 --talk-seq 13084 1,1,1,1,1,1 --get-global 85 --quest-probe --rng-seed 1"
 )
 
 dotnet build src/Hexwaste.Viewer -c Debug >/dev/null || { echo "build failed"; exit 2; }
