@@ -51,23 +51,9 @@ public class CompanionAiTests
     [Fact]
     public void PickTargetClosestIsTheNearest()
     {
-        // (Hp, Distance, HitMe): index 1 is the nearest.
+        // (Rating, Distance, HitMe): index 1 is the nearest.
         var cands = new List<(int, int, bool)> { (50, 5, false), (90, 2, false), (10, 8, false) };
         Assert.Equal(1, CompanionAi.PickTarget(AttackWho.Closest, cands));
-    }
-
-    [Fact]
-    public void PickTargetStrongestIsTheHighestHp()
-    {
-        var cands = new List<(int, int, bool)> { (50, 5, false), (90, 2, false), (10, 8, false) };
-        Assert.Equal(1, CompanionAi.PickTarget(AttackWho.Strongest, cands)); // 90 hp
-    }
-
-    [Fact]
-    public void PickTargetWeakestIsTheLowestHp()
-    {
-        var cands = new List<(int, int, bool)> { (50, 5, false), (90, 2, false), (10, 8, false) };
-        Assert.Equal(2, CompanionAi.PickTarget(AttackWho.Weakest, cands)); // 10 hp
     }
 
     [Fact]
@@ -87,6 +73,56 @@ public class CompanionAiTests
     [Fact]
     public void PickTargetEmptyIsMinusOne() =>
         Assert.Equal(-1, CompanionAi.PickTarget(AttackWho.Closest, new List<(int, int, bool)>()));
+
+    // The candidate tuple is (Rating, Distance, HitMe) — see AiRating / CompanionAi.PickTarget.
+
+    [Fact]
+    public void StrongestPicksTheLOWESTRatedTarget()
+    {
+        // VANILLA QUIRK (combat_ai.cc:1330 + :1691): _compare_strength sorts ASCENDING by rating and
+        // the picker takes targets[0], so "Strongest" targets the weakest critter. Ported as-is.
+        var candidates = new (int Rating, int Distance, bool HitMe)[]
+        {
+            (30, 5, false),
+            (7, 9, false),
+            (18, 2, false),
+        };
+        Assert.Equal(1, CompanionAi.PickTarget(AttackWho.Strongest, candidates));
+    }
+
+    [Fact]
+    public void WeakestPicksTheHIGHESTRatedTarget()
+    {
+        var candidates = new (int Rating, int Distance, bool HitMe)[]
+        {
+            (30, 5, false),
+            (7, 9, false),
+            (18, 2, false),
+        };
+        Assert.Equal(0, CompanionAi.PickTarget(AttackWho.Weakest, candidates));
+    }
+
+    [Fact]
+    public void EqualRatingsBreakByDistance()
+    {
+        var candidates = new (int Rating, int Distance, bool HitMe)[]
+        {
+            (12, 6, false),
+            (12, 2, false),
+        };
+        Assert.Equal(1, CompanionAi.PickTarget(AttackWho.Strongest, candidates));
+    }
+
+    [Fact]
+    public void ClosestIgnoresRating()
+    {
+        var candidates = new (int Rating, int Distance, bool HitMe)[]
+        {
+            (99, 1, false),
+            (1, 4, false),
+        };
+        Assert.Equal(0, CompanionAi.PickTarget(AttackWho.Closest, candidates));
+    }
 
     [Fact]
     public void DefaultDoesNotBurstAndHasNoWeaponPref()

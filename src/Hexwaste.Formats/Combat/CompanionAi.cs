@@ -103,10 +103,11 @@ public readonly record struct CompanionAi(
         _ => false,
     };
 
-    /// <summary>Pick a target by priority among the candidates (combat_ai.cc _ai_find_target). Each
-    /// candidate carries its HP, hex-distance from the actor, and whether it last hit the actor. Closest
-    /// is the default (the pre-P50 behaviour); ties break by distance.</summary>
-    public static int PickTarget(AttackWho mode, IReadOnlyList<(int Hp, int Distance, bool HitMe)> candidates)
+    /// <summary>Pick a target by priority among the candidates (combat_ai.cc _ai_danger_source's
+    /// attack_who switch, :1561). Each candidate carries its _combatai_rating, hex-distance from the
+    /// actor, and whether it last hit the actor. Closest is the default (the pre-P50 behaviour);
+    /// ties break by distance (Hexwaste's stable substitute for the engine's unstable qsort).</summary>
+    public static int PickTarget(AttackWho mode, IReadOnlyList<(int Rating, int Distance, bool HitMe)> candidates)
     {
         if (candidates.Count == 0)
             return -1;
@@ -120,10 +121,14 @@ public readonly record struct CompanionAi(
         return best;
     }
 
-    private static bool Better(AttackWho mode, (int Hp, int Distance, bool HitMe) a, (int Hp, int Distance, bool HitMe) b) => mode switch
+    // VANILLA QUIRK — ported deliberately, do NOT "correct" it: _compare_strength (combat_ai.cc:1330)
+    // returns -1 when rating1 < rating2, so _ai_sort_list_strength qsorts ASCENDING and the picker
+    // (:1691) takes targets[0] — the LOWEST-rated critter. STRONGEST therefore targets the weakest,
+    // and WEAKEST (_compare_weakness, :1366, the mirrored comparator) targets the strongest.
+    private static bool Better(AttackWho mode, (int Rating, int Distance, bool HitMe) a, (int Rating, int Distance, bool HitMe) b) => mode switch
     {
-        AttackWho.Strongest => a.Hp != b.Hp ? a.Hp > b.Hp : a.Distance < b.Distance,
-        AttackWho.Weakest => a.Hp != b.Hp ? a.Hp < b.Hp : a.Distance < b.Distance,
+        AttackWho.Strongest => a.Rating != b.Rating ? a.Rating < b.Rating : a.Distance < b.Distance,
+        AttackWho.Weakest => a.Rating != b.Rating ? a.Rating > b.Rating : a.Distance < b.Distance,
         AttackWho.WhoeverAttackingMe => a.HitMe != b.HitMe ? a.HitMe : a.Distance < b.Distance,
         _ => a.Distance < b.Distance, // Closest / Whomever
     };

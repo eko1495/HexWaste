@@ -1606,14 +1606,33 @@ public sealed class CombatEngine
 
     private static bool IsKnockedOut(MapObject c) => (c.CombatResults & CriticalTables.DamKnockedOut) != 0;
 
-    /// <summary>Record who last hit a critter (whoHitMe), team-gated + last-hitter-wins — ported from
-    /// fallout2-ce combat.cc:4707 + critter.cc:1285 _critter_set_who_hit_me. Drives AI retaliation in
-    /// TryEnemyAction. DOCUMENTED DIVERGENCE: last-hitter-wins; we don't port _combatai_rating's
-    /// "keep targeting the scarier attacker".</summary>
-    private static void RegisterHit(MapObject target, MapObject attacker)
+    /// <summary>ported from fallout2-ce src/combat_ai.cc _combatai_rating (:3449): this critter's threat
+    /// rating, 0 for a null/dead/knocked-out critter (the engine's DAM_DEAD | DAM_KNOCKED_OUT and
+    /// non-critter guards). NOTE: the engine sums over BOTH hands (critterGetItem1/critterGetItem2);
+    /// Hexwaste models one wielded slot, so the equipped weapon is the only candidate.</summary>
+    private int Rating(MapObject? critter)
     {
-        if (!target.IsDead && attacker != target && attacker.Team != target.Team)
-            target.WhoHitMe = attacker;
+        if (critter is null || critter.IsDead || IsKnockedOut(critter))
+            return 0;
+        CritterState? state = _host.GetCritterState(critter);
+        if (state is null)
+            return 0;
+        (ProtoInfo? proto, _) = _host.EquippedWeapon(critter);
+        return AiRating.Score(state.MeleeDamage, state.ArmorClass, proto?.Weapon?.MaxDamage ?? 0);
+    }
+
+    /// <summary>Record who last hit a critter (whoHitMe) — ported from fallout2-ce combat.cc:4707 +
+    /// combat_ai.cc _combatai_check_retaliation (:3484): an unset whoHitMe is taken unconditionally, but
+    /// an existing one is only REPLACED by a strictly higher-rated attacker (so a critter keeps hunting
+    /// the scarier enemy instead of whoever last scratched it). Hexwaste's team gate is retained — the
+    /// engine's equivalent gate lives in the callers.</summary>
+    private void RegisterHit(MapObject target, MapObject attacker)
+    {
+        if (target.IsDead || attacker == target || attacker.Team == target.Team)
+            return;
+        if (target.WhoHitMe is { } current && Rating(attacker) <= Rating(current))
+            return; // combat_ai.cc:3488 — only a STRICTLY greater rating retargets
+        target.WhoHitMe = attacker;
     }
 
     /// <summary>True if the critter may take its turn (not knocked out, not on a
@@ -2814,8 +2833,8 @@ public sealed class CombatEngine
         // WhoeverAttackingMe prefers the hostile that last hit this ally (ally.WhoHitMe, the per-critter
         // whoHitMe tracker added P101) — combat_ai.cc _ai_find_target's whoHitMe preference — and falls back
         // to Closest when nobody has (PickTarget). Ignored for the other modes, so the default is unchanged.
-        List<(int Hp, int Distance, bool HitMe)> ranked = hostiles
-            .Select(h => (_host.GetCritterState(h)?.CurrentHp ?? 0, HexGrid.Distance(ally.HexTile, h.HexTile),
+        List<(int Rating, int Distance, bool HitMe)> ranked = hostiles
+            .Select(h => (Rating(h), HexGrid.Distance(ally.HexTile, h.HexTile),
                 ReferenceEquals(ally.WhoHitMe, h)))
             .ToList();
         MapObject target = hostiles[CompanionAi.PickTarget(ai.AttackWho, ranked)];
