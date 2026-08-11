@@ -25,10 +25,11 @@ The backlog's A2 framing was checked line-by-line against the reference. Three f
 
 Three behaviors absent from the backlog entirely were also found and are in scope:
 `_ai_search_environ` / `_ai_retrieve_object` (ground pickup), `_ai_search_inven_armor`
-(companion armor auto-equip — note it lives in the **dialog** seam, `game_dialog.cc:3747`,
-not combat), and the arm-crippled / out-of-range `_ai_switch_weapons` triggers.
+(companion armor auto-equip — party-member-only and called from the **dialog** seam,
+`game_dialog.cc:3747`, not combat; CUT during planning, see Commit 5), and the arm-crippled /
+out-of-range `_ai_switch_weapons` triggers.
 
-## Scope — seven items, five commits
+## Scope — seven items, five commits (one CUT during planning → six; see item 7)
 
 ### Commit 1 — `_combatai_rating` and its two in-scope consumers
 
@@ -103,13 +104,14 @@ Vanilla's cross-turn memory (`aiInfoSetLastItem`: an NPC that could not reach th
 turn resumes toward it next turn) becomes a `Dictionary<MapObject, MapObject> _aiLastItem`
 on `CombatEngine`, cleared on combat end and on the item leaving the ground.
 
-### Commit 5 — companion armor auto-equip + the extra weapon-switch triggers
+### Commit 5 — the extra weapon-switch triggers (armor auto-equip cut)
 
-- **`_ai_search_inven_armor`** (`combat_ai.cc:2051`), party-member-only, called from
-  `game_dialog.cc:3747` — so it lands in the dialog/party seam, not `CombatEngine`. Score a
-  piece as `armorClass + Σ(damageResistance + damageThreshold)` across the 7 damage types;
-  when a carried piece beats the worn one, equip it. Reuses the P129 `_armorArtDirty` re-base
-  so the companion sprite follows the change.
+- ~~**`_ai_search_inven_armor`**~~ — **CUT during planning (2026-08-11).** Hexwaste models worn
+  armor for the **dude only**: `ApplyArmorBonus` (`ViewerGame.cs:4318`) folds it into the dude's
+  character sheet, `ArmorProtoStats.Male/FemaleFid` drives the dude sprite, and `CritterState` has
+  no worn-armor slot. `_ai_search_inven_armor` (`combat_ai.cc:2051`) therefore has nothing to equip
+  into — it needs a per-NPC worn-armor model first (stat bonuses, DR/DT in the damage path, sprite
+  fid), which is its own task, not a step in this batch. Six items, five commits.
 - **Extra `_ai_switch_weapons` triggers**: the arm-crippled
   (`COMBAT_BAD_SHOT_ARM_CRIPPLED` / `BOTH_ARMS_CRIPPLED`, `combat_ai.cc:2800`) and
   out-of-range-with-no-weapon (`:2823`) branches call the existing `AiSwitchWeapon`. No new
@@ -140,8 +142,7 @@ so the fake test host and the committed fixtures are inert *by construction*, no
 1. **Unit tests** (`tests/Hexwaste.Formats.Tests`, no game data required):
    `AiRating.Score` including the non-critter and dead/KO → 0 guards; the retaliation rule
    (null → set, higher → replace, lower **and equal** → keep); the inverted Strongest/Weakest
-   ordering; `AiBestWeapon` perk ×2; the ammo fallback with an empty vs matching caliber list;
-   the armor score sum.
+   ordering; `AiBestWeapon` perk ×2; the ammo fallback with an empty vs matching caliber list.
 2. **Golden nets**: `scripts/combat-golden.sh check` (16 fixtures) and
    `scripts/encounter-golden.sh` (188), plus the quest, opening and census nets. The
    per-item inertness argument is a **hypothesis to falsify, not an assumption**:
@@ -159,13 +160,13 @@ so the fake test host and the committed fixtures are inert *by construction*, no
    - a new `--ai-pickup-probe` harness flag: disarm an NPC standing near a dropped weapon,
      assert it walks over, picks the weapon up and wields it;
    - an NPC drug decay check: drive a chem-using NPC, then step the game clock and assert the
-     bonus ramps back down instead of vanishing at combat end;
-   - a companion armor hand-over check in the dialog seam.
+     bonus ramps back down instead of vanishing at combat end.
 4. `dotnet test` in full, plus the app boot smoke (needs a display and `FALLOUT2_DIR`).
 
 ## Definition of done
 
-Seven items landed across five conventional commits; all six golden nets byte-identical;
-new unit tests green; the three live probes demonstrated on real data; `docs/BACKLOG.md`
+Six items landed across five conventional commits (companion armor cut — see the scope section);
+all six golden nets byte-identical;
+new unit tests green; the two live probes demonstrated on real data; `docs/BACKLOG.md`
 updated so the A2 entry reflects what was ported, what was corrected (the three grounding
 fixes above), and what remains in the re-record tier.
