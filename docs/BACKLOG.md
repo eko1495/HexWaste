@@ -53,10 +53,15 @@ what's left is smaller and more precisely scoped than the 2026-07-16 pass below.
   reference's crippled-arm branch condition is actually `reason == NOT_ENOUGH_AP || ARM_CRIPPLED ||
   BOTH_ARMS_CRIPPLED` (`combat_ai.cc:2799-2804`) — the not-enough-AP site of that OR is neither
   wired nor exercised here; only the two crippled sites landed this batch.
-- **Deferred mid-batch to the re-record tier:** rating-gated retaliation
-  (`_combatai_check_retaliation`). It was implemented, then found to move the `brawl-watch`
-  encounter fixture (rounds 11→9, survivors 1→2, winning team 2→1); the project owner ruled it be
-  deferred rather than re-record the fixture. `RegisterHit`/whoHitMe remains last-hitter-wins.
+- **Shipped: rating-gated retaliation (`_combatai_check_retaliation`).** Originally deferred
+  mid-batch because it moved the `brawl-watch` encounter fixture; the project owner reconsidered
+  and authorized a deliberate re-record (see
+  `docs/superpowers/specs/2026-08-12-retaliation-rerecord-design.md` and the
+  `feat: rating-gated retaliation` commit). `RegisterHit` now replaces `whoHitMe` only when the new
+  attacker's `_combatai_rating` is strictly greater than the incumbent's (equal-rated attackers do
+  not steal aggro) — `CombatEngine.cs` `RegisterHit`/`Rating`. The blast radius was measured at
+  exactly one fixture (`brawl-watch`: rounds 11→9, survivors 1→2, winTeam [2]→[1], dudeHp unchanged
+  at 30) before recording; `record` touched only that file.
 - **Cut (needs prior work):** `_ai_search_inven_armor` (companion armor auto-equip,
   `combat_ai.cc:2051`) — Hexwaste has no per-NPC worn-armor model (`ApplyArmorBonus`,
   `ViewerGame.cs:4318`, folds armor into the dude's sheet only; `CritterState` has no worn-armor
@@ -68,12 +73,11 @@ what's left is smaller and more precisely scoped than the 2026-07-16 pass below.
   companion ranking was an undocumented divergence, now fixed); perception-based disengage was
   already ported (`WantsToStopFighting`) — the piece still deferred is `PruneEscapedHostiles`,
   which needs the golden-moving `_ai_danger_source`.
-- **Still in the re-record tier** (unchanged by this batch — see the individual re-record-tier
-  bullets below for detail): ring-spiral explosion damage; `_combat_safety_invalidate_weapon` +
-  `_cai_retargetTileFromFriendlyFire` (ally-in-LoF weapon-switch invalidation + snipe-back is
-  partial, `FriendlyOnFireLine`, `CombatEngine.cs:2382-2390`); `_ai_danger_source` + perception-based
-  `PruneEscapedHostiles`; the `_ai_best_weapon` explosive ×(extras+1) factor; and now the
-  rating-gated retaliation above.
+- **Still in the re-record tier** (unchanged by this batch — four items remain): ring-spiral
+  explosion damage; `_combat_safety_invalidate_weapon` + `_cai_retargetTileFromFriendlyFire`
+  (ally-in-LoF weapon-switch invalidation + snipe-back is partial, `FriendlyOnFireLine`,
+  `CombatEngine.cs:2382-2390`); `_ai_danger_source` + perception-based `PruneEscapedHostiles`; and
+  the `_ai_best_weapon` explosive ×(extras+1) factor.
 - **Final-review follow-ups (not implemented — documentation only):**
   - The out-of-range switch trigger (`CombatEngine.cs` `TryEnemyAction`, `:2732-2753`) is ordered
     AHEAD of the reference's flee check: the engine's `COMBAT_BAD_SHOT_OUT_OF_RANGE` branch
