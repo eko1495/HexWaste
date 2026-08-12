@@ -988,6 +988,56 @@ public class CombatEngineTests
     }
 
     [Fact]
+    public void AllySwitchedToAnEmptyGunDoesNotFireUnloaded()
+    {
+        // Companion-path counterpart of EnemySwitchedToAnEmptyGunDoesNotFireUnloaded — 4227b75 only
+        // patched TryEnemyAction; TryAllyAction (:2974-3022) has the identical shape (dry-gun-switch
+        // → AiSwitchWeapon admits an empty-magazine gun on a matching carried caliber → fire at ~:3022
+        // with no post-switch reload check), so a companion could fire a gun it never loaded and drive
+        // its ammo negative. ported from fallout2-ce src/combat_ai.cc _ai_try_attack (:2731-2757): the
+        // reference reloads on NO_AMMO before ever firing, for any combatant (friendly or hostile).
+        var host = new FakeCombatHost { LoadedAmmoCount = 0 }; // every gun in play reports an empty magazine
+        host.CarriedCalibersOverride = [0];                    // matches TestWeapon's default caliber
+        MapObject dude = host.SetDude(NewCritter(tile: 20100, hp: 30, ap: 10));
+        MapObject ally = host.AddAlly(
+            NewCritter(tile: HexGrid.TileInDirection(20100, 2), hp: 30, ap: 10, skill: 100), CompanionAi.Default);
+        // ap: 1 (the CritterState MaximumActionPoints stat floors at 1, so 0 still clamps to 1) — the
+        // enemy shares the same global host.Equipped dry gun (the fake host has no per-critter wield
+        // map), so with a real AP budget it would throw harmless fist-swings at the dude every turn
+        // while we wait for the ally's slot. Placed 5 hexes out (well outside fist range but inside a
+        // gun's MaxRange1, like the enemy-path fixture) so even its dry-switch-to-fists fallback can't
+        // reach the dude with 1 AP/round (a single hex of approach) — it just plods closer, never
+        // attacking, letting the loop below reach the dude's (pass-through) and then the ally's slot.
+        MapObject enemy = host.AddCritter(NewCritter(tile: Step(20100, 0, 5), hp: 30, ap: 1));
+        host.Equipped = (TestWeapon(0x100, 0x06, 5, 12), TestItem(0x100)); // dry equipped gun, can't reload (fake host)
+
+        MapObject backupItem = TestItem(0x201);
+        backupItem.AmmoQuantity = 0; // sentinel: an unfired weapon's ammo must never go negative from here
+        host.InventoryWeapons[ally] = [(TestWeapon(0x201, 0x06, 4, 10), backupItem)]; // a second gun, ALSO dry
+
+        var engine = new CombatEngine(host, new MinRng());
+        engine.BeginScriptAggro(enemy, dude); // the enemy opens combat (order: enemy, dude, ally)
+        for (int i = 0; i < 200 && engine.Phase != CombatPhase.PlayerTurn; i++)
+        {
+            host.Animating.Clear();
+            engine.Step(); // the AP-starved enemy plods one hex closer, never in range to attack
+        }
+        host.Transcripts.Clear();
+        engine.EndPlayerTurn(); // hand off to the ally's slot
+        host.Animating.Clear();
+        // ONE Step() only — the ally's dry-gun check fires on its own equipped weapon regardless of
+        // target distance (the gun's fake MaxRange1 is 40, so "in range" isn't the gate here), so this
+        // single call already exercises the switch-then-reload-check. Looping further would let the
+        // ally spend several ROUNDS closing the 5-6 hex gap and land a legitimate fists punch once
+        // adjacent — a real (non-buggy) melee fallback that would give a false "still fires" reading.
+        engine.Step();
+
+        Assert.Contains((ally, backupItem), host.Equips); // it DID switch to the backup...
+        Assert.DoesNotContain(host.Transcripts, t => t.StartsWith("ally-attack")); // ...but never fired it unloaded
+        Assert.True(backupItem.AmmoQuantity >= 0);         // ...and never decremented into negative "phantom ammo"
+    }
+
+    [Fact]
     public void EnemyWithAchievableMinToHitStillAttacks()
     {
         var host = new FakeCombatHost();

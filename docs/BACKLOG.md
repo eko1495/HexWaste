@@ -75,12 +75,12 @@ what's left is smaller and more precisely scoped than the 2026-07-16 pass below.
   `PruneEscapedHostiles`; the `_ai_best_weapon` explosive ×(extras+1) factor; and now the
   rating-gated retaliation above.
 - **Final-review follow-ups (not implemented — documentation only):**
-  - The out-of-range switch trigger (`CombatEngine.cs` `TryEnemyAction`) is ordered AHEAD of the
-    reference's flee check: the engine's `COMBAT_BAD_SHOT_OUT_OF_RANGE` branch
+  - The out-of-range switch trigger (`CombatEngine.cs` `TryEnemyAction`, `:2732-2753`) is ordered
+    AHEAD of the reference's flee check: the engine's `COMBAT_BAD_SHOT_OUT_OF_RANGE` branch
     (`combat_ai.cc:2807-2815`) evaluates `_determine_to_hit_no_range` with the PRE-switch weapon and
-    flees BEFORE switching if it can never land a hit; Hexwaste's min-to-hit flee check runs before
-    the switch too, but on the POST-switch weapon shape at the call site — a residual ordering
-    divergence, unexercised by any golden.
+    flees BEFORE switching if it can never land a hit; Hexwaste's min-to-hit flee check (`:2761-2763`)
+    runs AFTER the switch, on the POST-switch weapon shape — a residual ordering divergence,
+    unexercised by any golden.
   - The AI's ground-pickup walk (`_ai_search_environ` → `TryRetrieveItem`/`StartWalk`) deducts no AP
     from `_actingEnemyAp`, unlike the reference's move-then-pickup cost.
   - `_npcDrugBonus`/`_pendingDrugEvents` are never cleared on map change: a living NPC that chemmed

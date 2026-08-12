@@ -2537,13 +2537,13 @@ public sealed class CombatEngine
     /// Call this right after any AiSwitchWeapon result. Returns true when the turn was spent reloading
     /// (the caller should `return true` for this action); otherwise the weapon/item/isGun out params are
     /// cleared to fists when the switched-to gun could not be reloaded, so the caller never fires it dry.</summary>
-    private bool TryReloadSwitchedGun(MapObject enemy, ref ProtoInfo? weapon, ref MapObject? weaponItem, ref bool isGun)
+    private bool TryReloadSwitchedGun(MapObject critter, ref ProtoInfo? weapon, ref MapObject? weaponItem, ref bool isGun, ref int actorAp)
     {
         if (!isGun || _host.WeaponAmmo(weapon!, weaponItem!) > 0)
             return false;
-        if (_actingEnemyAp >= RangedMath.ReloadApCost && _host.TryReload(enemy, weapon!, weaponItem!))
+        if (actorAp >= RangedMath.ReloadApCost && _host.TryReload(critter, weapon!, weaponItem!))
         {
-            _actingEnemyAp -= RangedMath.ReloadApCost;
+            actorAp -= RangedMath.ReloadApCost;
             return true;
         }
         // Can't reload (no AP, or no matching ammo actually retrievable) — not a usable weapon this turn.
@@ -2689,6 +2689,7 @@ public sealed class CombatEngine
 
         // _ai_try_attack shape: reload-if-empty, approach if blocked/far, else
         // stand and shoot; switch to a carried backup (best_weapon) when dry, fists otherwise.
+        bool drySwitched = false; // did the branch below already run AiSwitchWeapon this turn?
         if (enemyGun && _host.WeaponAmmo(enemyWeapon!, enemyWeaponItem!) <= 0)
         {
             if (_actingEnemyAp >= RangedMath.ReloadApCost
@@ -2700,10 +2701,11 @@ public sealed class CombatEngine
             // Dry with no ammo: scan the inventory for the packet-preferred backup weapon and wield
             // it (_ai_switch_weapons → _ai_search_inven_weap, combat_ai.cc:2596). None → fists.
             (enemyWeapon, enemyWeaponItem) = AiSwitchWeapon(enemy, ai, enemyDistance, enemyWeaponItem);
+            drySwitched = true;
             enemyGun = enemyWeapon?.Weapon is { } ew2 && ew2.IsGun(enemyWeapon.ExtendedFlags);
             // Important 2: the switch may have landed on ANOTHER gun that is itself empty — reload it
             // (or drop to fists) before ever computing an attack range/firing with it.
-            if (TryReloadSwitchedGun(enemy, ref enemyWeapon, ref enemyWeaponItem, ref enemyGun))
+            if (TryReloadSwitchedGun(enemy, ref enemyWeapon, ref enemyWeaponItem, ref enemyGun, ref _actingEnemyAp))
                 return true;
         }
 
@@ -2735,7 +2737,14 @@ public sealed class CombatEngine
             (enemyWeapon, enemyWeaponItem) = AiSwitchWeapon(enemy, ai, enemyDistance, enemyWeaponItem);
             switched = true;
         }
-        else if (enemyWeapon is null && enemyDistance > attackRange)
+        // Minor (final review): when the dry-gun branch above already switched (and TryReloadSwitchedGun
+        // cleared the result to fists), enemyWeapon is null here too — without the !drySwitched guard this
+        // trigger would re-run the IDENTICAL AiSwitchWeapon call (re-selecting + re-EquipWeapon-ing the same
+        // unusable gun before dropping it again), which is inert for combat math but makes the viewer play
+        // a spurious draw animation (EquipWeapon → SetWieldedWeaponArt(animate: true)) for a weapon the NPC
+        // immediately discards. Skipping it here is a no-op for every other path (drySwitched is false
+        // whenever the branch above didn't run).
+        else if (!drySwitched && enemyWeapon is null && enemyDistance > attackRange)
         {
             (enemyWeapon, enemyWeaponItem) = AiSwitchWeapon(enemy, ai, enemyDistance, enemyWeaponItem);
             switched = true;
@@ -2745,7 +2754,7 @@ public sealed class CombatEngine
             enemyGun = enemyWeapon?.Weapon is { } ew3 && ew3.IsGun(enemyWeapon.ExtendedFlags);
             // Important 2: same re-check as the dry-gun switch above — don't let this switch land on
             // an unloaded gun and fire it unreloaded.
-            if (TryReloadSwitchedGun(enemy, ref enemyWeapon, ref enemyWeaponItem, ref enemyGun))
+            if (TryReloadSwitchedGun(enemy, ref enemyWeapon, ref enemyWeaponItem, ref enemyGun, ref _actingEnemyAp))
                 return true;
             attackRange = enemyGun ? enemyWeapon!.Weapon!.MaxRange1
                 : Math.Min(enemyWeapon?.Weapon?.MaxRange1 ?? 1, 2);
@@ -2984,6 +2993,15 @@ public sealed class CombatEngine
             // or fists when nothing else is carried (the pre-P51 slice behaviour → byte-identical).
             (weaponProto, weaponItem) = AiSwitchWeapon(ally, (int)ai.WeaponPref, minToHit: 0, distance, weaponItem);
             isGun = weaponProto?.Weapon is { } gw && gw.IsGun(weaponProto.ExtendedFlags);
+            // Final review (companion-path parity): the ally-side counterpart of the enemy's Important-2
+            // re-check above — CandidateGate/AiSwitchWeapon can land the ally on ANOTHER gun that is
+            // itself empty (a matching caliber in CarriedAmmoCalibers is enough to qualify as a
+            // candidate), so reload it here too before ever computing range/firing with it. Without this
+            // an ally could fire a gun it never loaded and drive its AmmoQuantity negative, mirroring the
+            // defect 4227b75 fixed on the enemy path only. ported from fallout2-ce src/combat_ai.cc
+            // _ai_try_attack (:2731-2757).
+            if (TryReloadSwitchedGun(ally, ref weaponProto, ref weaponItem, ref isGun, ref _actingAllyAp))
+                return true;
         }
 
         int range = isGun ? weaponProto!.Weapon!.MaxRange1
