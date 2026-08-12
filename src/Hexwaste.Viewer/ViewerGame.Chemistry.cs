@@ -61,8 +61,10 @@ public sealed partial class ViewerGame
     private readonly int[] _drugBonus = new int[35];
 
     /// <summary>Pending delayed drug kicks (the down-ramp / wear-off), keyed by the game-tick they fire at.
-    /// ported from item.cc's EVENT_TYPE_DRUG queue; driven from UpdateClock like the poison tick. (P37.)</summary>
-    private readonly List<(long FireTick, int[] Stats, int[] Amounts)> _pendingDrugEvents = [];
+    /// ported from item.cc's EVENT_TYPE_DRUG queue; driven from UpdateClock like the poison tick. (P37.)
+    /// Owner null = the dude; a non-null Owner is an NPC that chem'd up in combat (its bonus lives in
+    /// _npcDrugBonus and now decays on the clock instead of being wiped at combat end).</summary>
+    private readonly List<(long FireTick, MapObject? Owner, int[] Stats, int[] Amounts)> _pendingDrugEvents = [];
 
     /// <summary>
     /// ported from item.cc _perform_drug_effect (:2639): additively apply a drug's per-stat amounts.
@@ -118,12 +120,35 @@ public sealed partial class ViewerGame
     }
 
     /// <summary>Schedule a delayed drug kick durationMin game-minutes out (item.cc _insert_drug_effect:
-    /// skip an all-zero kick; delay = 600 ticks/game-minute, the GameClock basis). (P37.)</summary>
-    private void ScheduleDrugEvent(int durationMin, int[] stats, int[] amounts)
+    /// skip an all-zero kick; delay = 600 ticks/game-minute, the GameClock basis). (P37.)
+    /// <paramref name="owner"/> null = the dude; otherwise the NPC whose _npcDrugBonus ramps down.</summary>
+    private void ScheduleDrugEvent(int durationMin, int[] stats, int[] amounts, MapObject? owner = null)
     {
         if (amounts[0] == 0 && amounts[1] == 0 && amounts[2] == 0)
             return; // item.cc:2601 — an unused kick schedules nothing
-        _pendingDrugEvents.Add((_clock.Ticks + 600L * durationMin, stats, amounts));
+        _pendingDrugEvents.Add((_clock.Ticks + 600L * durationMin, owner, stats, amounts));
+    }
+
+    /// <summary>The NPC analogue of ApplyDrugEffect's 0..34 branch (item.cc _perform_drug_effect, :2639):
+    /// fold a kick into the critter's _npcDrugBonus. NPCs have no character sheet, so only the SPECIAL /
+    /// derived bonus band and current HP apply — poison/radiation (36/37) are dude-only in Hexwaste.
+    /// No RNG: the -2 random-range roll is immediate-only, and every scheduled kick is a fixed delta.</summary>
+    private void ApplyNpcDrugEffect(MapObject critter, int[] stats, int[] amounts)
+    {
+        int[] bonus = _npcDrugBonus.TryGetValue(critter, out int[]? b) ? b : _npcDrugBonus[critter] = new int[35];
+        for (int i = 0; i < 3; i++)
+        {
+            int stat = stats[i];
+            if (stat == 35)
+            {
+                int max = GetCritterState(critter)?.MaxHp ?? critter.CurrentHp;
+                critter.CurrentHp = Math.Clamp(critter.CurrentHp + amounts[i], 0, max);
+            }
+            else if (stat >= 0 && stat < 35)
+            {
+                bonus[stat] += amounts[i];
+            }
+        }
     }
 
     /// <summary>Fire every due drug kick in fire-time order (a clock JUMP from rest/travel fires several);
@@ -141,9 +166,12 @@ public sealed partial class ViewerGame
                     (earliest, next) = (_pendingDrugEvents[i].FireTick, i);
             if (next < 0)
                 return;
-            (long _, int[] stats, int[] amounts) = _pendingDrugEvents[next];
+            (long _, MapObject? owner, int[] stats, int[] amounts) = _pendingDrugEvents[next];
             _pendingDrugEvents.RemoveAt(next);
-            ApplyDrugEffect(stats, amounts, immediate: false);
+            if (owner is null)
+                ApplyDrugEffect(stats, amounts, immediate: false);
+            else
+                ApplyNpcDrugEffect(owner, stats, amounts);
         }
     }
 

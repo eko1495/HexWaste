@@ -297,8 +297,12 @@ public sealed partial class ViewerGame
             DudePoison = _dude is { Dude.Poison: > 0 } pd ? pd.Dude.Poison : null, // P35-M3 (sparse: null when not poisoned)
             // P37: persist the active drug bonus + pending wear-off kicks, sparse (null when no drug active).
             DrugBonus = _drugBonus.Any(b => b != 0) ? [.. _drugBonus] : null,
-            PendingDrugs = _pendingDrugEvents.Count > 0
-                ? [.. _pendingDrugEvents.Select(e => new SaveState.PendingDrug(e.FireTick, e.Stats, e.Amounts))]
+            // Only the DUDE's pending kicks persist: an NPC-owned entry references a live MapObject that
+            // no save format can name. NPC buffs therefore do not survive a save/load — no worse than the
+            // pre-port behaviour, where they did not survive the end of combat.
+            PendingDrugs = _pendingDrugEvents.Any(e => e.Owner is null)
+                ? [.. _pendingDrugEvents.Where(e => e.Owner is null)
+                      .Select(e => new SaveState.PendingDrug(e.FireTick, e.Stats, e.Amounts))]
                 : null,
             // P38: the active withdrawal penalty + pending onset/recovery events (addiction GVARs ride GlobalVars).
             WithdrawalBonus = _withdrawalBonus.Any(b => b != 0) ? [.. _withdrawalBonus] : null,
@@ -589,7 +593,7 @@ public sealed partial class ViewerGame
             }
         if (state.PendingDrugs is { } pending)
             foreach (SaveState.PendingDrug e in pending)
-                _pendingDrugEvents.Add((e.FireTick, e.Stats, e.Amounts));
+                _pendingDrugEvents.Add((e.FireTick, null, e.Stats, e.Amounts));
 
         // P38: restore the withdrawal penalty the same way (re-apply AFTER the sheet rebuild) + the
         // pending onset/recovery events. The addiction GVARs themselves ride GlobalVars (restored above).

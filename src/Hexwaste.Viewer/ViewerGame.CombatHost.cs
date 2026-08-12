@@ -521,10 +521,10 @@ public sealed partial class ViewerGame
 
     /// <summary>An NPC drinks ONE non-healing combat drug to buff itself (P78-M2): pick a
     /// chem_primary_desire drug, apply its IMMEDIATE stat effect to a per-critter bonus that
-    /// <see cref="GetCritterState"/> folds in (the companion-override anti-aliasing pattern; cleared on
-    /// combat end), heal any HP component, consume one. DOCUMENTED SIMPLIFICATION: the timed wear-off
-    /// (down-then-up ramp) isn't modelled for NPCs — the buff lasts the fight, which is shorter than any
-    /// drug's onset anyway.</summary>
+    /// <see cref="GetCritterState"/> folds in (the companion-override anti-aliasing pattern), heal any HP
+    /// component, consume one, then schedule the same two delayed wear-off kicks the dude gets so the
+    /// buff ramps down on the game clock instead of lasting until a blanket combat-end wipe (P37, this
+    /// task). ported from item.cc _item_d_take_drug (:2809).</summary>
     public bool TryNpcUseCombatDrug(MapObject critter, int[]? primaryDesire)
     {
         var carried = critter.Inventory.Where(it => SafeProto(it.Pid)?.Drug is not null).Select(it => it.Pid).ToList();
@@ -546,6 +546,13 @@ public sealed partial class ViewerGame
             int max = GetCritterState(critter)?.MaxHp ?? critter.CurrentHp;
             critter.CurrentHp = Math.Min(critter.CurrentHp + hpHeal, max);
         }
+
+        // item.cc _item_d_take_drug (:2809): the immediate effect is followed by two delayed kicks that
+        // ramp it back down — the same wear-off the dude gets (P37). Before this, an NPC's buff was
+        // permanent until the blanket combat-end wipe, i.e. it had no duration at all.
+        ScheduleDrugEvent(drug.Duration1, drug.Stats, drug.Amount1, critter);
+        ScheduleDrugEvent(drug.Duration2, drug.Stats, drug.Amount2, critter);
+
         item.StackCount--;
         if (item.StackCount <= 0)
             critter.Inventory.Remove(item);

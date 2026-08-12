@@ -2803,9 +2803,8 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
         _animator.Update(gameTime.ElapsedGameTime.TotalMilliseconds);
         AdvanceProjectiles(gameTime.ElapsedGameTime.TotalMilliseconds);
         _combat.Step();
-        // P78-M2: NPC combat-drug buffs last only the fight — drop them once combat is over.
-        if (_npcDrugBonus.Count > 0 && _combat.Phase == Formats.Combat.CombatPhase.Idle)
-            _npcDrugBonus.Clear();
+        // P37/fidelity: NPC drug bonuses are NO LONGER wiped when combat ends — they ramp down on the
+        // game clock through _pendingDrugEvents, like the dude's (item.cc _insert_drug_effect).
         _dude?.Update(gameTime.ElapsedGameTime.TotalMilliseconds);
         PumpPendingInteraction();
         UpdateAmbientLife(gameTime.ElapsedGameTime.TotalMilliseconds);
