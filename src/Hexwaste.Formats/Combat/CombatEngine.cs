@@ -1621,17 +1621,16 @@ public sealed class CombatEngine
         return AiRating.Score(state.MeleeDamage, state.ArmorClass, proto?.Weapon?.MaxDamage ?? 0);
     }
 
-    /// <summary>Record who last hit a critter (whoHitMe) — ported from fallout2-ce combat.cc:4707 +
-    /// combat_ai.cc _combatai_check_retaliation (:3484): an unset whoHitMe is taken unconditionally, but
-    /// an existing one is only REPLACED by a strictly higher-rated attacker (so a critter keeps hunting
-    /// the scarier enemy instead of whoever last scratched it). Hexwaste's team gate is retained — the
-    /// engine's equivalent gate lives in the callers.</summary>
+    /// <summary>Record who last hit a critter (whoHitMe) — unconditional last-hitter-wins
+    /// (combat.cc:4707). The faithful _combatai_check_retaliation gate that replaces whoHitMe
+    /// only when a strictly higher-rated attacker strikes (combat_ai.cc:3484) is deliberately
+    /// deferred because it changes NPC-vs-NPC brawl outcomes (affects encounter fixtures);
+    /// it belongs to the re-record tier. Hexwaste's team gate is retained — the engine's
+    /// equivalent gate lives in the callers.</summary>
     private void RegisterHit(MapObject target, MapObject attacker)
     {
         if (target.IsDead || attacker == target || attacker.Team == target.Team)
             return;
-        if (target.WhoHitMe is { } current && Rating(attacker) <= Rating(current))
-            return; // combat_ai.cc:3488 — only a STRICTLY greater rating retargets
         target.WhoHitMe = attacker;
     }
 
