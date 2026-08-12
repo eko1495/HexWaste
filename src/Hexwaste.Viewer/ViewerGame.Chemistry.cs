@@ -155,24 +155,47 @@ public sealed partial class ViewerGame
     /// each is a wear-off delta (no RNG). ported from item.cc drugEffectEventProcess. Driven by UpdateClock.</summary>
     private void ProcessDrugs()
     {
-        if (_pendingDrugEvents.Count == 0)
+        if (_pendingDrugEvents.Count != 0)
+            while (true)
+            {
+                int next = -1;
+                long earliest = long.MaxValue;
+                for (int i = 0; i < _pendingDrugEvents.Count; i++)
+                    if (_pendingDrugEvents[i].FireTick <= _clock.Ticks && _pendingDrugEvents[i].FireTick < earliest)
+                        (earliest, next) = (_pendingDrugEvents[i].FireTick, i);
+                if (next < 0)
+                    break;
+                (long _, MapObject? owner, int[] stats, int[] amounts) = _pendingDrugEvents[next];
+                _pendingDrugEvents.RemoveAt(next);
+                if (owner is null)
+                    ApplyDrugEffect(stats, amounts, immediate: false);
+                else
+                    ApplyNpcDrugEffect(owner, stats, amounts);
+            }
+        PruneDeadNpcDrugBonuses();
+    }
+
+    /// <summary>Prune _npcDrugBonus entries that can no longer affect anything: the critter is dead (its
+    /// bonus is never read again — GetCritterState on a dead critter's stats don't matter) and no pending
+    /// drug event still references it (so nothing will re-touch the entry later). This is NOT a behavioral
+    /// gate — it only drops state that is already unreachable, freeing the strong MapObject reference so
+    /// critters from a previously-visited map don't linger forever. Call after draining due events.</summary>
+    private void PruneDeadNpcDrugBonuses()
+    {
+        if (_npcDrugBonus.Count == 0)
             return;
-        while (true)
+        List<MapObject>? dead = null;
+        foreach (MapObject critter in _npcDrugBonus.Keys)
         {
-            int next = -1;
-            long earliest = long.MaxValue;
-            for (int i = 0; i < _pendingDrugEvents.Count; i++)
-                if (_pendingDrugEvents[i].FireTick <= _clock.Ticks && _pendingDrugEvents[i].FireTick < earliest)
-                    (earliest, next) = (_pendingDrugEvents[i].FireTick, i);
-            if (next < 0)
-                return;
-            (long _, MapObject? owner, int[] stats, int[] amounts) = _pendingDrugEvents[next];
-            _pendingDrugEvents.RemoveAt(next);
-            if (owner is null)
-                ApplyDrugEffect(stats, amounts, immediate: false);
-            else
-                ApplyNpcDrugEffect(owner, stats, amounts);
+            if (!critter.IsDead)
+                continue;
+            if (_pendingDrugEvents.Exists(e => ReferenceEquals(e.Owner, critter)))
+                continue;
+            (dead ??= []).Add(critter);
         }
+        if (dead is not null)
+            foreach (MapObject critter in dead)
+                _npcDrugBonus.Remove(critter);
     }
 
     // ─── P38: drug addiction + withdrawal (item.cc) ──────────────────────────────────────────

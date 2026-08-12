@@ -585,6 +585,8 @@ public sealed partial class ViewerGame
         // drive the stat negative). Then restore the pending wear-off kicks (they fire on the clock).
         Array.Clear(_drugBonus);
         _pendingDrugEvents.Clear();
+        _npcDrugBonus.Clear(); // NPC chem buffs are in-memory only (not saved) and keyed on MapObjects
+                                // LoadMap will recreate fresh — a loaded game inherits none of them
         if (state.DrugBonus is { } drugBonus && _dudeGcd is not null)
             for (int s = 0; s < 35 && s < drugBonus.Length; s++)
             {

@@ -363,7 +363,9 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
     // no companion levels up perks today — so GetCritterState passes null (inert). Persisted in the save.
     private readonly Dictionary<MapObject, int[]> _companionPerkRanks = [];
     /// <summary>P78-M2: per-NPC combat-drug stat bonus (int[35]) applied when an enemy chems up mid-fight;
-    /// GetCritterState folds it into BonusStats. Cleared when combat ends (no timed wear-off for NPCs).</summary>
+    /// GetCritterState folds it into BonusStats. Ramps down on the game clock via the same
+    /// _pendingDrugEvents queue the dude uses (no longer wiped at combat end); reset on new game / load
+    /// game, and unreachable entries (dead critter, no pending events left) are pruned in ProcessDrugs.</summary>
     private readonly Dictionary<MapObject, int[]> _npcDrugBonus = [];
     private Formats.Combat.ICombatRng? _partyRng;
 
@@ -6803,6 +6805,7 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
         _sneak.Working = false;
         Array.Clear(_drugBonus);        // P37: no drug in effect on a fresh game (else a stale
         _pendingDrugEvents.Clear();     // pending kick could fire on the reset clock)
+        _npcDrugBonus.Clear();          // a fresh game has no NPC chem buffs in memory either
         Array.Clear(_withdrawalBonus);  // P38: no addiction/withdrawal on a fresh game
         _pendingWithdrawalEvents.Clear();
         Array.Clear(_killsByType);      // P38: a fresh game has no kills
