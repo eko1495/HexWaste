@@ -782,6 +782,104 @@ public class CombatEngineTests
         Assert.Empty(host.Equips);
     }
 
+    // --- Ground-pickup fallback (_ai_search_environ / _ai_retrieve_object) -----------------------
+
+    [Fact]
+    public void AiRemembersAGroundWeaponAcrossTurnsAndRetrievesItLater()
+    {
+        // Issue 3 (review): the non-adjacent "start a walk, return not-yet, remember the item, retrieve
+        // it on a later turn" path had no test. First call: TryRetrieveItem reports "not adjacent yet" →
+        // fists this turn, but the item is remembered. Second call: the memory resumes and the item is
+        // actually retrieved + wielded — proving the cross-turn state in CombatEngine._aiLastItem works.
+        var host = new FakeCombatHost();
+        MapObject dude = host.SetDude(NewCritter(tile: 20100, hp: 30, ap: 10));
+        MapObject enemy = host.AddCritter(NewCritter(tile: Step(20100, 0, 1), hp: 30, ap: 10, skill: 120));
+        host.AiPackets[enemy] = new AiPacket(12, "Guard", MinToHit: 0, MinHp: 0, 0, "", "", 0, 0, BestWeapon: 3);
+
+        MapObject groundItem = TestItem(0x300);
+        groundItem.HexTile = Step(20100, 0, 4); // within perception(5)+5 of the enemy, not adjacent
+        host.Ground.Add((TestWeapon(0x300, 0x06, 4, 10), groundItem));
+        host.RetrieveResults[groundItem] = new Queue<bool>([false]); // first attempt: not adjacent yet
+
+        var engine = new CombatEngine(host, new MinRng());
+
+        Assert.Equal(-1, engine.ProbeAiWeaponSwitch(enemy, dude));    // remembered, not retrieved yet
+        Assert.Empty(host.Equips);
+        Assert.Equal(0x300, engine.ProbeAiWeaponSwitch(enemy, dude)); // resumed + retrieved this turn
+        Assert.Contains((enemy, groundItem), host.Equips);
+        Assert.Contains(groundItem, enemy.Inventory);
+    }
+
+    [Fact]
+    public void TwoCrittersRememberingTheSameGroundItemDoNotBothRetrieveIt()
+    {
+        // Issue 2 (review): the reference's _ai_retrieve_object re-checks item->owner (combat_ai.cc:2250)
+        // before trusting a remembered item — someone else may have already claimed it. Two unarmed
+        // critters that both remember the same ground weapon must NOT both end up with it in their
+        // inventory: whichever critter's turn resolves first takes it; the other's stale memory is
+        // dropped and it gets nothing (fists), not a duplicate MapObject reference.
+        var host = new FakeCombatHost();
+        MapObject dude = host.SetDude(NewCritter(tile: 20100, hp: 30, ap: 10));
+        MapObject enemy1 = host.AddCritter(NewCritter(tile: Step(20100, 0, 1), hp: 30, ap: 10, skill: 120));
+        MapObject enemy2 = host.AddCritter(NewCritter(tile: Step(20100, 1, 1), hp: 30, ap: 10, skill: 120));
+        host.AiPackets[enemy1] = new AiPacket(12, "Guard", MinToHit: 0, MinHp: 0, 0, "", "", 0, 0, BestWeapon: 3);
+        host.AiPackets[enemy2] = new AiPacket(12, "Guard", MinToHit: 0, MinHp: 0, 0, "", "", 0, 0, BestWeapon: 3);
+
+        MapObject groundItem = TestItem(0x300);
+        groundItem.HexTile = Step(20100, 0, 4);
+        host.Ground.Add((TestWeapon(0x300, 0x06, 4, 10), groundItem));
+        // Both critters' first attempt reports "not adjacent yet" so both end up remembering the item.
+        host.RetrieveResults[groundItem] = new Queue<bool>([false, false]);
+
+        var engine = new CombatEngine(host, new MinRng());
+        Assert.Equal(-1, engine.ProbeAiWeaponSwitch(enemy1, dude)); // enemy1 remembers it
+        Assert.Equal(-1, engine.ProbeAiWeaponSwitch(enemy2, dude)); // enemy2 remembers the SAME item
+
+        // Round 2: enemy1 resolves first (queue drained → default "still on ground" success), claiming it.
+        Assert.Equal(0x300, engine.ProbeAiWeaponSwitch(enemy1, dude));
+        Assert.Contains(groundItem, enemy1.Inventory);
+
+        // enemy2's remembered item is now stale (no longer on the ground) — must NOT be retrieved too.
+        Assert.Equal(-1, engine.ProbeAiWeaponSwitch(enemy2, dude));
+        Assert.DoesNotContain(groundItem, enemy2.Inventory);
+        Assert.Single(host.Equips); // only ever wielded once, by enemy1
+        Assert.DoesNotContain((enemy2, groundItem), host.Equips);
+    }
+
+    [Fact]
+    public void RoboticCritterNeverRetrievesAGroundWeapon()
+    {
+        // Issue 1 (review): _ai_search_environ (combat_ai.cc:2178/2180) gates on BODY_TYPE_BIPED alone —
+        // stricter than the bag-search gate (_ai_search_inven_weap), which also admits ROBOTIC. A robotic
+        // critter with an empty bag must NOT walk over and pick up a ground weapon.
+        var host = new FakeCombatHost();
+        MapObject dude = host.SetDude(NewCritter(tile: 20100, hp: 30, ap: 10));
+        int[] b = new int[35];
+        b[CritterStat.MaximumHitPoints] = 30;
+        b[CritterStat.MaximumActionPoints] = 10;
+        b[CritterStat.Perception] = 5;
+        var roboticProto = new CritterProtoStats(0, 0, 0, b, new int[35], new int[18], 2 /* BODY_TYPE_ROBOTIC */, 0, 0, 0);
+        var enemy = new MapObject
+        {
+            Id = 2, HexTile = Step(20100, 0, 1), X = 0, Y = 0, Frame = 0, Rotation = 0,
+            Fid = 0x01000000, Flags = 0, Pid = 0x01000005, Sid = -1,
+        };
+        enemy.CurrentHp = 30;
+        host.AddCritter((enemy, roboticProto));
+        host.AiPackets[enemy] = new AiPacket(12, "Robot", MinToHit: 0, MinHp: 0, 0, "", "", 0, 0, BestWeapon: 3);
+
+        MapObject groundItem = TestItem(0x300);
+        groundItem.HexTile = Step(20100, 0, 4);
+        host.Ground.Add((TestWeapon(0x300, 0x06, 4, 10), groundItem));
+
+        var engine = new CombatEngine(host, new MinRng());
+
+        Assert.Equal(-1, engine.ProbeAiWeaponSwitch(enemy, dude));
+        Assert.Empty(host.Equips);
+        Assert.Empty(host.RetrieveAttempts); // never even tried — the BIPED-only gate returns first
+        Assert.DoesNotContain(groundItem, enemy.Inventory);
+    }
+
     [Fact]
     public void EnemyWithAchievableMinToHitStillAttacks()
     {
@@ -2312,6 +2410,36 @@ public class CombatEngineTests
             InventoryWeapons.GetValueOrDefault(critter, []);
         public readonly List<(MapObject Critter, MapObject Item)> Equips = []; // P43 EquipWeapon
         public void EquipWeapon(MapObject critter, MapObject weaponItem) => Equips.Add((critter, weaponItem));
+
+        // Ground-pickup fallback (_ai_search_environ / _ai_retrieve_object, combat_ai.cc:2178/2237).
+        // Ground is a mutable "world" list: TryRetrieveItem removes the item from it on a genuine pickup,
+        // so a stale/already-claimed item naturally disappears from later GroundItemsNear scans — same
+        // observable contract as the real ViewerGame.CombatHost.TryRetrieveItem hardening.
+        public readonly List<(ProtoInfo Proto, MapObject Item)> Ground = [];
+        public IReadOnlyList<(ProtoInfo Proto, MapObject Item)> GroundItemsNear(MapObject critter, int maxDistance) =>
+            [.. Ground.Where(g => HexGrid.Distance(critter.HexTile, g.Item.HexTile) <= maxDistance)];
+        public readonly List<(MapObject Critter, MapObject Item)> RetrieveAttempts = [];
+        // Per-item queue of results to return in order; falls back to "adjacent ⇒ succeed" default logic
+        // (removes from Ground + adds to the critter's inventory) once the queue is drained.
+        public readonly Dictionary<MapObject, Queue<bool>> RetrieveResults = [];
+        // Deliberately NAIVE by default (no self-protecting "still on the ground?" check) — this
+        // mirrors the pre-fix TryRetrieveItem bug the review flagged (unconditional Inventory.Add
+        // regardless of whether the world-list removal actually found anything), so the "two critters
+        // remember the same item" test exercises CombatEngine's OWN re-verification (Issue 2's fix in
+        // CombatEngine.cs), not a self-protecting test double.
+        public bool TryRetrieveItem(MapObject critter, MapObject item)
+        {
+            RetrieveAttempts.Add((critter, item));
+            bool ok = RetrieveResults.TryGetValue(item, out Queue<bool>? q) && q.Count > 0
+                ? q.Dequeue()
+                : true; // "adjacent" default — always reports success unless a test configures otherwise
+            if (ok)
+            {
+                Ground.RemoveAll(g => g.Item == item);
+                critter.Inventory.Add(item);
+            }
+            return ok;
+        }
         public int LoadedAmmoCount; // settable magazine for burst/gun tests
         public int WeaponAmmo(ProtoInfo weaponProto, MapObject item) => LoadedAmmoCount;
         public AmmoProtoStats? LoadedAmmo(ProtoInfo weaponProto, MapObject item) => null;

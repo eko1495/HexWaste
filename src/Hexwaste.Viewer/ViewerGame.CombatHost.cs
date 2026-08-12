@@ -88,19 +88,27 @@ public sealed partial class ViewerGame
 
     /// <summary>ported from fallout2-ce src/combat_ai.cc _ai_retrieve_object (:2237): adjacent → transfer
     /// to inventory; otherwise start a walk toward it and report "not yet" so the caller remembers it for
-    /// next turn.</summary>
+    /// next turn. Issue-2 hardening: the reference re-checks item->owner (:2250) — someone else may already
+    /// have picked it up while this critter was remembering it across turns. Hexwaste has no MapObject.Owner
+    /// field, so "still available" is read directly off world-list membership instead; a stale item (no
+    /// longer in the draw lists) fails outright rather than being double-added to this critter's inventory.
+    /// </summary>
     public bool TryRetrieveItem(MapObject critter, MapObject item)
     {
+        if (!_flatObjects[_elevation].Contains(item) && !_solidObjects[_elevation].Contains(item))
+            return false; // no longer on the ground — someone else already claimed it
+
         if (Formats.Hex.HexGrid.Distance(critter.HexTile, item.HexTile) > 1)
         {
             StartWalk(critter, item.HexTile);
             return false;
         }
+        // OnScriptObjectRemoved already strips the item from every elevation's _flatObjects/_solidObjects
+        // (ViewerGame.cs:5210-5216) — mirrors PickUpItem (ViewerGame.cs:3540), which has no redundant
+        // follow-up Remove calls either.
         OnScriptObjectRemoved(item);
         foreach (MapElevation? elev in _map.Elevations)
             elev?.Objects.Remove(item);
-        _flatObjects[_elevation].Remove(item);
-        _solidObjects[_elevation].Remove(item);
         critter.Inventory.Add(item);
         _audio?.PlaySfx("ipickup1", SfxGain(critter)); // P117 sfx (inventory.cc:2364)
         Log($"The {ObjectName(critter)} picks up: {ObjectName(item)}.");

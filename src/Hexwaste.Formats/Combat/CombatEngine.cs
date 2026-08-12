@@ -2393,7 +2393,8 @@ public sealed class CombatEngine
     /// unusable (here: a dry gun with no reload), so scan the critter's CARRIED weapons for the best
     /// one its ai.txt <c>best_weapon</c> preference allows and wield it. Returns the new weapon, or
     /// (null, null) for fists when nothing qualifies (the engine's punch fallback). Only BIPED/ROBOTIC
-    /// bodies search inventory (combat_ai.cc:2004); others keep fists.
+    /// bodies search inventory (combat_ai.cc:2004); others keep fists. The ground-retrieval fallback
+    /// (_ai_search_environ, combat_ai.cc:2178) is stricter still — BIPED only.
     ///
     /// DOCUMENTED SIMPLIFICATIONS vs the engine: the avg-damage score omits the explosive-radius
     /// ×(extras+1) factor (Hexwaste tracks no explosive extras) — the weapon-perk ×2 factor IS applied
@@ -2470,11 +2471,25 @@ public sealed class CombatEngine
             return (w.Proto, w.Item);
         }
 
-        // _ai_switch_weapons (combat_ai.cc:2606): nothing usable in the bag → look for a weapon lying on
-        // the ground within PE+5 hexes, walk to it, pick it up and wield it. BIPED/ROBOTIC only (the
-        // body-type gate above already returned for other bodies).
+        // _ai_switch_weapons (combat_ai.cc:2606) → _ai_search_environ (combat_ai.cc:2178): nothing usable
+        // in the bag → look for a weapon lying on the ground within PE+5 hexes, walk to it, pick it up and
+        // wield it. _ai_search_environ opens with its OWN stricter gate — BIPED only (unlike the bag search
+        // above, which also admits ROBOTIC per _ai_search_inven_weap, combat_ai.cc:2004-2006).
+        if (bodyType != 0) // BODY_TYPE_BIPED
+            return (null, null);
+
+        // A remembered item may have been claimed by someone else since last turn — the closest reference
+        // analogue is _ai_retrieve_object's item->owner check (combat_ai.cc:2250), which drops the item
+        // rather than retrying it once someone else has it. Hexwaste has no MapObject.Owner, so re-verify
+        // the item is still lying on the ground before trusting the memory; TryRetrieveItem is also
+        // hardened against this independently (belt-and-suspenders — see ViewerGame.CombatHost.cs).
         (ProtoInfo Proto, MapObject Item)? wanted =
             _aiLastItem.TryGetValue(enemy, out (ProtoInfo Proto, MapObject Item) remembered) ? remembered : null;
+        if (wanted is { } stale && !_host.GroundItemsNear(enemy, int.MaxValue).Any(gi => gi.Item == stale.Item))
+        {
+            _aiLastItem.Remove(enemy);
+            wanted = null;
+        }
         if (wanted is null)
         {
             int perception = self?.Stat(CritterStat.Perception) ?? 0;
