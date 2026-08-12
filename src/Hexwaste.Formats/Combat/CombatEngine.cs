@@ -2390,12 +2390,13 @@ public sealed class CombatEngine
     /// (null, null) for fists when nothing qualifies (the engine's punch fallback). Only BIPED/ROBOTIC
     /// bodies search inventory (combat_ai.cc:2004); others keep fists.
     ///
-    /// DOCUMENTED SIMPLIFICATIONS vs the engine: the avg-damage score omits the weapon-perk ×2 and the
-    /// explosive-radius ×(extras+1) factors (Hexwaste tracks neither); _combat_safety_invalidate_weapon
-    /// (ally-in-line-of-fire / over-range "ignore") is not applied (Ignore stays false); ranged ammo
-    /// availability is approximated by the loaded/proto-default count (aiHaveAmmo bag-search not ported);
-    /// art-exists is assumed. Only the dry-gun trigger is wired (the slice driver); the engine also
-    /// switches on arm-crippled / out-of-range-no-weapon (combat_ai.cc:2800/2823) — same helper, not wired.
+    /// DOCUMENTED SIMPLIFICATIONS vs the engine: the avg-damage score omits the explosive-radius
+    /// ×(extras+1) factor (Hexwaste tracks no explosive extras) — the weapon-perk ×2 factor IS applied
+    /// (AiBestWeapon.AvgDamage); _combat_safety_invalidate_weapon (ally-in-line-of-fire / over-range
+    /// "ignore") is not applied (Ignore stays false); ranged ammo availability now searches the carried
+    /// inventory's calibers (CarriedAmmoCalibers), matching aiHaveAmmo; art-exists is assumed. Only the
+    /// dry-gun trigger is wired (the slice driver); the engine also switches on arm-crippled /
+    /// out-of-range-no-weapon (combat_ai.cc:2800/2823) — same helper, not wired.
     /// </summary>
     // Enemy entry: reads best_weapon + min_to_hit from the ai.txt packet.
     private (ProtoInfo?, MapObject?) AiSwitchWeapon(MapObject enemy, AiPacket? ai, int distance, MapObject? currentItem) =>
@@ -2438,11 +2439,16 @@ public sealed class CombatEngine
                     continue;
                 if (!AiBestWeapon.HasWeapPrefType(bestWeapon, attackType))
                     continue;
-                if (attackType == WeaponClass.AttackRanged && _host.WeaponAmmo(proto, item) <= 0)
-                    continue; // a ranged weapon needs ammo to be a candidate
+                // _ai_can_use_weapon's ammo gate (combat_ai.cc:2036 → aiHaveAmmo, :1765): a ranged weapon
+                // qualifies with rounds loaded OR matching ammo in the bag (the engine searches inventory;
+                // the pre-port approximation was loaded-rounds only).
+                if (attackType == WeaponClass.AttackRanged && _host.WeaponAmmo(proto, item) <= 0
+                    && !_host.CarriedAmmoCalibers(enemy).Contains(weapon.Caliber))
+                    continue;
 
                 var cand = new AiBestWeapon.Choice(attackType,
-                    (weapon.MinDamage + weapon.MaxDamage) / 2, proto.Cost, IsFlare: proto.Pid == 79);
+                    AiBestWeapon.AvgDamage(weapon.MinDamage, weapon.MaxDamage, weapon.WeaponPerk),
+                    proto.Cost, IsFlare: proto.Pid == 79);
                 bool favorB = bestWeapon == 7 && _rng.Next(1, 101) <= 50; // RANDOM coin (inert on slice)
                 if (AiBestWeapon.Prefers(bestWeapon, best, cand, favorB))
                 {

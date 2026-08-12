@@ -64,6 +64,10 @@ public sealed partial class ViewerGame
         return result;
     }
 
+    /// <summary>aiHaveAmmo (combat_ai.cc:1765): every ammo caliber in this critter's inventory.</summary>
+    public IReadOnlyList<int> CarriedAmmoCalibers(MapObject critter) =>
+        [.. critter.Inventory.Select(it => SafeProto(it.Pid)?.Ammo?.Caliber ?? -1).Where(c => c >= 0).Distinct()];
+
     /// <summary>Wield a carried weapon: clear every in-hand flag in the bag, then set the new item's
     /// right hand (_inven_wield HAND_RIGHT) so <see cref="EquippedWeapon"/> returns it. P43.
     /// P118: the AI switch also updates the idle art + draw anim (_invenWieldFunc animate=true).</summary>

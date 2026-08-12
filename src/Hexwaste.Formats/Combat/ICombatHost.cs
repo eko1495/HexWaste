@@ -68,6 +68,11 @@ public interface ICombatHost
     /// Default empty so the fake test host stays inert (no inventory model) and the combat goldens
     /// hold (the golden-fight critters carry no weapons). P43.</summary>
     IReadOnlyList<(ProtoInfo Proto, MapObject Item)> CritterInventoryWeapons(MapObject critter) => [];
+    /// <summary>ported from fallout2-ce src/combat_ai.cc aiHaveAmmo (:1765): the CALIBERS of every ammo
+    /// item the critter carries, so a ranged weapon with an empty magazine still counts as usable when
+    /// matching ammo is in the bag. Default empty — with no carried ammo the caller falls back to the
+    /// loaded-round count, which is exactly the pre-port behaviour (so the fixtures stay inert).</summary>
+    IReadOnlyList<int> CarriedAmmoCalibers(MapObject critter) => [];
     /// <summary>Wield a carried weapon (clear the old hand flag, set the new) — the AI weapon switch
     /// equips its best inventory weapon (_inven_wield, combat_ai.cc:2623). Default no-op (P43).</summary>
     void EquipWeapon(MapObject critter, MapObject weaponItem) { }

@@ -114,4 +114,25 @@ public class AiBestWeaponTests
     [InlineData(0x106, 0, 1)] // single, BigGun flag (0x100), normal → SKILL_BIG_GUNS
     public void WeaponClassMapsSkill(int extFlags, int damageType, int expected)
         => Assert.Equal(expected, WeaponClass.Skill(extFlags, damageType));
+
+    [Fact]
+    public void AvgDamageIsTheMidpointWithoutAPerk()
+    {
+        // weaponPerk -1 = no perk (WeaponProtoStats.WeaponPerk's default).
+        Assert.Equal(7, AiBestWeapon.AvgDamage(minDamage: 4, maxDamage: 10, weaponPerk: -1));
+    }
+
+    [Fact]
+    public void AvgDamageDoublesWhenTheWeaponHasAPerk()
+    {
+        // combat_ai.cc:1866 — SFALL "Lower weapon score multiplier for having perk": avgDamage *= 2.
+        // PerkAccurate == 59.
+        Assert.Equal(14, AiBestWeapon.AvgDamage(minDamage: 4, maxDamage: 10, weaponPerk: 59));
+    }
+
+    [Fact]
+    public void AvgDamageUsesIntegerDivisionLikeTheEngine()
+    {
+        Assert.Equal(7, AiBestWeapon.AvgDamage(minDamage: 5, maxDamage: 10, weaponPerk: -1));
+    }
 }
