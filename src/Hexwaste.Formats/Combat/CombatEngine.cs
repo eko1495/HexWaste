@@ -1610,10 +1610,14 @@ public sealed class CombatEngine
 
     private static bool IsKnockedOut(MapObject c) => (c.CombatResults & CriticalTables.DamKnockedOut) != 0;
 
-    /// <summary>ported from fallout2-ce src/combat_ai.cc _combatai_rating (:3449): this critter's threat
-    /// rating, 0 for a null/dead/knocked-out critter (the engine's DAM_DEAD | DAM_KNOCKED_OUT and
-    /// non-critter guards). NOTE: the engine sums over BOTH hands (critterGetItem1/critterGetItem2);
-    /// Hexwaste models one wielded slot, so the equipped weapon is the only candidate.</summary>
+    /// <summary>ported from fallout2-ce src/combat_ai.cc _combatai_rating (:3449-3479): this critter's
+    /// threat rating, 0 for a null/dead/knocked-out critter (the engine's DAM_DEAD | DAM_KNOCKED_OUT and
+    /// non-critter guards). The reference takes max(meleeDamage, item2 maxDamage, item1 maxDamage) + AC —
+    /// a MAX over melee and both hands, not a sum (AiRating.Score already implements the max correctly;
+    /// only this comment was wrong). Hexwaste models one wielded slot rather than two hands, so it
+    /// considers only the actively-wielded weapon (EquippedWeapon) — for the dude, a weapon carried in a
+    /// non-active hand is not considered. Currently unreachable in practice: Rating is only ever called
+    /// on hostiles, which don't have a second-hand concept here either.</summary>
     private int Rating(MapObject? critter)
     {
         if (critter is null || critter.IsDead || IsKnockedOut(critter))
@@ -1631,7 +1635,7 @@ public sealed class CombatEngine
     /// deferred because it changes NPC-vs-NPC brawl outcomes (affects encounter fixtures);
     /// it belongs to the re-record tier. Hexwaste's team gate is retained — the engine's
     /// equivalent gate lives in the callers.</summary>
-    private void RegisterHit(MapObject target, MapObject attacker)
+    private static void RegisterHit(MapObject target, MapObject attacker)
     {
         if (target.IsDead || attacker == target || attacker.Team == target.Team)
             return;
@@ -2474,8 +2478,11 @@ public sealed class CombatEngine
         // _ai_switch_weapons (combat_ai.cc:2606) → _ai_search_environ (combat_ai.cc:2178): nothing usable
         // in the bag → look for a weapon lying on the ground within PE+5 hexes, walk to it, pick it up and
         // wield it. _ai_search_environ opens with its OWN stricter gate — BIPED only (unlike the bag search
-        // above, which also admits ROBOTIC per _ai_search_inven_weap, combat_ai.cc:2004-2006).
-        if (bodyType != 0) // BODY_TYPE_BIPED
+        // above, which also admits ROBOTIC per _ai_search_inven_weap, combat_ai.cc:2004-2006). Both-arms-
+        // crippled is ALSO a hard no here: _ai_can_use_weapon's FIRST check (combat_ai.cc:1974-1977) rejects
+        // every weapon before the two-handed gate even runs, so a both-arms-crippled critter can never wield
+        // a weapon picked up off the ground either, not just one already in its bag.
+        if (bodyType != 0 || bothArmsCrippled) // BODY_TYPE_BIPED
             return (null, null);
 
         // A remembered item may have been claimed by someone else since last turn — the closest reference
@@ -2520,6 +2527,30 @@ public sealed class CombatEngine
             _aiLastItem[enemy] = g; // not adjacent yet — resume next turn (aiInfoSetLastItem)
         }
         return (null, null); // fists
+    }
+
+    /// <summary>Important 2 (final review): the AiSwitchWeapon candidate gate admits a ranged weapon
+    /// with an empty magazine when a matching caliber is carried (:2451-2453), but that weapon still
+    /// cannot fire until reloaded. ported from fallout2-ce src/combat_ai.cc _ai_try_attack (:2731-2757):
+    /// the reference loops _combat_check_bad_shot after every _ai_switch_weapons call and, on
+    /// COMBAT_BAD_SHOT_NO_AMMO, reloads BEFORE ever attempting to fire — never a free/negative-ammo shot.
+    /// Call this right after any AiSwitchWeapon result. Returns true when the turn was spent reloading
+    /// (the caller should `return true` for this action); otherwise the weapon/item/isGun out params are
+    /// cleared to fists when the switched-to gun could not be reloaded, so the caller never fires it dry.</summary>
+    private bool TryReloadSwitchedGun(MapObject enemy, ref ProtoInfo? weapon, ref MapObject? weaponItem, ref bool isGun)
+    {
+        if (!isGun || _host.WeaponAmmo(weapon!, weaponItem!) > 0)
+            return false;
+        if (_actingEnemyAp >= RangedMath.ReloadApCost && _host.TryReload(enemy, weapon!, weaponItem!))
+        {
+            _actingEnemyAp -= RangedMath.ReloadApCost;
+            return true;
+        }
+        // Can't reload (no AP, or no matching ammo actually retrievable) — not a usable weapon this turn.
+        weapon = null;
+        weaponItem = null;
+        isGun = false;
+        return false;
     }
 
     /// <summary>P43 harness: run the AI inventory weapon switch for <paramref name="enemy"/> as if its
@@ -2670,6 +2701,10 @@ public sealed class CombatEngine
             // it (_ai_switch_weapons → _ai_search_inven_weap, combat_ai.cc:2596). None → fists.
             (enemyWeapon, enemyWeaponItem) = AiSwitchWeapon(enemy, ai, enemyDistance, enemyWeaponItem);
             enemyGun = enemyWeapon?.Weapon is { } ew2 && ew2.IsGun(enemyWeapon.ExtendedFlags);
+            // Important 2: the switch may have landed on ANOTHER gun that is itself empty — reload it
+            // (or drop to fists) before ever computing an attack range/firing with it.
+            if (TryReloadSwitchedGun(enemy, ref enemyWeapon, ref enemyWeaponItem, ref enemyGun))
+                return true;
         }
 
         // P78-M4: an NPC with crippled arms can't wield its weapon (both arms → any weapon, one arm →
@@ -2708,6 +2743,10 @@ public sealed class CombatEngine
         if (switched)
         {
             enemyGun = enemyWeapon?.Weapon is { } ew3 && ew3.IsGun(enemyWeapon.ExtendedFlags);
+            // Important 2: same re-check as the dry-gun switch above — don't let this switch land on
+            // an unloaded gun and fire it unreloaded.
+            if (TryReloadSwitchedGun(enemy, ref enemyWeapon, ref enemyWeaponItem, ref enemyGun))
+                return true;
             attackRange = enemyGun ? enemyWeapon!.Weapon!.MaxRange1
                 : Math.Min(enemyWeapon?.Weapon?.MaxRange1 ?? 1, 2);
             attackCost = enemyWeapon?.Weapon?.ApCost ?? CombatMath.PunchApCost;

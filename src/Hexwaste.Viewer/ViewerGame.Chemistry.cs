@@ -132,7 +132,13 @@ public sealed partial class ViewerGame
     /// <summary>The NPC analogue of ApplyDrugEffect's 0..34 branch (item.cc _perform_drug_effect, :2639):
     /// fold a kick into the critter's _npcDrugBonus. NPCs have no character sheet, so only the SPECIAL /
     /// derived bonus band and current HP apply — poison/radiation (36/37) are dude-only in Hexwaste.
-    /// No RNG: the -2 random-range roll is immediate-only, and every scheduled kick is a fixed delta.</summary>
+    /// No RNG: the -2 random-range roll is immediate-only, and every scheduled kick is a fixed delta.
+    /// NOTE (final review, follow-up — not a gap): item.cc:2680-2688 has a `_combatKillCritterOutsideCombat`
+    /// call when a non-dude critter's stat-35 (current HP) kick would drop it to ≤0 outside combat. This
+    /// method has no equivalent — deliberately: no vanilla combat drug (Jet/Psycho/etc., the only drugs an
+    /// NPC ever quaffs via `TryNpcUseCombatDrug`) carries a negative stat-35 delta, so the branch would
+    /// never fire on this game's content. Revisit only if an NPC-usable drug with a negative HP kick is
+    /// ever added.</summary>
     private void ApplyNpcDrugEffect(MapObject critter, int[] stats, int[] amounts)
     {
         int[] bonus = _npcDrugBonus.TryGetValue(critter, out int[]? b) ? b : _npcDrugBonus[critter] = new int[35];

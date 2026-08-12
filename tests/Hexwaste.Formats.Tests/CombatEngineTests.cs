@@ -931,6 +931,63 @@ public class CombatEngineTests
     }
 
     [Fact]
+    public void BothArmsCrippledNeverRetrievesOrWieldsAGroundWeapon()
+    {
+        // Important 1 (final review): _ai_can_use_weapon's FIRST check is both-arms-crippled → false
+        // (combat_ai.cc:1974-1977), BEFORE the two-handed gate — a both-arms-crippled critter can never
+        // wield ANY weapon, ground or bag. The bag-search loop already gated on bothArmsCrippled (:2432);
+        // the ground-pickup branch that follows it did not, so a both-arms-crippled BIPED with an empty
+        // bag would walk to a ground weapon, retrieve it, and wield it anyway.
+        var host = new FakeCombatHost();
+        MapObject dude = host.SetDude(NewCritter(tile: 20100, hp: 30, ap: 10));
+        MapObject enemy = host.AddCritter(NewCritter(tile: Step(20100, 0, 1), hp: 30, ap: 10, skill: 120));
+        enemy.CombatResults = CriticalTables.DamCripArmAny; // both arms crippled
+        host.AiPackets[enemy] = new AiPacket(12, "Guard", MinToHit: 0, MinHp: 0, 0, "", "", 0, 0, BestWeapon: 3);
+
+        MapObject groundItem = TestItem(0x300);
+        groundItem.HexTile = Step(20100, 0, 4); // within perception+5, on the way it would otherwise take
+        host.Ground.Add((TestWeapon(0x300, 0x06, 4, 10), groundItem));
+
+        var engine = new CombatEngine(host, new MinRng());
+
+        Assert.Equal(-1, engine.ProbeAiWeaponSwitch(enemy, dude));
+        Assert.Empty(host.Equips);
+        Assert.Empty(host.RetrieveAttempts); // never even tried — the both-arms-crippled gate returns first
+        Assert.DoesNotContain(groundItem, enemy.Inventory);
+    }
+
+    [Fact]
+    public void EnemySwitchedToAnEmptyGunDoesNotFireUnloaded()
+    {
+        // Important 2 (final review): the candidate gate (:2451-2453) now admits a ranged weapon with
+        // WeaponAmmo <= 0 when a matching caliber is carried, but the reload attempt (:2661-2673) only
+        // ever re-checks the PRE-switch weapon — a switched-to gun with an empty magazine used to fire
+        // straight through EnemyAttack (:3113-3114), taking AmmoQuantity to -1 for a free unloaded shot.
+        // ported from fallout2-ce src/combat_ai.cc _ai_try_attack (:2731-2757): the reference loops
+        // _combat_check_bad_shot after every _ai_switch_weapons call and reloads on NO_AMMO before ever
+        // firing, rather than shooting an unloaded weapon.
+        var host = new FakeCombatHost { LoadedAmmoCount = 0 }; // every gun in play reports an empty magazine
+        host.CarriedCalibersOverride = [0];                    // matches TestWeapon's default caliber
+        MapObject dude = host.SetDude(NewCritter(tile: 20100, hp: 30, ap: 10));
+        int eTile = Step(20100, 0, 5); // out of fist range, well inside a gun's MaxRange1
+        MapObject enemy = host.AddCritter(NewCritter(tile: eTile, hp: 30, ap: 10, skill: 100));
+        host.AiPackets[enemy] = new AiPacket(12, "Guard", MinToHit: 0, MinHp: 0, 0, "", "", 0, 0, BestWeapon: 4 /* ranged */);
+        host.Equipped = (TestWeapon(0x100, 0x06, 5, 12), TestItem(0x100)); // dry equipped gun, can't reload (fake host)
+
+        MapObject backupItem = TestItem(0x201);
+        backupItem.AmmoQuantity = 0; // sentinel: an unfired weapon's ammo must never go negative from here
+        host.InventoryWeapons[enemy] = [(TestWeapon(0x201, 0x06, 4, 10), backupItem)]; // a second gun, ALSO dry
+
+        var engine = new CombatEngine(host, new MinRng());
+        engine.BeginScriptAggro(enemy, dude);
+        engine.Step();
+
+        Assert.Contains((enemy, backupItem), host.Equips); // it DID switch to the backup...
+        Assert.Equal(30, dude.CurrentHp);                  // ...but never fired it unloaded
+        Assert.True(backupItem.AmmoQuantity >= 0);         // ...and never decremented into negative "phantom ammo"
+    }
+
+    [Fact]
     public void EnemyWithAchievableMinToHitStillAttacks()
     {
         var host = new FakeCombatHost();
@@ -2494,6 +2551,10 @@ public class CombatEngineTests
         public int WeaponAmmo(ProtoInfo weaponProto, MapObject item) => LoadedAmmoCount;
         public AmmoProtoStats? LoadedAmmo(ProtoInfo weaponProto, MapObject item) => null;
         public bool TryReload(MapObject holder, ProtoInfo weaponProto, MapObject item) => false;
+        // Important 2 (final review): the calibers CarriedAmmoCalibers reports as "in the bag" — override
+        // per test so a candidate gun with WeaponAmmo <= 0 can still qualify (aiHaveAmmo's caliber match).
+        public IReadOnlyList<int> CarriedCalibersOverride = [];
+        public IReadOnlyList<int> CarriedAmmoCalibers(MapObject critter) => CarriedCalibersOverride;
         public Func<int, MapObject?>? BlockerOverride; // tests that need critters/walls on the line
         public MapObject? ShootBlockerAt(int tile, MapObject shooter, MapObject target) => BlockerOverride?.Invoke(tile);
         public bool IsBlocked(int tile) => false;

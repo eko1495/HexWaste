@@ -47,9 +47,12 @@ what's left is smaller and more precisely scoped than the 2026-07-16 pass below.
   weapon-perk ×2 damage factor; `aiHaveAmmo` inventory-caliber search; NPC combat-drug (Jet/Psycho)
   timed wear-off on the game clock (replacing the old "cleared at combat end" behavior); AI
   ground-weapon pickup (`_ai_search_environ` + `_ai_retrieve_object`, BIPED-only, with a
-  stale/claimed-item guard); and the two remaining `_ai_switch_weapons` triggers — a crippled arm
-  making the wielded weapon unusable (`combat_ai.cc:2800`) and already-unarmed-and-out-of-range
-  (`combat_ai.cc:2823`), both wired in `CombatEngine.cs` `TryEnemyAction`.
+  stale/claimed-item guard); and the two crippled/out-of-range `_ai_switch_weapons` triggers — a
+  crippled arm making the wielded weapon unusable (`combat_ai.cc:2800`) and already-unarmed-and-
+  out-of-range (`combat_ai.cc:2823`), both wired in `CombatEngine.cs` `TryEnemyAction`. The
+  reference's crippled-arm branch condition is actually `reason == NOT_ENOUGH_AP || ARM_CRIPPLED ||
+  BOTH_ARMS_CRIPPLED` (`combat_ai.cc:2799-2804`) — the not-enough-AP site of that OR is neither
+  wired nor exercised here; only the two crippled sites landed this batch.
 - **Deferred mid-batch to the re-record tier:** rating-gated retaliation
   (`_combatai_check_retaliation`). It was implemented, then found to move the `brawl-watch`
   encounter fixture (rounds 11→9, survivors 1→2, winning team 2→1); the project owner ruled it be
@@ -68,9 +71,24 @@ what's left is smaller and more precisely scoped than the 2026-07-16 pass below.
 - **Still in the re-record tier** (unchanged by this batch — see the individual re-record-tier
   bullets below for detail): ring-spiral explosion damage; `_combat_safety_invalidate_weapon` +
   `_cai_retargetTileFromFriendlyFire` (ally-in-LoF weapon-switch invalidation + snipe-back is
-  partial, `CombatEngine.cs:2375-2380`); `_ai_danger_source` + perception-based
+  partial, `FriendlyOnFireLine`, `CombatEngine.cs:2382-2390`); `_ai_danger_source` + perception-based
   `PruneEscapedHostiles`; the `_ai_best_weapon` explosive ×(extras+1) factor; and now the
   rating-gated retaliation above.
+- **Final-review follow-ups (not implemented — documentation only):**
+  - The out-of-range switch trigger (`CombatEngine.cs` `TryEnemyAction`) is ordered AHEAD of the
+    reference's flee check: the engine's `COMBAT_BAD_SHOT_OUT_OF_RANGE` branch
+    (`combat_ai.cc:2807-2815`) evaluates `_determine_to_hit_no_range` with the PRE-switch weapon and
+    flees BEFORE switching if it can never land a hit; Hexwaste's min-to-hit flee check runs before
+    the switch too, but on the POST-switch weapon shape at the call site — a residual ordering
+    divergence, unexercised by any golden.
+  - The AI's ground-pickup walk (`_ai_search_environ` → `TryRetrieveItem`/`StartWalk`) deducts no AP
+    from `_actingEnemyAp`, unlike the reference's move-then-pickup cost.
+  - `_npcDrugBonus`/`_pendingDrugEvents` are never cleared on map change: a living NPC that chemmed
+    up mid-fight and was left behind on the old map (not killed, not carried to the new map) retains
+    a strong `MapObject` reference plus a pending timed event indefinitely.
+  - `ApplyNpcDrugEffect` has no `_combatKillCritterOutsideCombat` analogue — intentional, not a gap:
+    no vanilla combat drug applies a negative stat-35 (`current_hp`-adjacent) kick outside combat, so
+    there is nothing for such a hook to catch. (Also noted as a code comment at the call site.)
 
 **A3 — Per-ally whoHitMe tracker (party tactics). GROUNDED + FIXED (2026-07-16).** The claim was
 half-stale: the per-critter `WhoHitMe` tracker *does* exist (added P101, `CombatEngine.cs:1616`),
