@@ -596,6 +596,56 @@ public class CombatEngineTests
         Assert.True(EnemyAttacks(CriticalTables.DamCripArmAny));   // both arms crippled → fists, still attacks
     }
 
+    [Fact]
+    public void EnemyWithACrippledArmSwitchesToACarriedOneHandedBackupInsteadOfFists()
+    {
+        // ported from fallout2-ce src/combat_ai.cc _ai_try_attack (:2800): when the wielded weapon is
+        // blocked by a crippled arm (WeaponBlockedByCrippledArms), _ai_switch_weapons is called — it isn't
+        // an automatic drop to fists. With a one-handed backup in the bag matching the ai.txt preference,
+        // the enemy should re-arm with it (and still land the attack this same turn), not punch.
+        var host = new FakeCombatHost { LoadedAmmoCount = 10 };
+        MapObject dude = host.SetDude(NewCritter(tile: 20100, hp: 30, ap: 10));
+        MapObject enemy = host.AddCritter(NewCritter(tile: HexGrid.TileInDirection(20100, 0), hp: 30, ap: 10, skill: 100));
+        enemy.CombatResults = CriticalTables.DamCripArmLeft; // one arm crippled
+        host.AiPackets[enemy] = new AiPacket(12, "Guard", MinToHit: 0, MinHp: 0, 0, "", "", 0, 0, BestWeapon: 2 /* melee */);
+        host.Equipped = (TestWeapon(0x100, 0x206, 5, 10), TestItem(0x100)); // two-handed → blocked by the crip
+
+        MapObject backupItem = TestItem(0x201);
+        host.InventoryWeapons[enemy] = [(TestWeapon(0x201, 0x03, 4, 10), backupItem)]; // one-handed melee (swing)
+
+        var engine = new CombatEngine(host, new MinRng());
+        engine.BeginScriptAggro(enemy, dude);
+        for (int i = 0; i < 50 && engine.Phase == CombatPhase.EnemyTurn; i++) { host.Animating.Clear(); engine.Step(); }
+
+        Assert.Contains((enemy, backupItem), host.Equips); // switched to the backup, not just dropped to fists
+        Assert.True(dude.CurrentHp < 30);                  // and attacked with it this turn
+    }
+
+    [Fact]
+    public void UnarmedEnemyOutOfRangeSwitchesToACarriedWeaponBeforeClosingIn()
+    {
+        // ported from fallout2-ce src/combat_ai.cc _ai_try_attack (:2823): COMBAT_BAD_SHOT_OUT_OF_RANGE
+        // with weapon == null calls _ai_switch_weapons before falling back to _ai_move_closer. An unarmed
+        // enemy standing 3 hexes off with a ranged backup in its bag should arm itself and shoot, rather
+        // than walking in to throw punches.
+        var host = new FakeCombatHost { LoadedAmmoCount = 10 };
+        MapObject dude = host.SetDude(NewCritter(tile: 20100, hp: 30, ap: 10));
+        int eTile = Step(20100, 0, 3); // 3 hexes away — out of fist range (1), never armed to begin with
+        MapObject enemy = host.AddCritter(NewCritter(tile: eTile, hp: 30, ap: 10, skill: 100));
+        host.AiPackets[enemy] = new AiPacket(12, "Guard", MinToHit: 0, MinHp: 0, 0, "", "", 0, 0, BestWeapon: 4 /* ranged */);
+        // no host.Equipped — genuinely unarmed
+
+        MapObject rangedItem = TestItem(0x201);
+        host.InventoryWeapons[enemy] = [(TestWeapon(0x201, 0x06, 4, 10), rangedItem)]; // a ranged pistol
+
+        var engine = new CombatEngine(host, new MinRng());
+        engine.BeginScriptAggro(enemy, dude);
+        engine.Step();
+
+        Assert.Contains((enemy, rangedItem), host.Equips); // armed itself instead of walking in unarmed
+        Assert.Equal(eTile, enemy.HexTile);                // in range with the new weapon → no approach needed
+    }
+
     // --- P68: AI-packet enemy distance (stay / snipe) ---------------------------------
 
     [Fact]

@@ -2400,9 +2400,9 @@ public sealed class CombatEngine
     /// ×(extras+1) factor (Hexwaste tracks no explosive extras) — the weapon-perk ×2 factor IS applied
     /// (AiBestWeapon.AvgDamage); _combat_safety_invalidate_weapon (ally-in-line-of-fire / over-range
     /// "ignore") is not applied (Ignore stays false); ranged ammo availability now searches the carried
-    /// inventory's calibers (CarriedAmmoCalibers), matching aiHaveAmmo; art-exists is assumed. Only the
-    /// dry-gun trigger is wired (the slice driver); the engine also switches on arm-crippled /
-    /// out-of-range-no-weapon (combat_ai.cc:2800/2823) — same helper, not wired.
+    /// inventory's calibers (CarriedAmmoCalibers), matching aiHaveAmmo; art-exists is assumed. Wired at
+    /// three triggers: dry gun with no reload, a crippled arm making the wielded weapon unusable, and
+    /// already-unarmed-and-out-of-range (combat_ai.cc:2800/2823 — the enemy-attack path in TryEnemyAction).
     /// </summary>
     // Enemy entry: reads best_weapon + min_to_hit from the ai.txt packet.
     private (ProtoInfo?, MapObject?) AiSwitchWeapon(MapObject enemy, AiPacket? ai, int distance, MapObject? currentItem) =>
@@ -2673,9 +2673,10 @@ public sealed class CombatEngine
         }
 
         // P78-M4: an NPC with crippled arms can't wield its weapon (both arms → any weapon, one arm →
-        // a two-handed weapon, combat.cc:5655) — drop to fists, the symmetric counterpart of the dude
-        // gate (P18-M2). Inert unless the dude has crippled an enemy's arm with an aimed shot.
-        if (enemyWeapon is not null && WeaponBlockedByCrippledArms(enemy, enemyWeapon) is not null)
+        // a two-handed weapon, combat.cc:5655) — drop to fists first, the symmetric counterpart of the
+        // dude gate (P18-M2). Inert unless the dude has crippled an enemy's arm with an aimed shot.
+        bool crippledBlock = enemyWeapon is not null && WeaponBlockedByCrippledArms(enemy, enemyWeapon) is not null;
+        if (crippledBlock)
         {
             enemyWeapon = null;
             enemyWeaponItem = null;
@@ -2685,6 +2686,33 @@ public sealed class CombatEngine
         int attackRange = enemyGun ? enemyWeapon!.Weapon!.MaxRange1
             : Math.Min(enemyWeapon?.Weapon?.MaxRange1 ?? 1, 2);
         int attackCost = enemyWeapon?.Weapon?.ApCost ?? CombatMath.PunchApCost;
+
+        // _ai_try_attack (combat_ai.cc:2800): a crippled arm just made the wielded weapon unusable →
+        // switch to whatever the critter can still use (one-handed / fists). Else (combat_ai.cc:2823):
+        // already unarmed and out of range with the current weapon → try to arm ourselves before falling
+        // back to moving closer. _combat_check_bad_shot (combat.cc:5643) returns ONE mutually exclusive
+        // bad-shot reason per attempt — arm-crippled outranks out-of-range in that ordering — so this is
+        // an if/else-if (mirroring the reason dispatch), not two independent triggers that could both
+        // fire and double up the switch's RNG draw (best_weapon == 7 coin flip).
+        bool switched = false;
+        if (crippledBlock)
+        {
+            (enemyWeapon, enemyWeaponItem) = AiSwitchWeapon(enemy, ai, enemyDistance, enemyWeaponItem);
+            switched = true;
+        }
+        else if (enemyWeapon is null && enemyDistance > attackRange)
+        {
+            (enemyWeapon, enemyWeaponItem) = AiSwitchWeapon(enemy, ai, enemyDistance, enemyWeaponItem);
+            switched = true;
+        }
+        if (switched)
+        {
+            enemyGun = enemyWeapon?.Weapon is { } ew3 && ew3.IsGun(enemyWeapon.ExtendedFlags);
+            attackRange = enemyGun ? enemyWeapon!.Weapon!.MaxRange1
+                : Math.Min(enemyWeapon?.Weapon?.MaxRange1 ?? 1, 2);
+            attackCost = enemyWeapon?.Weapon?.ApCost ?? CombatMath.PunchApCost;
+        }
+
         int minToHit = ai?.MinToHit ?? 0;
         CritterState? self = _host.GetCritterState(enemy);
         CritterState? def = _host.GetCritterState(defenderObj);

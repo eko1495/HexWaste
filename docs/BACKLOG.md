@@ -38,17 +38,39 @@ reaction meter/head-mood — are both wired (P31/P122). So karma already works w
 it; the "cosmetic" appearance is a CONTENT-slice consequence, not an engine gap. Building "karma
 effects" would mean inventing behavior fo2ce lacks (violates "port, don't guess"). **Closed.**
 
-**A2 — Combat-AI fidelity residuals. GROUNDED: real but DELIBERATELY-DEFERRED cuts (2026-07-16).**
-*Effort M (golden re-records) · medium-high impact.* All five are annotated in-code as documented
-divergences/deferrals (not mirages, not accidental gaps) — each is golden-heavy combat-fidelity
-polish, correctly parked. Only pursue if the goal is combat feel. Core AI is faithful; residuals:
-- `_combat_safety` (`combat.cc:2249`) wires only gun-hold-when-teammate-in-LoF; ally-in-LoF
-  weapon-switch invalidation + snipe-back is partial (`CombatEngine.cs:2375-2380`).
-- `_combatai_rating` not ported → whoHitMe retaliation is "last-hitter-wins" vs rating-based.
-- NPC combat-drug (Jet/Psycho) use has **no timed wear-off** — bonus cleared at combat end
-  (`Combat/AiCombatDrug.cs`).
-- Perception-based **disengage** (`_combatai_want_to_stop`, combat_ai.cc site 3) deferred (P113 4.3).
-- `_ai_best_weapon` score omits the weapon-perk ×2 and explosive ×(extras+1) factors.
+**A2 — Combat-AI fidelity residuals. RECONCILED after the fo2ce-combat-ai-fidelity batch
+(2026-08-12).** *Effort M (golden re-records) · medium-high impact.* Most of the batch landed;
+what's left is smaller and more precisely scoped than the 2026-07-16 pass below.
+
+- **Ported this batch:** `_combatai_rating` (`AiRating.cs`) feeding the companion Strongest/Weakest
+  comparators (vanilla's inverted-comparator quirk deliberately preserved); the `_ai_best_weapon`
+  weapon-perk ×2 damage factor; `aiHaveAmmo` inventory-caliber search; NPC combat-drug (Jet/Psycho)
+  timed wear-off on the game clock (replacing the old "cleared at combat end" behavior); AI
+  ground-weapon pickup (`_ai_search_environ` + `_ai_retrieve_object`, BIPED-only, with a
+  stale/claimed-item guard); and the two remaining `_ai_switch_weapons` triggers — a crippled arm
+  making the wielded weapon unusable (`combat_ai.cc:2800`) and already-unarmed-and-out-of-range
+  (`combat_ai.cc:2823`), both wired in `CombatEngine.cs` `TryEnemyAction`.
+- **Deferred mid-batch to the re-record tier:** rating-gated retaliation
+  (`_combatai_check_retaliation`). It was implemented, then found to move the `brawl-watch`
+  encounter fixture (rounds 11→9, survivors 1→2, winning team 2→1); the project owner ruled it be
+  deferred rather than re-record the fixture. `RegisterHit`/whoHitMe remains last-hitter-wins.
+- **Cut (needs prior work):** `_ai_search_inven_armor` (companion armor auto-equip,
+  `combat_ai.cc:2051`) — Hexwaste has no per-NPC worn-armor model (`ApplyArmorBonus`,
+  `ViewerGame.cs:4318`, folds armor into the dude's sheet only; `CritterState` has no worn-armor
+  slot for any other critter). Needs a `WornArmorProto`/equip pair (stat bonuses, DR/DT in the
+  damage path, sprite fid) as its own task before this item can land.
+- **Grounding corrections recorded this batch:** `attack_who` is party-member-only
+  (`combat_ai.cc:1544`), so Hexwaste's companion-only application of it is faithful, not a gap;
+  `_combatai_rating` also keys `_compare_strength`/`_compare_weakness` (the previous HP-based
+  companion ranking was an undocumented divergence, now fixed); perception-based disengage was
+  already ported (`WantsToStopFighting`) — the piece still deferred is `PruneEscapedHostiles`,
+  which needs the golden-moving `_ai_danger_source`.
+- **Still in the re-record tier** (unchanged by this batch — see the individual re-record-tier
+  bullets below for detail): ring-spiral explosion damage; `_combat_safety_invalidate_weapon` +
+  `_cai_retargetTileFromFriendlyFire` (ally-in-LoF weapon-switch invalidation + snipe-back is
+  partial, `CombatEngine.cs:2375-2380`); `_ai_danger_source` + perception-based
+  `PruneEscapedHostiles`; the `_ai_best_weapon` explosive ×(extras+1) factor; and now the
+  rating-gated retaliation above.
 
 **A3 — Per-ally whoHitMe tracker (party tactics). GROUNDED + FIXED (2026-07-16).** The claim was
 half-stale: the per-critter `WhoHitMe` tracker *does* exist (added P101, `CombatEngine.cs:1616`),
