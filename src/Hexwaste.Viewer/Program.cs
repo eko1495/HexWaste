@@ -512,6 +512,10 @@ for (int i = 0; i < args.Length; i++)
         case "--kill" when i + 1 < args.Length: // P104: kill the critter at <hex> (fires its destroy_p_proc)
             actions.Add(new ViewerGame.StartupAction.KillCritterAt(int.Parse(args[++i])));
             break;
+        case "--ai-pickup-probe" when i + 2 < args.Length: // NPC weapon-switch ground-pickup fallback
+            actions.Add(new ViewerGame.StartupAction.AiPickupProbe(
+                int.Parse(args[++i]), int.Parse(args[++i])));
+            break;
         case "--approach" when i + 1 < args.Length: // P109: click-simulate the object at <hex> (walk-to-then-interact)
             actions.Add(new ViewerGame.StartupAction.Approach(int.Parse(args[++i])));
             break;

@@ -874,6 +874,10 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
         /// <summary>P110 QA: start a scripted NPC walk (StartNpcWalk) from the critter at NpcHex to
         /// TargetHex — e2e-drives NPC door pathing headlessly with --advance-ms.</summary>
         public sealed record NpcWalk(int NpcHex, int TargetHex, bool Run = false) : StartupAction;
+        /// <summary>Fidelity probe: strip the critter at NpcHex of its wielded weapon, then run the AI
+        /// weapon switch against the critter at TargetHex — exercising the ground-pickup fallback
+        /// (_ai_search_environ → _ai_retrieve_object). Reports what it walked to and wielded.</summary>
+        public sealed record AiPickupProbe(int NpcHex, int TargetHex) : StartupAction;
         /// <summary>P100 (Point 3): run the MAP script's combat_p_proc "combat over" hook (fixedParam = a
         /// KO'er team) and report whether the map defines it + script_overrides — proves the prizefight
         /// caught-KO seam (_scr_end_combat) without needing a live fight.</summary>

@@ -68,6 +68,45 @@ public sealed partial class ViewerGame
     public IReadOnlyList<int> CarriedAmmoCalibers(MapObject critter) =>
         [.. critter.Inventory.Select(it => SafeProto(it.Pid)?.Ammo?.Caliber ?? -1).Where(c => c >= 0).Distinct()];
 
+    /// <summary>ported from fallout2-ce src/combat_ai.cc _ai_search_environ (:2178): item objects on the
+    /// current elevation within maxDistance, nearest first. PID type 0 == OBJ_TYPE_ITEM (Fid.PidType).</summary>
+    public IReadOnlyList<(ProtoInfo Proto, MapObject Item)> GroundItemsNear(MapObject critter, int maxDistance)
+    {
+        List<(ProtoInfo Proto, MapObject Item, int Distance)> found = [];
+        foreach (MapObject o in _flatObjects[_elevation].Concat(_solidObjects[_elevation]))
+        {
+            if (Fid.PidType(o.Pid) != 0)
+                continue; // OBJ_TYPE_ITEM only
+            int d = Formats.Hex.HexGrid.Distance(critter.HexTile, o.HexTile);
+            if (d > maxDistance)
+                continue;
+            if (SafeProto(o.Pid) is { } proto)
+                found.Add((proto, o, d));
+        }
+        return [.. found.OrderBy(f => f.Distance).Select(f => (f.Proto, f.Item))];
+    }
+
+    /// <summary>ported from fallout2-ce src/combat_ai.cc _ai_retrieve_object (:2237): adjacent → transfer
+    /// to inventory; otherwise start a walk toward it and report "not yet" so the caller remembers it for
+    /// next turn.</summary>
+    public bool TryRetrieveItem(MapObject critter, MapObject item)
+    {
+        if (Formats.Hex.HexGrid.Distance(critter.HexTile, item.HexTile) > 1)
+        {
+            StartWalk(critter, item.HexTile);
+            return false;
+        }
+        OnScriptObjectRemoved(item);
+        foreach (MapElevation? elev in _map.Elevations)
+            elev?.Objects.Remove(item);
+        _flatObjects[_elevation].Remove(item);
+        _solidObjects[_elevation].Remove(item);
+        critter.Inventory.Add(item);
+        _audio?.PlaySfx("ipickup1", SfxGain(critter)); // P117 sfx (inventory.cc:2364)
+        Log($"The {ObjectName(critter)} picks up: {ObjectName(item)}.");
+        return true;
+    }
+
     /// <summary>Wield a carried weapon: clear every in-hand flag in the bag, then set the new item's
     /// right hand (_inven_wield HAND_RIGHT) so <see cref="EquippedWeapon"/> returns it. P43.
     /// P118: the AI switch also updates the idle art + draw anim (_invenWieldFunc animate=true).</summary>

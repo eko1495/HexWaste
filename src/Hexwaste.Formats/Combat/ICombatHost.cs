@@ -73,6 +73,16 @@ public interface ICombatHost
     /// matching ammo is in the bag. Default empty — with no carried ammo the caller falls back to the
     /// loaded-round count, which is exactly the pre-port behaviour (so the fixtures stay inert).</summary>
     IReadOnlyList<int> CarriedAmmoCalibers(MapObject critter) => [];
+    /// <summary>ported from fallout2-ce src/combat_ai.cc _ai_search_environ (:2178): the ITEM objects
+    /// lying on the critter's elevation within <paramref name="maxDistance"/> hexes, nearest first
+    /// (the engine's _ai_sort_list_distance + the PE+5 cutoff at :2193). Default empty — nothing on the
+    /// ground means the AI behaves exactly as before the port.</summary>
+    IReadOnlyList<(ProtoInfo Proto, MapObject Item)> GroundItemsNear(MapObject critter, int maxDistance) => [];
+    /// <summary>ported from fallout2-ce src/combat_ai.cc _ai_retrieve_object (:2237): try to pick the item
+    /// up. Returns true when it is now in the critter's inventory; false when the critter is not adjacent
+    /// yet (a walk toward it was started — the engine's actionPickUp + _combat_turn_run, resumed next turn
+    /// via the caller's lastItem memory). Default false = no pickup ability (pre-port behaviour).</summary>
+    bool TryRetrieveItem(MapObject critter, MapObject item) => false;
     /// <summary>Wield a carried weapon (clear the old hand flag, set the new) — the AI weapon switch
     /// equips its best inventory weapon (_inven_wield, combat_ai.cc:2623). Default no-op (P43).</summary>
     void EquipWeapon(MapObject critter, MapObject weaponItem) { }

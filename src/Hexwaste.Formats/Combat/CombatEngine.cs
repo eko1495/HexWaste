@@ -109,6 +109,10 @@ public sealed class CombatEngine
     // turn (the remaining-AP dodge, stat.cc:239). A not-yet-acted critter carries full maxAp dodge;
     // an already-acted one its leftover. The dude is captured at EndPlayerTurn.
     private readonly Dictionary<MapObject, int> _currentAp = [];
+    /// <summary>ported from fallout2-ce src/combat_ai.cc aiInfoSetLastItem (:2258): the ground item a
+    /// critter is walking toward but could not reach this turn, so it resumes next turn instead of
+    /// re-deciding. Cleared when the item is retrieved and when combat ends.</summary>
+    private readonly Dictionary<MapObject, (ProtoInfo Proto, MapObject Item)> _aiLastItem = [];
     private int _round;
     private int _dudeAp;
     private bool _gameOver;
@@ -2063,6 +2067,7 @@ public sealed class CombatEngine
         foreach (MapObject c in _hostiles.Concat(_host.PartyMembers).Append(_host.Dude!).Where(c => c is not null).Distinct())
             c.CombatResults &= ~(CriticalTables.DamKnockedOut | CriticalTables.DamLoseTurn);
         _knockedDown.Clear();
+        _aiLastItem.Clear();
         _terminateRequested = false; // P35-M5
 
         _phase = CombatPhase.Idle;
@@ -2461,7 +2466,43 @@ public sealed class CombatEngine
         if (winner is { } w)
         {
             _host.EquipWeapon(enemy, w.Item);
+            _aiLastItem.Remove(enemy);
             return (w.Proto, w.Item);
+        }
+
+        // _ai_switch_weapons (combat_ai.cc:2606): nothing usable in the bag → look for a weapon lying on
+        // the ground within PE+5 hexes, walk to it, pick it up and wield it. BIPED/ROBOTIC only (the
+        // body-type gate above already returned for other bodies).
+        (ProtoInfo Proto, MapObject Item)? wanted =
+            _aiLastItem.TryGetValue(enemy, out (ProtoInfo Proto, MapObject Item) remembered) ? remembered : null;
+        if (wanted is null)
+        {
+            int perception = self?.Stat(CritterStat.Perception) ?? 0;
+            foreach ((ProtoInfo p, MapObject it) in _host.GroundItemsNear(enemy, perception + 5))
+            {
+                if (p.Weapon is null)
+                    continue;
+                int groundType = WeaponClass.AttackType(p.ExtendedFlags);
+                if (!AiBestWeapon.HasWeapPrefType(bestWeapon, groundType))
+                    continue;
+                if (self is not null
+                    && self.SkillValue(WeaponClass.Skill(p.ExtendedFlags, p.Weapon.DamageType)) < minToHit)
+                    continue;
+                if (anyArmCrippled && WeaponProtoStats.IsTwoHanded(p.ExtendedFlags))
+                    continue;
+                wanted = (p, it);
+                break;
+            }
+        }
+        if (wanted is { } g)
+        {
+            if (_host.TryRetrieveItem(enemy, g.Item))
+            {
+                _aiLastItem.Remove(enemy);
+                _host.EquipWeapon(enemy, g.Item);
+                return (g.Proto, g.Item);
+            }
+            _aiLastItem[enemy] = g; // not adjacent yet — resume next turn (aiInfoSetLastItem)
         }
         return (null, null); // fists
     }

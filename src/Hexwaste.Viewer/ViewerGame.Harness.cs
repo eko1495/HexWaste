@@ -833,6 +833,24 @@ public sealed partial class ViewerGame
                     Console.WriteLine($"kill: pid=0x{victim.Pid:X}@{killHex} dead={(victim.IsDead ? 1 : 0)}");
                     break;
                 }
+                case StartupAction.AiPickupProbe(var npcHex, var targetHex):
+                {
+                    MapObject? npc = CritterAt(npcHex, includeFlat: true);
+                    MapObject? target = CritterAt(targetHex, includeFlat: true);
+                    if (npc is null || target is null)
+                    {
+                        Console.Error.WriteLine($"ai-pickup-probe: no critter at {npcHex} or {targetHex}");
+                        break;
+                    }
+                    IReadOnlyList<(ProtoInfo Proto, MapObject Item)> ground =
+                        GroundItemsNear(npc, (GetCritterState(npc)?.Stat(Formats.Combat.CritterStat.Perception) ?? 0) + 5);
+                    Console.WriteLine($"ai-pickup-probe: ground items in range = {ground.Count}");
+                    foreach ((ProtoInfo p, MapObject it) in ground)
+                        Console.WriteLine($"  pid={p.Pid} tile={it.HexTile} weapon={p.Weapon is not null}");
+                    int pid = _combat.ProbeAiWeaponSwitch(npc, target);
+                    Console.WriteLine($"ai-pickup-probe: wielded pid={pid} tile={npc.HexTile}");
+                    break;
+                }
                 // _npcWalkProbe (field below) carries the walked NPC to the post-advance report.
                 case StartupAction.NpcWalk(var nwHex, var nwTarget, var nwRun):
                 {
