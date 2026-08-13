@@ -80,14 +80,20 @@ what's left is smaller and more precisely scoped than the 2026-07-16 pass below.
   (`CombatEngineTests.cs`), which fails when `ExplosionExtrasAt` is stubbed to return 0. Five
   documented divergences from the reference remain (see the `Explode`/`WeaponDamageRadius`/
   `ExplosionExtrasAt` doc comments in `CombatEngine.cs` for the exact citations): attacker backwash
-  is not ported (`combat.cc:4056-4060` — `arcaves-throw-grenade` exercises this: the dude takes
-  ordinary blast damage from his own grenade where the reference computes backwash separately); the
-  centre critter is hit first inside `Explode`'s own loop rather than through the reference's main
-  attack path; victim discovery is by tile-occupancy map, not per-tile `_obj_blocking_at` (differs
-  for multihex critters spanning several tiles); the grenade (2) / rocket (3) radius split is applied
-  in `WeaponDamageRadius` for the AI's count, but `Explode` itself still takes one caller-supplied
-  radius; and damage computation stays Hexwaste's pre-existing simplified formula, not
-  `attackComputeDamage`.
+  is not ported in the `Explode` DAMAGE path (`combat.cc:4056-4060` — `arcaves-throw-grenade`
+  exercises this: the dude takes ordinary blast damage from his own grenade where the reference
+  computes backwash separately). `ExplosionExtrasAt` — the AI's damage-free COUNTING helper for the
+  ×(extras+1) weapon-switch score — is a distinct site that hits the same `combat.cc:4056-4060`
+  special-case: it now excludes the attacker from its `occupied` tile set (fixed 2026-08-13; see its
+  doc comment), so the two attacker-vs-explosion sites (damage in `Explode`, counting in
+  `ExplosionExtrasAt`) diverge from the reference in different, independently-tracked ways — `Explode`
+  still applies ordinary (non-backwash) damage to a self-caught attacker; `ExplosionExtrasAt` now
+  correctly never counts the attacker as an "extra". The centre critter is hit first inside `Explode`'s
+  own loop rather than through the reference's main attack path; victim discovery is by tile-occupancy
+  map, not per-tile `_obj_blocking_at` (differs for multihex critters spanning several tiles); the
+  grenade (2) / rocket (3) radius split is applied in `WeaponDamageRadius` for the AI's count, but
+  `Explode` itself still takes one caller-supplied radius; and damage computation stays Hexwaste's
+  pre-existing simplified formula, not `attackComputeDamage`.
 - **Still in the re-record tier** (unchanged by this batch — see the individual re-record-tier
   bullets below for detail): `_combat_safety_invalidate_weapon` +
   `_cai_retargetTileFromFriendlyFire` (ally-in-LoF weapon-switch invalidation + snipe-back is
@@ -108,6 +114,19 @@ what's left is smaller and more precisely scoped than the 2026-07-16 pass below.
   - `ApplyNpcDrugEffect` has no `_combatKillCritterOutsideCombat` analogue — intentional, not a gap:
     no vanilla combat drug applies a negative stat-35 (`current_hp`-adjacent) kick outside combat, so
     there is nothing for such a hook to catch. (Also noted as a code comment at the call site.)
+  - **Genuine fidelity gap, not implemented (2026-08-13 review):** the explosive ×(extras+1) factor
+    is wired only for the ENEMY weapon-switch path — `TryEnemyAction` → `AiSwitchWeapon(..., defender:
+    defenderObj)` and its harness `ProbeAiWeaponSwitch` both supply a defender, so `ExplosionExtrasAt`
+    can count victims. `TryAllyAction` (`CombatEngine.cs:3068`) and `ProbeAllyWeaponSwitch` call the
+    same `AiSwitchWeapon` overload with NO defender argument, so companions' weapon-switch scoring
+    never gets the boost. Review traced the reference call graph — `combat_ai.cc:3060-3150` →
+    `_ai_try_attack` → `_ai_switch_weapons` → `_ai_best_weapon` — and confirmed it runs identically for
+    any AI-controlled combatant, including party members; the reference makes no enemy/ally
+    distinction here. So a companion carrying both a rifle and a grenade, with several hostiles
+    clustered around its target, will never prefer the grenade the way an enemy would. Follow-up:
+    thread a defender (the ally's current target) through `TryAllyAction`'s `AiSwitchWeapon` calls and
+    `ProbeAllyWeaponSwitch`, matching the enemy path. Not implemented in this fix (scope: enemy-path
+    porting-error corrections only) — recorded here as the documentation gap review flagged.
 
 **A3 — Per-ally whoHitMe tracker (party tactics). GROUNDED + FIXED (2026-07-16).** The claim was
 half-stale: the per-critter `WhoHitMe` tracker *does* exist (added P101, `CombatEngine.cs:1616`),

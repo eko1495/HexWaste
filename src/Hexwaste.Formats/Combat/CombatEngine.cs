@@ -2418,12 +2418,17 @@ public sealed class CombatEngine
     /// bodies search inventory (combat_ai.cc:2004); others keep fists. The ground-retrieval fallback
     /// (_ai_search_environ, combat_ai.cc:2178) is stricter still — BIPED only.
     ///
-    /// DOCUMENTED SIMPLIFICATIONS vs the engine: the avg-damage score omits the explosive-radius
-    /// ×(extras+1) factor (Hexwaste tracks no explosive extras) — the weapon-perk ×2 factor IS applied
-    /// (AiBestWeapon.AvgDamage); _combat_safety_invalidate_weapon (ally-in-line-of-fire / over-range
-    /// "ignore") is not applied (Ignore stays false); ranged ammo availability now searches the carried
-    /// inventory's calibers (CarriedAmmoCalibers), matching aiHaveAmmo; art-exists is assumed. Wired at
-    /// three triggers: dry gun with no reload, a crippled arm making the wielded weapon unusable, and
+    /// DOCUMENTED SIMPLIFICATIONS vs the engine: the avg-damage score applies the explosive-radius
+    /// ×(extras+1) factor (ExplosionExtrasAt) only when a <paramref name="defender"/> is supplied —
+    /// wired for the ENEMY path (TryEnemyAction/ProbeAiWeaponSwitch pass the dude as defender); the
+    /// ALLY path (TryAllyAction/ProbeAllyWeaponSwitch) passes no defender, so companions never get the
+    /// blast-radius boost even though the reference runs the same _ai_best_weapon for any AI-controlled
+    /// combatant (combat_ai.cc:3060-3150 → _ai_try_attack → _ai_switch_weapons → _ai_best_weapon) —
+    /// see docs/BACKLOG.md. The weapon-perk ×2 factor IS applied (AiBestWeapon.AvgDamage);
+    /// _combat_safety_invalidate_weapon (ally-in-line-of-fire / over-range "ignore") is not applied
+    /// (Ignore stays false); ranged ammo availability now searches the carried inventory's calibers
+    /// (CarriedAmmoCalibers), matching aiHaveAmmo; art-exists is assumed. Wired at three triggers: dry
+    /// gun with no reload, a crippled arm making the wielded weapon unusable, and
     /// already-unarmed-and-out-of-range (combat_ai.cc:2800/2823 — the enemy-attack path in TryEnemyAction).
     /// </summary>
     // Enemy entry: reads best_weapon + min_to_hit from the ai.txt packet.
@@ -2431,17 +2436,24 @@ public sealed class CombatEngine
         MapObject? defender = null) =>
         AiSwitchWeapon(enemy, ai?.BestWeapon ?? -1, ai?.MinToHit ?? 0, distance, currentItem, defender);
 
-    /// <summary>ported from fallout2-ce src/item.cc weaponGetDamageRadius (:1975): a ranged
+    /// <summary>ported from fallout2-ce src/item.cc weaponGetDamageRadius (:1975-1995): a ranged
     /// single-shot explosion weapon uses the rocket radius (3), a thrown grenade the grenade radius
     /// (2), everything else 0 (item.cc:3376-3377 — engine globals, not proto fields). weaponIsGrenade
-    /// is damage type EXPLOSION / PLASMA / EMP (item.cc:1968).</summary>
+    /// is damage type EXPLOSION / PLASMA / EMP (item.cc:1968-1972, proto_types.h:59-67: NORMAL 0,
+    /// LASER 1, FIRE 2, PLASMA 3, ELECTRICAL 4, EMP 5, EXPLOSION 6).
+    ///
+    /// The "fire single" test is NOT <c>AnimationCode</c> — that field is the held-weapon-sprite
+    /// selector (weaponGetAnimationCode, WEAPON_ANIMATION_* in art.h:91-101; 1 = WEAPON_ANIMATION_KNIFE),
+    /// unrelated to attack animation. The reference compares weaponGetAnimationForHitMode(...) against
+    /// ANIM_FIRE_SINGLE, which _attack_anim[extendedFlags &amp; 0xF] (item.cc:116-126) maps from nibble
+    /// index 6 — the same nibble WeaponClass.AttackType already reads to get RANGED for that index.</summary>
     private static int WeaponDamageRadius(ProtoInfo proto, int attackType)
     {
         if (proto.Weapon is not { } w)
             return 0;
-        bool blastDamage = w.DamageType is 6 /* EXPLOSION */ or 7 /* PLASMA */ or 8 /* EMP */;
-        if (attackType == WeaponClass.AttackRanged && w.AnimationCode == 1 /* ANIM_FIRE_SINGLE */
-            && w.DamageType == 6)
+        bool blastDamage = w.DamageType is 6 /* EXPLOSION */ or 3 /* PLASMA */ or 5 /* EMP */;
+        bool fireSingle = (proto.ExtendedFlags & 0xF) == 6; // ANIM_FIRE_SINGLE (item.cc:116-126)
+        if (attackType == WeaponClass.AttackRanged && fireSingle && w.DamageType == 6 /* EXPLOSION */)
             return 3; // gRocketExplosionRadius
         if (attackType == WeaponClass.AttackThrow && blastDamage)
             return 2; // gGrenadeExplosionRadius
@@ -2451,15 +2463,20 @@ public sealed class CombatEngine
     /// <summary>ported from fallout2-ce src/combat_ai.cc _ai_best_weapon (:1859-1862): how many EXTRA
     /// victims a blast at the defender's tile would catch — the engine calls
     /// _compute_explosion_on_extras with noDamage = 1 purely to read extrasLength. Counting only; no
-    /// damage, no RNG. Returns 0 for a non-blast weapon or a null defender.</summary>
-    private int ExplosionExtrasAt(ProtoInfo proto, int attackType, MapObject? defender)
+    /// damage, no RNG. Returns 0 for a non-blast weapon or a null defender.
+    ///
+    /// The attacker's own tile is excluded from the count: the reference's spiral scan special-cases
+    /// <c>obstacle == attack->attacker</c> and routes it to the backwash branch instead of
+    /// <c>attack->extras[]</c> (combat.cc:4056-4060), so a self-adjacent attacker never inflates its
+    /// own extrasLength.</summary>
+    private int ExplosionExtrasAt(ProtoInfo proto, int attackType, MapObject? defender, MapObject attacker)
     {
         int radius = WeaponDamageRadius(proto, attackType);
         if (radius <= 0 || defender is null)
             return 0;
         var occupied = new HashSet<int>();
         foreach (MapObject c in _host.CombatCritters)
-            if (!c.IsDead)
+            if (!c.IsDead && c != attacker)
                 occupied.Add(c.HexTile);
         int extras = 0;
         foreach (int tile in ExplosionSpiral.Tiles(defender.HexTile, radius))
@@ -2514,7 +2531,7 @@ public sealed class CombatEngine
 
                 var cand = new AiBestWeapon.Choice(attackType,
                     AiBestWeapon.AvgDamage(weapon.MinDamage, weapon.MaxDamage, weapon.WeaponPerk,
-                        ExplosionExtrasAt(proto, attackType, defender)),
+                        ExplosionExtrasAt(proto, attackType, defender, enemy)),
                     proto.Cost, IsFlare: proto.Pid == 79);
                 bool favorB = bestWeapon == 7 && _rng.Next(1, 101) <= 50; // RANDOM coin (inert on slice)
                 if (AiBestWeapon.Prefers(bestWeapon, best, cand, favorB))

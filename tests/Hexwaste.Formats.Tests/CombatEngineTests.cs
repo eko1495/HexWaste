@@ -810,6 +810,133 @@ public class CombatEngineTests
     }
 
     [Fact]
+    public void AiPrefersARocketLauncherWhenExtraVictimsPushItsScoreAhead()
+    {
+        // Review finding "Important 2": WeaponDamageRadius's ranged/fire-single test used
+        // w.AnimationCode (the held-weapon-sprite selector, art.h WEAPON_ANIMATION_*) instead of the
+        // extendedFlags nibble (item.cc _attack_anim[6] == ANIM_FIRE_SINGLE). TestWeapon always leaves
+        // AnimationCode == 0, so under the bug this branch NEVER returns a nonzero radius for ANY ranged
+        // weapon — a rocket launcher's own extras are always counted as 0 and it can never win a
+        // close-call vs a plain rifle. Two critters sit at hex-distance EXACTLY 3 from the defender
+        // (ring 3, TileInDirection distance:3) — inside the rocket's radius-3 blast but outside a
+        // radius-2 (grenade) blast, so this also pins the radius value at 3, not some other nonzero
+        // fallback.
+        var host = new FakeCombatHost { LoadedAmmoCount = 10 };
+        MapObject dude = host.SetDude(NewCritter(tile: 20100, hp: 30, ap: 10));
+        // Attacker stands well outside its own rocket's radius-3 blast around the defender.
+        MapObject enemy = host.AddCritter(NewCritter(tile: HexGrid.TileInDirection(20100, 0, distance: 8), hp: 30, ap: 10));
+        host.AiPackets[enemy] = new AiPacket(8, "Grunt", MinToHit: 0, MinHp: 0, 0, "", "", 0, 0, BestWeapon: -1);
+        host.Equipped = (TestWeapon(0x100, 0x06, 5, 12), TestItem(0x100)); // some other equipped gun
+
+        MapObject rifleItem = TestItem(0x201);
+        MapObject rocketItem = TestItem(0x202);
+        host.InventoryWeapons[enemy] =
+        [
+            (TestWeapon(0x201, 0x06, 10, 10, dmgType: 0), rifleItem), // ranged rifle, avg 10, NORMAL damage
+            (TestWeapon(0x202, 0x06, 4, 10, dmgType: 6 /* EXPLOSION */), rocketItem), // ranged rocket launcher, base avg 7
+        ];
+
+        // Two extra critters at exactly hex-distance 3 from the dude — ring 3 only.
+        host.AddCritter(NewCritter(tile: HexGrid.TileInDirection(dude.HexTile, 0, distance: 3), hp: 30, ap: 10));
+        host.AddCritter(NewCritter(tile: HexGrid.TileInDirection(dude.HexTile, 2, distance: 3), hp: 30, ap: 10));
+
+        var engine = new CombatEngine(host, new MinRng());
+
+        int chosen = engine.ProbeAiWeaponSwitch(enemy, dude);
+
+        Assert.Equal(0x202, chosen); // the rocket, boosted by its 2 extras (7*3=21 vs rifle's 10), wins
+    }
+
+    [Fact]
+    public void AiRecognizesAThrownPlasmaGrenadeAsABlastWeapon()
+    {
+        // Review finding "Important 1": the blastDamage test used damage-type constants 6/7/8
+        // (EXPLOSION/PLASMA/EMP per the task brief's WRONG numbering) instead of the reference's
+        // 6/3/5 (proto_types.h:59-67). Under the bug, a PLASMA(=3) grenade's blastDamage is false, so
+        // it is never treated as a grenade and never gets the ×(extras+1) boost.
+        var host = new FakeCombatHost { LoadedAmmoCount = 10 };
+        MapObject dude = host.SetDude(NewCritter(tile: 20100, hp: 30, ap: 10));
+        MapObject enemy = host.AddCritter(NewCritter(tile: HexGrid.TileInDirection(20100, 0, distance: 5), hp: 30, ap: 10));
+        host.AiPackets[enemy] = new AiPacket(8, "Grunt", MinToHit: 0, MinHp: 0, 0, "", "", 0, 0, BestWeapon: -1);
+        host.Equipped = (TestWeapon(0x100, 0x06, 5, 12), TestItem(0x100));
+
+        MapObject rifleItem = TestItem(0x201);
+        MapObject grenadeItem = TestItem(0x202);
+        host.InventoryWeapons[enemy] =
+        [
+            (TestWeapon(0x201, 0x06, 10, 10, dmgType: 0), rifleItem),                // ranged rifle, avg 10
+            (TestWeapon(0x202, 0x05, 4, 10, dmgType: 3 /* PLASMA */), grenadeItem),  // thrown plasma grenade, base avg 7
+        ];
+
+        host.AddCritter(NewCritter(tile: HexGrid.TileInDirection(dude.HexTile, 1), hp: 30, ap: 10));
+        host.AddCritter(NewCritter(tile: HexGrid.TileInDirection(dude.HexTile, 3), hp: 30, ap: 10));
+
+        var engine = new CombatEngine(host, new MinRng());
+
+        int chosen = engine.ProbeAiWeaponSwitch(enemy, dude);
+
+        Assert.Equal(0x202, chosen); // the plasma grenade, boosted by its 2 extras, beats the rifle
+    }
+
+    [Fact]
+    public void AiRecognizesAThrownEmpGrenadeAsABlastWeapon()
+    {
+        // Same as the plasma case, but for EMP (=5), also miscoded as 8 by the bug.
+        var host = new FakeCombatHost { LoadedAmmoCount = 10 };
+        MapObject dude = host.SetDude(NewCritter(tile: 20100, hp: 30, ap: 10));
+        MapObject enemy = host.AddCritter(NewCritter(tile: HexGrid.TileInDirection(20100, 0, distance: 5), hp: 30, ap: 10));
+        host.AiPackets[enemy] = new AiPacket(8, "Grunt", MinToHit: 0, MinHp: 0, 0, "", "", 0, 0, BestWeapon: -1);
+        host.Equipped = (TestWeapon(0x100, 0x06, 5, 12), TestItem(0x100));
+
+        MapObject rifleItem = TestItem(0x201);
+        MapObject grenadeItem = TestItem(0x202);
+        host.InventoryWeapons[enemy] =
+        [
+            (TestWeapon(0x201, 0x06, 10, 10, dmgType: 0), rifleItem),              // ranged rifle, avg 10
+            (TestWeapon(0x202, 0x05, 4, 10, dmgType: 5 /* EMP */), grenadeItem),  // thrown EMP grenade, base avg 7
+        ];
+
+        host.AddCritter(NewCritter(tile: HexGrid.TileInDirection(dude.HexTile, 1), hp: 30, ap: 10));
+        host.AddCritter(NewCritter(tile: HexGrid.TileInDirection(dude.HexTile, 3), hp: 30, ap: 10));
+
+        var engine = new CombatEngine(host, new MinRng());
+
+        int chosen = engine.ProbeAiWeaponSwitch(enemy, dude);
+
+        Assert.Equal(0x202, chosen); // the EMP grenade, boosted by its 2 extras, beats the rifle
+    }
+
+    [Fact]
+    public void AiGivesNoBlastRadiusToANonBlastWeapon()
+    {
+        // Sanity check: a thrown weapon with ordinary (non-blast) damage never gets the ×(extras+1)
+        // boost even with extra critters standing right next to the defender — WeaponDamageRadius
+        // returns 0, so ExplosionExtrasAt never fires (radius <= 0 short-circuit).
+        var host = new FakeCombatHost { LoadedAmmoCount = 10 };
+        MapObject dude = host.SetDude(NewCritter(tile: 20100, hp: 30, ap: 10));
+        MapObject enemy = host.AddCritter(NewCritter(tile: HexGrid.TileInDirection(20100, 0, distance: 5), hp: 30, ap: 10));
+        host.AiPackets[enemy] = new AiPacket(8, "Grunt", MinToHit: 0, MinHp: 0, 0, "", "", 0, 0, BestWeapon: -1);
+        host.Equipped = (TestWeapon(0x100, 0x06, 5, 12), TestItem(0x100));
+
+        MapObject rifleItem = TestItem(0x201);
+        MapObject throwingKnifeItem = TestItem(0x202);
+        host.InventoryWeapons[enemy] =
+        [
+            (TestWeapon(0x201, 0x06, 10, 10, dmgType: 0), rifleItem),                // ranged rifle, avg 10
+            (TestWeapon(0x202, 0x05, 4, 10, dmgType: 0 /* NORMAL */), throwingKnifeItem), // thrown knife, base avg 7
+        ];
+
+        host.AddCritter(NewCritter(tile: HexGrid.TileInDirection(dude.HexTile, 1), hp: 30, ap: 10));
+        host.AddCritter(NewCritter(tile: HexGrid.TileInDirection(dude.HexTile, 3), hp: 30, ap: 10));
+
+        var engine = new CombatEngine(host, new MinRng());
+
+        int chosen = engine.ProbeAiWeaponSwitch(enemy, dude);
+
+        Assert.Equal(0x201, chosen); // no blast boost for the knife → the rifle's raw damage still wins
+    }
+
+    [Fact]
     public void AiKeepsFistsWhenNoCarriedWeaponQualifies()
     {
         // The inert-by-default invariant: an empty inventory → no candidate → fists (-1), nothing wielded.
