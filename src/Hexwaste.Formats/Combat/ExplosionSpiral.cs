@@ -12,6 +12,12 @@ namespace Hexwaste.Formats.Combat;
 /// defender handled by the main attack path.
 ///
 /// PURE: tile arithmetic only. The caller applies radius limits, line-of-sight, damage and caps.
+///
+/// DOCUMENTED DIVERGENCE: When a ring walk reaches a grid edge, the reference re-processes the clamped
+/// tile as duplicate extras in subsequent steps, whereas this port stops early instead. Both the reference's
+/// <c>tileGetTileInDirection</c> (tile.cc:893-906) and this port's <c>TileInDirection</c> clamp at grid edges
+/// and return the last valid tile unchanged — neither returns -1 or a sentinel. No committed test exercises
+/// a near-edge blast radius.
 /// </summary>
 public static class ExplosionSpiral
 {
@@ -30,18 +36,19 @@ public static class ExplosionSpiral
             // Each ring opens NE of the previous ring's first tile (combat.cc:4040).
             int tile = HexGrid.TileInDirection(ringFirstTile, RotationNe);
             if (tile == ringFirstTile)
-                yield break; // walked off the grid edge — TileInDirection clamps, so stop rather than spin
+                yield break; // grid edge: TileInDirection clamped and returned the same tile; stop to avoid duplicates
             ringFirstTile = tile;
             int rotation = RotationSe;
             int ringTileIdx = 0;
             yield return tile;
 
-            // 6*radius steps close a hex ring; the guard is a backstop for edge-clamped tiles.
+            // 6*radius steps close a hex ring. If TileInDirection clamps at a grid edge, it returns the same
+            // tile unchanged — we detect this and stop to avoid re-processing it as duplicate extras.
             for (int step = 0; step < 6 * radius; step++)
             {
                 int next = HexGrid.TileInDirection(tile, rotation);
                 if (next == ringFirstTile || next == tile)
-                    break; // ring closed (or clamped at the grid edge)
+                    break; // ring closed (or next tile is same as current, indicating edge clamp)
                 tile = next;
                 yield return tile;
 
