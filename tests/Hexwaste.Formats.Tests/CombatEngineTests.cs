@@ -1526,6 +1526,77 @@ public class CombatEngineTests
         Assert.Equal(75, host.XpAwarded); // out-of-combat blast pays immediately
     }
 
+    [Fact]
+    public void ExplosionDamagesNonCentreVictimsInSpiralOrderNotDistanceOrder()
+    {
+        // ported from fallout2-ce src/combat.cc _compute_explosion_on_extras (:4022): victims are
+        // collected ring-by-ring in rotation order, NOT nearest-first. Both victims here sit at
+        // distance 1, so a distance sort keeps list order (west, then north-east) while the spiral
+        // opens at the NE neighbour — so the order flips, and with it which victim draws first.
+        const int center = 20100;
+        const int NE = 0, W = 4;
+        var host = new FakeCombatHost();
+        host.SetDude(NewCritter(tile: 20900, hp: 30, ap: 10)); // far away, not a victim
+
+        int westTile = HexGrid.TileInDirection(center, W);
+        int northEastTile = HexGrid.TileInDirection(center, NE);
+        host.AddCritter(NewCritter(tile: westTile, hp: 100));
+        host.AddCritter(NewCritter(tile: northEastTile, hp: 100));
+
+        var engine = new CombatEngine(host, new MinRng());
+        engine.Explode(center, killer: null, minDamage: 10, maxDamage: 10, radius: 2);
+
+        // The transcript records victims in the order they were damaged, at the tile they occupied AT
+        // THAT MOMENT — captured above, since a nonzero-damage hit also knocks the victim back
+        // (Explode -> Shove), which would otherwise mutate MapObject.HexTile out from under a
+        // post-Explode read.
+        var hitOrder = host.Transcripts
+            .Where(t => t.StartsWith("explosion-hit:"))
+            .ToList();
+        Assert.Equal(2, hitOrder.Count);
+        Assert.Contains($"@{northEastTile}", hitOrder[0]); // spiral opens NE
+        Assert.Contains($"@{westTile}", hitOrder[1]);
+    }
+
+    [Fact]
+    public void ACritterOnTheBlastTileIsDamagedBeforeAnySpiralVictim()
+    {
+        // DOCUMENTED DIVERGENCE (combat.cc:4033): the reference never enumerates the blast tile — its
+        // occupant is the primary defender, damaged by the main attack path. Hexwaste's Explode has no
+        // separate primary path, so the centre critter is damaged FIRST and the spiral orders the rest.
+        // Without this, a strict spiral port would leave a critter standing on the blast tile unharmed.
+        //
+        // DEVIATION FROM BRIEF: the brief's 2-victim version (centre + one neighbour) can never fail
+        // under the OLD distance sort either — the centre tile is always distance 0, the unbeatable
+        // minimum, so OrderBy(Distance) already puts it first regardless of insertion order or spiral
+        // logic. Confirmed empirically: that 2-victim setup PASSED against the pre-change code (see
+        // task-2-report.md). A third distance-1 victim is added here (west, same trick as the sibling
+        // spiral-order test) so the assertion also pins the spiral tie-break among the non-centre
+        // victims — which DOES fail pre-change (distance sort's stable tie keeps insertion order:
+        // west before north-east).
+        const int center = 20100;
+        const int NE = 0, W = 4;
+        var host = new FakeCombatHost();
+        host.SetDude(NewCritter(tile: 20900, hp: 30, ap: 10)); // far away, not a victim
+
+        int westTile = HexGrid.TileInDirection(center, W);
+        int neighbourTile = HexGrid.TileInDirection(center, NE);
+        host.AddCritter(NewCritter(tile: westTile, hp: 100));
+        host.AddCritter(NewCritter(tile: neighbourTile, hp: 100));
+        host.AddCritter(NewCritter(tile: center, hp: 100));
+
+        var engine = new CombatEngine(host, new MinRng());
+        engine.Explode(center, killer: null, minDamage: 10, maxDamage: 10, radius: 2);
+
+        // Tiles captured above (not read live off MapObject.HexTile after Explode), since a nonzero
+        // hit also knocks the victim back (Explode -> Shove), which would otherwise mutate HexTile.
+        var hitOrder = host.Transcripts.Where(t => t.StartsWith("explosion-hit:")).ToList();
+        Assert.Equal(3, hitOrder.Count);
+        Assert.Contains($"@{center}", hitOrder[0]); // centre victim first...
+        Assert.Contains($"@{neighbourTile}", hitOrder[1]); // ...then the spiral opens NE...
+        Assert.Contains($"@{westTile}", hitOrder[2]); // ...then west
+    }
+
     private static int Step(int tile, int dir, int n)
     {
         for (int i = 0; i < n; i++)

@@ -1558,9 +1558,27 @@ public sealed class CombatEngine
 
         int diffMod = DiffDmgMod(killer); // P84: an enemy blast scales by Easy/Hard; a dude/null blast = 100
         int hits = 0;
-        foreach (MapObject victim in victims
-            .Where(c => HexGrid.Distance(c.HexTile, centerTile) <= radius)
-            .OrderBy(c => HexGrid.Distance(c.HexTile, centerTile)))
+
+        // ported from fallout2-ce src/combat.cc _compute_explosion_on_extras (:4022): victims are
+        // found ring-by-ring in rotation order, not nearest-first — the order decides which victim
+        // draws its damage first. DOCUMENTED DIVERGENCE: the reference never examines the blast tile
+        // (its occupant is the primary defender, damaged by the main attack path); Hexwaste's Explode
+        // has no separate primary path, so the centre critter is damaged FIRST and the spiral orders
+        // the rest.
+        var byTile = new Dictionary<int, MapObject>();
+        foreach (MapObject c in victims)
+            byTile.TryAdd(c.HexTile, c);
+
+        var ordered = new List<MapObject>();
+        var seen = new HashSet<MapObject>();
+        if (byTile.TryGetValue(centerTile, out MapObject? atCenter) && seen.Add(atCenter))
+            ordered.Add(atCenter);
+        foreach (int tile in ExplosionSpiral.Tiles(centerTile, radius))
+            if (byTile.TryGetValue(tile, out MapObject? victimAtTile) && seen.Add(victimAtTile))
+                ordered.Add(victimAtTile); // combat.cc:4063-4070 — the reference scans `extras` for the
+                                           // obstacle before adding it, so no victim is hit twice.
+
+        foreach (MapObject victim in ordered)
         {
             if (hits >= maxTargets)
                 break;
