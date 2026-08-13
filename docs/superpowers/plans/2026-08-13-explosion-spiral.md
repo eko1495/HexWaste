@@ -333,11 +333,13 @@ In `src/Hexwaste.Formats/Combat/CombatEngine.cs`, inside `Explode`, replace the 
             byTile.TryAdd(c.HexTile, c);
 
         var ordered = new List<MapObject>();
-        if (byTile.TryGetValue(centerTile, out MapObject? atCenter))
+        var seen = new HashSet<MapObject>();
+        if (byTile.TryGetValue(centerTile, out MapObject? atCenter) && seen.Add(atCenter))
             ordered.Add(atCenter);
         foreach (int tile in ExplosionSpiral.Tiles(centerTile, radius))
-            if (byTile.TryGetValue(tile, out MapObject? victimAtTile))
-                ordered.Add(victimAtTile);
+            if (byTile.TryGetValue(tile, out MapObject? victimAtTile) && seen.Add(victimAtTile))
+                ordered.Add(victimAtTile); // combat.cc:4063-4070 — the reference scans `extras` for the
+                                           // obstacle before adding it, so no victim is hit twice.
 
         foreach (MapObject victim in ordered)
 ```
