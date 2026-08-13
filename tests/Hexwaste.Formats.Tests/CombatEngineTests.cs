@@ -774,6 +774,42 @@ public class CombatEngineTests
     }
 
     [Fact]
+    public void AiPrefersABlastWeaponWhenExtraVictimsPushItsScoreAhead()
+    {
+        // LIVENESS PROOF (task 3, step 5): the ×(extras+1) factor is not just wired, it changes a real
+        // decision. best_weapon = -1 (default) → the RANGED/THROW preference orders differ, so the
+        // choice hinges on the |Δavg| > 5 damage override (combat_ai.cc:1963). Weapon A (a ranged rifle,
+        // avg 10) alone beats weapon B (a thrown frag grenade, base avg 7 — never > 5 ahead of A) — but
+        // with 2 extra critters standing around the defender's tile within the grenade's radius-2 blast,
+        // B's score becomes 7 * (2+1) = 21, now 11 ahead of A, clears the override and wins.
+        var host = new FakeCombatHost { LoadedAmmoCount = 10 };
+        MapObject dude = host.SetDude(NewCritter(tile: 20100, hp: 30, ap: 10));
+        // The enemy stands well outside the grenade's own radius-2 blast (distance 5) so its own tile
+        // never counts itself as an "extra" — keeps the extras count exactly the 2 critters seeded below.
+        MapObject enemy = host.AddCritter(NewCritter(tile: HexGrid.TileInDirection(20100, 0, distance: 5), hp: 30, ap: 10));
+        host.AiPackets[enemy] = new AiPacket(8, "Grunt", MinToHit: 0, MinHp: 0, 0, "", "", 0, 0, BestWeapon: -1);
+        host.Equipped = (TestWeapon(0x100, 0x06, 5, 12), TestItem(0x100)); // some other equipped gun
+
+        MapObject rifleItem = TestItem(0x201);
+        MapObject grenadeItem = TestItem(0x202);
+        host.InventoryWeapons[enemy] =
+        [
+            (TestWeapon(0x201, 0x06, 10, 10, dmgType: 0), rifleItem),               // ranged rifle, avg 10
+            (TestWeapon(0x202, 0x05, 4, 10, dmgType: 6 /* EXPLOSION */), grenadeItem), // thrown grenade, base avg 7
+        ];
+
+        // Two extra critters standing adjacent to the dude (well within the grenade's radius-2 spiral).
+        host.AddCritter(NewCritter(tile: HexGrid.TileInDirection(dude.HexTile, 1), hp: 30, ap: 10));
+        host.AddCritter(NewCritter(tile: HexGrid.TileInDirection(dude.HexTile, 3), hp: 30, ap: 10));
+
+        var engine = new CombatEngine(host, new MinRng());
+
+        int chosen = engine.ProbeAiWeaponSwitch(enemy, dude);
+
+        Assert.Equal(0x202, chosen); // the grenade, boosted by its 2 extras, beats the raw-damage rifle
+    }
+
+    [Fact]
     public void AiKeepsFistsWhenNoCarriedWeaponQualifies()
     {
         // The inert-by-default invariant: an empty inventory → no candidate → fists (-1), nothing wielded.

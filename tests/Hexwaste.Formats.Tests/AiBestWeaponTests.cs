@@ -135,4 +135,27 @@ public class AiBestWeaponTests
     {
         Assert.Equal(7, AiBestWeapon.AvgDamage(minDamage: 5, maxDamage: 10, weaponPerk: -1));
     }
+
+    [Fact]
+    public void AvgDamageMultipliesByTheExplosionExtrasCount()
+    {
+        // combat_ai.cc:1861 — avgDamage *= attack.extrasLength + 1, applied BEFORE the perk doubling.
+        // (4+10)/2 = 7, two extra victims -> 7 * 3 = 21.
+        Assert.Equal(21, AiBestWeapon.AvgDamage(minDamage: 4, maxDamage: 10, weaponPerk: -1, explosionExtras: 2));
+    }
+
+    [Fact]
+    public void ExplosionExtrasApplyBeforeThePerkDoubling()
+    {
+        // 7 * (1+1) extras = 14, then *2 for the perk = 28. PerkAccurate == 59.
+        Assert.Equal(28, AiBestWeapon.AvgDamage(minDamage: 4, maxDamage: 10, weaponPerk: 59, explosionExtras: 1));
+    }
+
+    [Fact]
+    public void ZeroExtrasLeavesTheScoreUnchanged()
+    {
+        // The default keeps every pre-existing call site byte-identical.
+        Assert.Equal(7, AiBestWeapon.AvgDamage(minDamage: 4, maxDamage: 10, weaponPerk: -1, explosionExtras: 0));
+        Assert.Equal(7, AiBestWeapon.AvgDamage(minDamage: 4, maxDamage: 10, weaponPerk: -1));
+    }
 }

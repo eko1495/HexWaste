@@ -68,12 +68,31 @@ what's left is smaller and more precisely scoped than the 2026-07-16 pass below.
   companion ranking was an undocumented divergence, now fixed); perception-based disengage was
   already ported (`WantsToStopFighting`) — the piece still deferred is `PruneEscapedHostiles`,
   which needs the golden-moving `_ai_danger_source`.
+- **Shipped BYTE-IDENTICAL, not as a re-record (2026-08-13):** the ring-spiral explosion victim
+  walk (`ExplosionSpiral.Tiles`, ported from `_compute_explosion_on_extras`, `combat.cc:4022-4045`),
+  `Explode`'s ordering by that spiral with the centre critter kept primary, and the `_ai_best_weapon`
+  explosive ×(extras+1) damage-score factor (`AiBestWeapon.AvgDamage`'s new `explosionExtras`
+  parameter, wired via a damage-free `ExplosionExtrasAt` counting mode in `CombatEngine.cs`, extras
+  applied BEFORE the weapon-perk ×2, `combat_ai.cc:1857-1870`). This item entered the backlog
+  expecting to move a fixture (hence its earlier re-record-tier placement); it didn't — all 16
+  `combat-golden.sh` fixtures stayed byte-identical, so it shipped without a re-record. The factor's
+  liveness (not just wired) is proven by `AiPrefersABlastWeaponWhenExtraVictimsPushItsScoreAhead`
+  (`CombatEngineTests.cs`), which fails when `ExplosionExtrasAt` is stubbed to return 0. Five
+  documented divergences from the reference remain (see the `Explode`/`WeaponDamageRadius`/
+  `ExplosionExtrasAt` doc comments in `CombatEngine.cs` for the exact citations): attacker backwash
+  is not ported (`combat.cc:4056-4060` — `arcaves-throw-grenade` exercises this: the dude takes
+  ordinary blast damage from his own grenade where the reference computes backwash separately); the
+  centre critter is hit first inside `Explode`'s own loop rather than through the reference's main
+  attack path; victim discovery is by tile-occupancy map, not per-tile `_obj_blocking_at` (differs
+  for multihex critters spanning several tiles); the grenade (2) / rocket (3) radius split is applied
+  in `WeaponDamageRadius` for the AI's count, but `Explode` itself still takes one caller-supplied
+  radius; and damage computation stays Hexwaste's pre-existing simplified formula, not
+  `attackComputeDamage`.
 - **Still in the re-record tier** (unchanged by this batch — see the individual re-record-tier
-  bullets below for detail): ring-spiral explosion damage; `_combat_safety_invalidate_weapon` +
+  bullets below for detail): `_combat_safety_invalidate_weapon` +
   `_cai_retargetTileFromFriendlyFire` (ally-in-LoF weapon-switch invalidation + snipe-back is
   partial, `FriendlyOnFireLine`, `CombatEngine.cs:2382-2390`); `_ai_danger_source` + perception-based
-  `PruneEscapedHostiles`; the `_ai_best_weapon` explosive ×(extras+1) factor; and now the
-  rating-gated retaliation above.
+  `PruneEscapedHostiles`; and the rating-gated retaliation above.
 - **Final-review follow-ups (not implemented — documentation only):**
   - The out-of-range switch trigger (`CombatEngine.cs` `TryEnemyAction`, `:2732-2753`) is ordered
     AHEAD of the reference's flee check: the engine's `COMBAT_BAD_SHOT_OUT_OF_RANGE` branch
@@ -118,7 +137,9 @@ switch (`stat.cc:530`); (2) Pip-Boy "Radiated" was hardcoded false — now `Radi
   reference. Now a faithful no-op (falls through). **Closed.**
 - Unwired externals silently return 0 (`IntVm.cs:2094`) — safe for vanilla (0/155 maps), but the
   fallback masks any future gap; a `--strict` mode that logs would be a cheap guardrail.
-- Area-explosion damage is radius+LoS, not the engine ring-spiral (`CombatEngine.cs:1543`).
+- Area-explosion VICTIM ORDERING now follows the engine ring-spiral (`ExplosionSpiral.Tiles`,
+  shipped 2026-08-13 — see A2's shipped bullet); damage computation itself stays Hexwaste's
+  simplified formula, not `attackComputeDamage` (`CombatEngine.cs` `Explode`).
 
 ## Tier B — quest-driver + campaign-QA frontier (the dominant remaining WORK)
 

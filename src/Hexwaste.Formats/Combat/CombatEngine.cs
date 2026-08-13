@@ -2427,13 +2427,51 @@ public sealed class CombatEngine
     /// already-unarmed-and-out-of-range (combat_ai.cc:2800/2823 — the enemy-attack path in TryEnemyAction).
     /// </summary>
     // Enemy entry: reads best_weapon + min_to_hit from the ai.txt packet.
-    private (ProtoInfo?, MapObject?) AiSwitchWeapon(MapObject enemy, AiPacket? ai, int distance, MapObject? currentItem) =>
-        AiSwitchWeapon(enemy, ai?.BestWeapon ?? -1, ai?.MinToHit ?? 0, distance, currentItem);
+    private (ProtoInfo?, MapObject?) AiSwitchWeapon(MapObject enemy, AiPacket? ai, int distance, MapObject? currentItem,
+        MapObject? defender = null) =>
+        AiSwitchWeapon(enemy, ai?.BestWeapon ?? -1, ai?.MinToHit ?? 0, distance, currentItem, defender);
+
+    /// <summary>ported from fallout2-ce src/item.cc weaponGetDamageRadius (:1975): a ranged
+    /// single-shot explosion weapon uses the rocket radius (3), a thrown grenade the grenade radius
+    /// (2), everything else 0 (item.cc:3376-3377 — engine globals, not proto fields). weaponIsGrenade
+    /// is damage type EXPLOSION / PLASMA / EMP (item.cc:1968).</summary>
+    private static int WeaponDamageRadius(ProtoInfo proto, int attackType)
+    {
+        if (proto.Weapon is not { } w)
+            return 0;
+        bool blastDamage = w.DamageType is 6 /* EXPLOSION */ or 7 /* PLASMA */ or 8 /* EMP */;
+        if (attackType == WeaponClass.AttackRanged && w.AnimationCode == 1 /* ANIM_FIRE_SINGLE */
+            && w.DamageType == 6)
+            return 3; // gRocketExplosionRadius
+        if (attackType == WeaponClass.AttackThrow && blastDamage)
+            return 2; // gGrenadeExplosionRadius
+        return 0;
+    }
+
+    /// <summary>ported from fallout2-ce src/combat_ai.cc _ai_best_weapon (:1859-1862): how many EXTRA
+    /// victims a blast at the defender's tile would catch — the engine calls
+    /// _compute_explosion_on_extras with noDamage = 1 purely to read extrasLength. Counting only; no
+    /// damage, no RNG. Returns 0 for a non-blast weapon or a null defender.</summary>
+    private int ExplosionExtrasAt(ProtoInfo proto, int attackType, MapObject? defender)
+    {
+        int radius = WeaponDamageRadius(proto, attackType);
+        if (radius <= 0 || defender is null)
+            return 0;
+        var occupied = new HashSet<int>();
+        foreach (MapObject c in _host.CombatCritters)
+            if (!c.IsDead)
+                occupied.Add(c.HexTile);
+        int extras = 0;
+        foreach (int tile in ExplosionSpiral.Tiles(defender.HexTile, radius))
+            if (occupied.Contains(tile) && ++extras == 6) // explosionGetMaxTargets (item.cc:3574)
+                break;
+        return extras;
+    }
 
     // P51: the core, callable for an ALLY with a best_weapon VALUE (from CompanionAi.WeaponPref) instead
     // of an ai.txt packet — the same _ai_best_weapon switch the enemies run (combat_ai.cc:1894).
     private (ProtoInfo?, MapObject?) AiSwitchWeapon(MapObject enemy, int bestWeapon, int minToHit, int distance,
-        MapObject? currentItem)
+        MapObject? currentItem, MapObject? defender = null)
     {
         CritterState? self = _host.GetCritterState(enemy);
         int bodyType = self?.Proto.BodyType ?? -1;
@@ -2475,7 +2513,8 @@ public sealed class CombatEngine
                     continue;
 
                 var cand = new AiBestWeapon.Choice(attackType,
-                    AiBestWeapon.AvgDamage(weapon.MinDamage, weapon.MaxDamage, weapon.WeaponPerk),
+                    AiBestWeapon.AvgDamage(weapon.MinDamage, weapon.MaxDamage, weapon.WeaponPerk,
+                        ExplosionExtrasAt(proto, attackType, defender)),
                     proto.Cost, IsFlare: proto.Pid == 79);
                 bool favorB = bestWeapon == 7 && _rng.Next(1, 101) <= 50; // RANDOM coin (inert on slice)
                 if (AiBestWeapon.Prefers(bestWeapon, best, cand, favorB))
@@ -2580,7 +2619,7 @@ public sealed class CombatEngine
         AiPacket? ai = _host.GetAiPacket(enemy);
         int distance = HexGrid.Distance(enemy.HexTile, target.HexTile);
         (_, MapObject? curItem) = _host.EquippedWeapon(enemy);
-        (ProtoInfo? proto, _) = AiSwitchWeapon(enemy, ai, distance, curItem);
+        (ProtoInfo? proto, _) = AiSwitchWeapon(enemy, ai, distance, curItem, target);
         return proto?.Pid ?? -1;
     }
 
@@ -2718,7 +2757,7 @@ public sealed class CombatEngine
             }
             // Dry with no ammo: scan the inventory for the packet-preferred backup weapon and wield
             // it (_ai_switch_weapons → _ai_search_inven_weap, combat_ai.cc:2596). None → fists.
-            (enemyWeapon, enemyWeaponItem) = AiSwitchWeapon(enemy, ai, enemyDistance, enemyWeaponItem);
+            (enemyWeapon, enemyWeaponItem) = AiSwitchWeapon(enemy, ai, enemyDistance, enemyWeaponItem, defenderObj);
             drySwitched = true;
             enemyGun = enemyWeapon?.Weapon is { } ew2 && ew2.IsGun(enemyWeapon.ExtendedFlags);
             // Important 2: the switch may have landed on ANOTHER gun that is itself empty — reload it
@@ -2752,7 +2791,7 @@ public sealed class CombatEngine
         bool switched = false;
         if (crippledBlock)
         {
-            (enemyWeapon, enemyWeaponItem) = AiSwitchWeapon(enemy, ai, enemyDistance, enemyWeaponItem);
+            (enemyWeapon, enemyWeaponItem) = AiSwitchWeapon(enemy, ai, enemyDistance, enemyWeaponItem, defenderObj);
             switched = true;
         }
         // Minor (final review): when the dry-gun branch above already switched (and TryReloadSwitchedGun
@@ -2764,7 +2803,7 @@ public sealed class CombatEngine
         // whenever the branch above didn't run).
         else if (!drySwitched && enemyWeapon is null && enemyDistance > attackRange)
         {
-            (enemyWeapon, enemyWeaponItem) = AiSwitchWeapon(enemy, ai, enemyDistance, enemyWeaponItem);
+            (enemyWeapon, enemyWeaponItem) = AiSwitchWeapon(enemy, ai, enemyDistance, enemyWeaponItem, defenderObj);
             switched = true;
         }
         if (switched)
