@@ -1182,13 +1182,19 @@ public sealed class CombatEngine
         if ((flags & CriticalTables.DamKnockedDown) != 0 && _knockedDown.Add(self))
             _host.Transcript($"knockdown: {_host.ObjectName(self)}@{self.HexTile}");
 
-        // Self-damage: EXPLODE detonates the fumbling weapon at the attacker's tile (its own damage as
-        // the blast, radius 1 — a documented simplification); HIT_SELF/HURT_SELF take the weapon's rolled
-        // damage as a direct HP hit (no on-hit hooks / ammo mods, not a re-attack).
-        if ((flags & CriticalTables.DamExplode) != 0)
-            Explode(self.HexTile, self, weaponProto?.Weapon?.MinDamage ?? 1, weaponProto?.Weapon?.MaxDamage ?? 6, 1);
-        else if ((flags & (CriticalTables.DamHitSelf | CriticalTables.DamHurtSelf)) != 0)
+        // Self-damage, in the reference's shape (combat.cc:4228-4232 at our pinned e97087b — the fork adds
+        // the HURT_SELF branch straight after it, community/main combat.cc:4343-4345): HIT_SELF takes the weapon's rolled
+        // damage as a direct HP hit (no on-hit hooks / ammo mods, not a re-attack); else EXPLODE detonates
+        // the fumbling weapon at the attacker's tile (its own damage as the blast, radius 1 — a documented
+        // simplification). HURT_SELF is a SEPARATE, much milder branch: a flat 1-5, with no damage roll at
+        // all. _cf_table never pairs HURT_SELF with HIT_SELF, so the two never stack.
+        if ((flags & CriticalTables.DamHitSelf) != 0)
             CritFailDamage(attacker, attacker, weaponProto, "crit-fail-self");
+        else if ((flags & CriticalTables.DamExplode) != 0)
+            Explode(self.HexTile, self, weaponProto?.Weapon?.MinDamage ?? 1, weaponProto?.Weapon?.MaxDamage ?? 6, 1);
+
+        if ((flags & CriticalTables.DamHurtSelf) != 0)
+            ApplyCritFailDamage(attacker, attacker, _rng.Next(1, 6), weaponProto, "crit-fail-self");
 
         if ((flags & CriticalTables.DamDrop) != 0 && weaponItem is not null)
         {
@@ -1213,18 +1219,52 @@ public sealed class CombatEngine
         return (flags & CriticalTables.DamLoseTurn) != 0;
     }
 
-    /// <summary>Direct crit-failure damage to a victim (self-hurt or the wild RANDOM_HIT): the weapon's
+    /// <summary>Direct crit-failure damage to a victim (DAM_HIT_SELF or the wild RANDOM_HIT): the weapon's
     /// rolled damage (no ammo mods — a documented simplification), applied straight to HP with a kill
-    /// check. A self-kill / companion-kill via the attacker; a dude victim → game over.</summary>
+    /// check.</summary>
+    // ported from fallout2-ce src/combat.cc attackComputeCriticalFailure() (community fix #675).
+    // The reference rolls weapon damage (attackComputeDamage) ONLY for DAM_HIT_SELF and DAM_EXPLODE;
+    // DAM_HURT_SELF is a separate branch that just adds randomBetween(1, 5) to attackerDamage — which
+    // starts at 0 — so a HURT_SELF fumble is worth exactly 1-5 and takes no damage roll. This method is
+    // the HIT_SELF/RANDOM_HIT half; the HURT_SELF half calls ApplyCritFailDamage directly with the 1-5.
     private void CritFailDamage(CritterState attacker, CritterState victimState, ProtoInfo? weaponProto, string tag)
     {
-        MapObject victim = victimState.Critter;
         int dmg = weaponProto?.Weapon is { } w
             ? CombatMath.RollWeaponDamage(_rng, attacker, victimState, w.MinDamage, w.MaxDamage, 1, false, 0)
             : CombatMath.RollDamage(_rng, attacker, victimState, 1, false, 0);
+        ApplyCritFailDamage(attacker, victimState, dmg, weaponProto, tag);
+    }
+
+    /// <summary>Apply an already-computed crit-failure damage figure to a victim: HP, log, transcript and
+    /// the kill check. A self-kill / companion-kill via the attacker; a dude victim → game over.</summary>
+    private void ApplyCritFailDamage(CritterState attacker, CritterState victimState, int dmg,
+        ProtoInfo? weaponProto, string tag)
+    {
+        MapObject victim = victimState.Critter;
         victim.CurrentHp -= dmg;
         _host.Log($"The {_host.ObjectName(victim)} takes {dmg} damage.");
         _host.Transcript($"{tag}: {_host.ObjectName(victim)}@{victim.HexTile} damage={dmg}");
+
+        // ported from fallout2-ce src/combat.cc _apply_damage() (community fix #493): the attacker's
+        // self-damage _damage_object call passes the "hit an UNINTENDED target" flag (the pre-image at
+        // e97087b passes its inverse and carries the author's own `// TODO: Not sure about
+        // "attack->defender == attack->oops"` on that very expression). With the corrected polarity the
+        // ordinary fumble — defender == the intended target — DOES run the self-damaged attacker's
+        // damage_p_proc, with itself as both damaged object and source. _damage_object still skips the
+        // proc when target and source are both party members, which for self-damage means EVERY party
+        // member (the dude included, gPartyMembers[0]) is skipped: only an unaffiliated critter runs it.
+        // The DAM_RANDOM_HIT victim is NOT this call site — it becomes attack->defender with oops left
+        // at the original target, so its flag is true and it takes no damage_p_proc either way.
+        // One deliberate difference on this branch: the reference's self-damage _damage_object (:4683) is
+        // NOT preceded by a scriptSetObjects — unlike the defender (:4722) and extras (:4749) call sites —
+        // so source_obj keeps whatever the previous call left there and a script reading it here reads a
+        // stale handle. We pass
+        // the victim itself — a well-defined choice, since "the attacker damaged itself" is what happened.
+        if (victim == attacker.Critter && dmg > 0 && victim.Sid != -1
+            && victim != _host.Dude && !_host.PartyMembers.Contains(victim))
+            foreach (string line in _host.RunDamageProc(victim, victim, dmg))
+                _host.Log(line);
+
         if (victim.CurrentHp > 0)
             return;
         if (victim == _host.Dude)
@@ -1544,8 +1584,17 @@ public sealed class CombatEngine
     /// or the misc-10 marker): every critter within radius with clear line-of-sight
     /// takes rand(min,max) − DT_explosion − DR_explosion (stats 23/30), plus
     /// knockback dmg/10 away from the blast. Ported from actions.cc actionExplode /
-    /// _compute_explosion_*; the engine's ring-spiral is simplified to radius + LoS,
-    /// capped at 6 targets (combat.cc explosionGetMaxTargets).</summary>
+    /// _compute_explosion_*; victim discovery now walks the engine's own ring-spiral
+    /// (<see cref="ExplosionSpiral"/>, ported from _compute_explosion_on_extras), with LoS applied per
+    /// victim and a cap of 6 hits (combat.cc explosionGetMaxTargets). NOTE the cap here counts the
+    /// centre critter too, unlike the reference where explosionGetMaxTargets (6) bounds only the
+    /// EXTRAS array and the primary defender is hit outside/before that cap — so the reference can
+    /// damage up to 7 critters from one blast where this port caps at 6. NOTE ALSO: when two critters
+    /// share a tile, only the first one enumerated into <c>byTile</c> can ever be a victim of that
+    /// tile — a second critter on the same tile takes zero blast damage where the reference (whose
+    /// _obj_blocking_at also yields a single object per tile, and can itself pick a wall over a
+    /// critter) would have processed whichever object it found there. Not changed: judged more
+    /// faithful than less, but gameplay-visible, so documented here.</summary>
     public void Explode(int centerTile, MapObject? killer, int minDamage, int maxDamage, int radius)
     {
         const int maxTargets = 6;
@@ -1558,9 +1607,27 @@ public sealed class CombatEngine
 
         int diffMod = DiffDmgMod(killer); // P84: an enemy blast scales by Easy/Hard; a dude/null blast = 100
         int hits = 0;
-        foreach (MapObject victim in victims
-            .Where(c => HexGrid.Distance(c.HexTile, centerTile) <= radius)
-            .OrderBy(c => HexGrid.Distance(c.HexTile, centerTile)))
+
+        // ported from fallout2-ce src/combat.cc _compute_explosion_on_extras (:4022): victims are
+        // found ring-by-ring in rotation order, not nearest-first — the order decides which victim
+        // draws its damage first. DOCUMENTED DIVERGENCE: the reference never examines the blast tile
+        // (its occupant is the primary defender, damaged by the main attack path); Hexwaste's Explode
+        // has no separate primary path, so the centre critter is damaged FIRST and the spiral orders
+        // the rest.
+        var byTile = new Dictionary<int, MapObject>();
+        foreach (MapObject c in victims)
+            byTile.TryAdd(c.HexTile, c);
+
+        var ordered = new List<MapObject>();
+        var seen = new HashSet<MapObject>();
+        if (byTile.TryGetValue(centerTile, out MapObject? atCenter) && seen.Add(atCenter))
+            ordered.Add(atCenter);
+        foreach (int tile in ExplosionSpiral.Tiles(centerTile, radius))
+            if (byTile.TryGetValue(tile, out MapObject? victimAtTile) && seen.Add(victimAtTile))
+                ordered.Add(victimAtTile); // combat.cc:4063-4070 — the reference scans `extras` for the
+                                           // obstacle before adding it, so no victim is hit twice.
+
+        foreach (MapObject victim in ordered)
         {
             if (hits >= maxTargets)
                 break;
@@ -2428,22 +2495,99 @@ public sealed class CombatEngine
     /// bodies search inventory (combat_ai.cc:2004); others keep fists. The ground-retrieval fallback
     /// (_ai_search_environ, combat_ai.cc:2178) is stricter still — BIPED only.
     ///
-    /// DOCUMENTED SIMPLIFICATIONS vs the engine: the avg-damage score omits the explosive-radius
-    /// ×(extras+1) factor (Hexwaste tracks no explosive extras) — the weapon-perk ×2 factor IS applied
-    /// (AiBestWeapon.AvgDamage); _combat_safety_invalidate_weapon (ally-in-line-of-fire / over-range
-    /// "ignore") is not applied (Ignore stays false); ranged ammo availability now searches the carried
-    /// inventory's calibers (CarriedAmmoCalibers), matching aiHaveAmmo; art-exists is assumed. Wired at
-    /// three triggers: dry gun with no reload, a crippled arm making the wielded weapon unusable, and
+    /// DOCUMENTED SIMPLIFICATIONS vs the engine: the avg-damage score applies the explosive-radius
+    /// ×(extras+1) factor (ExplosionExtrasAt) only when a <paramref name="defender"/> is supplied —
+    /// wired for the ENEMY path (TryEnemyAction/ProbeAiWeaponSwitch pass the dude as defender); the
+    /// ALLY path (TryAllyAction/ProbeAllyWeaponSwitch) passes no defender, so companions never get the
+    /// blast-radius boost even though the reference runs the same _ai_best_weapon for any AI-controlled
+    /// combatant (combat_ai.cc:3060-3150 → _ai_try_attack → _ai_switch_weapons → _ai_best_weapon) —
+    /// see docs/BACKLOG.md. The weapon-perk ×2 factor IS applied (AiBestWeapon.AvgDamage);
+    /// _combat_safety_invalidate_weapon (ally-in-line-of-fire / over-range "ignore") is not applied
+    /// (Ignore stays false); ranged ammo availability now searches the carried inventory's calibers
+    /// (CarriedAmmoCalibers), matching aiHaveAmmo; art-exists is assumed. Wired at three triggers: dry
+    /// gun with no reload, a crippled arm making the wielded weapon unusable, and
     /// already-unarmed-and-out-of-range (combat_ai.cc:2800/2823 — the enemy-attack path in TryEnemyAction).
     /// </summary>
     // Enemy entry: reads best_weapon + min_to_hit from the ai.txt packet.
-    private (ProtoInfo?, MapObject?) AiSwitchWeapon(MapObject enemy, AiPacket? ai, int distance, MapObject? currentItem) =>
-        AiSwitchWeapon(enemy, ai?.BestWeapon ?? -1, ai?.MinToHit ?? 0, distance, currentItem);
+    private (ProtoInfo?, MapObject?) AiSwitchWeapon(MapObject enemy, AiPacket? ai, int distance, MapObject? currentItem,
+        MapObject? defender = null) =>
+        AiSwitchWeapon(enemy, ai?.BestWeapon ?? -1, ai?.MinToHit ?? 0, distance, currentItem, defender);
+
+    /// <summary>ported from fallout2-ce src/item.cc weaponGetDamageRadius (:1975-1995): a ranged
+    /// single-shot explosion weapon uses the rocket radius (3), a thrown grenade the grenade radius
+    /// (2), everything else 0 (item.cc:3376-3377 — engine globals, not proto fields). weaponIsGrenade
+    /// is damage type EXPLOSION / PLASMA / EMP (item.cc:1968-1972, proto_types.h:59-67: NORMAL 0,
+    /// LASER 1, FIRE 2, PLASMA 3, ELECTRICAL 4, EMP 5, EXPLOSION 6).
+    ///
+    /// The "fire single" test is NOT <c>AnimationCode</c> — that field is the held-weapon-sprite
+    /// selector (weaponGetAnimationCode, WEAPON_ANIMATION_* in art.h:91-101; 1 = WEAPON_ANIMATION_KNIFE),
+    /// unrelated to attack animation. The reference compares weaponGetAnimationForHitMode(...) against
+    /// ANIM_FIRE_SINGLE, which _attack_anim[extendedFlags &amp; 0xF] (item.cc:116-126) maps from nibble
+    /// index 6 — the same nibble WeaponClass.AttackType already reads to get RANGED for that index.</summary>
+    private static int WeaponDamageRadius(ProtoInfo proto, int attackType)
+    {
+        if (proto.Weapon is not { } w)
+            return 0;
+        bool blastDamage = w.DamageType is 6 /* EXPLOSION */ or 3 /* PLASMA */ or 5 /* EMP */;
+        bool fireSingle = (proto.ExtendedFlags & 0xF) == 6; // ANIM_FIRE_SINGLE (item.cc:116-126)
+        if (attackType == WeaponClass.AttackRanged && fireSingle && w.DamageType == 6 /* EXPLOSION */)
+            return 3; // gRocketExplosionRadius
+        if (attackType == WeaponClass.AttackThrow && blastDamage)
+            return 2; // gGrenadeExplosionRadius
+        return 0;
+    }
+
+    /// <summary>ported from fallout2-ce src/combat_ai.cc _ai_best_weapon (:1859-1862): how many EXTRA
+    /// victims a blast at the defender's tile would catch — the engine calls
+    /// _compute_explosion_on_extras with noDamage = 1 purely to read extrasLength. Counting only; no
+    /// damage, no RNG. Returns 0 for a non-blast weapon or a null defender.
+    ///
+    /// The spiral itself is ALWAYS bounded by the grenade radius (2), never the rocket radius (3),
+    /// regardless of which one <see cref="WeaponDamageRadius"/> returns as its non-zero gate. Traced
+    /// the full call chain: <c>_ai_best_weapon</c> only checks <c>weaponGetDamageRadius(...) &gt; 0</c>
+    /// (combat_ai.cc:1860) to decide whether to run the count at all; the radius that actually bounds
+    /// the spiral is the <c>isGrenade</c> argument threaded into <c>_compute_explosion_on_extras</c>
+    /// (combat.cc:4033-4039), and the AI passes <c>isGrenade = weaponIsGrenade(weapon1)</c> — a
+    /// damage-TYPE-only test (EXPLOSION / PLASMA / EMP, item.cc:1968-1972) with no animation gate, so
+    /// it is true for a fire-single rocket launcher exactly as much as for a thrown grenade. Every
+    /// weapon that clears the <c>&gt; 0</c> gate is therefore "a grenade" for this AI-scoring purpose,
+    /// and the walk is bounded by <c>gGrenadeExplosionRadius = 2</c> (item.cc:3376), never 3. The
+    /// genuine 2-vs-3 split lives only in the real damage path (<see cref="Explode"/>,
+    /// combat.cc:3831-3836), which additionally requires <c>ANIM_THROW_ANIM</c> and is out of scope
+    /// here.
+    ///
+    /// The attacker's own tile is excluded from the count: the reference's spiral scan special-cases
+    /// <c>obstacle == attack->attacker</c> and routes it to the backwash branch instead of
+    /// <c>attack->extras[]</c> (combat.cc:4056-4060), so a self-adjacent attacker never inflates its
+    /// own extrasLength.
+    ///
+    /// AI-SCORING-ONLY DIVERGENCES from the reference (combat.cc:4053-4055), none applied here: the
+    /// <c>_combat_is_shot_blocked</c> line-of-sight test (which <see cref="Explode"/> DOES apply to its
+    /// damage victims), the <c>OBJECT_SHOOT_THRU</c> flag test, and the attacker's own elevation as a
+    /// filter on candidate tiles. Also note <c>_host.CombatCritters</c> excludes the dude (see
+    /// <c>ViewerGame.CombatHost.cs</c> around :984), so when an enemy scores a blast against a
+    /// companion, the player standing nearby is never counted as an extra victim.</summary>
+    private int ExplosionExtrasAt(ProtoInfo proto, int attackType, MapObject? defender, MapObject attacker)
+    {
+        int gate = WeaponDamageRadius(proto, attackType); // combat_ai.cc:1860 — a > 0 gate only
+        if (gate <= 0 || defender is null)
+            return 0;
+        const int spiralRadius = 2; // gGrenadeExplosionRadius (item.cc:3376) — see doc comment above
+        var occupied = new HashSet<int>();
+        foreach (MapObject c in _host.CombatCritters)
+            if (!c.IsDead && c != attacker)
+                occupied.Add(c.HexTile);
+        int extras = 0;
+        foreach (int tile in ExplosionSpiral.Tiles(defender.HexTile, spiralRadius))
+            if (occupied.Contains(tile) && ++extras == 6) // explosionGetMaxTargets (item.cc:3574)
+                break;
+        return extras;
+    }
 
     // P51: the core, callable for an ALLY with a best_weapon VALUE (from CompanionAi.WeaponPref) instead
     // of an ai.txt packet — the same _ai_best_weapon switch the enemies run (combat_ai.cc:1894).
     private (ProtoInfo?, MapObject?) AiSwitchWeapon(MapObject enemy, int bestWeapon, int minToHit, int distance,
-        MapObject? currentItem)
+        MapObject? currentItem, MapObject? defender = null)
     {
         CritterState? self = _host.GetCritterState(enemy);
         int bodyType = self?.Proto.BodyType ?? -1;
@@ -2485,7 +2629,8 @@ public sealed class CombatEngine
                     continue;
 
                 var cand = new AiBestWeapon.Choice(attackType,
-                    AiBestWeapon.AvgDamage(weapon.MinDamage, weapon.MaxDamage, weapon.WeaponPerk),
+                    AiBestWeapon.AvgDamage(weapon.MinDamage, weapon.MaxDamage, weapon.WeaponPerk,
+                        ExplosionExtrasAt(proto, attackType, defender, enemy)),
                     proto.Cost, IsFlare: proto.Pid == 79);
                 bool favorB = bestWeapon == 7 && _rng.Next(1, 101) <= 50; // RANDOM coin (inert on slice)
                 if (AiBestWeapon.Prefers(bestWeapon, best, cand, favorB))
@@ -2590,7 +2735,7 @@ public sealed class CombatEngine
         AiPacket? ai = _host.GetAiPacket(enemy);
         int distance = HexGrid.Distance(enemy.HexTile, target.HexTile);
         (_, MapObject? curItem) = _host.EquippedWeapon(enemy);
-        (ProtoInfo? proto, _) = AiSwitchWeapon(enemy, ai, distance, curItem);
+        (ProtoInfo? proto, _) = AiSwitchWeapon(enemy, ai, distance, curItem, target);
         return proto?.Pid ?? -1;
     }
 
@@ -2728,7 +2873,7 @@ public sealed class CombatEngine
             }
             // Dry with no ammo: scan the inventory for the packet-preferred backup weapon and wield
             // it (_ai_switch_weapons → _ai_search_inven_weap, combat_ai.cc:2596). None → fists.
-            (enemyWeapon, enemyWeaponItem) = AiSwitchWeapon(enemy, ai, enemyDistance, enemyWeaponItem);
+            (enemyWeapon, enemyWeaponItem) = AiSwitchWeapon(enemy, ai, enemyDistance, enemyWeaponItem, defenderObj);
             drySwitched = true;
             enemyGun = enemyWeapon?.Weapon is { } ew2 && ew2.IsGun(enemyWeapon.ExtendedFlags);
             // Important 2: the switch may have landed on ANOTHER gun that is itself empty — reload it
@@ -2762,7 +2907,7 @@ public sealed class CombatEngine
         bool switched = false;
         if (crippledBlock)
         {
-            (enemyWeapon, enemyWeaponItem) = AiSwitchWeapon(enemy, ai, enemyDistance, enemyWeaponItem);
+            (enemyWeapon, enemyWeaponItem) = AiSwitchWeapon(enemy, ai, enemyDistance, enemyWeaponItem, defenderObj);
             switched = true;
         }
         // Minor (final review): when the dry-gun branch above already switched (and TryReloadSwitchedGun
@@ -2774,7 +2919,7 @@ public sealed class CombatEngine
         // whenever the branch above didn't run).
         else if (!drySwitched && enemyWeapon is null && enemyDistance > attackRange)
         {
-            (enemyWeapon, enemyWeaponItem) = AiSwitchWeapon(enemy, ai, enemyDistance, enemyWeaponItem);
+            (enemyWeapon, enemyWeaponItem) = AiSwitchWeapon(enemy, ai, enemyDistance, enemyWeaponItem, defenderObj);
             switched = true;
         }
         if (switched)

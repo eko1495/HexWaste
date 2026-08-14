@@ -78,20 +78,15 @@ public sealed partial class ViewerGame
     {
         if (_scriptHost is null || _dude is null || _map.Elevations[_elevation] is not { } elev)
             return;
+        // BACKLOG A6: one placement pass for the whole party, so each member claims its tile and the
+        // next one moves on. Scanning _blockedTiles per member (rebuilt only after the loop) gave
+        // every member the same first free neighbour and landed the party stacked on one hex.
+        int[] spawns = Formats.Map.Placement.FreeTilesAround(
+            _dude.Dude.HexTile, _scriptHost.PartyMembers.Count, t => _blockedTiles.Contains(t));
+        int spawnIndex = 0;
         foreach (MapObject member in _scriptHost.PartyMembers)
         {
-            int spawn = _dude.Dude.HexTile;
-            for (int rotation = 0; rotation < 6; rotation++)
-            {
-                int candidate = Formats.Hex.HexGrid.TileInDirection(_dude.Dude.HexTile, rotation);
-                if (!_blockedTiles.Contains(candidate))
-                {
-                    spawn = candidate;
-                    break;
-                }
-            }
-
-            member.HexTile = spawn;
+            member.HexTile = spawns[spawnIndex++];
             // Fresh script binding on this map so the follow critter_p_proc keeps running (sids are
             // per-map); the member's preserved local-var slice rides along (P108 — fo2ce restores
             // party LVARs into the new map, party_member.cc:704-708).

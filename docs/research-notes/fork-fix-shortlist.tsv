@@ -1,0 +1,260 @@
+# Stage-1 fork-fix shortlist — 252 rows (2026-08-14)
+#
+# GENERATED, then hand-filtered. Reproduce with:
+#   scripts/fork-triage.sh e97087b main | grep -iE 'fix|bug|crash|correct|revert'
+# (the script enumerates every commit in the e97087b...main compare; the grep is what cuts it to
+# these 252). Columns, tab-separated: short sha, PR number (blank if the subject carries none),
+# commit subject. Classification of these rows lives in fork-fix-ledger-2026-08.md; 35 are
+# classified there and 217 remain deferred.
+0038b7f1d		Missed changes for correctFidForRemovedItem
+016c83bc4	161	Inventory Item not Disappearing Fix (#161)
+0303a0029	219	Merge pull request #219 from fallout2-ce/trade-and-barter-glitch-fix
+07d1649b6	409	Attempt to fix windows CI (#409)
+0873eaab3	76	Fix for #76 (occasional crash when using skills on scenery objects).
+0a73abe67	333	Barter hook refactoring and Keypress hook repeat fix (#333)
+0ba670f0f		Add debug message when everything is ok
+0d0578f11		Revert "Add --force flag to re-install in case of used cache"
+0d40fa458	678	Fix map load crash for Et tu (#678)
+0d8741e08	434	Debug logging improvements (#434)
+0e18e7790		Fix formatting
+0e773d521		Perk review fixes
+0f3023dc9		Fix runawaymode and disposition validations
+0fc042ef8	484	Fix save games being missing on Mac OS (#484)
+0fc5d24a0	653	fix removing next object after hidden object when critter dies (#653)
+10ebd28a4	410	Fix f2_res migration never working (#410)
+12fe582e6		Fixed AI loading single-rounds in magazines.
+15aa1db28		Revert initialization order of gTownMapHotkeysFix
+168f25002		Trying to fix CI release
+16bc15684	617	[Et tu] Fix several issues with TMA (#617)
+18c05d438		Fixed clang-format error
+196553ec4	174	Don't crash if game resolution is <800 with custom interface bar (#174)
+196ad2267		Fix formatting
+1afe925cb	486	Better fix for directory detection (#486)
+1d5359496		Fix initialization place
+1d6111b89	202	Merge pull request #202 from fallout2-ce/fix-for-splash-screens
+1e3aacebd		Fix build cmd
+1e91b401f		Fix stats test
+1f0f08f3e		Use DWARF for debug build
+20ad8d877		mapper: fix SAV files being created in the dev_path
+20bcb2360		Fix env, add prune
+20e80d4bb		fix the spaces and make rgb to rgb555 color conversion constexpre function
+2112b04c5	63	Merge pull request #63 from roginvs/fix_ci_release_names
+2183c3914	492	Fix Goris robe/disrobe (#492)
+21a98bebb	591	Correct PC placement when screen is large (#591)
+22a864a0c		Ignore cities count if CitiesLimitFix is enabled
+2395a6da3		Fix formatting
+23e9eab72	311	Fix crash/glitched map when the encounter table has no available entries (#311)
+2435b3348	227	Fix missing cursor on the right (mirrored) context menu (#227)
+2447593e9	493	Fix crash due to corrupted `whoHitMe` (#493)
+25106684b		[emscripten] bump emsdk version; fix review comment
+252d7fe83		Add CitiesLimitFix into sFall config with default=true
+25b5e9d27		Fix async call
+2703af882		Update game_mouse.cc to fix context menu
+277faa114		fix code formatting
+29b8c7bfe	20	Merge pull request #20 from roginvs/fix_no_sound_issue
+2be9b7db6		Fix off-by-one error in duplicates cleanup
+2ca921c52		Revert "Remove cities amount check on game load"
+2e2655ee1		Fix formatting
+2ec824082	239	Merge pull request #239 from fallout2-ce/fix_gMapGlobalPointers_resize
+2ed355f8c	519	Fix initialized variable comparisons and fileReadInt32 (#519)
+2f144fb42	60	Merge pull request #60 from roginvs/fix_ci_release_names
+2f974aefe		Fix formatting
+3082e3b2b		-Wswitch fixes
+30cfd0f08		Fix formatting
+316331929		Revert "Set MSVC_RUNTIME_LIBRARY in the makefile"
+319c11604	18	PR Fix for #18
+349af8fbb	472	Fix aiPacketRead inducing crash when loading saves in certain order (#472)
+34ef1c2f2	213	Merge pull request #213 from fallout2-ce/disappearing-inventory-item-fix
+3659c834a	166	Merge pull request #166 from fallout2-ce/animations-behind-worldmap-fix
+39733665f		Clang warning fix
+39bcb9875		Fix action parameter name
+3abdbcb53	357	Fix Text Delay not saving in options (#357)
+413c843ff	168	Fix bug that stopped music when reloading on the same map (#168)
+41eafedf8	280	Fix release standard library used in debug config (#280)
+41f09fa34	546	Fix elevator cancelation in RPU (#546)
+4247d7ac3		- Set correct checks for msvc or win
+4278d1a1d		fix crash
+436ce1202		Merge branch 'main' into fix_use_after_free_in_use_item_on
+498bdfcd1		Fixed missing value check.
+4a2174c8a		Clang warning fix, part 2
+4a9e822e8	512	Fix "Uncontrolled format string" Code Scanning results (#512)
+4c7794ded		fix union  mix of designated-initializers with non-designated-initializers
+4ce09d8cd		Debugging
+4f117678e		Fix func declaration
+511d53a61	344	fix set_proto_data leftover value on stack in case of invalid args + use programPrintError (#344)
+5304823f8	315	Fix argument order in mapper: mapSetEnteringLocation (#315)
+53337cbb7		Now trying to fix win64 builds
+547cabc42	153	Merge pull request #153 from roginvs/auto-fix-formatting-on-main-branch
+54a3b0c05	111	Merge pull request #111 from fallout2-ce/sherief-fix-ai-reload
+552505e3f	601	fixes party_member.cc memory leaks (#601)
+55c528f34		fixes
+571b43410	254	Fix crash during encounter (#254)
+577437292	547	Implement `set_object_data`, and add memory safety and correct offsets (#547)
+5786f5660		Fix formatting
+58b811f2a	265	Fix overlapping memory copy (#265)
+5939e41da	363	Fix crash when global scripts are called reentrantly (#363)
+5a0507200		fix emsdk setup
+5a9f8fb46	164	Merge pull request #164 from fallout2-ce/character-screen-button-fix
+5ae46be31		Add debug info
+5dbcfd997	147	Fixes slightly misaligned buttons in the pipboy (#147)
+5dc913568	572	Fix start_gdialog talking-head crash (#572)
+61da36018		Runtime fix of Splashes wrong pal
+62108938f		Update game_dialog.cc to fix using keyboard
+63d79e4bf	440	Fix high pitch voiced dialog (#440)
+64a53ff4d	1	Merge pull request #1 from avnik/avnik/fix-case-sensitive-findfirst
+66c021874	117	Merge pull request #117 from fallout2-ce/fix_crash_on_game_load
+6835d1059		mapper: fix TMP map files not being deleted, fix edg not loading when changing maps in play mode
+68d7bd066	533	Fix heap corruption in wmWorldMap_load when save file has more cities than current config (#533)
+69a27fcdb		fix _obj_save_dude savedRotation usage
+6a0bed443	336	Death Anim script hook + fall anim fix + related refactoring (#336)
+6c0155190	675	Fix a variety of decompilation errors (#675)
+6c13d6792		Update inventory.cc to fix button click sounds for 'Move Items'
+6cbe68aef	390	Fix setup (play) instructions, and add basic compile instructions to CONTRIBUTING.md (#390)
+6efbe795d		Decyphering in and around proto_instance + fix build
+6f0f68d5a	366	Fix crash when using op_pickup with global scripts (#366)
+6f240acf0		Fix typo
+6fa5667b5		few review fixes
+721e40f78		Merge branch 'main' into inventory-character-display-fix
+7224c7d7f		Button Fix for Loadsave.cc
+72da5eb87	308	Merge pull request #308 from fallout2-ce/fix/tile-from-screen-xy-signature
+7338c2f42		Fix pipboy messages memory leak
+74c212560		Fix env
+74eb64b59		Disable debug checks
+75dbc9832		Add debug: true
+7604061e1	573	Fix script use-after-free when scripts remove themselves (#573)
+763169f33		Merge branch 'main' into add_cities_limit_fix
+767ae9af2		Fixed crash when running out of ammo before clip is full.
+76f3d8267		Clang-format fixes
+772d8cd1d	640	Fix the cursor getting stuck in view scrolling mode for encounters (#640)
+787fa1b1b		Show labels for debug
+7957246c7		Fix artifacts
+795ef54d7		fix formatting
+7960b3cb6		Add platform/architecture suffix to executables
+7a08f2e03		-Wswitch fixes
+7c7cb87f6	238	Merge pull request #238 from fallout2-ce/fix_memory_overlap_with_sound
+7d093030e		Fix find filtering
+823858f27		mapper: fix selected object being deleted when opening map
+833b6d821		Fix formatting using this command:
+84336d465		Fix warning
+86787e2c9		correct SSL function names in comments
+8714d418a		Clang format fixes
+88fd96201		char to int conversion operator fix
+89b681271		Typo fix
+8ad2cb7e2		Revert "Fix dependency"
+8eae8a4cb	8	Merge pull request #8 from roginvs/fallout2_ce_fix_formatting
+9097c2e76		Add commit hash to fix web builds until web ui is fixed
+92383353b		reverted the CharacterSoundEffect usage in sfxBuildCharName
+926efeb0c	16	Fix for workflow file #16
+92cc37560	359	Fix `list_as_array(LIST_CRITTERS)` returning objects with pid=-1 (#359)
+942d88476		Update inventory.cc to fix button click sounds for 'Move Items'
+950c12dbf	245	Merge pull request #245 from fallout2-ce/fix_indexes_in_file_list_init
+959d40dc0		y0lo PR fixes
+95c07dba9	482	Fix compile warnings (#482)
+9711e61f8		fixes heap-use-after-free in objectUseItemOnInternal when object is destoryed by the script (fixing K9 and attaching pole in Mariposa cart)
+98cf43438	9	Merge pull request #9 from roginvs/fix_targeted_attack_on_non_critter
+9974a23c1	243	Merge pull request #243 from fallout2-ce/fix-deployments-cleanup
+9a3ec752d		Fix typo
+9a84b67ed		comment typo fix
+9b6fbeecb	42	Merge pull request #42 from roginvs/fallout2-ce-main-fix-ci-release
+9b96e3118	17	Workflow permissions fix #17
+9bfc3e83c		Add fix_formatting script
+9c19d212a	500	Fix blue/green channel mixup in PCX reading (#500)
+9d6134367	14	Merge pull request #14 from roginvs/pvs_studio_fixes
+9e3ce4cd8		Fix stats test
+a0a597725		Fix extensions scan
+a0a6091bd		add package dependency fix
+a24e0630d		Fix wrong variable usage in character_editor
+a259a3318	114	Merge pull request #114 from fallout2-ce/fix-skill-oob-access
+a380a3c9e	525	Merge pull request #525 from fallout2-ce/stackable_empty_weapons_fix
+a406c5f01		CI fixes
+a478e24c8	279	Merge pull request #279 from fallout2-ce/context-menu-fix
+a4f9d7b94		Use env variables for debug info
+a59bfdb64		Fix debug print message
+a5de35884		Fix missing lib for 64bit windows
+a697f0b86	372	Fix garbled splash screen when `SkipOpeningMovies=1` (#372)
+a7de22897	426	frm2png fix unable to convert most FRM's (#426)
+a852e88bf		Clang format fix
+a88ca9f7e	201	Fix build warnings introduced by sfall opcodes/metarules (#201)
+aa7bda09d		Update game_dialog.cc to fix Combat Control buttons/sounds
+aac42c162	561	Fix refresh after elevator transition (#561)
+ab841916f		Dam usage fixes
+acc52383e		emscripten: add CASE_INSENSITIVE_FS, move source map generation to debug mode
+ade8c90f5		revert validation as the game doesn't start anymore
+b14f51871	339	Comment out hires_stencil debug logs (#339)
+b27b0f03f	329	Fix `get_ini_setting` (#329)
+b2efcffec		Fix to eliminate Clang warnings on old merged PRs
+b6384ce8e		Merge remote-tracking branch 'roginvs/add_cities_limit_fix' into add_cities_limit_fix_fallout2-ce
+b71f1e7d1	313	Merge pull request #313 from NovaRain/wmenc_table_fix
+b7933f6b8	159	Merge pull request #159 from fallout2-ce/inventory-character-display-fix
+b7f2b32b9	321	Debug window size setting, start debug output earlier and log number of loaded mods (#321)
+b8988b69a	569	combatAi: heap fragmentation fix, free previously initialized lists before init (#569)
+b93591f5d		EDG: fix incorrect image corruption when scroll limiting kicks in right at the edge border
+b97c9864a	347	Fix global script loading on non-Windows (#347)
+bb839cd6c		some fixes & improvements
+bc47279a9		Do changes in correct branch instead of wondering why it does not work
+bd4cadaa5	679	Fix under-clearing inventory screen (#679)
+beb3c537a	316	Fix several compile warnings (#316)
+bf1d35b2d	513	Fix possible double-free in animation_free (#513)
+bfcfaa954	267	Fix negative ammo for Mega Power Fist (#267)
+c02c5efcf	581	Don't crash on long config file lengths (#581)
+c240657d0	335	Fix two metarule argument popping order errors (#335)
+c33789cd6		copilot review fixes
+c574812f1	471	EDG: fix getIsoWindowSize returning (1, 1) in release builds (#471)
+c663d79b9		fix bug(?)
+c6818f084	497	Fix ddraw.ini -> game.cfg migration on unix-y systems (#497)
+c7a25f1dc	652	Fix many locations with possible read of uninitialized variables. (#652)
+c91057ec1		Use EM_ASYNC_JS correctly
+c95f91c2f	476	Fix returnval of critter_mod_skill (#476)
+ca72573c1		Merge branch 'main' into fix_gMapGlobalPointers_resize
+ca89abad6	596	[Et tu] Fix TMA (Tell me about) (#596)
+cb6a8ad7c	614	Revert weight indicator to green, and add old option (#614)
+cc7d9ed86		Revert "Use messages from pipboy"
+cedfe1f57		fix warning overlooked -Wswitch warning for AnimationType
+ceecc3ebd	552	Two crash fixes (#552)
+d029bf3cd		Revert rsync step
+d0c0a81ec		Fix steps and branch names
+d3346b5d1		Fix for workflow
+d532e4c39	244	Merge pull request #244 from fallout2-ce/fix_uncompressed_database_seek
+d53bda501		Fix github pages https://fallout2-ce.github.io/fallout2-ce/
+d593c481f		Clang-format fix & proper variable name
+d5b4486d6		Revert back to pipboy text
+d5fd197dd	584	Fix OOM memory access with alternate damage calculation (#584)
+d63f29329		fix typo
+d9c24e1cc		fix special animation handling in opAnim, missign AnimationType usages
+da3f1cc42		Fixes
+db07e95f5		Use gCitiesLimitFix variable
+db86e53af	473	Fix crash in opTokenize when prev is not null but not present in the source string (#473)
+dd49ddb7c		Fixed clang-format complaint.
+dfe7eeb3a	565	Merge pull request #565 from fallout2-ce/fix_use_after_free_in_use_item_on
+dff752970		Full Transparency Fix
+e0384a37b		Fix tileFromScreenXY signature cleanup
+e05dacebc	64	Merge pull request #64 from roginvs/fix_ci_release_names
+e1f5f83eb	369	Fix strange mouse behaviour in windowed mode when scale>=2 (#369)
+e21b80cff	658	fixes memory leak of script lists during map transitions (#658)
+e42b7ad2c		Fix flags
+e638c4cf0		Fix dependency
+e8d85dbdd	291	Revert to original behaviour in window.cc window existence checks (#291)
+e90b68837	550	fix an opposite scroll direction in towns list (#550)
+e9ee94a6d		-Wswitch fixes
+ea6628755		Load gCitiesLimitFix state before it is used
+eaa53b3e8	108	Merge pull request #108 from fallout2-ce/tmp_fix_web_ui_hash_until_fixed
+eb9f745b7	21	Merge pull request #21 from roginvs/ci_fix_releases
+ed23b0f50	310	Fix crash when trying to run missing combat_p_proc and start is not the first in the script (#310)
+ef0914237		Revert "Use cache string force"
+efd8a4a52	406	Fix last remaining warnings in MSVC (#406)
+f0691d2c2		Fix for hooks
+f17dd1911	341	Fix parameter order in metarules set_flags and set_outline. (#341)
+f291f52a6	275	Merge pull request #275 from fallout2-ce/click_through_fix
+f2b212770		fix processor name typo
+f35d1efab		Revert "Set MSVC_RUNTIME_LIBRARY in the makefile"
+f5507c8c5		Workflow permissions fix
+f60b773ed	273	Merge pull request #273 from fallout2-ce/add_cities_limit_fix_fallout2-ce
+f672ba4dd		Log GITHUB_OUTPUT for debugging
+f76e310f1		Fix mapper compilation
+f79cff356		Fixing clang-format
+f7fdc4c9d		skilldexrc ios fix
+fa6ae9847	633	Fix selected item highlight in character editor screen (#633)
+fc8fe334f	647	Fix NPC reactions in "use best weapon" button (#647)
+fdee9914e	541	Fix division by zero in objectExamineFunc (#541)
+feb0cd61f	536	fix healing revision op_tokenize (#536)
+fec5df898	511	Fix missing argument to format string (#511)

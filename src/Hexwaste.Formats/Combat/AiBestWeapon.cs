@@ -41,12 +41,13 @@ public static class AiBestWeapon
         int AttackType, int AvgDamage, int Cost, bool Ignore = false, bool IsFlare = false);
 
     /// <summary>ported from fallout2-ce src/combat_ai.cc _ai_best_weapon (:1857-1870): the candidate's
-    /// damage score — the (min+max)/2 midpoint (the SFALL avg-damage fix), DOUBLED when the weapon
-    /// carries a weapon perk (:1866). The explosive ×(extrasLength+1) factor (:1861) is NOT applied —
-    /// it needs _compute_explosion_on_extras, deferred with the ring-spiral explosion port.</summary>
-    public static int AvgDamage(int minDamage, int maxDamage, int weaponPerk)
+    /// damage score — the (min+max)/2 midpoint (the SFALL avg-damage fix), multiplied by
+    /// <paramref name="explosionExtras"/> + 1 for a blast weapon's extra victims (:1861), THEN doubled
+    /// when the weapon carries a weapon perk (:1866). The order matters: extras first, perk second.</summary>
+    public static int AvgDamage(int minDamage, int maxDamage, int weaponPerk, int explosionExtras = 0)
     {
         int avg = (minDamage + maxDamage) / 2;
+        avg *= explosionExtras + 1;
         return weaponPerk != -1 ? avg * 2 : avg;
     }
 
