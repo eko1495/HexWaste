@@ -13,11 +13,19 @@ namespace Hexwaste.Formats.Combat;
 ///
 /// PURE: tile arithmetic only. The caller applies radius limits, line-of-sight, damage and caps.
 ///
-/// DOCUMENTED DIVERGENCE: When a ring walk reaches a grid edge, the reference re-processes the clamped
-/// tile as duplicate extras in subsequent steps, whereas this port stops early instead. Both the reference's
-/// <c>tileGetTileInDirection</c> (tile.cc:893-906) and this port's <c>TileInDirection</c> clamp at grid edges
-/// and return the last valid tile unchanged — neither returns -1 or a sentinel. No committed test exercises
-/// a near-edge blast radius.
+/// DOCUMENTED DIVERGENCE: this is a SET change, not merely an ordering change. When a ring walk
+/// reaches a grid edge, the reference's <c>tileGetTileInDirection</c> (tile.cc:893-906) clamps and
+/// returns the same tile unchanged, and the reference's caller keeps walking — re-examining that
+/// clamped tile step after step as if it were newly-discovered ground, so the SAME tile (and any
+/// critter on it) is re-processed as a duplicate candidate for the rest of the ring (and would, in
+/// principle, spin forever without the caller's own extras/maxTargets cap eventually breaking the
+/// loop). This port's <c>TileInDirection</c> clamps identically, but <c>Tiles</c> detects the
+/// repeated tile and stops the walk early instead of re-yielding it. The result: near a grid edge,
+/// this port's spiral enumerates STRICTLY FEWER distinct tiles than the reference would visit, so
+/// fewer victims are ever candidates — the victim SET can shrink, not just reorder. The reference is
+/// no better here (its repeated-tile behaviour is not a designed feature, just an unguarded loop), so
+/// stopping early is judged the right engineering call and is NOT changed by this fix — only
+/// documented. No committed test exercises a near-edge blast radius.
 /// </summary>
 public static class ExplosionSpiral
 {

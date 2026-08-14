@@ -817,13 +817,18 @@ public class CombatEngineTests
         // extendedFlags nibble (item.cc _attack_anim[6] == ANIM_FIRE_SINGLE). TestWeapon always leaves
         // AnimationCode == 0, so under the bug this branch NEVER returns a nonzero radius for ANY ranged
         // weapon — a rocket launcher's own extras are always counted as 0 and it can never win a
-        // close-call vs a plain rifle. Two critters sit at hex-distance EXACTLY 3 from the defender
-        // (ring 3, TileInDirection distance:3) — inside the rocket's radius-3 blast but outside a
-        // radius-2 (grenade) blast, so this also pins the radius value at 3, not some other nonzero
-        // fallback.
+        // close-call vs a plain rifle.
+        //
+        // Final-review correction (2026-08-14): the AI's own extras spiral is ALWAYS bounded by the
+        // grenade radius (2), never the rocket radius (3) — traced combat_ai.cc:1860 (a > 0 gate
+        // only) → combat.cc:4033-4039 (isGrenade bounds the walk) → item.cc:1968-1972
+        // (weaponIsGrenade is damage-TYPE only, no animation gate) → item.cc:3376
+        // (gGrenadeExplosionRadius = 2). So the two extra critters below sit at hex-distance EXACTLY 2
+        // (ring 2), inside the AI-scoring spiral's actual radius-2 bound — see the companion negative
+        // test below, which places them at ring 3 instead and asserts they are NOT counted.
         var host = new FakeCombatHost { LoadedAmmoCount = 10 };
         MapObject dude = host.SetDude(NewCritter(tile: 20100, hp: 30, ap: 10));
-        // Attacker stands well outside its own rocket's radius-3 blast around the defender.
+        // Attacker stands well outside its own rocket's radius-2 (AI-scoring) blast around the defender.
         MapObject enemy = host.AddCritter(NewCritter(tile: HexGrid.TileInDirection(20100, 0, distance: 8), hp: 30, ap: 10));
         host.AiPackets[enemy] = new AiPacket(8, "Grunt", MinToHit: 0, MinHp: 0, 0, "", "", 0, 0, BestWeapon: -1);
         host.Equipped = (TestWeapon(0x100, 0x06, 5, 12), TestItem(0x100)); // some other equipped gun
@@ -836,7 +841,48 @@ public class CombatEngineTests
             (TestWeapon(0x202, 0x06, 4, 10, dmgType: 6 /* EXPLOSION */), rocketItem), // ranged rocket launcher, base avg 7
         ];
 
-        // Two extra critters at exactly hex-distance 3 from the dude — ring 3 only.
+        // Two extra critters at exactly hex-distance 2 from the dude — ring 2, inside the radius-2 walk.
+        host.AddCritter(NewCritter(tile: HexGrid.TileInDirection(dude.HexTile, 0, distance: 2), hp: 30, ap: 10));
+        host.AddCritter(NewCritter(tile: HexGrid.TileInDirection(dude.HexTile, 2, distance: 2), hp: 30, ap: 10));
+
+        var engine = new CombatEngine(host, new MinRng());
+
+        int chosen = engine.ProbeAiWeaponSwitch(enemy, dude);
+
+        Assert.Equal(0x202, chosen); // the rocket, boosted by its 2 extras (7*3=21 vs rifle's 10), wins
+    }
+
+    [Fact]
+    public void AiRocketLauncherScoringIgnoresVictimsAtRingThree()
+    {
+        // Final-review negative counterpart (2026-08-14) to AiPrefersARocketLauncherWhenExtraVictims-
+        // PushItsScoreAhead: proves the AI-scoring spiral radius is pinned at 2, not 3. Same setup as
+        // that test, EXCEPT the two extra critters sit at hex-distance EXACTLY 3 (ring 3) — outside the
+        // AI-scoring spiral's radius-2 bound (item.cc:3376 gGrenadeExplosionRadius; see the chain cited
+        // in ExplosionExtrasAt's doc comment). With them correctly excluded, the rocket's score stays
+        // at its unboosted 7 (extras = 0 → 7*(0+1) = 7), which is within 5 of the rifle's 10, so the
+        // tiebreak falls to item cost — both weapons cost 0 here, so the incumbent (rifle) keeps the
+        // win. If the spiral radius were wrongly reverted to 3 (the pre-fix bug this whole batch
+        // corrects), these same ring-3 critters WOULD be counted, the rocket's score would jump to
+        // 7*3=21, clear the rifle's 10 by more than 5, and `chosen` would flip to the rocket
+        // (0x202) — so this assertion fails under the radius-3 regression. Verified manually by
+        // temporarily reverting ExplosionExtrasAt's spiralRadius to 3: this test then fails with
+        // Assert.Equal(0x201, chosen) expecting 0x201 but getting 0x202.
+        var host = new FakeCombatHost { LoadedAmmoCount = 10 };
+        MapObject dude = host.SetDude(NewCritter(tile: 20100, hp: 30, ap: 10));
+        MapObject enemy = host.AddCritter(NewCritter(tile: HexGrid.TileInDirection(20100, 0, distance: 8), hp: 30, ap: 10));
+        host.AiPackets[enemy] = new AiPacket(8, "Grunt", MinToHit: 0, MinHp: 0, 0, "", "", 0, 0, BestWeapon: -1);
+        host.Equipped = (TestWeapon(0x100, 0x06, 5, 12), TestItem(0x100)); // some other equipped gun
+
+        MapObject rifleItem = TestItem(0x201);
+        MapObject rocketItem = TestItem(0x202);
+        host.InventoryWeapons[enemy] =
+        [
+            (TestWeapon(0x201, 0x06, 10, 10, dmgType: 0), rifleItem), // ranged rifle, avg 10, NORMAL damage
+            (TestWeapon(0x202, 0x06, 4, 10, dmgType: 6 /* EXPLOSION */), rocketItem), // ranged rocket launcher, base avg 7
+        ];
+
+        // Two extra critters at exactly hex-distance 3 from the dude — ring 3 only, OUTSIDE radius 2.
         host.AddCritter(NewCritter(tile: HexGrid.TileInDirection(dude.HexTile, 0, distance: 3), hp: 30, ap: 10));
         host.AddCritter(NewCritter(tile: HexGrid.TileInDirection(dude.HexTile, 2, distance: 3), hp: 30, ap: 10));
 
@@ -844,7 +890,7 @@ public class CombatEngineTests
 
         int chosen = engine.ProbeAiWeaponSwitch(enemy, dude);
 
-        Assert.Equal(0x202, chosen); // the rocket, boosted by its 2 extras (7*3=21 vs rifle's 10), wins
+        Assert.Equal(0x201, chosen); // ring-3 victims NOT counted → rocket stays unboosted → rifle wins
     }
 
     [Fact]

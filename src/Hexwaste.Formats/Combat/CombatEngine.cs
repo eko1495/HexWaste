@@ -1544,8 +1544,17 @@ public sealed class CombatEngine
     /// or the misc-10 marker): every critter within radius with clear line-of-sight
     /// takes rand(min,max) − DT_explosion − DR_explosion (stats 23/30), plus
     /// knockback dmg/10 away from the blast. Ported from actions.cc actionExplode /
-    /// _compute_explosion_*; the engine's ring-spiral is simplified to radius + LoS,
-    /// capped at 6 targets (combat.cc explosionGetMaxTargets).</summary>
+    /// _compute_explosion_*; victim discovery now walks the engine's own ring-spiral
+    /// (<see cref="ExplosionSpiral"/>, ported from _compute_explosion_on_extras), with LoS applied per
+    /// victim and a cap of 6 hits (combat.cc explosionGetMaxTargets). NOTE the cap here counts the
+    /// centre critter too, unlike the reference where explosionGetMaxTargets (6) bounds only the
+    /// EXTRAS array and the primary defender is hit outside/before that cap — so the reference can
+    /// damage up to 7 critters from one blast where this port caps at 6. NOTE ALSO: when two critters
+    /// share a tile, only the first one enumerated into <c>byTile</c> can ever be a victim of that
+    /// tile — a second critter on the same tile takes zero blast damage where the reference (whose
+    /// _obj_blocking_at also yields a single object per tile, and can itself pick a wall over a
+    /// critter) would have processed whichever object it found there. Not changed: judged more
+    /// faithful than less, but gameplay-visible, so documented here.</summary>
     public void Explode(int centerTile, MapObject? killer, int minDamage, int maxDamage, int radius)
     {
         const int maxTargets = 6;
@@ -2465,21 +2474,43 @@ public sealed class CombatEngine
     /// _compute_explosion_on_extras with noDamage = 1 purely to read extrasLength. Counting only; no
     /// damage, no RNG. Returns 0 for a non-blast weapon or a null defender.
     ///
+    /// The spiral itself is ALWAYS bounded by the grenade radius (2), never the rocket radius (3),
+    /// regardless of which one <see cref="WeaponDamageRadius"/> returns as its non-zero gate. Traced
+    /// the full call chain: <c>_ai_best_weapon</c> only checks <c>weaponGetDamageRadius(...) &gt; 0</c>
+    /// (combat_ai.cc:1860) to decide whether to run the count at all; the radius that actually bounds
+    /// the spiral is the <c>isGrenade</c> argument threaded into <c>_compute_explosion_on_extras</c>
+    /// (combat.cc:4033-4039), and the AI passes <c>isGrenade = weaponIsGrenade(weapon1)</c> — a
+    /// damage-TYPE-only test (EXPLOSION / PLASMA / EMP, item.cc:1968-1972) with no animation gate, so
+    /// it is true for a fire-single rocket launcher exactly as much as for a thrown grenade. Every
+    /// weapon that clears the <c>&gt; 0</c> gate is therefore "a grenade" for this AI-scoring purpose,
+    /// and the walk is bounded by <c>gGrenadeExplosionRadius = 2</c> (item.cc:3376), never 3. The
+    /// genuine 2-vs-3 split lives only in the real damage path (<see cref="Explode"/>,
+    /// combat.cc:3831-3836), which additionally requires <c>ANIM_THROW_ANIM</c> and is out of scope
+    /// here.
+    ///
     /// The attacker's own tile is excluded from the count: the reference's spiral scan special-cases
     /// <c>obstacle == attack->attacker</c> and routes it to the backwash branch instead of
     /// <c>attack->extras[]</c> (combat.cc:4056-4060), so a self-adjacent attacker never inflates its
-    /// own extrasLength.</summary>
+    /// own extrasLength.
+    ///
+    /// AI-SCORING-ONLY DIVERGENCES from the reference (combat.cc:4053-4055), none applied here: the
+    /// <c>_combat_is_shot_blocked</c> line-of-sight test (which <see cref="Explode"/> DOES apply to its
+    /// damage victims), the <c>OBJECT_SHOOT_THRU</c> flag test, and the attacker's own elevation as a
+    /// filter on candidate tiles. Also note <c>_host.CombatCritters</c> excludes the dude (see
+    /// <c>ViewerGame.CombatHost.cs</c> around :984), so when an enemy scores a blast against a
+    /// companion, the player standing nearby is never counted as an extra victim.</summary>
     private int ExplosionExtrasAt(ProtoInfo proto, int attackType, MapObject? defender, MapObject attacker)
     {
-        int radius = WeaponDamageRadius(proto, attackType);
-        if (radius <= 0 || defender is null)
+        int gate = WeaponDamageRadius(proto, attackType); // combat_ai.cc:1860 — a > 0 gate only
+        if (gate <= 0 || defender is null)
             return 0;
+        const int spiralRadius = 2; // gGrenadeExplosionRadius (item.cc:3376) — see doc comment above
         var occupied = new HashSet<int>();
         foreach (MapObject c in _host.CombatCritters)
             if (!c.IsDead && c != attacker)
                 occupied.Add(c.HexTile);
         int extras = 0;
-        foreach (int tile in ExplosionSpiral.Tiles(defender.HexTile, radius))
+        foreach (int tile in ExplosionSpiral.Tiles(defender.HexTile, spiralRadius))
             if (occupied.Contains(tile) && ++extras == 6) // explosionGetMaxTargets (item.cc:3574)
                 break;
         return extras;

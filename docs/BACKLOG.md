@@ -159,6 +159,27 @@ switch (`stat.cc:530`); (2) Pip-Boy "Radiated" was hardcoded false — now `Radi
 - Area-explosion VICTIM ORDERING now follows the engine ring-spiral (`ExplosionSpiral.Tiles`,
   shipped 2026-08-13 — see A2's shipped bullet); damage computation itself stays Hexwaste's
   simplified formula, not `attackComputeDamage` (`CombatEngine.cs` `Explode`).
+- **Final-review correction (2026-08-14): the near-grid-edge divergence is a SET change, not just an
+  ordering change.** `ExplosionSpiral.Tiles` stops its walk the first time it detects a
+  `tileGetTileInDirection`-style clamp at a grid edge, whereas the reference's caller keeps walking
+  and re-examines that same clamped tile as if it were new ground on every subsequent step of the
+  ring (an unguarded loop, not a designed feature — `tile.cc:893-906` / `combat.cc:4022-4045`). So
+  near an edge, this port's spiral enumerates strictly fewer distinct tiles than the reference would
+  visit, and the victim SET can shrink, not merely reorder. The reference is no better here (its
+  repeated-tile behaviour would just spin), so stopping early remains the right engineering call —
+  NOT changed by this fix, only documented (see `ExplosionSpiral.cs`'s doc comment).
+- **Final-review addition (2026-08-14): `Explode`'s `maxTargets = 6` cap semantics.** The reference's
+  `explosionGetMaxTargets()` (6) bounds only the `extras` array — the primary defender at the blast
+  tile is hit outside that cap, so one reference blast can damage up to 7 critters. This port's
+  `maxTargets` counts the centre critter toward the same cap of 6, so it can damage at most 6.
+  Documented divergence, not changed.
+- **Final-review addition (2026-08-14): shared-tile collapse in `Explode`.** `byTile.TryAdd` means
+  when two critters occupy the same tile, only the first one enumerated becomes that tile's possible
+  victim — a second critter on the same tile now takes zero blast damage where a resolution that
+  picked the other critter would have dealt it full damage. Judged MORE faithful, not less: the
+  reference's own `_obj_blocking_at` also yields a single object per tile, and can itself resolve to
+  a wall that masks a critter standing on the same tile. Not changed — but gameplay-visible, so
+  documented here and in `Explode`'s doc comment.
 
 ## Tier B — quest-driver + campaign-QA frontier (the dominant remaining WORK)
 
