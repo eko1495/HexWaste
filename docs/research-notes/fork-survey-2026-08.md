@@ -43,7 +43,7 @@ different numbers. Against the same head commit (`cd285597`), local git reports 
 384 files** for `e97087b..community/main` — 203 of them merges, and the set reaches back to
 2022-05-19, i.e. it includes long-lived side branches merged in *after* our pin, whose commits
 predate it. GitHub's compare set begins 2023-06-16. Neither count is wrong; they enumerate different
-things. Two consequences worth stating plainly:
+things. Three consequences worth stating plainly:
 
 - The **252-row shortlist derives from the API's enumeration**, so commits present only in git's
   larger set were never offered to Stage 2. That is an additional, previously unstated bound on the
@@ -65,9 +65,13 @@ no disassembly, no linked issue with an in-game symptom, and no reconstructable 
 
 ## 3. Triage results
 
-`scripts/fork-triage.sh` mechanically reduced the 1090 commits to a **252-row shortlist** (dropping
-commits confined to `.github/`, `CMakeLists*`, `os/`, `.clang-format`, emscripten/Android/iOS paths
-and the mapper, then keeping those touching files we ported). Two further stages fed the ledger:
+`scripts/fork-triage.sh` **enumerated** the 1090 commits as TSV rows (sha, PR number, subject) —
+it applies no filter of its own — and piping that through `grep -iE 'fix|bug|crash|correct|revert'`
+produced the **252-row shortlist**, checked in at `docs/research-notes/fork-fix-shortlist.tsv` with
+its reproduction command in the header. The script's `PORTED` file pattern is *documented but not
+applied* there: the compare API carries no per-commit file list, so "does this touch a file we
+ported?" was answered per-candidate during the Stage-2 read, not mechanically up front. Two further
+stages fed the ledger:
 
 - **Stage 2 (rationale read).** Classification was **deliberately bounded by a user scoping
   decision** to PR #675's 74 hunks plus the 35 shortlist commits touching `combat.cc`,
@@ -141,7 +145,10 @@ lumped `CritFailDamage(..., bool hurtSelf)` call — and review caught that *the
 the defect: our engine treated `DAM_HIT_SELF` and `DAM_HURT_SELF` as one branch that always rolled
 full weapon/unarmed damage, so a `HURT_SELF` fumble cost weapon damage **plus** 1–5 — further from
 vanilla in magnitude than before the port. Pass 2 rebuilt the branch to the reference's shape
-(`combat.cc:4336-4345`): `HIT_SELF` → `attackComputeDamage` (our weapon roll, unchanged); else
+(`combat.cc:4228-4232` **at our pinned `e97087b`**, where the `HIT_SELF`/`EXPLODE` pair lives and no
+`HURT_SELF` branch exists at all — the fork adds it immediately after, at `community/main`'s
+`combat.cc:4343-4345`; every unqualified line citation elsewhere in this repo means the pinned tree,
+where `4336-4345` is unrelated `attackDetermineToHit` code): `HIT_SELF` → `attackComputeDamage` (our weapon roll, unchanged); else
 `EXPLODE` → the blast; and `HURT_SELF` as its **own** branch adding `randomBetween(1, 5)` to an
 `attackerDamage` that starts at 0 — i.e. exactly 1–5, with no damage roll at all. (`_cf_table` never
 pairs `HURT_SELF` with `HIT_SELF`, so they cannot stack.) The shared tail — HP, log, transcript,
@@ -284,13 +291,26 @@ be re-opened, so their verdicts are summarised here.
 
 ### 5.3 What the rejections cost us
 
-Ten rows recorded a genuine **Hexwaste-side** gap in passing — found while proving a fork hunk
+Ten findings, spread across eight rows (two rows carry two each), recorded a genuine
+**Hexwaste-side** gap in passing — found while proving a fork hunk
 inapplicable, and unrelated to the fork commit that surfaced them. They are the single most valuable
 by-product of this pass. Because "nothing to do *about the fork commit*" is not the same as "nothing
 to do", they have been promoted out of ledger prose into first-class `docs/BACKLOG.md` entries
 (Tier F, plus the party-stacking bug in Tier A). If you are reading the ledger and see a `not-a-gap`
 row whose notes end in a parenthesised Hexwaste-side finding, the backlog entry is where the work is
 tracked.
+
+The final-review pass found **three more** that the policy above had missed because they were not
+row-tails: they sat inside a row's body prose or in untracked working notes, and so would have
+evaporated on merge. They are now **F12** (`ApplyAccidentalHit` runs a `damage_p_proc` for a
+missed-shot collateral victim that both `e97087b` and the fork suppress — fixture-moving), **F13**
+(`DAM_EXPLODE` crit-failure self-damage still runs no `damage_p_proc`, i.e. the PR #493 port is only
+*partially* applied across the crit-failure branches), and **F14** (our `CRIP_RANDOM` limb draw
+precedes the self-damage draws where the reference orders self-damage first — proven inert on the
+shipped `_cf_table`, so a documentation-of-divergence entry). The same pass added **F11**, which is
+*not* a fork finding at all: `DAM_HIT_SELF`/`DAM_RANDOM_HIT` self-damage is half vanilla because
+`CritFailDamage` passes `critMultiplier: 1`, a pre-existing defect from `f77e37f` that §4.1's port
+only pinned in a test.
 
 ## 6. Parked: QoL catalogue for a future phase
 

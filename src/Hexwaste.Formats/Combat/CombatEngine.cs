@@ -1182,7 +1182,8 @@ public sealed class CombatEngine
         if ((flags & CriticalTables.DamKnockedDown) != 0 && _knockedDown.Add(self))
             _host.Transcript($"knockdown: {_host.ObjectName(self)}@{self.HexTile}");
 
-        // Self-damage, in the reference's shape (combat.cc:4336-4345): HIT_SELF takes the weapon's rolled
+        // Self-damage, in the reference's shape (combat.cc:4228-4232 at our pinned e97087b — the fork adds
+        // the HURT_SELF branch straight after it, community/main combat.cc:4343-4345): HIT_SELF takes the weapon's rolled
         // damage as a direct HP hit (no on-hit hooks / ammo mods, not a re-attack); else EXPLODE detonates
         // the fumbling weapon at the attacker's tile (its own damage as the blast, radius 1 — a documented
         // simplification). HURT_SELF is a SEPARATE, much milder branch: a flat 1-5, with no damage roll at
@@ -1254,6 +1255,11 @@ public sealed class CombatEngine
         // member (the dude included, gPartyMembers[0]) is skipped: only an unaffiliated critter runs it.
         // The DAM_RANDOM_HIT victim is NOT this call site — it becomes attack->defender with oops left
         // at the original target, so its flag is true and it takes no damage_p_proc either way.
+        // One deliberate difference on this branch: the reference's self-damage _damage_object (:4683) is
+        // NOT preceded by a scriptSetObjects — unlike the defender (:4722) and extras (:4749) call sites —
+        // so source_obj keeps whatever the previous call left there and a script reading it here reads a
+        // stale handle. We pass
+        // the victim itself — a well-defined choice, since "the attacker damaged itself" is what happened.
         if (victim == attacker.Critter && dmg > 0 && victim.Sid != -1
             && victim != _host.Dude && !_host.PartyMembers.Contains(victim))
             foreach (string line in _host.RunDamageProc(victim, victim, dmg))

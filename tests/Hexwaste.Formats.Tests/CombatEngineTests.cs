@@ -2475,11 +2475,18 @@ public class CombatEngineTests
     [Fact]
     public void HitSelfFumbleStillRollsWeaponDamage()
     {
-        // The other half of combat.cc:4336-4345: DAM_HIT_SELF keeps the full weapon-damage roll (and
-        // takes NO 1-5 roll). _cf_table row 1 col 4 = 65536 = DAM_HIT_SELF exactly, so a gun whose
-        // criticalFailureType is 1 fumbling at max severity self-hits. SequenceRng: to-hit 100 (miss),
-        // upgrade 1 (crit-fail), severity raw 80 → chance = 80 + 25 = 105 → col 4; later draws repeat
-        // 80 clamped, so the 5-12 weapon roll yields its max, 12.
+        // The other half of the self-damage branch (combat.cc:4228-4232 at our pinned e97087b):
+        // DAM_HIT_SELF keeps the full weapon-damage roll (and takes NO 1-5 roll). _cf_table row 1
+        // col 4 = 65536 = DAM_HIT_SELF exactly, so a gun whose criticalFailureType is 1 fumbling at
+        // max severity self-hits. SequenceRng: to-hit 100 (miss), upgrade 1 (crit-fail), severity raw
+        // 80 → chance = 80 + 25 = 105 → col 4; later draws repeat 80 clamped, so the 5-12 weapon roll
+        // yields its max, 12 — and 12 then becomes 6 of HP, because CritFailDamage passes
+        // critMultiplier: 1 into RollWeaponDamage, whose body is `raw * critMultiplier / 2`.
+        // That halving is a KNOWN pre-existing fidelity bug, not the shape of the reference:
+        // e97087b's attackComputeDamage(attack, n, 2) multiplies by bonusDamageMultiplier 2 and then
+        // divides by 2 (combat.cc:4586 and the `damage /= 2` at :4601), i.e. x1, so vanilla
+        // self-damage is the full 12. This
+        // test pins TODAY's behaviour; see docs/BACKLOG.md F11 for the fix, which moves fixtures.
         var host = new FakeCombatHost
         {
             CriticalsEnabled = true,
