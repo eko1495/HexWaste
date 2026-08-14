@@ -2500,6 +2500,33 @@ public class CombatEngineTests
     }
 
     [Fact]
+    public void NpcSelfDamageFumbleRunsItsOwnDamageProc()
+    {
+        // community fix #493 (combat.cc _apply_damage): the attacker's self-damage _damage_object call
+        // passes the "hit an unintended target" flag, so in the ordinary case (defender == intendedTarget)
+        // the SELF-damaged attacker runs its own damage_p_proc.
+        var host = new FakeCombatHost { CriticalsEnabled = true };
+        MapObject dude = host.SetDude(NewCritter(20100, hp: 100, ap: 10));
+        MapObject enemy = host.AddCritter(NewCritter(HexGrid.TileInDirection(20100, 0), hp: 30, ap: 10));
+        enemy.Sid = 7; // a scripted NPC: damage_p_proc can run
+        var rng = new RecordingRng(new SequenceRng(100, 1, 100, 1, 60));
+        var engine = new CombatEngine(host, rng);
+
+        Assert.True(engine.TryAttack(enemy)); // open combat
+        host.Animating.Clear();
+        engine.ProcessAnimations();
+        engine.EndPlayerTurn();
+        for (int i = 0; i < 200 && engine.Phase == CombatPhase.EnemyTurn; i++)
+        {
+            host.Animating.Clear();
+            engine.Step();
+        }
+
+        Assert.Contains(host.Transcripts, t => t.StartsWith("crit-fail-self: "));
+        Assert.Contains(host.DamageProcCalls, c => c.Target == enemy && c.Source == enemy);
+    }
+
+    [Fact]
     public void NoCriticalFailureWithoutCriticalsOrJinxed()
     {
         // The inert invariant: a non-Jinxed dude before day 2 (CriticalsEnabled false) draws NOTHING
@@ -3003,7 +3030,12 @@ public class CombatEngineTests
         public bool StartDeathFall(MapObject critter, int deathAnim) => false; // no fall art → corpse now
         public void ConvertToCorpse(MapObject critter, int deathAnim) { }
         public void OnCritterRemoved(MapObject critter) { }
-        public IReadOnlyList<string> RunDamageProc(MapObject target, MapObject? source, int damage) => [];
+        public readonly List<(MapObject Target, MapObject? Source, int Damage)> DamageProcCalls = [];
+        public IReadOnlyList<string> RunDamageProc(MapObject target, MapObject? source, int damage)
+        {
+            DamageProcCalls.Add((target, source, damage));
+            return [];
+        }
         public (IReadOnlyList<string> Lines, bool Overridden) RunDestroyProc(MapObject critter, MapObject? killer) => ([], false);
         public void RemovePartyMember(MapObject critter) { }
         public IReadOnlyCollection<MapObject> PartyMembers => Allies;

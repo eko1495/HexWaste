@@ -1243,6 +1243,22 @@ public sealed class CombatEngine
         victim.CurrentHp -= dmg;
         _host.Log($"The {_host.ObjectName(victim)} takes {dmg} damage.");
         _host.Transcript($"{tag}: {_host.ObjectName(victim)}@{victim.HexTile} damage={dmg}");
+
+        // ported from fallout2-ce src/combat.cc _apply_damage() (community fix #493): the attacker's
+        // self-damage _damage_object call passes the "hit an UNINTENDED target" flag (the pre-image at
+        // e97087b passes its inverse and carries the author's own `// TODO: Not sure about
+        // "attack->defender == attack->oops"` on that very expression). With the corrected polarity the
+        // ordinary fumble — defender == the intended target — DOES run the self-damaged attacker's
+        // damage_p_proc, with itself as both damaged object and source. _damage_object still skips the
+        // proc when target and source are both party members, which for self-damage means EVERY party
+        // member (the dude included, gPartyMembers[0]) is skipped: only an unaffiliated critter runs it.
+        // The DAM_RANDOM_HIT victim is NOT this call site — it becomes attack->defender with oops left
+        // at the original target, so its flag is true and it takes no damage_p_proc either way.
+        if (victim == attacker.Critter && dmg > 0 && victim.Sid != -1
+            && victim != _host.Dude && !_host.PartyMembers.Contains(victim))
+            foreach (string line in _host.RunDamageProc(victim, victim, dmg))
+                _host.Log(line);
+
         if (victim.CurrentHp > 0)
             return;
         if (victim == _host.Dude)
