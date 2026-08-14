@@ -22,6 +22,14 @@ Key files: `src/dfile.cc` (DAT2), `src/db.cc` (VFS: loose files override DAT), `
 When porting, add a comment with the source: `// ported from fallout2-ce src/tile.cc tileToScreenXY()`.
 If a format detail can't be confirmed from fallout2-ce sources, **stop and ask** instead of guessing.
 
+Upstream is unmaintained ([issue #522](https://github.com/alexbatalov/fallout2-ce/issues/522)). The
+maintained fork `fallout2-ce/fallout2-ce` is fetched into the same clone as the `community` remote
+(`git diff e97087b..community/main -- src/x.cc`). **`alexbatalov e97087b` remains authoritative for
+vanilla behavior**; `community/main` is a **bug-fix candidate source only**. Port a fork change only
+when it corrects a misreading of the original game — never because the fork made it. The fork also
+carries deliberate non-vanilla QoL (often marked `// CE:`); that is out of scope. Cite ported fork
+fixes as `// ported from fallout2-ce src/x.cc f() (community fix #NNN)`.
+
 ## Layout
 
 - `src/Hexwaste.Formats` — pure .NET class library, zero MonoGame deps, unit-testable.
