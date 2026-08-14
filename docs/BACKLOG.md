@@ -181,8 +181,14 @@ switch (`stat.cc:530`); (2) Pip-Boy "Radiated" was hardcoded false — now `Radi
   a wall that masks a critter standing on the same tile. Not changed — but gameplay-visible, so
   documented here and in `Explode`'s doc comment.
 
-**A6 — Party members land STACKED on one hex after a map transition. LIVE BUG (found 2026-08-14,
-independently reviewer-confirmed).** *Effort S · user-visible.* `InjectPartyMembers`
+**A6 — Party members land STACKED on one hex after a map transition. ~~LIVE BUG~~ FIXED 2026-08-14
+(found and fixed the same day, independently reviewer-confirmed).** *Effort S · user-visible.*
+Fixed by `Placement.FreeTilesAround` (`src/Hexwaste.Formats/Map/Placement.cs`), which does one
+placement pass for the whole party and claims each tile as it is handed out; `InjectPartyMembers`
+now calls it once instead of hand-rolling a per-member scan. Covered by `PlacementTests`
+(3 cases: distinctness, blocked-neighbour skip, centre fallback once the ring is exhausted). All
+golden suites stayed byte-identical — the first member keeps the tile it always got, only the
+subsequent ones move. Original diagnosis, for the record: `InjectPartyMembers`
 (`src/Hexwaste.Viewer/ViewerGame.Party.cs:77-107`) picks each member's spawn tile by scanning
 `_blockedTiles` for the first free neighbour of the dude (`:84-92`), but `RebuildBlockedTiles` is
 called only **after** the loop (`:106`) and the just-placed member's tile is never added to the set
@@ -299,8 +305,10 @@ iteration in an incrementing rotation from `gDude->tile`, gated by `wmEvalTileNu
 ring scan of directions 0..5 at distance 1, with no seed variable and no `wmEvalTileNumForPlacement`.
 Note for whoever ports it: `e97087b`'s seed is `int v7 = 0;` with `v7++` **before** first use, i.e.
 the first direction tried is 1 (`ROTATION_E`); PR #675 reseeds it to `ROTATION_NW` with no
-disassembly, so follow `e97087b`. **Do A6 first** — it is a distinct, simpler bug in the same
-routine, and fixing it does not require this port.
+disassembly, so follow `e97087b`. **A6 is done** (2026-08-14) — it was the distinct, simpler bug in
+the same routine, and this port was not required for it. Whoever takes F3 replaces
+`Placement.FreeTilesAround`'s ring scan with the chained walk; the per-member tile claiming A6 added
+is still wanted, since `_objPMAttemptPlacement` also refuses an occupied tile.
 
 ### Rendering / UI fidelity
 
