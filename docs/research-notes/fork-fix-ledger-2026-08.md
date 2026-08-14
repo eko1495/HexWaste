@@ -238,6 +238,28 @@ path — the same category as hunk 51 (`proto_critter_init`) — which Hexwaste 
 all (we only ever read real `.pro` files), so the "touched routine is ported" half of the rule
 fails and `not-applicable` stands.
 
+### Hexwaste-side findings promoted out of this ledger (2026-08-14, Task 8)
+
+Ten rows above end with a parenthesised **Hexwaste-side** finding: a real divergence from `e97087b`
+noticed while proving the fork's hunk inapplicable, unrelated to that hunk. "Nothing to do about the
+fork commit" is not "nothing to do", so each is now a first-class `docs/BACKLOG.md` entry and is
+tracked there, not here. The mapping:
+
+| Ledger row | Backlog entry |
+| --- | --- |
+| #675 hunk 60 — `InjectPartyMembers` re-scans a `_blockedTiles` set rebuilt only after the loop | **A6** (live bug: companions land stacked) |
+| #675 hunk 8 — `max_dist` gate + `CRITTER_MANEUVER_DISENGAGING` absent (use `<`, not the fork's `<=`) | **F1** (re-record tier) |
+| #572 (1/2) — head mood honours the script argument instead of the critter's reaction | **F2** |
+| #675 hunk 60 — `_partyMemberSyncPosition` fan-out has no analogue | **F3** |
+| #675 hunk 20 — heads top-anchored (`y = frameY + 14`) instead of bottom-anchored | **F4** |
+| #675 hunk 20 — `_totalHotx` unapplied (5 heads) | **F5** |
+| #675 hunk 17 — no `'\x95'` knob, flat 162-px wrap budget | **F6** |
+| #675 hunk 5 — no automap wall-colour-priority guard | **F7** |
+| `object.cc _obj_render_*` — outlines uncapped (we match the fork, not vanilla) | **F8** |
+| `d9c24e1cc` — `Anim` external drops script values 1000/1010 | **F9** |
+
+Summary and rejection patterns: `docs/research-notes/fork-survey-2026-08.md` (§5.3 for these).
+
 ### Recurring judgment note
 
 Several in-scope commits are the fork **repairing its own post-`e97087b` refactors** rather than
