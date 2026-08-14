@@ -774,6 +774,215 @@ public class CombatEngineTests
     }
 
     [Fact]
+    public void AiPrefersABlastWeaponWhenExtraVictimsPushItsScoreAhead()
+    {
+        // LIVENESS PROOF (task 3, step 5): the ×(extras+1) factor is not just wired, it changes a real
+        // decision. best_weapon = -1 (default) → the RANGED/THROW preference orders differ, so the
+        // choice hinges on the |Δavg| > 5 damage override (combat_ai.cc:1963). Weapon A (a ranged rifle,
+        // avg 10) alone beats weapon B (a thrown frag grenade, base avg 7 — never > 5 ahead of A) — but
+        // with 2 extra critters standing around the defender's tile within the grenade's radius-2 blast,
+        // B's score becomes 7 * (2+1) = 21, now 11 ahead of A, clears the override and wins.
+        var host = new FakeCombatHost { LoadedAmmoCount = 10 };
+        MapObject dude = host.SetDude(NewCritter(tile: 20100, hp: 30, ap: 10));
+        // The enemy stands well outside the grenade's own radius-2 blast (distance 5) so its own tile
+        // never counts itself as an "extra" — keeps the extras count exactly the 2 critters seeded below.
+        MapObject enemy = host.AddCritter(NewCritter(tile: HexGrid.TileInDirection(20100, 0, distance: 5), hp: 30, ap: 10));
+        host.AiPackets[enemy] = new AiPacket(8, "Grunt", MinToHit: 0, MinHp: 0, 0, "", "", 0, 0, BestWeapon: -1);
+        host.Equipped = (TestWeapon(0x100, 0x06, 5, 12), TestItem(0x100)); // some other equipped gun
+
+        MapObject rifleItem = TestItem(0x201);
+        MapObject grenadeItem = TestItem(0x202);
+        host.InventoryWeapons[enemy] =
+        [
+            (TestWeapon(0x201, 0x06, 10, 10, dmgType: 0), rifleItem),               // ranged rifle, avg 10
+            (TestWeapon(0x202, 0x05, 4, 10, dmgType: 6 /* EXPLOSION */), grenadeItem), // thrown grenade, base avg 7
+        ];
+
+        // Two extra critters standing adjacent to the dude (well within the grenade's radius-2 spiral).
+        host.AddCritter(NewCritter(tile: HexGrid.TileInDirection(dude.HexTile, 1), hp: 30, ap: 10));
+        host.AddCritter(NewCritter(tile: HexGrid.TileInDirection(dude.HexTile, 3), hp: 30, ap: 10));
+
+        var engine = new CombatEngine(host, new MinRng());
+
+        int chosen = engine.ProbeAiWeaponSwitch(enemy, dude);
+
+        Assert.Equal(0x202, chosen); // the grenade, boosted by its 2 extras, beats the raw-damage rifle
+    }
+
+    [Fact]
+    public void AiPrefersARocketLauncherWhenExtraVictimsPushItsScoreAhead()
+    {
+        // Review finding "Important 2": WeaponDamageRadius's ranged/fire-single test used
+        // w.AnimationCode (the held-weapon-sprite selector, art.h WEAPON_ANIMATION_*) instead of the
+        // extendedFlags nibble (item.cc _attack_anim[6] == ANIM_FIRE_SINGLE). TestWeapon always leaves
+        // AnimationCode == 0, so under the bug this branch NEVER returns a nonzero radius for ANY ranged
+        // weapon — a rocket launcher's own extras are always counted as 0 and it can never win a
+        // close-call vs a plain rifle.
+        //
+        // Final-review correction (2026-08-14): the AI's own extras spiral is ALWAYS bounded by the
+        // grenade radius (2), never the rocket radius (3) — traced combat_ai.cc:1860 (a > 0 gate
+        // only) → combat.cc:4033-4039 (isGrenade bounds the walk) → item.cc:1968-1972
+        // (weaponIsGrenade is damage-TYPE only, no animation gate) → item.cc:3376
+        // (gGrenadeExplosionRadius = 2). So the two extra critters below sit at hex-distance EXACTLY 2
+        // (ring 2), inside the AI-scoring spiral's actual radius-2 bound — see the companion negative
+        // test below, which places them at ring 3 instead and asserts they are NOT counted.
+        var host = new FakeCombatHost { LoadedAmmoCount = 10 };
+        MapObject dude = host.SetDude(NewCritter(tile: 20100, hp: 30, ap: 10));
+        // Attacker stands well outside its own rocket's radius-2 (AI-scoring) blast around the defender.
+        MapObject enemy = host.AddCritter(NewCritter(tile: HexGrid.TileInDirection(20100, 0, distance: 8), hp: 30, ap: 10));
+        host.AiPackets[enemy] = new AiPacket(8, "Grunt", MinToHit: 0, MinHp: 0, 0, "", "", 0, 0, BestWeapon: -1);
+        host.Equipped = (TestWeapon(0x100, 0x06, 5, 12), TestItem(0x100)); // some other equipped gun
+
+        MapObject rifleItem = TestItem(0x201);
+        MapObject rocketItem = TestItem(0x202);
+        host.InventoryWeapons[enemy] =
+        [
+            (TestWeapon(0x201, 0x06, 10, 10, dmgType: 0), rifleItem), // ranged rifle, avg 10, NORMAL damage
+            (TestWeapon(0x202, 0x06, 4, 10, dmgType: 6 /* EXPLOSION */), rocketItem), // ranged rocket launcher, base avg 7
+        ];
+
+        // Two extra critters at exactly hex-distance 2 from the dude — ring 2, inside the radius-2 walk.
+        host.AddCritter(NewCritter(tile: HexGrid.TileInDirection(dude.HexTile, 0, distance: 2), hp: 30, ap: 10));
+        host.AddCritter(NewCritter(tile: HexGrid.TileInDirection(dude.HexTile, 2, distance: 2), hp: 30, ap: 10));
+
+        var engine = new CombatEngine(host, new MinRng());
+
+        int chosen = engine.ProbeAiWeaponSwitch(enemy, dude);
+
+        Assert.Equal(0x202, chosen); // the rocket, boosted by its 2 extras (7*3=21 vs rifle's 10), wins
+    }
+
+    [Fact]
+    public void AiRocketLauncherScoringIgnoresVictimsAtRingThree()
+    {
+        // Final-review negative counterpart (2026-08-14) to AiPrefersARocketLauncherWhenExtraVictims-
+        // PushItsScoreAhead: proves the AI-scoring spiral radius is pinned at 2, not 3. Same setup as
+        // that test, EXCEPT the two extra critters sit at hex-distance EXACTLY 3 (ring 3) — outside the
+        // AI-scoring spiral's radius-2 bound (item.cc:3376 gGrenadeExplosionRadius; see the chain cited
+        // in ExplosionExtrasAt's doc comment). With them correctly excluded, the rocket's score stays
+        // at its unboosted 7 (extras = 0 → 7*(0+1) = 7), which is within 5 of the rifle's 10, so the
+        // tiebreak falls to item cost — both weapons cost 0 here, so the incumbent (rifle) keeps the
+        // win. If the spiral radius were wrongly reverted to 3 (the pre-fix bug this whole batch
+        // corrects), these same ring-3 critters WOULD be counted, the rocket's score would jump to
+        // 7*3=21, clear the rifle's 10 by more than 5, and `chosen` would flip to the rocket
+        // (0x202) — so this assertion fails under the radius-3 regression. Verified manually by
+        // temporarily reverting ExplosionExtrasAt's spiralRadius to 3: this test then fails with
+        // Assert.Equal(0x201, chosen) expecting 0x201 but getting 0x202.
+        var host = new FakeCombatHost { LoadedAmmoCount = 10 };
+        MapObject dude = host.SetDude(NewCritter(tile: 20100, hp: 30, ap: 10));
+        MapObject enemy = host.AddCritter(NewCritter(tile: HexGrid.TileInDirection(20100, 0, distance: 8), hp: 30, ap: 10));
+        host.AiPackets[enemy] = new AiPacket(8, "Grunt", MinToHit: 0, MinHp: 0, 0, "", "", 0, 0, BestWeapon: -1);
+        host.Equipped = (TestWeapon(0x100, 0x06, 5, 12), TestItem(0x100)); // some other equipped gun
+
+        MapObject rifleItem = TestItem(0x201);
+        MapObject rocketItem = TestItem(0x202);
+        host.InventoryWeapons[enemy] =
+        [
+            (TestWeapon(0x201, 0x06, 10, 10, dmgType: 0), rifleItem), // ranged rifle, avg 10, NORMAL damage
+            (TestWeapon(0x202, 0x06, 4, 10, dmgType: 6 /* EXPLOSION */), rocketItem), // ranged rocket launcher, base avg 7
+        ];
+
+        // Two extra critters at exactly hex-distance 3 from the dude — ring 3 only, OUTSIDE radius 2.
+        host.AddCritter(NewCritter(tile: HexGrid.TileInDirection(dude.HexTile, 0, distance: 3), hp: 30, ap: 10));
+        host.AddCritter(NewCritter(tile: HexGrid.TileInDirection(dude.HexTile, 2, distance: 3), hp: 30, ap: 10));
+
+        var engine = new CombatEngine(host, new MinRng());
+
+        int chosen = engine.ProbeAiWeaponSwitch(enemy, dude);
+
+        Assert.Equal(0x201, chosen); // ring-3 victims NOT counted → rocket stays unboosted → rifle wins
+    }
+
+    [Fact]
+    public void AiRecognizesAThrownPlasmaGrenadeAsABlastWeapon()
+    {
+        // Review finding "Important 1": the blastDamage test used damage-type constants 6/7/8
+        // (EXPLOSION/PLASMA/EMP per the task brief's WRONG numbering) instead of the reference's
+        // 6/3/5 (proto_types.h:59-67). Under the bug, a PLASMA(=3) grenade's blastDamage is false, so
+        // it is never treated as a grenade and never gets the ×(extras+1) boost.
+        var host = new FakeCombatHost { LoadedAmmoCount = 10 };
+        MapObject dude = host.SetDude(NewCritter(tile: 20100, hp: 30, ap: 10));
+        MapObject enemy = host.AddCritter(NewCritter(tile: HexGrid.TileInDirection(20100, 0, distance: 5), hp: 30, ap: 10));
+        host.AiPackets[enemy] = new AiPacket(8, "Grunt", MinToHit: 0, MinHp: 0, 0, "", "", 0, 0, BestWeapon: -1);
+        host.Equipped = (TestWeapon(0x100, 0x06, 5, 12), TestItem(0x100));
+
+        MapObject rifleItem = TestItem(0x201);
+        MapObject grenadeItem = TestItem(0x202);
+        host.InventoryWeapons[enemy] =
+        [
+            (TestWeapon(0x201, 0x06, 10, 10, dmgType: 0), rifleItem),                // ranged rifle, avg 10
+            (TestWeapon(0x202, 0x05, 4, 10, dmgType: 3 /* PLASMA */), grenadeItem),  // thrown plasma grenade, base avg 7
+        ];
+
+        host.AddCritter(NewCritter(tile: HexGrid.TileInDirection(dude.HexTile, 1), hp: 30, ap: 10));
+        host.AddCritter(NewCritter(tile: HexGrid.TileInDirection(dude.HexTile, 3), hp: 30, ap: 10));
+
+        var engine = new CombatEngine(host, new MinRng());
+
+        int chosen = engine.ProbeAiWeaponSwitch(enemy, dude);
+
+        Assert.Equal(0x202, chosen); // the plasma grenade, boosted by its 2 extras, beats the rifle
+    }
+
+    [Fact]
+    public void AiRecognizesAThrownEmpGrenadeAsABlastWeapon()
+    {
+        // Same as the plasma case, but for EMP (=5), also miscoded as 8 by the bug.
+        var host = new FakeCombatHost { LoadedAmmoCount = 10 };
+        MapObject dude = host.SetDude(NewCritter(tile: 20100, hp: 30, ap: 10));
+        MapObject enemy = host.AddCritter(NewCritter(tile: HexGrid.TileInDirection(20100, 0, distance: 5), hp: 30, ap: 10));
+        host.AiPackets[enemy] = new AiPacket(8, "Grunt", MinToHit: 0, MinHp: 0, 0, "", "", 0, 0, BestWeapon: -1);
+        host.Equipped = (TestWeapon(0x100, 0x06, 5, 12), TestItem(0x100));
+
+        MapObject rifleItem = TestItem(0x201);
+        MapObject grenadeItem = TestItem(0x202);
+        host.InventoryWeapons[enemy] =
+        [
+            (TestWeapon(0x201, 0x06, 10, 10, dmgType: 0), rifleItem),              // ranged rifle, avg 10
+            (TestWeapon(0x202, 0x05, 4, 10, dmgType: 5 /* EMP */), grenadeItem),  // thrown EMP grenade, base avg 7
+        ];
+
+        host.AddCritter(NewCritter(tile: HexGrid.TileInDirection(dude.HexTile, 1), hp: 30, ap: 10));
+        host.AddCritter(NewCritter(tile: HexGrid.TileInDirection(dude.HexTile, 3), hp: 30, ap: 10));
+
+        var engine = new CombatEngine(host, new MinRng());
+
+        int chosen = engine.ProbeAiWeaponSwitch(enemy, dude);
+
+        Assert.Equal(0x202, chosen); // the EMP grenade, boosted by its 2 extras, beats the rifle
+    }
+
+    [Fact]
+    public void AiGivesNoBlastRadiusToANonBlastWeapon()
+    {
+        // Sanity check: a thrown weapon with ordinary (non-blast) damage never gets the ×(extras+1)
+        // boost even with extra critters standing right next to the defender — WeaponDamageRadius
+        // returns 0, so ExplosionExtrasAt never fires (radius <= 0 short-circuit).
+        var host = new FakeCombatHost { LoadedAmmoCount = 10 };
+        MapObject dude = host.SetDude(NewCritter(tile: 20100, hp: 30, ap: 10));
+        MapObject enemy = host.AddCritter(NewCritter(tile: HexGrid.TileInDirection(20100, 0, distance: 5), hp: 30, ap: 10));
+        host.AiPackets[enemy] = new AiPacket(8, "Grunt", MinToHit: 0, MinHp: 0, 0, "", "", 0, 0, BestWeapon: -1);
+        host.Equipped = (TestWeapon(0x100, 0x06, 5, 12), TestItem(0x100));
+
+        MapObject rifleItem = TestItem(0x201);
+        MapObject throwingKnifeItem = TestItem(0x202);
+        host.InventoryWeapons[enemy] =
+        [
+            (TestWeapon(0x201, 0x06, 10, 10, dmgType: 0), rifleItem),                // ranged rifle, avg 10
+            (TestWeapon(0x202, 0x05, 4, 10, dmgType: 0 /* NORMAL */), throwingKnifeItem), // thrown knife, base avg 7
+        ];
+
+        host.AddCritter(NewCritter(tile: HexGrid.TileInDirection(dude.HexTile, 1), hp: 30, ap: 10));
+        host.AddCritter(NewCritter(tile: HexGrid.TileInDirection(dude.HexTile, 3), hp: 30, ap: 10));
+
+        var engine = new CombatEngine(host, new MinRng());
+
+        int chosen = engine.ProbeAiWeaponSwitch(enemy, dude);
+
+        Assert.Equal(0x201, chosen); // no blast boost for the knife → the rifle's raw damage still wins
+    }
+
+    [Fact]
     public void AiKeepsFistsWhenNoCarriedWeaponQualifies()
     {
         // The inert-by-default invariant: an empty inventory → no candidate → fists (-1), nothing wielded.
@@ -1526,6 +1735,77 @@ public class CombatEngineTests
         Assert.Equal(75, host.XpAwarded); // out-of-combat blast pays immediately
     }
 
+    [Fact]
+    public void ExplosionDamagesNonCentreVictimsInSpiralOrderNotDistanceOrder()
+    {
+        // ported from fallout2-ce src/combat.cc _compute_explosion_on_extras (:4022): victims are
+        // collected ring-by-ring in rotation order, NOT nearest-first. Both victims here sit at
+        // distance 1, so a distance sort keeps list order (west, then north-east) while the spiral
+        // opens at the NE neighbour — so the order flips, and with it which victim draws first.
+        const int center = 20100;
+        const int NE = 0, W = 4;
+        var host = new FakeCombatHost();
+        host.SetDude(NewCritter(tile: 20900, hp: 30, ap: 10)); // far away, not a victim
+
+        int westTile = HexGrid.TileInDirection(center, W);
+        int northEastTile = HexGrid.TileInDirection(center, NE);
+        host.AddCritter(NewCritter(tile: westTile, hp: 100));
+        host.AddCritter(NewCritter(tile: northEastTile, hp: 100));
+
+        var engine = new CombatEngine(host, new MinRng());
+        engine.Explode(center, killer: null, minDamage: 10, maxDamage: 10, radius: 2);
+
+        // The transcript records victims in the order they were damaged, at the tile they occupied AT
+        // THAT MOMENT — captured above, since a nonzero-damage hit also knocks the victim back
+        // (Explode -> Shove), which would otherwise mutate MapObject.HexTile out from under a
+        // post-Explode read.
+        var hitOrder = host.Transcripts
+            .Where(t => t.StartsWith("explosion-hit:"))
+            .ToList();
+        Assert.Equal(2, hitOrder.Count);
+        Assert.Contains($"@{northEastTile}", hitOrder[0]); // spiral opens NE
+        Assert.Contains($"@{westTile}", hitOrder[1]);
+    }
+
+    [Fact]
+    public void ACritterOnTheBlastTileIsDamagedBeforeAnySpiralVictim()
+    {
+        // DOCUMENTED DIVERGENCE (combat.cc:4033): the reference never enumerates the blast tile — its
+        // occupant is the primary defender, damaged by the main attack path. Hexwaste's Explode has no
+        // separate primary path, so the centre critter is damaged FIRST and the spiral orders the rest.
+        // Without this, a strict spiral port would leave a critter standing on the blast tile unharmed.
+        //
+        // DEVIATION FROM BRIEF: the brief's 2-victim version (centre + one neighbour) can never fail
+        // under the OLD distance sort either — the centre tile is always distance 0, the unbeatable
+        // minimum, so OrderBy(Distance) already puts it first regardless of insertion order or spiral
+        // logic. Confirmed empirically: that 2-victim setup PASSED against the pre-change code (see
+        // task-2-report.md). A third distance-1 victim is added here (west, same trick as the sibling
+        // spiral-order test) so the assertion also pins the spiral tie-break among the non-centre
+        // victims — which DOES fail pre-change (distance sort's stable tie keeps insertion order:
+        // west before north-east).
+        const int center = 20100;
+        const int NE = 0, W = 4;
+        var host = new FakeCombatHost();
+        host.SetDude(NewCritter(tile: 20900, hp: 30, ap: 10)); // far away, not a victim
+
+        int westTile = HexGrid.TileInDirection(center, W);
+        int neighbourTile = HexGrid.TileInDirection(center, NE);
+        host.AddCritter(NewCritter(tile: westTile, hp: 100));
+        host.AddCritter(NewCritter(tile: neighbourTile, hp: 100));
+        host.AddCritter(NewCritter(tile: center, hp: 100));
+
+        var engine = new CombatEngine(host, new MinRng());
+        engine.Explode(center, killer: null, minDamage: 10, maxDamage: 10, radius: 2);
+
+        // Tiles captured above (not read live off MapObject.HexTile after Explode), since a nonzero
+        // hit also knocks the victim back (Explode -> Shove), which would otherwise mutate HexTile.
+        var hitOrder = host.Transcripts.Where(t => t.StartsWith("explosion-hit:")).ToList();
+        Assert.Equal(3, hitOrder.Count);
+        Assert.Contains($"@{center}", hitOrder[0]); // centre victim first...
+        Assert.Contains($"@{neighbourTile}", hitOrder[1]); // ...then the spiral opens NE...
+        Assert.Contains($"@{westTile}", hitOrder[2]); // ...then west
+    }
+
     private static int Step(int tile, int dir, int n)
     {
         for (int i = 0; i < n; i++)
@@ -2054,9 +2334,9 @@ public class CombatEngineTests
     }
 
     /// <summary>A single-shot gun (ext 0x06 = primary SINGLE) with range 40 and AP cost 5.</summary>
-    private static (ProtoInfo Proto, MapObject Item) MakeGun(int ap = 5)
+    private static (ProtoInfo Proto, MapObject Item) MakeGun(int ap = 5, int critFailType = 0)
     {
-        var w = new WeaponProtoStats(0, 5, 12, 0, 40, 0, 0, 0, ap, 0, 0, 0, -1, 12, 0);
+        var w = new WeaponProtoStats(0, 5, 12, 0, 40, 0, 0, 0, ap, 0, 0, 0, -1, 12, 0, critFailType);
         var proto = new ProtoInfo(8, 0, 0x06000000, 0, 0x06, 3, Weapon: w);
         var item = new MapObject { Id = 8, HexTile = 0, X = 0, Y = 0, Frame = 0, Rotation = 0, Fid = 0x06000000, Flags = 0, Pid = 8, Sid = -1, AmmoQuantity = -1 };
         return (proto, item);
@@ -2165,6 +2445,92 @@ public class CombatEngineTests
         var engine = new CombatEngine(host, new SequenceRng(100, 1, 100, 0));
         Assert.True(engine.TryAttack(enemy));
         Assert.NotEqual(0, dude.CombatResults & CriticalTables.DamCripLimbs); // a limb is crippled
+    }
+
+    [Fact]
+    public void HurtSelfFumbleRollsTheExtraOneToFiveDamage()
+    {
+        // community fix #675 (combat.cc:4336-4345): DAM_HURT_SELF is its OWN branch — the reference only
+        // rolls weapon damage for DAM_HIT_SELF / DAM_EXPLODE, and _cf_table never pairs HURT_SELF with
+        // HIT_SELF, so a HURT_SELF fumble is worth EXACTLY randomBetween(1, 5) and nothing else.
+        // _cf_table row 0 (unarmed) col 3 = 524290 = HURT_SELF | KNOCKED_DOWN, so a day-6 dude fumble
+        // at severity 3 takes that path. SequenceRng: to-hit 100 (miss), upgrade 1 (crit-fail),
+        // severity raw 60 → chance = 60 − 5*(LUCK 0 − 5) = 85, i.e. the 76..95 bucket = col 3;
+        // every later draw repeats 60 clamped into range → the 1-5 roll yields 5.
+        var host = new FakeCombatHost { CriticalsEnabled = true, DudeCritFailuresEnabled = true };
+        MapObject dude = host.SetDude(NewCritter(20100, hp: 30, ap: 10));
+        MapObject enemy = host.AddCritter(NewCritter(HexGrid.TileInDirection(20100, 0), hp: 100));
+        var rng = new RecordingRng(new SequenceRng(100, 1, 60));
+        var engine = new CombatEngine(host, rng);
+
+        Assert.True(engine.TryAttack(enemy));
+
+        // The exact draw stream: to-hit, crit-fail upgrade, severity, then the 1-5 self-hurt roll.
+        // The reference's randomBetween(1, 5) is inclusive → Next(1, 6) here. No weapon/base damage
+        // draw may precede it — that was the lumped-with-HIT_SELF bug.
+        Assert.Equal([(1, 101), (1, 101), (1, 101), (1, 6)], rng.Draws);
+        Assert.Equal(25, dude.CurrentHp); // 30 − 5, the clamped 1-5 roll, no weapon damage on top
+    }
+
+    [Fact]
+    public void HitSelfFumbleStillRollsWeaponDamage()
+    {
+        // The other half of the self-damage branch (combat.cc:4228-4232 at our pinned e97087b):
+        // DAM_HIT_SELF keeps the full weapon-damage roll (and takes NO 1-5 roll). _cf_table row 1
+        // col 4 = 65536 = DAM_HIT_SELF exactly, so a gun whose criticalFailureType is 1 fumbling at
+        // max severity self-hits. SequenceRng: to-hit 100 (miss), upgrade 1 (crit-fail), severity raw
+        // 80 → chance = 80 + 25 = 105 → col 4; later draws repeat 80 clamped, so the 5-12 weapon roll
+        // yields its max, 12 — and 12 then becomes 6 of HP, because CritFailDamage passes
+        // critMultiplier: 1 into RollWeaponDamage, whose body is `raw * critMultiplier / 2`.
+        // That halving is a KNOWN pre-existing fidelity bug, not the shape of the reference:
+        // e97087b's attackComputeDamage(attack, n, 2) multiplies by bonusDamageMultiplier 2 and then
+        // divides by 2 (combat.cc:4586 and the `damage /= 2` at :4601), i.e. x1, so vanilla
+        // self-damage is the full 12. This
+        // test pins TODAY's behaviour; see docs/BACKLOG.md F11 for the fix, which moves fixtures.
+        var host = new FakeCombatHost
+        {
+            CriticalsEnabled = true,
+            DudeCritFailuresEnabled = true,
+            LoadedAmmoCount = 10,
+            Equipped = MakeGun(critFailType: 1),
+        };
+        MapObject dude = host.SetDude(NewCritter(20100, hp: 30, ap: 10));
+        MapObject enemy = host.AddCritter(NewCritter(HexGrid.TileInDirection(20100, 0), hp: 100));
+        var rng = new RecordingRng(new SequenceRng(100, 1, 80));
+        var engine = new CombatEngine(host, rng);
+
+        Assert.True(engine.TryAttack(enemy));
+
+        Assert.Contains(host.Transcripts, t => t.StartsWith("crit-fail-self:"));
+        Assert.DoesNotContain((1, 6), rng.Draws);   // the 1-5 HURT_SELF roll is NOT part of this path
+        Assert.Equal(24, dude.CurrentHp);           // 30 − 6, the weapon-damage roll
+    }
+
+    [Fact]
+    public void NpcSelfDamageFumbleRunsItsOwnDamageProc()
+    {
+        // community fix #493 (combat.cc _apply_damage): the attacker's self-damage _damage_object call
+        // passes the "hit an unintended target" flag, so in the ordinary case (defender == intendedTarget)
+        // the SELF-damaged attacker runs its own damage_p_proc.
+        var host = new FakeCombatHost { CriticalsEnabled = true };
+        MapObject dude = host.SetDude(NewCritter(20100, hp: 100, ap: 10));
+        MapObject enemy = host.AddCritter(NewCritter(HexGrid.TileInDirection(20100, 0), hp: 30, ap: 10));
+        enemy.Sid = 7; // a scripted NPC: damage_p_proc can run
+        var rng = new RecordingRng(new SequenceRng(100, 1, 100, 1, 60));
+        var engine = new CombatEngine(host, rng);
+
+        Assert.True(engine.TryAttack(enemy)); // open combat
+        host.Animating.Clear();
+        engine.ProcessAnimations();
+        engine.EndPlayerTurn();
+        for (int i = 0; i < 200 && engine.Phase == CombatPhase.EnemyTurn; i++)
+        {
+            host.Animating.Clear();
+            engine.Step();
+        }
+
+        Assert.Contains(host.Transcripts, t => t.StartsWith("crit-fail-self: "));
+        Assert.Contains(host.DamageProcCalls, c => c.Target == enemy && c.Source == enemy);
     }
 
     [Fact]
@@ -2511,6 +2877,18 @@ public class CombatEngineTests
             Math.Clamp(values[Math.Min(_i++, values.Length - 1)], minInclusive, maxExclusive - 1);
     }
 
+    /// <summary>Wraps another RNG and records the (min, maxExclusive) bounds of every draw —
+    /// lets a test assert that a specific roll happened, independent of damage-formula internals.</summary>
+    private sealed class RecordingRng(ICombatRng inner) : ICombatRng
+    {
+        public readonly List<(int Min, int MaxExclusive)> Draws = [];
+        public int Next(int minInclusive, int maxExclusive)
+        {
+            Draws.Add((minInclusive, maxExclusive));
+            return inner.Next(minInclusive, maxExclusive);
+        }
+    }
+
     private sealed class FakeCombatHost : ICombatHost
     {
         private readonly Dictionary<MapObject, CritterState> _states = [];
@@ -2659,7 +3037,12 @@ public class CombatEngineTests
         public bool StartDeathFall(MapObject critter, int deathAnim) => false; // no fall art → corpse now
         public void ConvertToCorpse(MapObject critter, int deathAnim) { }
         public void OnCritterRemoved(MapObject critter) { }
-        public IReadOnlyList<string> RunDamageProc(MapObject target, MapObject? source, int damage) => [];
+        public readonly List<(MapObject Target, MapObject? Source, int Damage)> DamageProcCalls = [];
+        public IReadOnlyList<string> RunDamageProc(MapObject target, MapObject? source, int damage)
+        {
+            DamageProcCalls.Add((target, source, damage));
+            return [];
+        }
         public (IReadOnlyList<string> Lines, bool Overridden) RunDestroyProc(MapObject critter, MapObject? killer) => ([], false);
         public void RemovePartyMember(MapObject critter) { }
         public IReadOnlyCollection<MapObject> PartyMembers => Allies;
