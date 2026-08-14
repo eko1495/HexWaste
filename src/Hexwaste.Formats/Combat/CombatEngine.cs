@@ -1188,7 +1188,8 @@ public sealed class CombatEngine
         if ((flags & CriticalTables.DamExplode) != 0)
             Explode(self.HexTile, self, weaponProto?.Weapon?.MinDamage ?? 1, weaponProto?.Weapon?.MaxDamage ?? 6, 1);
         else if ((flags & (CriticalTables.DamHitSelf | CriticalTables.DamHurtSelf)) != 0)
-            CritFailDamage(attacker, attacker, weaponProto, "crit-fail-self");
+            CritFailDamage(attacker, attacker, weaponProto, "crit-fail-self",
+                hurtSelf: (flags & CriticalTables.DamHurtSelf) != 0);
 
         if ((flags & CriticalTables.DamDrop) != 0 && weaponItem is not null)
         {
@@ -1216,12 +1217,18 @@ public sealed class CombatEngine
     /// <summary>Direct crit-failure damage to a victim (self-hurt or the wild RANDOM_HIT): the weapon's
     /// rolled damage (no ammo mods — a documented simplification), applied straight to HP with a kill
     /// check. A self-kill / companion-kill via the attacker; a dude victim → game over.</summary>
-    private void CritFailDamage(CritterState attacker, CritterState victimState, ProtoInfo? weaponProto, string tag)
+    // ported from fallout2-ce src/combat.cc attackComputeCriticalFailure() (community fix #675):
+    // DAM_HURT_SELF adds a further randomBetween(1, 5) on top of the rolled damage. The extra roll is
+    // taken HERE, after the damage roll, to keep the RNG stream in reference order.
+    private void CritFailDamage(CritterState attacker, CritterState victimState, ProtoInfo? weaponProto,
+        string tag, bool hurtSelf = false)
     {
         MapObject victim = victimState.Critter;
         int dmg = weaponProto?.Weapon is { } w
             ? CombatMath.RollWeaponDamage(_rng, attacker, victimState, w.MinDamage, w.MaxDamage, 1, false, 0)
             : CombatMath.RollDamage(_rng, attacker, victimState, 1, false, 0);
+        if (hurtSelf)
+            dmg += _rng.Next(1, 6); // randomBetween(1, 5) — inclusive in the reference
         victim.CurrentHp -= dmg;
         _host.Log($"The {_host.ObjectName(victim)} takes {dmg} damage.");
         _host.Transcript($"{tag}: {_host.ObjectName(victim)}@{victim.HexTile} damage={dmg}");

@@ -2448,6 +2448,28 @@ public class CombatEngineTests
     }
 
     [Fact]
+    public void HurtSelfFumbleRollsTheExtraOneToFiveDamage()
+    {
+        // community fix #675 (combat.cc attackComputeCriticalFailure): DAM_HURT_SELF adds a further
+        // randomBetween(1, 5) on top of the rolled self-damage. Upstream omitted it, so we did too.
+        // _cf_table row 0 (unarmed) col 3 = 524290 = HURT_SELF | KNOCKED_DOWN, so a day-6 dude fumble
+        // at severity 3 takes that path. SequenceRng: to-hit 100 (miss), upgrade 1 (crit-fail),
+        // severity raw 60 → chance = 60 − 5*(LUCK 0 − 5) = 85, i.e. the 76..95 bucket = col 3;
+        // every later draw repeats 60 clamped into range.
+        var host = new FakeCombatHost { CriticalsEnabled = true, DudeCritFailuresEnabled = true };
+        MapObject dude = host.SetDude(NewCritter(20100, hp: 30, ap: 10));
+        MapObject enemy = host.AddCritter(NewCritter(HexGrid.TileInDirection(20100, 0), hp: 100));
+        var rng = new RecordingRng(new SequenceRng(100, 1, 60));
+        var engine = new CombatEngine(host, rng);
+
+        Assert.True(engine.TryAttack(enemy));
+
+        // The reference's randomBetween(1, 5) is inclusive → Next(1, 6) here.
+        Assert.Contains((1, 6), rng.Draws);
+        Assert.True(dude.CurrentHp < 30, "the fumble must cost the dude HP");
+    }
+
+    [Fact]
     public void NoCriticalFailureWithoutCriticalsOrJinxed()
     {
         // The inert invariant: a non-Jinxed dude before day 2 (CriticalsEnabled false) draws NOTHING
@@ -2789,6 +2811,18 @@ public class CombatEngineTests
         private int _i;
         public int Next(int minInclusive, int maxExclusive) =>
             Math.Clamp(values[Math.Min(_i++, values.Length - 1)], minInclusive, maxExclusive - 1);
+    }
+
+    /// <summary>Wraps another RNG and records the (min, maxExclusive) bounds of every draw —
+    /// lets a test assert that a specific roll happened, independent of damage-formula internals.</summary>
+    private sealed class RecordingRng(ICombatRng inner) : ICombatRng
+    {
+        public readonly List<(int Min, int MaxExclusive)> Draws = [];
+        public int Next(int minInclusive, int maxExclusive)
+        {
+            Draws.Add((minInclusive, maxExclusive));
+            return inner.Next(minInclusive, maxExclusive);
+        }
     }
 
     private sealed class FakeCombatHost : ICombatHost
