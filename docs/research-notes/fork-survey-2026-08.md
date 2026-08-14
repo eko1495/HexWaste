@@ -32,10 +32,28 @@ the community considers worth adding), not fidelity.
 
 Our reference clone `reference/fallout2-ce` is pinned at **`e97087b`** (2025-02-16, "Remove pause
 window"), and `e97087b` remains the sole authority for vanilla behaviour. Against
-`fallout2-ce/fallout2-ce@main` that pin is **1090 commits / 300 files changed** — but it is the
-*same tree*, so every one of those commits reads as a diff against our exact port source. When the
-fork changes a line we ported verbatim, we can see precisely what we ported and what they think it
-should have been. That is what makes this fork a candidate source at all.
+`fallout2-ce/fallout2-ce@main` that pin is **1090 commits / 300 files changed** *as GitHub's compare
+API reports it* — but it is the *same tree*, so every one of those commits reads as a diff against
+our exact port source. When the fork changes a line we ported verbatim, we can see precisely what we
+ported and what they think it should have been. That is what makes this fork a candidate source at
+all.
+
+**Reconciling that figure**, because it does not reproduce locally and a reader who checks will get
+different numbers. Against the same head commit (`cd285597`), local git reports **1963 commits and
+384 files** for `e97087b..community/main` — 203 of them merges, and the set reaches back to
+2022-05-19, i.e. it includes long-lived side branches merged in *after* our pin, whose commits
+predate it. GitHub's compare set begins 2023-06-16. Neither count is wrong; they enumerate different
+things. Two consequences worth stating plainly:
+
+- The **252-row shortlist derives from the API's enumeration**, so commits present only in git's
+  larger set were never offered to Stage 2. That is an additional, previously unstated bound on the
+  triage, on top of the deliberate scoping bound in §3.
+- The **Stage-3 sweep is immune to it**: it read the full local `e97087b..community/main` diff of
+  `tile.cc`, `combat.cc`, `interpreter.cc` and `object.cc`, and a diff shows the net change
+  regardless of how the intervening commits are counted. The four highest-fidelity files are
+  therefore covered independently of this discrepancy.
+- The "300 files" figure is additionally a **cap, not a count** — GitHub's compare endpoint
+  truncates its file list at 300 (page 2 returns none); the true figure is 384.
 
 `cambragol/fission-ce` is a **survey source only**. It is a feature fork, not a fidelity fork; it
 contributes to §6 and to nothing else in this document.
@@ -262,7 +280,7 @@ be re-opened, so their verdicts are summarised here.
   `art\heads\*.FRM` in `master.dat` found `RotationOffsetsY` all-zero on every one, so the disputed
   `width` vs `destWidth` term is multiplied by 0 and the hunk cannot move a pixel. Note the scope
   carefully — the verdict covers *that term only*, not our head Y in general, which does diverge
-  (see BACKLOG H1).
+  (see BACKLOG F4, with F5 alongside).
 
 ### 5.3 What the rejections cost us
 

@@ -240,7 +240,8 @@ fails and `not-applicable` stands.
 
 ### Hexwaste-side findings promoted out of this ledger (2026-08-14, Task 8)
 
-Ten rows above end with a parenthesised **Hexwaste-side** finding: a real divergence from `e97087b`
+Ten findings, spread across eight rows above (two rows carry two each), end with a parenthesised
+**Hexwaste-side** finding: a real divergence from `e97087b`
 noticed while proving the fork's hunk inapplicable, unrelated to that hunk. "Nothing to do about the
 fork commit" is not "nothing to do", so each is now a first-class `docs/BACKLOG.md` entry and is
 tracked there, not here. The mapping:
