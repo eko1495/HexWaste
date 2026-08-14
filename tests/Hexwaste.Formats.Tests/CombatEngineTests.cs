@@ -2334,9 +2334,9 @@ public class CombatEngineTests
     }
 
     /// <summary>A single-shot gun (ext 0x06 = primary SINGLE) with range 40 and AP cost 5.</summary>
-    private static (ProtoInfo Proto, MapObject Item) MakeGun(int ap = 5)
+    private static (ProtoInfo Proto, MapObject Item) MakeGun(int ap = 5, int critFailType = 0)
     {
-        var w = new WeaponProtoStats(0, 5, 12, 0, 40, 0, 0, 0, ap, 0, 0, 0, -1, 12, 0);
+        var w = new WeaponProtoStats(0, 5, 12, 0, 40, 0, 0, 0, ap, 0, 0, 0, -1, 12, 0, critFailType);
         var proto = new ProtoInfo(8, 0, 0x06000000, 0, 0x06, 3, Weapon: w);
         var item = new MapObject { Id = 8, HexTile = 0, X = 0, Y = 0, Frame = 0, Rotation = 0, Fid = 0x06000000, Flags = 0, Pid = 8, Sid = -1, AmmoQuantity = -1 };
         return (proto, item);
@@ -2450,12 +2450,13 @@ public class CombatEngineTests
     [Fact]
     public void HurtSelfFumbleRollsTheExtraOneToFiveDamage()
     {
-        // community fix #675 (combat.cc attackComputeCriticalFailure): DAM_HURT_SELF adds a further
-        // randomBetween(1, 5) on top of the rolled self-damage. Upstream omitted it, so we did too.
+        // community fix #675 (combat.cc:4336-4345): DAM_HURT_SELF is its OWN branch — the reference only
+        // rolls weapon damage for DAM_HIT_SELF / DAM_EXPLODE, and _cf_table never pairs HURT_SELF with
+        // HIT_SELF, so a HURT_SELF fumble is worth EXACTLY randomBetween(1, 5) and nothing else.
         // _cf_table row 0 (unarmed) col 3 = 524290 = HURT_SELF | KNOCKED_DOWN, so a day-6 dude fumble
         // at severity 3 takes that path. SequenceRng: to-hit 100 (miss), upgrade 1 (crit-fail),
         // severity raw 60 → chance = 60 − 5*(LUCK 0 − 5) = 85, i.e. the 76..95 bucket = col 3;
-        // every later draw repeats 60 clamped into range.
+        // every later draw repeats 60 clamped into range → the 1-5 roll yields 5.
         var host = new FakeCombatHost { CriticalsEnabled = true, DudeCritFailuresEnabled = true };
         MapObject dude = host.SetDude(NewCritter(20100, hp: 30, ap: 10));
         MapObject enemy = host.AddCritter(NewCritter(HexGrid.TileInDirection(20100, 0), hp: 100));
@@ -2464,9 +2465,38 @@ public class CombatEngineTests
 
         Assert.True(engine.TryAttack(enemy));
 
-        // The reference's randomBetween(1, 5) is inclusive → Next(1, 6) here.
-        Assert.Contains((1, 6), rng.Draws);
-        Assert.True(dude.CurrentHp < 30, "the fumble must cost the dude HP");
+        // The exact draw stream: to-hit, crit-fail upgrade, severity, then the 1-5 self-hurt roll.
+        // The reference's randomBetween(1, 5) is inclusive → Next(1, 6) here. No weapon/base damage
+        // draw may precede it — that was the lumped-with-HIT_SELF bug.
+        Assert.Equal([(1, 101), (1, 101), (1, 101), (1, 6)], rng.Draws);
+        Assert.Equal(25, dude.CurrentHp); // 30 − 5, the clamped 1-5 roll, no weapon damage on top
+    }
+
+    [Fact]
+    public void HitSelfFumbleStillRollsWeaponDamage()
+    {
+        // The other half of combat.cc:4336-4345: DAM_HIT_SELF keeps the full weapon-damage roll (and
+        // takes NO 1-5 roll). _cf_table row 1 col 4 = 65536 = DAM_HIT_SELF exactly, so a gun whose
+        // criticalFailureType is 1 fumbling at max severity self-hits. SequenceRng: to-hit 100 (miss),
+        // upgrade 1 (crit-fail), severity raw 80 → chance = 80 + 25 = 105 → col 4; later draws repeat
+        // 80 clamped, so the 5-12 weapon roll yields its max, 12.
+        var host = new FakeCombatHost
+        {
+            CriticalsEnabled = true,
+            DudeCritFailuresEnabled = true,
+            LoadedAmmoCount = 10,
+            Equipped = MakeGun(critFailType: 1),
+        };
+        MapObject dude = host.SetDude(NewCritter(20100, hp: 30, ap: 10));
+        MapObject enemy = host.AddCritter(NewCritter(HexGrid.TileInDirection(20100, 0), hp: 100));
+        var rng = new RecordingRng(new SequenceRng(100, 1, 80));
+        var engine = new CombatEngine(host, rng);
+
+        Assert.True(engine.TryAttack(enemy));
+
+        Assert.Contains(host.Transcripts, t => t.StartsWith("crit-fail-self:"));
+        Assert.DoesNotContain((1, 6), rng.Draws);   // the 1-5 HURT_SELF roll is NOT part of this path
+        Assert.Equal(24, dude.CurrentHp);           // 30 − 6, the weapon-damage roll
     }
 
     [Fact]

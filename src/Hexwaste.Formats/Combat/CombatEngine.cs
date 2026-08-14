@@ -1182,14 +1182,18 @@ public sealed class CombatEngine
         if ((flags & CriticalTables.DamKnockedDown) != 0 && _knockedDown.Add(self))
             _host.Transcript($"knockdown: {_host.ObjectName(self)}@{self.HexTile}");
 
-        // Self-damage: EXPLODE detonates the fumbling weapon at the attacker's tile (its own damage as
-        // the blast, radius 1 — a documented simplification); HIT_SELF/HURT_SELF take the weapon's rolled
-        // damage as a direct HP hit (no on-hit hooks / ammo mods, not a re-attack).
-        if ((flags & CriticalTables.DamExplode) != 0)
+        // Self-damage, in the reference's shape (combat.cc:4336-4345): HIT_SELF takes the weapon's rolled
+        // damage as a direct HP hit (no on-hit hooks / ammo mods, not a re-attack); else EXPLODE detonates
+        // the fumbling weapon at the attacker's tile (its own damage as the blast, radius 1 — a documented
+        // simplification). HURT_SELF is a SEPARATE, much milder branch: a flat 1-5, with no damage roll at
+        // all. _cf_table never pairs HURT_SELF with HIT_SELF, so the two never stack.
+        if ((flags & CriticalTables.DamHitSelf) != 0)
+            CritFailDamage(attacker, attacker, weaponProto, "crit-fail-self");
+        else if ((flags & CriticalTables.DamExplode) != 0)
             Explode(self.HexTile, self, weaponProto?.Weapon?.MinDamage ?? 1, weaponProto?.Weapon?.MaxDamage ?? 6, 1);
-        else if ((flags & (CriticalTables.DamHitSelf | CriticalTables.DamHurtSelf)) != 0)
-            CritFailDamage(attacker, attacker, weaponProto, "crit-fail-self",
-                hurtSelf: (flags & CriticalTables.DamHurtSelf) != 0);
+
+        if ((flags & CriticalTables.DamHurtSelf) != 0)
+            ApplyCritFailDamage(attacker, attacker, _rng.Next(1, 6), weaponProto, "crit-fail-self");
 
         if ((flags & CriticalTables.DamDrop) != 0 && weaponItem is not null)
         {
@@ -1214,21 +1218,28 @@ public sealed class CombatEngine
         return (flags & CriticalTables.DamLoseTurn) != 0;
     }
 
-    /// <summary>Direct crit-failure damage to a victim (self-hurt or the wild RANDOM_HIT): the weapon's
+    /// <summary>Direct crit-failure damage to a victim (DAM_HIT_SELF or the wild RANDOM_HIT): the weapon's
     /// rolled damage (no ammo mods — a documented simplification), applied straight to HP with a kill
-    /// check. A self-kill / companion-kill via the attacker; a dude victim → game over.</summary>
-    // ported from fallout2-ce src/combat.cc attackComputeCriticalFailure() (community fix #675):
-    // DAM_HURT_SELF adds a further randomBetween(1, 5) on top of the rolled damage. The extra roll is
-    // taken HERE, after the damage roll, to keep the RNG stream in reference order.
-    private void CritFailDamage(CritterState attacker, CritterState victimState, ProtoInfo? weaponProto,
-        string tag, bool hurtSelf = false)
+    /// check.</summary>
+    // ported from fallout2-ce src/combat.cc attackComputeCriticalFailure() (community fix #675).
+    // The reference rolls weapon damage (attackComputeDamage) ONLY for DAM_HIT_SELF and DAM_EXPLODE;
+    // DAM_HURT_SELF is a separate branch that just adds randomBetween(1, 5) to attackerDamage — which
+    // starts at 0 — so a HURT_SELF fumble is worth exactly 1-5 and takes no damage roll. This method is
+    // the HIT_SELF/RANDOM_HIT half; the HURT_SELF half calls ApplyCritFailDamage directly with the 1-5.
+    private void CritFailDamage(CritterState attacker, CritterState victimState, ProtoInfo? weaponProto, string tag)
     {
-        MapObject victim = victimState.Critter;
         int dmg = weaponProto?.Weapon is { } w
             ? CombatMath.RollWeaponDamage(_rng, attacker, victimState, w.MinDamage, w.MaxDamage, 1, false, 0)
             : CombatMath.RollDamage(_rng, attacker, victimState, 1, false, 0);
-        if (hurtSelf)
-            dmg += _rng.Next(1, 6); // randomBetween(1, 5) — inclusive in the reference
+        ApplyCritFailDamage(attacker, victimState, dmg, weaponProto, tag);
+    }
+
+    /// <summary>Apply an already-computed crit-failure damage figure to a victim: HP, log, transcript and
+    /// the kill check. A self-kill / companion-kill via the attacker; a dude victim → game over.</summary>
+    private void ApplyCritFailDamage(CritterState attacker, CritterState victimState, int dmg,
+        ProtoInfo? weaponProto, string tag)
+    {
+        MapObject victim = victimState.Critter;
         victim.CurrentHp -= dmg;
         _host.Log($"The {_host.ObjectName(victim)} takes {dmg} damage.");
         _host.Transcript($"{tag}: {_host.ObjectName(victim)}@{victim.HexTile} damage={dmg}");
