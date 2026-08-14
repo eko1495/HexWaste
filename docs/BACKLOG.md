@@ -350,6 +350,54 @@ branch, so scripts using them get no effect at all. Unrelated to the fork commit
 (`d9c24e1cc`, which is the fork repairing its own enum refactor). Cheap to close, and a script
 calling `anim(obj, 1000, rot)` to face a critter is a plausible vanilla content pattern.
 
+### Crit-failure self-damage and `damage_p_proc` reach
+
+The four below were carried as prose (in a ledger row's Notes, or in the harvest's working notes)
+rather than as entries, and were promoted here on 2026-08-14 so they survive the merge. All four sit
+in the crit-failure / accidental-hit neighbourhood of `CombatEngine`; none is a fork port.
+
+**F11 — `DAM_HIT_SELF` and `DAM_RANDOM_HIT` crit-failure damage is HALF vanilla.** *Effort S ·
+**re-record tier**.* `CritFailDamage` (`CombatEngine.cs:1233`) passes `critMultiplier: 1` into
+`CombatMath.RollWeaponDamage` / `RollDamage`, whose body is `raw * critMultiplier / 2` — so the
+rolled figure is halved before DT/DR. The reference calls `attackComputeDamage(attack, n, 2)`
+(`combat.cc:4230` at `e97087b`), and that routine multiplies by `bonusDamageMultiplier` (2) at
+`:4586` and divides by 2 at `:4601`, i.e. the pair is **x1**: vanilla applies the *full* rolled
+damage. A 5-12 weapon self-hit that should cost 12 costs 6 today. Pre-existing since `f77e37f`,
+unrelated to the 2026-08 fork harvest, which only pinned it in a test. **Do not fold this into a
+docs pass:** changing the multiplier moves recorded damage numbers, so it needs its own phase with a
+diff-reviewed re-record on the P120 precedent. `CombatEngineTests.HitSelfFumbleStillRollsWeaponDamage`
+currently asserts `30 - 6` and its comment states the deviation; that assertion is what changes.
+
+**F12 — A missed shot's collateral victim runs a `damage_p_proc` the reference suppresses.**
+*Effort S · **re-record tier**.* `ApplyAccidentalHit` (`CombatEngine.cs:729`) calls
+`RunDamageProc(acc.Victim, attacker, …)` unconditionally for any scripted non-dude bystander. That
+victim is precisely the `defender != oops` case: `_damage_object` consumes the flag as
+`if (!flag) run damage_p_proc`, so at `e97087b` — and after the fork's PR #493 inversion, which does
+not change this branch's outcome — the collateral victim runs **no** damage proc. Surfaced while
+classifying PR #493 (ledger row `#493`) and explicitly excluded from that port. Running an extra
+script proc can move fixtures, so treat as a re-record-tier change, not a one-line edit.
+
+**F13 — `DAM_EXPLODE` crit-failure self-damage still runs no `damage_p_proc` — PR #493 is only
+PARTIALLY applied.** *Effort S.* The `#493` port wired the self-damage proc into
+`ApplyCritFailDamage`, which covers the `DAM_HIT_SELF` branch. The sibling `DAM_EXPLODE` branch
+(`CombatEngine.cs:1193`) routes to `Explode(…)` instead, and that path never reaches
+`ApplyCritFailDamage`, so a fumbling critter blown up by its own weapon runs no damage proc — where
+the reference's `attackComputeDamage(attack, 1, 2)` self-damage feeds the same `_apply_damage` path
+that `#493` corrects. Nothing tracked said so before this entry; the ledger's `#493` row describes
+the port as covering "the attacker's self-damage call", which is true of the branch it touched and
+silently not of this one. Closing it means giving the explode branch the same party-gated
+`RunDamageProc(self, self, …)` tail.
+
+**F14 — Our `CRIP_RANDOM` limb draw precedes the self-damage draws; the reference orders self-damage
+first.** *Effort S · documentation of a divergence, not a live bug.* `attackComputeCriticalFailure`
+resolves `DAM_HIT_SELF` / `DAM_EXPLODE` (`combat.cc:4228-4232` at `e97087b`) **before** the
+`_do_random_cripple` call at `:4249`; `HandleCriticalFailure` draws the random limb first
+(`CombatEngine.cs:1175`) and the self-damage after. Confirmed **inert on the shipped `_cf_table`**:
+`DAM_CRIP_RANDOM` appears exactly once, row 0 column 4 (`combat.cc:1876`), paired with nothing — so
+no fumble can ever take both draws and the RNG stream cannot diverge. Recorded so a future edit to
+either branch does not re-derive this, and so anyone who *adds* a table entry knows the order is
+wrong before they trip over a moved fixture.
+
 ### Pointer
 
 **F10 — Surveyed-but-unbuilt QoL catalogue.** *Not scheduled work.*
