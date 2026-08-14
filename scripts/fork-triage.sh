@@ -2,9 +2,15 @@
 # Stage-1 triage for the maintained-fork fix harvest.
 #   docs/superpowers/specs/2026-08-14-fork-fix-harvest-design.md
 #
-# Lists fork commits between our pinned reference (e97087b) and community/main that touch C++
-# sources we actually ported, dropping build/CI/platform/mapper-only churn. NO judgment is applied
-# here — every surviving row still needs the Stage-2 rationale read.
+# ENUMERATES every fork commit between our pinned reference (e97087b) and community/main, one TSV
+# row each (sha, PR number, subject). It does NOT filter: no file filter and no subject filter are
+# applied to the output, and NO judgment is applied here.
+#
+# What the 2026-08-14 harvest actually did with it: piped this output through
+#   grep -iE 'fix|bug|crash|correct|revert'
+# which is what produced the 252-row shortlist (docs/research-notes/fork-fix-shortlist.tsv). The
+# PORTED pattern below is documented, not applied — the compare API does not carry per-commit file
+# lists, so the file filter is a per-candidate step done downstream during the rationale read.
 #
 # Usage: scripts/fork-triage.sh [base] [head]   (defaults: e97087b main)
 set -euo pipefail
@@ -14,9 +20,11 @@ HEAD_REF="${2:-main}"
 REPO="fallout2-ce/fallout2-ce"
 PER_PAGE=250
 
-# Files we ported logic from. Anything outside this list is not our subsystem. Applied per-candidate
-# in step 3 (the compare API does not carry per-commit file lists) — documented here, not exported,
-# for Task 3 to copy: this process exits before any downstream step could read an export.
+# Files we ported logic from. Anything outside this list is not our subsystem. Deliberately UNUSED by
+# this script (shellcheck SC2034 is expected): the compare API does not carry per-commit file lists,
+# so this is applied per-candidate during the downstream rationale read. It lives here as the single
+# written-down copy of the pattern, for that step to reuse.
+# shellcheck disable=SC2034
 PORTED='^src/(tile|combat|combat_ai|critter|object|map|proto|item|skill|perk|interpreter|interpreter_extra|scripts|worldmap|animation|art|color|palette|dfile|db|game_dialog|automap|inventory|party_member|queue|stat|trait|display_monitor|light|actions|pipboy|elevator|endgame|random)\.cc$'
 
 TMPDIR="$(mktemp -d)"
