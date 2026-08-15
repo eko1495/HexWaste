@@ -1696,16 +1696,44 @@ public sealed class CombatEngine
         return AiRating.Score(state.MeleeDamage, state.ArmorClass, proto?.Weapon?.MaxDamage ?? 0);
     }
 
-    /// <summary>Record who last hit a critter (whoHitMe) — unconditional last-hitter-wins
-    /// (combat.cc:4707). The faithful _combatai_check_retaliation gate that replaces whoHitMe
-    /// only when a strictly higher-rated attacker strikes (combat_ai.cc:3484) is deliberately
-    /// deferred because it changes NPC-vs-NPC brawl outcomes (affects encounter fixtures);
-    /// it belongs to the re-record tier. Hexwaste's team gate is retained — the engine's
-    /// equivalent gate lives in the callers.</summary>
-    private static void RegisterHit(MapObject target, MapObject attacker)
+    /// <summary>Record who last hit a critter (whoHitMe) — ported from fallout2-ce combat.cc:4707 +
+    /// combat_ai.cc _combatai_check_retaliation (:3484): an unset whoHitMe is taken unconditionally, but
+    /// an existing one is REPLACED only by a strictly higher-rated attacker (_combatai_rating), so a
+    /// critter keeps hunting the scarier enemy rather than whoever last scratched it. An equally-rated
+    /// attacker does not steal aggro. Hexwaste's team gate is retained — the engine's equivalent gate
+    /// lives in the callers and in `_critter_set_who_hit_me` itself. This moved the brawl-watch fixture
+    /// (deliberately re-recorded — see
+    /// docs/superpowers/specs/2026-08-12-retaliation-rerecord-design.md).
+    ///
+    /// KO/DEAD BYPASS (combat.cc:4711-4716): the reference branches on the JUST-APPLIED hit's outcome —
+    /// if it leaves the defender DAM_DEAD or DAM_KNOCKED_OUT, `_critter_set_who_hit_me` (critter.cc:1285-
+    /// 1301) is called instead of `_combatai_check_retaliation`. That callee is NOT unconditional: it
+    /// stamps whoHitMe only when the attacker is null, OR the attacker's team differs from the defender's,
+    /// OR a `statRoll(defender, STAT_INTELLIGENCE, -1) < 2` check passes (and even then only when the
+    /// defender/attacker aren't BOTH party members). So it carries its own team filter — a same-team
+    /// knockout does not stamp whoHitMe in the reference except via that INT-roll exception. Hexwaste's
+    /// bypass therefore only lifts the RATING gate, not the team gate: since ApplyCritStatus (which can
+    /// set DamKnockedOut) runs immediately before this call, IsKnockedOut(target) reflects THIS hit's
+    /// outcome, and a KO'd target takes the attacker unconditionally once past the team check, bypassing
+    /// only the rating gate below.
+    ///
+    /// Documented simplifications (not modelled): (1) the `statRoll(INT) < 2` exception, which can still
+    /// stamp whoHitMe on a same-team KO in the reference; (2) combat.cc:4713's extra condition that skips
+    /// the stamp entirely when the KO'd defender is the dude and the hit wasn't an "oops" (friendly-fire)
+    /// hit — Hexwaste always stamps once past the team gate.</summary>
+    private void RegisterHit(MapObject target, MapObject attacker)
     {
-        if (target.IsDead || attacker == target || attacker.Team == target.Team)
+        if (target.IsDead || attacker == target)
             return;
+        if (attacker.Team == target.Team)
+            return;
+        if (IsKnockedOut(target))
+        {
+            target.WhoHitMe = attacker; // critter.cc:1285-1301 — bypasses only the rating gate below
+            return;
+        }
+        if (target.WhoHitMe is { } current && Rating(attacker) <= Rating(current))
+            return; // combat_ai.cc:3488 — only a STRICTLY greater rating retargets
         target.WhoHitMe = attacker;
     }
 

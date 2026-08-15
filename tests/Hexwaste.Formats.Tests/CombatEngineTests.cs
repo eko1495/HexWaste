@@ -2832,6 +2832,210 @@ public class CombatEngineTests
         Assert.Contains(host.Equips, e => e.Critter == ally && e.Item.Pid == 0x201);
     }
 
+    [Fact]
+    public void AHigherRatedAttackerKeepsWhoHitMeAgainstALaterWeakerHit()
+    {
+        // ported from fallout2-ce src/combat_ai.cc _combatai_check_retaliation (:3484): whoHitMe is only
+        // REPLACED when the new attacker's _combatai_rating is strictly greater, so a critter keeps
+        // hunting the scarier enemy instead of whoever last scratched it. Pre-change (unconditional
+        // last-hitter-wins) the dude's whoHitMe would end up as the WEAK attacker that struck last.
+        var host = new FakeCombatHost();
+        MapObject dude = host.SetDude(NewCritter(tile: 20100, hp: 200, ap: 10));
+        // seq orders the turn: the STRONG one acts first, the WEAK one strikes last.
+        MapObject strong = host.AddCritter(
+            NewCritter(tile: HexGrid.TileInDirection(20100, 0), hp: 30, ap: 10, seq: 20, meleeDmg: 9, skill: 100));
+        MapObject weak = host.AddCritter(
+            NewCritter(tile: HexGrid.TileInDirection(20100, 3), hp: 30, ap: 10, seq: 1, meleeDmg: 1, skill: 100));
+        strong.Team = 1; // distinct from the dude's default team 0 — RegisterHit's team gate must pass
+        weak.Team = 1;
+
+        var engine = new CombatEngine(host, new MinRng());
+        engine.BeginScriptAggro(strong, dude);
+        for (int i = 0; i < 20 && !ReferenceEquals(dude.WhoHitMe, weak); i++)
+        {
+            host.Animating.Clear(); // unblock the pending-attack resolve so each Step lands a hit
+            if (engine.Phase == CombatPhase.PlayerTurn)
+                engine.EndPlayerTurn(); // the dude takes no action — pass so weak's slot comes up
+            engine.Step();
+        }
+
+        Assert.NotNull(dude.WhoHitMe);
+        Assert.Same(strong, dude.WhoHitMe); // the weak last-hitter must NOT have stolen it
+        // Finding 4: the failure mode hit on the first attempt was WEAK never actually landing a hit —
+        // asserting only the incumbent left that unproven. `enemy-attack` transcript lines print the
+        // ATTACKER's own tile, so a hit=True line at `weak`'s spawn tile proves it struck at least once.
+        Assert.Contains(host.Transcripts,
+            t => t.StartsWith($"enemy-attack Critter@{weak.HexTile}") && t.Contains("hit=True"));
+    }
+
+    [Fact]
+    public void AnEqualRatedAttackerDoesNotStealWhoHitMe()
+    {
+        // The boundary the reference's STRICT `>` defines (combat_ai.cc:3488): an equally-rated attacker
+        // leaves the existing whoHitMe alone. Pre-change this returned the later attacker.
+        var host = new FakeCombatHost();
+        MapObject dude = host.SetDude(NewCritter(tile: 20100, hp: 200, ap: 10));
+        MapObject first = host.AddCritter(
+            NewCritter(tile: HexGrid.TileInDirection(20100, 0), hp: 30, ap: 10, seq: 20, meleeDmg: 5, skill: 100));
+        MapObject second = host.AddCritter(
+            NewCritter(tile: HexGrid.TileInDirection(20100, 3), hp: 30, ap: 10, seq: 1, meleeDmg: 5, skill: 100));
+        first.Team = 1; // distinct from the dude's default team 0 — RegisterHit's team gate must pass
+        second.Team = 1;
+
+        var engine = new CombatEngine(host, new MinRng());
+        engine.BeginScriptAggro(first, dude);
+        for (int i = 0; i < 20 && !ReferenceEquals(dude.WhoHitMe, second); i++)
+        {
+            host.Animating.Clear(); // unblock the pending-attack resolve so each Step lands a hit
+            if (engine.Phase == CombatPhase.PlayerTurn)
+                engine.EndPlayerTurn(); // the dude takes no action — pass so second's slot comes up
+            engine.Step();
+        }
+
+        Assert.Same(first, dude.WhoHitMe); // equal rating → keep the incumbent
+        // Finding 4: prove `second` actually struck at least once (the earlier failure mode was
+        // asserting only the incumbent, never that the challenger landed a hit at all).
+        Assert.Contains(host.Transcripts,
+            t => t.StartsWith($"enemy-attack Critter@{second.HexTile}") && t.Contains("hit=True"));
+    }
+
+    [Fact]
+    public void ASameTeamHitNeverRegistersWhoHitMe()
+    {
+        // Finding 2 fix: the original "preservation guard" (SameTeamAndDeadTargetHitsStillNeverRegister-
+        // WhoHitMe) mutation-tested as vacuous — with `RegisterHit` reduced to `if (attacker == target)
+        // return;` (BOTH the team gate and the dead-target gate deleted) it still passed, because no hit
+        // ever landed (single Step(), no host.Animating.Clear()) and its assertion was a tautology in a
+        // two-critter host. This test genuinely exercises RegisterHit's team gate
+        // (attacker.Team == target.Team, CombatEngine.cs:1658): `enemy` is left on the DEFAULT team (0),
+        // same as the dude's default team, so BeginScriptAggro still opens combat and enemy still attacks
+        // the dude (team is not consulted anywhere in target selection — only in RegisterHit itself), but
+        // every landed hit must be rejected before it ever writes dude.WhoHitMe.
+        var host = new FakeCombatHost();
+        MapObject dude = host.SetDude(NewCritter(tile: 20100, hp: 200, ap: 10));
+        MapObject enemy = host.AddCritter(
+            NewCritter(tile: HexGrid.TileInDirection(20100, 0), hp: 30, ap: 10, meleeDmg: 5, skill: 100));
+        // enemy.Team left at its default (0) — identical to dude's default team.
+
+        var engine = new CombatEngine(host, new MinRng());
+        engine.BeginScriptAggro(enemy, dude);
+        // Run a FIXED number of steps (not "until a hit-dispatch line appears" — that transcript line
+        // is written at DISPATCH time, one Step() before ResolveAttack/RegisterHit actually run on the
+        // following Step(), so stopping on it would exit before the gate under test is ever reached).
+        for (int i = 0; i < 20; i++)
+        {
+            host.Animating.Clear(); // unblock the pending-attack resolve so each Step lands a hit
+            if (engine.Phase == CombatPhase.PlayerTurn)
+                engine.EndPlayerTurn(); // the dude takes no action — pass so enemy's slot comes up
+            engine.Step();
+        }
+
+        // Proves a hit actually RESOLVED (host.Logs carries the post-resolution "hits you" line, written
+        // from ResolveAttack right before RegisterHit — otherwise the gate below would be untested, same
+        // failure mode as before), then proves the team gate blocked it from reaching dude.WhoHitMe.
+        Assert.Contains(host.Logs, l => l.Contains("hits you"));
+        Assert.Null(dude.WhoHitMe);
+    }
+
+    [Fact]
+    public void ARegisterHitCallOnAnAlreadyDeadTargetIsANoOp()
+    {
+        // Finding 2 fix, dead-target half: RegisterHit's `target.IsDead` guard is unreachable through
+        // the public engine surface by design — TryAttack (CombatEngine.cs:279) already refuses a dead
+        // target before any attack is dispatched, and every AI target-selection path (the dude+party
+        // pick, the cross-team hostiles loop at :2645, FriendAttacker) skips dead critters before they're
+        // ever considered — mirroring the reference, where a corpse is never offered as attack->defender
+        // in the first place. So RegisterHit's own `target.IsDead` check is a defensive redundant guard
+        // that real gameplay can never exercise; the only honest way to pin it is to call the private
+        // method directly and confirm it is a no-op on an already-dead target.
+        var host = new FakeCombatHost();
+        MapObject dude = host.SetDude(NewCritter(tile: 20100, hp: 200, ap: 10));
+        MapObject attacker = host.AddCritter(
+            NewCritter(tile: HexGrid.TileInDirection(20100, 0), hp: 30, ap: 10, meleeDmg: 5, skill: 100));
+        MapObject corpse = host.AddCritter(
+            NewCritter(tile: HexGrid.TileInDirection(20100, 3), hp: 30, ap: 10, meleeDmg: 5, skill: 100));
+        attacker.Team = 1; // cross-team from both dude and corpse, so only IsDead can be gating this
+        corpse.CombatResults |= 0x80; // DAM_DEAD (MapObject.IsDead, MapFile.cs:129)
+
+        var engine = new CombatEngine(host, new MinRng());
+        var registerHit = typeof(CombatEngine).GetMethod("RegisterHit",
+            System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!;
+        registerHit.Invoke(engine, [corpse, attacker]);
+
+        Assert.Null(corpse.WhoHitMe);
+    }
+
+    [Fact]
+    public void AKnockedOutTargetBypassesTheRatingGate()
+    {
+        // ported from fallout2-ce src/combat.cc:4711-4716: a hit that leaves the defender knocked out
+        // takes the JUST-LANDED attacker unconditionally (via _critter_set_who_hit_me, critter.cc:1285-
+        // 1301) rather than going through _combatai_check_retaliation's rating comparison. So a lower-
+        // rated attacker CAN steal whoHitMe from a higher-rated incumbent when the hit knocks the
+        // target out — the opposite of the ordinary (non-KO) rule pinned by
+        // AHigherRatedAttackerKeepsWhoHitMeAgainstALaterWeakerHit above. Invoked via reflection like
+        // ARegisterHitCallOnAnAlreadyDeadTargetIsANoOp: the KO branch is reachable through the public
+        // engine surface (ApplyCritStatus can set DamKnockedOut immediately before RegisterHit runs),
+        // but driving that combination through Step()/BeginScriptAggro would be RNG-fragile, so a direct
+        // call is the honest way to pin the branch in isolation.
+        var host = new FakeCombatHost();
+        MapObject dude = host.SetDude(NewCritter(tile: 20100, hp: 200, ap: 10));
+        MapObject strongIncumbent = host.AddCritter(
+            NewCritter(tile: HexGrid.TileInDirection(20100, 0), hp: 30, ap: 10, meleeDmg: 9, skill: 100));
+        MapObject weakAttacker = host.AddCritter(
+            NewCritter(tile: HexGrid.TileInDirection(20100, 3), hp: 30, ap: 10, meleeDmg: 1, skill: 100));
+        MapObject target = host.AddCritter(
+            NewCritter(tile: HexGrid.TileInDirection(20100, 1), hp: 30, ap: 10));
+        strongIncumbent.Team = 1;
+        weakAttacker.Team = 1;
+        target.Team = 0; // cross-team from both attackers — only the KO bypass is under test here
+
+        var engine = new CombatEngine(host, new MinRng());
+        var registerHit = typeof(CombatEngine).GetMethod("RegisterHit",
+            System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!;
+
+        target.WhoHitMe = strongIncumbent; // a higher-rated incumbent already holds whoHitMe
+        target.CombatResults |= CriticalTables.DamKnockedOut; // THIS hit just knocked the target out
+
+        registerHit.Invoke(engine, [target, weakAttacker]);
+
+        // Without the KO branch, the rating gate (weakAttacker's rating <= strongIncumbent's) would
+        // keep the incumbent — this assertion is what a deleted KO branch fails.
+        Assert.Same(weakAttacker, target.WhoHitMe);
+    }
+
+    [Fact]
+    public void ASameTeamKnockedOutCompanionStillBlocksWhoHitMe()
+    {
+        // Pins the branch ORDERING required by combat.cc:4711-4716 + critter.cc:1285-1301: the reference
+        // routes a KO'd defender to `_critter_set_who_hit_me`, which carries its OWN team filter (skips
+        // the stamp when attacker.Team == defender.Team, absent the unmodelled INT-roll exception — see
+        // the RegisterHit doc comment above). So Hexwaste's team gate (attacker.Team == target.Team) must
+        // run BEFORE the KO bypass, not after — otherwise a same-team knockout (e.g. friendly fire on a
+        // companion) would wrongly stamp whoHitMe. Invoked via reflection for the same reason as
+        // AKnockedOutTargetBypassesTheRatingGate: isolating the KO+same-team combination directly rather
+        // than fishing for it through Step()/RNG.
+        var host = new FakeCombatHost();
+        MapObject dude = host.SetDude(NewCritter(tile: 20100, hp: 200, ap: 10));
+        MapObject companion = host.AddCritter(
+            NewCritter(tile: HexGrid.TileInDirection(20100, 0), hp: 30, ap: 10));
+        MapObject friendlyAttacker = host.AddCritter(
+            NewCritter(tile: HexGrid.TileInDirection(20100, 3), hp: 30, ap: 10, meleeDmg: 9, skill: 100));
+        companion.Team = 1;
+        friendlyAttacker.Team = 1; // same team as the companion — the team gate must reject this hit
+
+        var engine = new CombatEngine(host, new MinRng());
+        var registerHit = typeof(CombatEngine).GetMethod("RegisterHit",
+            System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!;
+
+        companion.CombatResults |= CriticalTables.DamKnockedOut; // THIS hit just knocked the companion out
+
+        registerHit.Invoke(engine, [companion, friendlyAttacker]);
+
+        // If the KO branch ran before the team gate, this would be stamped unconditionally instead.
+        Assert.Null(companion.WhoHitMe);
+    }
+
     private static (MapObject Obj, CritterProtoStats Proto) NewCritter(
         int tile, int hp, int ap = 10, int seq = 1, int exp = 0, int betterCrit = 0, int meleeDmg = 0, int skill = 0, int endurance = 0, int dr = 0, int killType = 0, int perception = 5)
     {
