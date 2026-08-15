@@ -604,6 +604,39 @@ public class CombatEngineTests
     }
 
     [Fact]
+    public void AFleeingCritterNeverLogsAFleeItDoesNotPerform()
+    {
+        // F18: TryFlee used to pick its retreat tile with a pathfinder that exempts the GOAL from the
+        // blocked test, so it could propose an occupied tile; the walker then refused the move and the
+        // transcript recorded a flight that never happened (denbus2-fight-flee logged the identical
+        // 'flee: Cute Slave@11272 -> 10480' four times without the critter ever moving).
+        // ported from fallout2-ce src/combat_ai.cc _ai_run_away (:1192): the retreat search passes
+        // _make_path(..., a5 = 1), so a blocked candidate produces no path and the loop shrinks.
+        var host = new FakeCombatHost();
+        MapObject dude = host.SetDude(NewCritter(tile: 20100, hp: 30, ap: 10));
+        MapObject enemy = host.AddCritter(NewCritter(tile: HexGrid.TileInDirection(20100, 0), hp: 5, ap: 10));
+        host.AiPackets[enemy] = new AiPacket(13, "Thug", MinToHit: 0, MinHp: 10, 10, "", "");
+
+        // Occupy the full-AP retreat tile the search would otherwise choose, leaving nearer tiles free.
+        int startTile = enemy.HexTile;
+        int rotation = HexGrid.RotationTo(dude.HexTile, startTile);
+        int fullDistanceTile = HexGrid.TileInDirection(startTile, rotation, 10);
+        host.IsBlockedOverride = tile => tile == fullDistanceTile;
+
+        var engine = new CombatEngine(host, new MinRng());
+        engine.BeginScriptAggro(enemy, dude);
+        engine.Step();
+
+        // With requireFreeDestination honoured, the blocked full-AP tile is rejected and the loop
+        // shrinks to the next-nearer (dist=9) candidate, which IS free — the critter flees there for
+        // real. A logged flee must therefore correspond to an actual move to a tile other than the
+        // blocked one.
+        Assert.Contains(host.Transcripts, t => t.StartsWith("flee:"));
+        Assert.NotEqual(startTile, enemy.HexTile);
+        Assert.NotEqual(fullDistanceTile, enemy.HexTile);
+    }
+
+    [Fact]
     public void HurtBipedEnemyHealsBeforeAttackingWithChemUse()
     {
         // P42 (_ai_check_drugs): a hurt BIPED enemy with chem_use + a healing item quaffs it (2 AP) on
@@ -3300,7 +3333,8 @@ public class CombatEngineTests
         public IReadOnlyList<int> CarriedAmmoCalibers(MapObject critter) => CarriedCalibersOverride;
         public Func<int, MapObject?>? BlockerOverride; // tests that need critters/walls on the line
         public MapObject? ShootBlockerAt(int tile, MapObject shooter, MapObject target) => BlockerOverride?.Invoke(tile);
-        public bool IsBlocked(int tile) => false;
+        public Func<int, bool>? IsBlockedOverride; // tests that need a specific tile reported blocked (e.g. Pathfinder callers like TryFlee)
+        public bool IsBlocked(int tile) => IsBlockedOverride?.Invoke(tile) ?? false;
         public bool IsAnimating(MapObject critter) => Animating.Contains(critter);
         public bool IsFallInProgress(MapObject critter) => false;
         public bool IsAnyWalkerMoving() => false;

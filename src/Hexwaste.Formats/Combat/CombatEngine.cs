@@ -3082,6 +3082,10 @@ public sealed class CombatEngine
         // threat (the rotation from threat→self), or ±1 rotation, as far as AP allows, via
         // a REAL path (_make_path) — not greedy neighbour-stepping that snags on obstacles.
         // Try the full-AP distance first, shrinking until a reachable retreat tile is found.
+        // F18: the reference calls _make_path(a1, a1->tile, destination, nullptr, 1) — a5 = 1 requires
+        // the DESTINATION itself to be free (combat_ai.cc:1192), not just the path leading to it. A
+        // candidate that is itself occupied/blocked must be rejected so the loop shrinks to a nearer
+        // free tile, rather than being accepted and then silently refused by the walker.
         int rotation = HexGrid.RotationTo(threatTile, fromTile);
         int target = -1;
         for (int dist = actorAp; dist > 0 && target < 0; dist--)
@@ -3090,7 +3094,7 @@ public sealed class CombatEngine
             {
                 int dest = HexGrid.TileInDirection(fromTile, dir, dist);
                 if (dest != fromTile && Pathfinder.FindPath(fromTile, dest, _host.IsBlocked,
-                        t => _host.IsPassableClosedDoor(critter, t)) is not null) // P113 (4.1): flee through doors
+                        t => _host.IsPassableClosedDoor(critter, t), requireFreeDestination: true) is not null) // P113 (4.1): flee through doors
                 {
                     target = dest;
                     break;
