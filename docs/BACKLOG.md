@@ -307,27 +307,29 @@ was the `= 0` reset once a critter joined combat (`CombatEngine.cs:2016`) — so
 because it got hurt or ran low on HP could never be marked FLEEING, and could never reach
 DISENGAGING to let a fight actually end.
 
-**F18 — LIVE BUG (found doing F1): a "successful" flee that never moves the critter.**
-*Effort M · **re-record tier** (the bug is in transcript territory — fixing it moves recorded
-lines).* `denbus2-fight-flee` records `flee: Cute Slave@11272 -> 10480` at fixture lines 25, 39, 57
-and 75 — the same critter, from the same tile, logging a *successful* flee four times and never
-moving, while `Healthy Slave` in the same fight advances normally (11670 → 10270 → 8870). Not
-caused by the F1 gate (Cute Slave never reaches `max_dist`, so this is the plain always-flee path).
-Traced by instrumenting `TryFlee` (`CombatEngine.cs:3049`) and `StartNpcWalk`
-(`ViewerGame.cs:3326`) directly (temporary stderr probes, added, run, reverted — no diff remains;
-confirmed with `git diff --stat`): `TryFlee` writes its `flee:` transcript line and calls
-`_host.StartWalk` **unconditionally**, before knowing whether the walk succeeds. `Pathfinder.FindPath`
-picks destination tile 10480 and reports a path exists — every round, since the critter's own tile
-never changes between its turns. But `StartNpcWalk`'s early-return guard
-(`ViewerGame.cs:3357-3359`) finds `_blockedTiles.Contains(10480)` true (not a door, so no exception)
-and returns `false` **before ever calling `WalkTo`**. So the pathfinder and the walker's own
-blocked-tile view disagree about whether 10480 is legal, and the transcript records a flight that
-never happens. Fix direction: either make `TryFlee`'s target search consult the same occupancy
-check `StartNpcWalk` uses so it never proposes an already-blocked destination, or move the `flee:`
-transcript line after a successful `StartWalk` (or both). **Fixing this WILL move
-`denbus2-fight-flee`** (the flee lines are exactly what's recorded), so treat as re-record tier on
-the P120 precedent. See the appendix in the F1 implementation task's report for the full repro and
-probe transcripts.
+**F18 — SHIPPED 2026-08-15 (`64500e8`, `ec736ad`), `denbus2-fight-flee` deliberately re-recorded
+(the only fixture that moved). NOT fully closed — see F21.** *Was Effort M · re-record tier.*
+`64500e8` ported `Pathfinder.FindPath`'s `requireFreeDestination` parameter, the reference's `a5`
+argument (`animation.cc:1716-1722`): with it set, a blocked destination yields no path before any
+search runs. Defaults to `false` (`a5 = 0`, the unconditional goal exemption Hexwaste always had),
+so every other call site stayed inert; the class doc, which had claimed the unconditional exemption
+"matched the original" (true only of `a5 = 0`), was corrected. `ec736ad` made `CombatEngine.TryFlee`'s
+retreat search opt in (`CombatEngine.cs:3096-3097`), matching `_make_path(a1, a1->tile, destination,
+nullptr, 1)` (`combat_ai.cc:1192`, inside `_ai_run_away`). `tests/golden-combat/denbus2-fight-flee.txt`
+was re-recorded: `Cute Slave@11272 -> 10480` logged four times with no movement becomes
+`11272 -> 9672` once and actually moves; `Handsome Slave@12670 -> 14270` likewise becomes
+`12670 -> 14070`. Six phantom flee lines removed. Combat outcome is byte-identical (rounds=5,
+dudeHp=0, gameOver=True).
+
+**Rejected alternative, on purpose:** moving the `flee:` transcript line to after a successful
+`StartWalk` was considered and deliberately not done. It treats the symptom (the log line appearing
+regardless of outcome) rather than the cause (the destination itself being illegal), and doing both
+would have made the fixture delta impossible to attribute to either change individually.
+
+**Not fully closed.** The re-recorded fixture still contains one phantom flee — `flee: Healthy
+Slave@10270 -> 8870`, logged in rounds 3 and 4 with the critter at tile 10270 both times, lines
+byte-identical before and after this fix (8870 is not blocked, so the new destination check
+correctly leaves that pair alone; a different bug is responsible). See F21.
 
 **F19 — Out of scope for now: the reference's second `DISENGAGING` setter, at the tail of
 `_combat_ai`, is unported.** *Effort M–L · **re-record tier** once attempted.* Beyond `_ai_run_away`
@@ -342,6 +344,47 @@ friendly-corpse tracking and a friend search built first. Note the effect is the
 sounds like: porting it makes disengagement *harder*, not easier — a critter with a nearby friend
 keeps fighting instead of disengaging — so it will move fixtures. Re-record tier, not a docs-only
 follow-up.
+
+**F20 — The other `Pathfinder.FindPath` call sites are unaudited against their reference `a5`
+counterparts.** *Effort S per site (audit) · re-record tier for any that flip.* F18 taught Hexwaste's
+`FindPath` only `a5 = 0` until now; the reference passes `a5 = 1` at other call sites too —
+`_ai_move_away` (`combat_ai.cc:1238-1239`, `_make_path(a1, a1->tile, destination, nullptr, 1)`) is
+the known next case, feeding `_combat_ai`'s tail (see F19) and reachable independently of it. The
+other Hexwaste call sites have never been checked against their reference counterparts, each still
+passing the `a5 = 0` default: `CombatEngine.cs:3022` (enemy approach) and `:3266` (ally move);
+`DudeController.cs:62`, `:83`, `:161` (dude walk/repath); `ViewerGame.cs:5236` (worldmap start-point
+reachability probe). Auditing means finding and citing each site's reference counterpart and its `a5`
+value in `animation.cc`/`combat_ai.cc`, not assuming `0` is correct by default. Changing any site
+found to need `a5 = 1` is re-record tier — it moves movement transcripts, per the F18 precedent.
+
+**F21 — LIVE BUG, most consequential finding of the F1/F18 sub-project: a stale `_npcWalkers` entry
+freezes a critter while its `flee:` log keeps firing — and the golden fixtures have been recording a
+harness artefact as game behaviour.** *Effort M · re-record tier once fixed.* Surfaced reviewing F18:
+`denbus2-fight-flee` still logs `flee: Healthy Slave@10270 -> 8870` in rounds 3 and 4, byte-identical,
+with the critter's origin tile frozen at 10270 both times — 8870 is not blocked, so F18's new
+destination check correctly leaves this pair alone; the cause is different and F18 could not have
+touched it. Mechanism, traced through the actual code:
+- `StartNpcWalk` (`ViewerGame.cs:3326`, guard at `:3328`) refuses a new walk whenever
+  `_npcWalkers.ContainsKey(npc)` — keyed on dictionary **presence**, not on `walker.Moving`.
+- A finished walker is pruned only inside `UpdateAmbientLife` (`ViewerGame.cs:3262-3272`).
+- The `--fight` autoplay harness that `combat-golden.sh` drives never calls `UpdateAmbientLife` — it
+  pumps `walker.Update(10)` directly on every entry in `_npcWalkers.Values`
+  (`ViewerGame.Harness.cs:2037-2038`). So once Healthy Slave's round-2 flee finishes, the now-idle
+  walker is never removed, and every later `TryFlee` call for that critter hits the stale guard:
+  `StartWalk` fails silently while the `flee:` transcript line and the AP-zeroing (`CombatEngine.cs`,
+  same shape as the failure mode F18 fixed, but a different cause) have already fired.
+- **Not purely a harness artefact.** The prune sits *after* `if (DisableAmbientLife || _worldmapOpen)
+  return;` (`ViewerGame.cs:3259-3260`) inside `UpdateAmbientLife` itself, so `--no-ambient` and an open
+  worldmap defeat the same prune in the real interactive game — walker lifecycle management is nested
+  inside an unrelated cosmetic feature's early return, not solely a test-loop omission.
+- The brawl-watch autoplay loop (`ViewerGame.Harness.cs:203-209`) shares the identical
+  `walker.Update(...)`-without-prune shape and should be checked for the same defect before this is
+  called fixed.
+- **Consequence to record plainly:** any golden fixture recorded through the `--fight`/brawl-watch
+  autoplay path, wherever an NPC walker finishes mid-fixture, may contain frozen-critter artefacts
+  like this one baked in as if they were engine behaviour. Resolve the underlying membership-vs-`Moving`
+  bug (and confirm/fix the brawl-watch loop) before those transcripts can be trusted; expect any fix to
+  move fixtures, hence re-record tier.
 
 ### Dialog and party
 
