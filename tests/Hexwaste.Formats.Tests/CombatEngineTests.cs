@@ -2665,6 +2665,44 @@ public class CombatEngineTests
     }
 
     [Fact]
+    public void ExplodeSkipsAVictimKilledByAnEarlierVictimsDamageProc()
+    {
+        // ported from fallout2-ce src/combat.cc _apply_damage() (:4738): the extras loop re-checks
+        // DAM_DEAD for every entry before processing it, because an earlier entry's damage_p_proc can
+        // kill a later one. F13 made Explode()'s victim loop able to run a script (the self-damaged
+        // attacker's damage_p_proc) for the first time; before that, `ordered` was a pure data snapshot
+        // and no iteration could observe another entry's death mid-loop. Without the IsDead guard this
+        // adds, a proc that kills a not-yet-processed victim would not stop Explode from still applying
+        // blast damage (and, if lethal, a second KillCritter) to that already-dead victim.
+        const int center = 20100;
+        var host = new FakeCombatHost();
+        host.SetDude(NewCritter(Step(center, 0, 20), hp: 100)); // far away, not a victim
+        MapObject fumbler = host.AddCritter(NewCritter(center, hp: 100)); // processed first: ordered puts the centre tile first
+        fumbler.Sid = 5; // unaffiliated scripted critter: its damage_p_proc can run
+        int otherTile = Step(center, 0, 1);
+        MapObject other = host.AddCritter(NewCritter(otherTile, hp: 100)); // one hex away: processed after the centre
+
+        // Simulate the fumbler's damage_p_proc killing `other` via some unrelated script effect —
+        // exactly the hazard the reference's DAM_DEAD re-check guards against.
+        host.OnDamageProc = (target, _, _) =>
+        {
+            if (target == fumbler)
+                other.CombatResults |= CriticalTables.DamDead;
+        };
+
+        var engine = new CombatEngine(host, new MinRng()); // MinRng: damage == minDamage exactly, no DT/DR
+        engine.Explode(center, killer: null, minDamage: 10, maxDamage: 10, radius: 2, selfDamageProcFor: fumbler);
+
+        Assert.Contains(host.DamageProcCalls, c => c.Target == fumbler); // the proc did run
+        // The guard must stop Explode from touching `other` once the proc has killed it: no blast
+        // damage applied, no "explosion-hit" transcript, no second KillCritter/XP for an already-dead
+        // victim.
+        Assert.Equal(100, other.CurrentHp);
+        Assert.DoesNotContain(host.Transcripts, t => t.StartsWith("explosion-hit:") && t.Contains($"@{otherTile}"));
+        Assert.DoesNotContain(other, host.RecordedKills);
+    }
+
+    [Fact]
     public void NoCriticalFailureWithoutCriticalsOrJinxed()
     {
         // The inert invariant: a non-Jinxed dude before day 2 (CriticalsEnabled false) draws NOTHING
@@ -3373,9 +3411,11 @@ public class CombatEngineTests
         public void ConvertToCorpse(MapObject critter, int deathAnim) { }
         public void OnCritterRemoved(MapObject critter) { }
         public readonly List<(MapObject Target, MapObject? Source, int Damage)> DamageProcCalls = [];
+        public Action<MapObject, MapObject?, int>? OnDamageProc { get; set; } // a test side-effect (e.g. kill another victim)
         public IReadOnlyList<string> RunDamageProc(MapObject target, MapObject? source, int damage)
         {
             DamageProcCalls.Add((target, source, damage));
+            OnDamageProc?.Invoke(target, source, damage);
             return [];
         }
         public (IReadOnlyList<string> Lines, bool Overridden) RunDestroyProc(MapObject critter, MapObject? killer) => ([], false);

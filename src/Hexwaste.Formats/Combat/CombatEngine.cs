@@ -1648,6 +1648,15 @@ public sealed class CombatEngine
         {
             if (hits >= maxTargets)
                 break;
+            // ported from fallout2-ce src/combat.cc _apply_damage() (:4738): the extras loop re-checks
+            // `(obj->data.critter.combat.results & DAM_DEAD) == 0` for every entry before processing it,
+            // because an earlier entry's damage_p_proc can kill a later one. `ordered` is a snapshot
+            // list built before any script runs, and now that the self-damage proc (F13) can run a
+            // script mid-loop, a proc that kills a not-yet-processed victim would otherwise reach
+            // `KillCritter` a second time — a double destroy_p_proc and double XP award, since
+            // KillCritter itself has no IsDead early-return.
+            if (victim.IsDead)
+                continue;
             // Line-of-sight from the blast centre (walls shield).
             (MapObject? blocker, _) = LineOfFire.Trace(centerTile, victim.HexTile,
                 t => _host.ShootBlockerAt(t, victim, victim));
@@ -1678,6 +1687,15 @@ public sealed class CombatEngine
             // BEFORE the kill check because the reference's proc gate (:4847) precedes its DAM_DEAD
             // destroy block (:4855). selfDamageProcFor is null for every other caller — an ordinary
             // blast has no self-damaged attacker — so this is inert by construction (F13, fixed 2026-08-15).
+            // Firing the proc before the Shove call below is NOT an arbitrary choice: for this exact
+            // event, attackComputeCriticalFailure() clears DAM_HIT (combat.cc:4180) before calling
+            // attackComputeDamage(), which then takes the attacker-damage branch and sets
+            // knockbackDistancePtr = nullptr unconditionally (combat.cc:4517) — the reference computes
+            // NO knockback for the fumbling attacker's own self-damage, so there is no reference
+            // knockback for this proc to precede or follow. Explode()'s unconditional Shove call below
+            // is inherited from the shared grenade-blast path (`actionExplode` / `_compute_explosion_*`,
+            // see the class-level doc comment above), not from this crit-failure event, so it has no
+            // reference ordering to match here either way.
             if (victim == selfDamageProcFor && victim.Sid != -1
                 && victim != _host.Dude && !_host.PartyMembers.Contains(victim))
                 foreach (string line in _host.RunDamageProc(victim, victim, damage))
