@@ -467,6 +467,22 @@ unnoticed until this review. Mark **re-record tier**: wiring a live `RunDamagePr
 every `Explode` caller (including the two `explosion-hit` fixtures) can reach is not inert by
 construction the way F13's `selfDamageProcFor` parameter was.
 
+**F17 — A fumbling attacker is knocked back by its own `DAM_EXPLODE` blast; vanilla computes no
+knockback for self-damage at all.** *Effort S · **re-record tier**.* `attackComputeCriticalFailure`
+clears `DAM_HIT` as its first statement (`combat.cc:4180`), so the `attackComputeDamage` call it then
+makes for `DAM_HIT_SELF` / `DAM_EXPLODE` takes the attacker-damage branch, which sets
+`knockbackDistancePtr = nullptr` unconditionally (`:4513-4517`) — the reference computes **zero**
+knockback for the fumbler's own self-damage. Hexwaste routes the explode branch through the generic
+`Explode`, whose per-victim tail calls `Shove(centerTile, victim, damage / 10)` for every non-multihex
+victim including the attacker standing on the blast tile. `HexGrid.RotationTo(centerTile, centerTile)`
+is degenerate for that critter, so a self-blast dealing ≥ 10 damage shoves the fumbler one or more
+tiles in an arbitrary direction where vanilla moves it not at all. Surfaced during the F13 final-fix
+round (2026-08-15): the shipped `Explode` comment records the reference behaviour in prose, but the
+divergence itself was untracked, which is the same failure mode F16 exists to prevent. Closing it
+means suppressing the shove for `selfDamageProcFor` — or, more faithfully, for any victim whose
+damage came from its own fumble — and that moves recorded `knockback:` transcript lines wherever a
+fixture blast reaches 10 damage, hence the tier.
+
 ### Pointer
 
 **F10 — Surveyed-but-unbuilt QoL catalogue.** *Not scheduled work.*
