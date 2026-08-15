@@ -2058,6 +2058,64 @@ public class CombatEngineTests
     }
 
     [Fact]
+    public void MissedShotsCollateralVictimRunsNoDamageProc()
+    {
+        // F12, ported from fallout2-ce src/combat.cc _damage_object() (:4821): _check_ranged_miss
+        // reassigns attack->defender to the bystander it struck, while attack->oops keeps the INTENDED
+        // target (set at :3485). The defender's damage call at :4723 therefore passes
+        // `attack->defender != attack->oops` = TRUE, and _damage_object gates the proc as `if (!a4)`
+        // (:4847) — so a collateral victim runs NO damage_p_proc. It still takes the HP loss and still
+        // runs the on-hit path; only the damage proc is suppressed.
+        int from = 20100;
+        int target = HexGrid.TileInDirection(from, 0, 3);
+
+        var host = new FakeCombatHost { CriticalsEnabled = false, LoadedAmmoCount = 10 };
+        host.SetDude(NewCritter(from, hp: 30, ap: 12, skill: 100));
+        MapObject enemy = host.AddCritter(NewCritter(target, hp: 500));
+        (ProtoInfo proto, MapObject item) = MakeBurstWeapon(rounds: 10, apCost2: 6, minDmg: 10, maxDmg: 10, maxRange: 40);
+        host.Equipped = (proto, item);
+
+        int endpoint = HexGrid.TileNumBeyond(from, target, 40);
+        var line = new List<int>();
+        LineOfFire.Trace(target, endpoint, t => { line.Add(t); return null; });
+        Assert.True(line.Count > 1, "there must be an overshoot tile beyond the target");
+        MapObject bystander = host.AddCritter(NewCritter(line[1], hp: 500));
+        bystander.Sid = 7; // scripted: a damage_p_proc COULD run — the point is that it must not
+
+        host.BlockerOverride = tile => host.CombatCritters.FirstOrDefault(c => c.HexTile == tile && !c.IsDead);
+
+        var engine = new CombatEngine(host, new SequenceRng(100));
+        Assert.True(engine.TryAttack(enemy));
+        host.Animating.Clear();
+        engine.ProcessAnimations();
+
+        Assert.True(bystander.CurrentHp < 500, "the overshoot should still have struck the bystander");
+        Assert.DoesNotContain(host.DamageProcCalls, c => c.Target == bystander);
+    }
+
+    [Fact]
+    public void OrdinaryDefenderStillRunsItsDamageProc()
+    {
+        // F12 boundary pin: the damage-proc suppression is specific to ApplyAccidentalHit's collateral
+        // victim (defender != oops). It must not leak to the ordinary defender path — a landed shot on
+        // the INTENDED target (defender == oops) still runs SCRIPT_PROC_DAMAGE (combat.cc:4723-4850-4851).
+        // This is a boundary pin, not a regression test: it is expected to pass both before and after F12.
+        var host = new FakeCombatHost { CriticalsEnabled = false, LoadedAmmoCount = 10 };
+        host.SetDude(NewCritter(20100, hp: 30, ap: 12, skill: 100));
+        MapObject enemy = host.AddCritter(NewCritter(HexGrid.TileInDirection(20100, 0), hp: 100));
+        enemy.Sid = 7; // scripted: a damage_p_proc can run
+        host.Equipped = MakeGun();
+        var engine = new CombatEngine(host, new MinRng()); // guaranteed to-hit success
+
+        Assert.True(engine.TryAttack(enemy));
+        host.Animating.Clear();
+        engine.ProcessAnimations();
+
+        Assert.True(enemy.CurrentHp < 100, "the shot must land for the proc to matter");
+        Assert.Contains(host.DamageProcCalls, c => c.Target == enemy);
+    }
+
+    [Fact]
     public void BurstConeCatchesACollateralBystanderOnALine()
     {
         // M2: a critter standing on the left cone line takes collateral fire, while the

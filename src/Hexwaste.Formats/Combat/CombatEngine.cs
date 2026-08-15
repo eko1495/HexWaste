@@ -716,8 +716,14 @@ public sealed class CombatEngine
         return new AccidentalHit(victim, dmg);
     }
 
-    /// <summary>Apply a missed shot's accidental bystander hit (mirrors ApplyBurstExtras — HP, damage_p_proc,
-    /// kill / on-hit proc; the dude routes to GameOver).</summary>
+    /// <summary>Apply a missed shot's accidental bystander hit (mirrors ApplyBurstExtras — HP, kill /
+    /// on-hit proc; the dude routes to GameOver). NO damage_p_proc: see below.</summary>
+    // ported from fallout2-ce src/combat.cc _damage_object() (:4821) + _check_ranged_miss(): the miss
+    // reassigns attack->defender to the bystander while attack->oops keeps the INTENDED target
+    // (:3485), so the defender damage call at :4723 passes `defender != oops` = true and the proc gate
+    // `if (!a4)` (:4847) skips SCRIPT_PROC_DAMAGE entirely. The collateral victim takes the HP loss and
+    // the on-hit path, but never its damage proc (F12, fixed 2026-08-15). The fork's PR #493 inverts a
+    // DIFFERENT call site's polarity and does not change this branch's outcome.
     private void ApplyAccidentalHit(AccidentalHit acc, MapObject attacker)
     {
         if (acc.Damage <= 0 || acc.Victim.IsDead)
@@ -725,9 +731,6 @@ public sealed class CombatEngine
         MapObject? dude = _host.Dude;
         acc.Victim.CurrentHp -= acc.Damage;
         _host.Log($"The shot goes wide and hits the {_host.ObjectName(acc.Victim)} for {acc.Damage} damage.");
-        if (acc.Victim != dude && acc.Victim.Sid != -1)
-            foreach (string line in _host.RunDamageProc(acc.Victim, attacker, acc.Damage))
-                _host.Log(line);
         if (acc.Victim.CurrentHp <= 0)
         {
             if (acc.Victim == dude)
