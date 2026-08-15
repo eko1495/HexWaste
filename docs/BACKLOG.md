@@ -307,7 +307,7 @@ was the `= 0` reset once a critter joined combat (`CombatEngine.cs:2016`) — so
 because it got hurt or ran low on HP could never be marked FLEEING, and could never reach
 DISENGAGING to let a fight actually end.
 
-**F15 — LIVE BUG (found doing F1): a "successful" flee that never moves the critter.**
+**F18 — LIVE BUG (found doing F1): a "successful" flee that never moves the critter.**
 *Effort M · **re-record tier** (the bug is in transcript territory — fixing it moves recorded
 lines).* `denbus2-fight-flee` records `flee: Cute Slave@11272 -> 10480` at fixture lines 25, 39, 57
 and 75 — the same critter, from the same tile, logging a *successful* flee four times and never
@@ -329,7 +329,7 @@ transcript line after a successful `StartWalk` (or both). **Fixing this WILL mov
 the P120 precedent. See the appendix in the F1 implementation task's report for the full repro and
 probe transcripts.
 
-**F16 — Out of scope for now: the reference's second `DISENGAGING` setter, at the tail of
+**F19 — Out of scope for now: the reference's second `DISENGAGING` setter, at the tail of
 `_combat_ai`, is unported.** *Effort M–L · **re-record tier** once attempted.* Beyond `_ai_run_away`
 (F1, shipped), `e97087b` sets `CRITTER_MANEUVER_DISENGAGING` a second time, at `_combat_ai`'s tail
 (`combat_ai.cc:3098-3112`): when the target is alive, the critter has AP left, and
