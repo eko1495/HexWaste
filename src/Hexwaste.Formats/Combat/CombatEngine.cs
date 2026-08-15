@@ -1194,7 +1194,8 @@ public sealed class CombatEngine
         if ((flags & CriticalTables.DamHitSelf) != 0)
             CritFailDamage(attacker, attacker, weaponProto, "crit-fail-self");
         else if ((flags & CriticalTables.DamExplode) != 0)
-            Explode(self.HexTile, self, weaponProto?.Weapon?.MinDamage ?? 1, weaponProto?.Weapon?.MaxDamage ?? 6, 1);
+            Explode(self.HexTile, self, weaponProto?.Weapon?.MinDamage ?? 1, weaponProto?.Weapon?.MaxDamage ?? 6, 1,
+                selfDamageProcFor: self);
 
         if ((flags & CriticalTables.DamHurtSelf) != 0)
             ApplyCritFailDamage(attacker, attacker, _rng.Next(1, 6), weaponProto, "crit-fail-self");
@@ -1610,7 +1611,8 @@ public sealed class CombatEngine
     /// _obj_blocking_at also yields a single object per tile, and can itself pick a wall over a
     /// critter) would have processed whichever object it found there. Not changed: judged more
     /// faithful than less, but gameplay-visible, so documented here.</summary>
-    public void Explode(int centerTile, MapObject? killer, int minDamage, int maxDamage, int radius)
+    public void Explode(int centerTile, MapObject? killer, int minDamage, int maxDamage, int radius,
+        MapObject? selfDamageProcFor = null)
     {
         const int maxTargets = 6;
         const int explosionDt = CritterStat.DamageThreshold + 6; // STAT_DAMAGE_THRESHOLD_EXPLOSION
@@ -1666,6 +1668,20 @@ public sealed class CombatEngine
             victim.CurrentHp -= damage;
             _host.Log($"The blast hits the {_host.ObjectName(victim)} for {damage} damage.");
             _host.Transcript($"explosion-hit: {_host.ObjectName(victim)}@{victim.HexTile} damage={damage}");
+
+            // ported from fallout2-ce src/combat.cc _damage_object() (:4847, community fix #493): the
+            // DAM_EXPLODE crit-failure branch self-damages through attackComputeDamage(attack, 1, 2)
+            // (:4231-4232) and lands in the same _apply_damage path as DAM_HIT_SELF, so the fumbling
+            // critter runs its own damage_p_proc — with itself as both damaged object and source. The
+            // proc is skipped when object and source are both party members, which for self-damage means
+            // every party member including the dude, so only an unaffiliated critter runs it. It fires
+            // BEFORE the kill check because the reference's proc gate (:4847) precedes its DAM_DEAD
+            // destroy block (:4855). selfDamageProcFor is null for every other caller — an ordinary
+            // blast has no self-damaged attacker — so this is inert by construction (F13, fixed 2026-08-15).
+            if (victim == selfDamageProcFor && victim.Sid != -1
+                && victim != _host.Dude && !_host.PartyMembers.Contains(victim))
+                foreach (string line in _host.RunDamageProc(victim, victim, damage))
+                    _host.Log(line);
 
             if ((victim.Flags & OBJECT_MULTIHEX) == 0)
                 Shove(centerTile, victim, damage / 10);

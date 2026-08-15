@@ -2614,6 +2614,57 @@ public class CombatEngineTests
     }
 
     [Fact]
+    public void ExplodeFumbleRunsTheSelfDamagedAttackersDamageProc()
+    {
+        // F13: PR #493's self-damage proc was wired into ApplyCritFailDamage, which only the
+        // DAM_HIT_SELF branch reaches. The sibling DAM_EXPLODE branch routes to Explode() and reached
+        // no proc at all — where the reference's attackComputeDamage(attack, 1, 2) self-damage feeds
+        // the same _apply_damage path (combat.cc:4231-4232). _cf_table row 4 col 4 = 4096 = DAM_EXPLODE
+        // exactly, so a critFailType-4 weapon fumbling at max severity detonates.
+        var host = new FakeCombatHost
+        {
+            CriticalsEnabled = true,
+            LoadedAmmoCount = 10,
+            Equipped = MakeGun(critFailType: 4),
+        };
+        host.SetDude(NewCritter(20100, hp: 100, ap: 10));
+        MapObject enemy = host.AddCritter(NewCritter(HexGrid.TileInDirection(20100, 0), hp: 60, ap: 10));
+        enemy.Sid = 7; // a scripted, unaffiliated NPC: its damage_p_proc can run
+        // Derived empirically with RecordingRng (rng.Draws printed against the armed NPC's AI/attack
+        // path) — the sibling test's sequence is for an unarmed NPC and does not apply here. Five draws
+        // land the fumble; a 6th (clamped to the 5th's value) is Explode()'s own blast-damage roll:
+        //   100 -> the DUDE's own to-hit roll (opens combat with a guaranteed miss)
+        //   1   -> the DUDE's TriggerCritFailure natural-upgrade roll: drawn (CriticalsEnabled), but
+        //          DudeCritFailuresEnabled defaults false so the dude's fumble has no further effect —
+        //          this draw is consumed and inert, exactly like NpcSelfDamageFumble's shape
+        //   100 -> the ENEMY's own to-hit roll (guaranteed miss, opens ITS crit-failure check)
+        //   1   -> the ENEMY's TriggerCritFailure natural-upgrade roll (1 <= -delta/10, upgrades)
+        //   80  -> CriticalFailure.Resolve's severity roll. Luck is 0 (NewCritter's default, unset),
+        //          so chance = 80 − 5·(0−5) = 105 (CriticalFailure.cs:25) → Severity(105) buckets to
+        //          column 4 (>95, CriticalFailure.cs:18) → _cf_table row 4 col 4 = 4096 = DAM_EXPLODE
+        //          (CriticalTables.g.cs row index 20-24). This is the Luck-0 trap: Luck 0 shifts
+        //          severity UP a column versus a naive "chance == raw roll" assumption — the same trap
+        //          an earlier plan's SequenceRng(100,1,80) fell into.
+        //   (80 again, clamped) -> Explode()'s rand(minDamage, maxDamage+1) blast roll, drawn once per
+        //          victim in range (here: both the enemy itself and the dude, radius 1)
+        var rng = new RecordingRng(new SequenceRng(100, 1, 100, 1, 80));
+        var engine = new CombatEngine(host, rng);
+
+        Assert.True(engine.TryAttack(enemy)); // open combat
+        host.Animating.Clear();
+        engine.ProcessAnimations();
+        engine.EndPlayerTurn();
+        for (int i = 0; i < 200 && engine.Phase == CombatPhase.EnemyTurn; i++)
+        {
+            host.Animating.Clear();
+            engine.Step();
+        }
+
+        Assert.Contains(host.Transcripts, t => t.StartsWith("crit-fail: ") && t.Contains("flags=0x1000"));
+        Assert.Contains(host.DamageProcCalls, c => c.Target == enemy && c.Source == enemy);
+    }
+
+    [Fact]
     public void NoCriticalFailureWithoutCriticalsOrJinxed()
     {
         // The inert invariant: a non-Jinxed dude before day 2 (CriticalsEnabled false) draws NOTHING
