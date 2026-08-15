@@ -3051,6 +3051,32 @@ public sealed class CombatEngine
         if (actorAp < 1)
             return false;
 
+        // ported from fallout2-ce src/combat_ai.cc _ai_run_away (:1183-1217): a critter already at or
+        // beyond max_dist from its threat does NOT run — it sets CRITTER_MANEUVER_DISENGAGING (:1216)
+        // and takes no movement and no AP, which is exactly what lets a flight terminate
+        // (_combatai_want_to_stop returns true on the flag, :3215). Inside the threshold it is marked
+        // CRITTER_MANUEVER_FLEEING (:1184) and runs. Before this gate the engine set NEITHER flag, so
+        // every consumer of them was starved on an engine-initiated flight and a fleeing critter would
+        // re-flee every turn forever with nothing to ever mark it done. No committed golden fixture
+        // exercises this: in denbus2-fight-flee every fleeing critter's distance from its threat stays
+        // at or below 8, never reaching its ai.txt packet's max_dist of 10 (measured directly). That
+        // fixture's own repeated "flee: Cute Slave@11272 -> 10480" line (same tile every round) has a
+        // different, pre-existing cause: TryFlee logs the flee line and calls StartWalk unconditionally,
+        // but StartWalk's destination tile is itself occupied/blocked every round, so the walk never
+        // actually starts and the critter never moves — a separate bug, not this gate's absence.
+        // The comparison is '<', matching e97087b. The maintained fork's PR #675 flips it to '<=';
+        // that hunk was rejected as ungrounded, so '<' is deliberate — do not "correct" it.
+        // A null AI packet is a Hexwaste-only state (the reference always has one): keep the pre-gate
+        // behaviour and flee, rather than inventing a default max_dist.
+        AiPacket? ai = _host.GetAiPacket(critter);
+        if (ai is not null && !(HexGrid.Distance(critter.HexTile, threatTile) < ai.MaxDist))
+        {
+            critter.Maneuver |= ManeuverDisengaging;
+            _host.Transcript($"disengage: {_host.ObjectName(critter)}@{critter.HexTile}");
+            return false; // the reference's empty else — no move, no AP, and the caller ends the turn
+        }
+        critter.Maneuver |= ManeuverFleeing;
+
         int fromTile = critter.HexTile;
         // ported from fallout2-ce combat_ai.cc _ai_run_away: head directly AWAY from the
         // threat (the rotation from threat→self), or ±1 rotation, as far as AP allows, via

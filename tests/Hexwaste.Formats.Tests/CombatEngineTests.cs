@@ -423,7 +423,9 @@ public class CombatEngineTests
         MapObject dude = host.SetDude(NewCritter(tile: 20100, hp: 30, ap: 10));
         int eTile = HexGrid.TileInDirection(20100, 0);
         MapObject enemy = host.AddCritter(NewCritter(tile: eTile, hp: 5, ap: 10));
-        host.AiPackets[enemy] = new AiPacket(13, "Thug", MinToHit: 0, MinHp: 10, 0, "", "");
+        // MaxDist was a placeholder 0 here until F1 (max_dist gate) made the field live; distance
+        // 1 < max_dist 10 so it flees, matching the pre-gate behaviour this test locks.
+        host.AiPackets[enemy] = new AiPacket(13, "Thug", MinToHit: 0, MinHp: 10, 10, "", "");
         var engine = new CombatEngine(host, new MinRng());
 
         engine.BeginScriptAggro(enemy, dude); // opens on the enemy's turn
@@ -444,7 +446,7 @@ public class CombatEngineTests
         MapObject dude = host.SetDude(NewCritter(tile: 20100, hp: 30, ap: 10));
         int eTile = HexGrid.TileInDirection(20100, 0);
         MapObject enemy = host.AddCritter(NewCritter(tile: eTile, hp: 30, ap: 10)); // healthy, would normally attack
-        host.AiPackets[enemy] = new AiPacket(13, "Coward", MinToHit: 0, MinHp: 0, 0, "", "");
+        host.AiPackets[enemy] = new AiPacket(13, "Coward", MinToHit: 0, MinHp: 0, 10, "", "");
         enemy.Maneuver |= ManeuverFleeing; // a script flagged it to flee
         var engine = new CombatEngine(host, new MinRng());
 
@@ -475,12 +477,121 @@ public class CombatEngineTests
     }
 
     [Fact]
+    public void EnemyInsideMaxDistFleesAndIsMarkedFleeing()
+    {
+        // ported from fallout2-ce src/combat_ai.cc _ai_run_away (:1183-1184): inside max_dist the
+        // critter is marked CRITTER_MANUEVER_FLEEING and runs. Adjacent (distance 1) with max_dist 10.
+        const int ManeuverFleeing = 0x04;
+        var host = new FakeCombatHost();
+        MapObject dude = host.SetDude(NewCritter(tile: 20100, hp: 30, ap: 10));
+        MapObject enemy = host.AddCritter(NewCritter(tile: HexGrid.TileInDirection(20100, 0), hp: 5, ap: 10));
+        host.AiPackets[enemy] = new AiPacket(13, "Thug", MinToHit: 0, MinHp: 10, 10, "", "");
+        var engine = new CombatEngine(host, new MinRng());
+
+        engine.BeginScriptAggro(enemy, dude);
+        engine.Step();
+
+        Assert.Contains(host.Transcripts, t => t.StartsWith("flee:"));
+        Assert.True((enemy.Maneuver & ManeuverFleeing) != 0, "the engine must mark an actual flight FLEEING");
+    }
+
+    [Theory]
+    [InlineData(9, true)]    // distance 9 < max_dist 10 -> flees
+    [InlineData(10, false)]  // distance 10 is NOT < 10 -> disengages. The fork's PR #675 '<=' would flee here.
+    public void MaxDistBoundaryDecidesFleeingVersusDisengaging(int distance, bool expectFlee)
+    {
+        // ported from fallout2-ce src/combat_ai.cc _ai_run_away (:1183). The comparison is '<' at our
+        // pinned e97087b. The maintained fork's PR #675 flips it to '<=', a hunk we rejected as
+        // ungrounded — so distance == max_dist MUST disengage. Do not "fix" this to '<='.
+        // Geometry check (distcheck scratch program): HexGrid.Distance(20100, TileInDirection(20100,0,n))
+        // == n exactly for n=9 and n=10 (no edge wraparound at this tile), so the identity assumed by
+        // this test holds verbatim.
+        const int ManeuverFleeing = 0x04, ManeuverDisengaging = 0x02;
+        var host = new FakeCombatHost();
+        MapObject dude = host.SetDude(NewCritter(tile: 20100, hp: 30, ap: 10));
+        MapObject enemy = host.AddCritter(NewCritter(tile: HexGrid.TileInDirection(20100, 0, distance), hp: 5, ap: 10));
+        host.AiPackets[enemy] = new AiPacket(13, "Thug", MinToHit: 0, MinHp: 10, 10, "", "");
+        var engine = new CombatEngine(host, new MinRng());
+
+        engine.BeginScriptAggro(enemy, dude);
+        engine.Step();
+
+        Assert.Equal(expectFlee, (enemy.Maneuver & ManeuverFleeing) != 0);
+        Assert.Equal(!expectFlee, (enemy.Maneuver & ManeuverDisengaging) != 0);
+    }
+
+    [Fact]
+    public void DisengagingEnemyNeitherMovesNorAttacks()
+    {
+        // combat_ai.cc:1215-1217 — the else branch sets the flag and does NOTHING else: no movement,
+        // no AP spend, and (because TryEnemyAction returns false) no attack either.
+        var host = new FakeCombatHost();
+        MapObject dude = host.SetDude(NewCritter(tile: 20100, hp: 30, ap: 10));
+        MapObject enemy = host.AddCritter(NewCritter(tile: HexGrid.TileInDirection(20100, 0, 10), hp: 5, ap: 10));
+        host.AiPackets[enemy] = new AiPacket(13, "Thug", MinToHit: 0, MinHp: 10, 10, "", "");
+        int startTile = enemy.HexTile;
+        var engine = new CombatEngine(host, new MinRng());
+
+        engine.BeginScriptAggro(enemy, dude);
+        engine.Step();
+
+        Assert.DoesNotContain(host.Transcripts, t => t.StartsWith("flee:"));
+        Assert.Equal(startTile, enemy.HexTile);   // did not move
+        Assert.Equal(30, dude.CurrentHp);         // did not attack
+    }
+
+    [Fact]
+    public void ADisengagedHostileNoLongerKeepsTheFightOpen()
+    {
+        // The POINT of the item, end-to-end: DISENGAGING makes _combatai_want_to_stop return true
+        // (combat_ai.cc:3215), which is what lets a fight terminate. Asserting the flag alone would
+        // pass even if nothing consumed it, so drive it through the engine's own exit path.
+        // CanEndCombat() from the brief is a placeholder name; the real public predicate fed by
+        // WantsToStopFighting (CombatEngine.cs:2213, exit gate at :2203) is TryEndCombat().
+        // Perception is bumped to 20 (fallback range PE*2=40 in combat) so that, pre-gate, the
+        // enemy's un-gated 10-tile flee to distance ~20 does NOT accidentally drop it out of
+        // WithinPerception and end the fight via the unrelated perception fallback in
+        // WantsToStopFighting — that would make this pass pre-change for the wrong reason. With PE 20
+        // the pre-gate combat correctly stays open (still perceived), and only the post-gate
+        // DISENGAGING flag (checked before the perception fallback) can close it.
+        var host = new FakeCombatHost();
+        MapObject dude = host.SetDude(NewCritter(tile: 20100, hp: 30, ap: 10));
+        MapObject enemy = host.AddCritter(NewCritter(tile: HexGrid.TileInDirection(20100, 0, 10), hp: 5, ap: 10, perception: 20));
+        host.AiPackets[enemy] = new AiPacket(13, "Thug", MinToHit: 0, MinHp: 10, 10, "", "");
+        var engine = new CombatEngine(host, new MinRng());
+
+        engine.BeginScriptAggro(enemy, dude);
+        engine.Step();
+
+        Assert.True(engine.TryEndCombat(), "a disengaged sole hostile must not block leaving combat");
+    }
+
+    [Fact]
+    public void ACritterWithNoAiPacketStillFlees()
+    {
+        // Hexwaste-only state: the reference always has a packet, so there is no vanilla behaviour to
+        // port for a null one. Keep the pre-gate behaviour rather than inventing a default max_dist —
+        // this is what keeps packet-less fixture critters and the ally flee path inert.
+        var host = new FakeCombatHost();
+        MapObject dude = host.SetDude(NewCritter(tile: 20100, hp: 30, ap: 10));
+        MapObject enemy = host.AddCritter(NewCritter(tile: HexGrid.TileInDirection(20100, 0), hp: 30, ap: 10));
+        enemy.Maneuver |= 0x04; // script-set FLEEING, the path that does not need a packet
+        // deliberately NO host.AiPackets[enemy] entry
+        var engine = new CombatEngine(host, new MinRng());
+
+        engine.BeginScriptAggro(enemy, dude);
+        engine.Step();
+
+        Assert.Contains(host.Transcripts, t => t.StartsWith("flee:"));
+    }
+
+    [Fact]
     public void EnemyThatCanNeverClearMinToHitFlees()
     {
         var host = new FakeCombatHost();
         MapObject dude = host.SetDude(NewCritter(tile: 20100, hp: 30, ap: 10));
         MapObject enemy = host.AddCritter(NewCritter(tile: HexGrid.TileInDirection(20100, 0), hp: 30, ap: 10));
-        host.AiPackets[enemy] = new AiPacket(99, "Hopeless", MinToHit: 99, MinHp: 0, 0, "", "");
+        host.AiPackets[enemy] = new AiPacket(99, "Hopeless", MinToHit: 99, MinHp: 0, 10, "", "");
         var engine = new CombatEngine(host, new MinRng());
 
         engine.BeginScriptAggro(enemy, dude);
@@ -1271,7 +1382,7 @@ public class CombatEngineTests
         var host = new FakeCombatHost();
         MapObject dude = host.SetDude(NewCritter(tile: 20100, hp: 30, ap: 10));
         MapObject enemy = host.AddCritter(NewCritter(tile: HexGrid.TileInDirection(20100, 0), hp: 30, ap: 10));
-        host.AiPackets[enemy] = new AiPacket(8, "Scorpion", MinToHit: 0, MinHp: 0, 0, "", "",
+        host.AiPackets[enemy] = new AiPacket(8, "Scorpion", MinToHit: 0, MinHp: 0, 10, "", "",
             HurtTooMuch: CriticalTables.DamBlind);
         enemy.CombatResults |= CriticalTables.DamBlind;
         var engine = new CombatEngine(host, new MinRng());
