@@ -169,6 +169,43 @@ public class PathfinderTests
     }
 
     [Fact]
+    public void BlockedDestinationStillPathsWithoutTheFlag()
+    {
+        // Inertness guarantee for the seven call sites that do NOT opt in: the goal tile stays exempt
+        // from the blocked test by default (Pathfinder.cs `neighbor != to`), which is what lets a
+        // melee approach path onto an occupied tile. This is the reference's a5 = 0 behaviour.
+        int from = Tile(100, 100);
+        int to = HexGrid.TileInDirection(HexGrid.TileInDirection(from, 2), 2);
+
+        Assert.NotNull(Pathfinder.FindPath(from, to, tile => tile == to));
+    }
+
+    [Fact]
+    public void BlockedDestinationYieldsNoPathWhenTheDestinationMustBeFree()
+    {
+        // ported from fallout2-ce src/animation.cc pathfinderFindPath (:1716-1722): with a5 set, a
+        // blocked destination returns 0 BEFORE any search. _ai_run_away's retreat search passes
+        // a5 = 1 (combat_ai.cc:1192), which is how vanilla shrinks its retreat distance until it
+        // finds a genuinely free tile.
+        int from = Tile(100, 100);
+        int to = HexGrid.TileInDirection(HexGrid.TileInDirection(from, 2), 2);
+
+        Assert.Null(Pathfinder.FindPath(from, to, tile => tile == to, null, requireFreeDestination: true));
+    }
+
+    [Fact]
+    public void APassableClosedDoorAtTheDestinationIsNotABlocker()
+    {
+        // P109: a closed door the walker may open is not a blocker. The new destination check must
+        // honour the same exemption the intermediate-tile check does, or flee-through-doors regresses.
+        int from = Tile(100, 100);
+        int to = HexGrid.TileInDirection(HexGrid.TileInDirection(from, 2), 2);
+
+        Assert.NotNull(Pathfinder.FindPath(from, to, tile => tile == to, tile => tile == to,
+            requireFreeDestination: true));
+    }
+
+    [Fact]
     public void IsOnSegmentDetectsACollinearInBetweenTile()
     {
         // Three tiles stepped straight out in direction 0: the middle one is on the a→b segment; the

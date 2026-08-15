@@ -4,9 +4,11 @@ namespace Hexwaste.Formats.Hex;
 /// A* over the hex grid, ported from fallout2-ce src/animation.cc
 /// pathfinderFindPath(): uniform step cost 50, +10 turn penalty, screen-space
 /// _idist heuristic, capped at 2000 expanded nodes. Returns the sequence of
-/// rotations to walk, or null when unreachable. The goal tile itself is never
-/// blocking-checked (so paths can end next to/at an occupied target), matching
-/// the original.
+/// rotations to walk, or null when unreachable. The reference takes an `a5`
+/// flag; the default here reproduces `a5 = 0`, under which the goal tile is
+/// never blocking-checked (so paths can end next to/at an occupied target,
+/// e.g. a melee approach). Pass <paramref name="requireFreeDestination"/> to
+/// reproduce `a5 = 1`, which refuses a path onto a blocked destination.
 /// </summary>
 public static class Pathfinder
 {
@@ -19,10 +21,23 @@ public static class Pathfinder
     /// (animation.cc:1802-1808: unlocked scenery door; walk-thru additionally required for the dude);
     /// the walker then auto-opens the door on contact (_object_move, animation.cc:2599). Null = no
     /// exemption (combat AI and NPC ambient walkers keep their current behavior).</param>
+    /// <param name="requireFreeDestination">ported from fallout2-ce src/animation.cc
+    /// pathfinderFindPath (:1716-1722): the reference's `a5` argument. When set, a BLOCKED
+    /// destination yields no path at all — the function returns 0 before searching. Callers that
+    /// mirror `_make_path(..., 1)` pass true; the default false reproduces `a5 = 0`, under which the
+    /// goal tile is exempt from the blocked test so a path can end on an occupied tile (a melee
+    /// approach). F18: TryFlee needed this, because a retreat onto a blocked tile is refused by the
+    /// walker and the flight silently never happens.</param>
     public static byte[]? FindPath(int from, int to, Func<int, bool> isBlocked,
-        Func<int, bool>? isPassableDoor = null)
+        Func<int, bool>? isPassableDoor = null, bool requireFreeDestination = false)
     {
         if (!HexGrid.IsValid(from) || !HexGrid.IsValid(to) || from == to)
+            return null;
+
+        // ported from fallout2-ce src/animation.cc pathfinderFindPath (:1718-1722): `if (a5) { if
+        // (callback(object, to, elevation) != nullptr) return 0; }` — the destination's own blocker is
+        // tested up front. The door exemption applies here exactly as it does to intermediate tiles.
+        if (requireFreeDestination && isBlocked(to) && !(isPassableDoor?.Invoke(to) ?? false))
             return null;
 
         var processed = new HashSet<int> { from };
