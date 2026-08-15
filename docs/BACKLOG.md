@@ -446,6 +446,27 @@ byte-identical port. (As of F11/F12/F13 shipping, no committed golden fixture re
 at all — see F11's correction note — so the first fixture to exercise it may need to be recorded
 fresh rather than merely re-recorded.)
 
+**F16 — `Explode`'s OTHER blast victims still run no `damage_p_proc`; F13 only fixed the fumbler's
+own proc.** *Effort S–M · re-record tier.* The same reference event F13 ports — a `DAM_EXPLODE`
+crit-failure — models *two* things: the attacker's own self-damage (`attackComputeDamage(attack, 1,
+2)`, `combat.cc:4232`, applied through `_damage_object` at `:4683`, which is what F13 wired up) *and*
+`_compute_explosion_on_extras(attack, 1, …)` (`:3976`) for every other critter caught in the blast,
+whose damage is applied through the extras loop's own `_damage_object` call at `combat.cc:4751`.
+Under the community-fix #493 polarity Hexwaste already carries — and which Hexwaste's own extras
+site, `ApplyBurstExtras` (`CombatEngine.cs:976`), already applies — those other blast victims should
+also run `damage_p_proc`. `Explode` runs the proc for none of them (only for the critter named by
+`selfDamageProcFor`). So after F13 the engine is internally asymmetric on a single reference event:
+the fumbler gets its `damage_p_proc`, the bystanders caught in his exploding gun do not. This is
+vanilla-faithful at the pinned `alexbatalov e97087b` (where the extras path's `a4` gate reduces to
+`defender == oops` = true for this event, i.e. no proc there either in the reference's own general
+extras case) and is out of this branch's stated scope — `Explode` is Hexwaste's *generic* grenade/
+blast path, not the extras path, so wiring this in means giving `Explode` the same per-victim
+`Sid`/party/`Dude` gate F13 gave the fumbler, for every victim in `ordered`, not just one. Recorded
+here so it is tracked rather than lost — leaving it undocumented is exactly how F13 itself went
+unnoticed until this review. Mark **re-record tier**: wiring a live `RunDamageProc` call into a path
+every `Explode` caller (including the two `explosion-hit` fixtures) can reach is not inert by
+construction the way F13's `selfDamageProcFor` parameter was.
+
 ### Pointer
 
 **F10 — Surveyed-but-unbuilt QoL catalogue.** *Not scheduled work.*
