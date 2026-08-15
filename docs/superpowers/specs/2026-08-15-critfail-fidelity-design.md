@@ -28,7 +28,7 @@ if ((attack->attackerFlags & DAM_HIT_SELF) != 0) {
 }
 ```
 
-`DAM_RANDOM_HIT` takes the same shape (`combat.cc:3486`): `attackComputeDamage(attack, ammoQuantity, 2)`.
+`DAM_RANDOM_HIT` takes the same shape (`combat.cc:4260`): `attackComputeDamage(attack, ammoQuantity, 2)`.
 
 Inside `attackComputeDamage` the third argument is `bonusDamageMultiplier`, which reaches
 `damageMultiplier = bonusDamageMultiplier * weaponGetAmmoDamageMultiplier(...)` (`:4586`) and is then

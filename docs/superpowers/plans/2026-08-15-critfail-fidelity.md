@@ -52,7 +52,7 @@ Verified against `e97087b` on 2026-08-15. Do not re-derive; do falsify if someth
 - `attackComputeCriticalFailure` (`combat.cc:4228-4232`) resolves self-damage as
   `attackComputeDamage(attack, ammoQuantity, 2)` for `DAM_HIT_SELF` and
   `attackComputeDamage(attack, 1, 2)` for `DAM_EXPLODE`. `DAM_RANDOM_HIT` uses the same shape at
-  `combat.cc:3486`.
+  `combat.cc:4260`.
 - Inside `attackComputeDamage`, the third argument is `bonusDamageMultiplier`: it multiplies at
   `:4586` and is undone by `damage /= 2` at `:4601`. **The pair is net ×1 — vanilla applies the full
   rolled damage.**
@@ -134,7 +134,7 @@ Immediately after `HitSelfFumbleStillRollsWeaponDamage`, add:
     public void RandomHitFumbleAppliesFullWeaponDamageToTheWildVictim()
     {
         // The OTHER caller of CritFailDamage. DAM_RANDOM_HIT takes the same shape as DAM_HIT_SELF in
-        // the reference — attackComputeDamage(attack, ammoQuantity, 2) at combat.cc:3486 — so its
+        // the reference — attackComputeDamage(attack, ammoQuantity, 2) at combat.cc:4260 — so its
         // victim also takes the full rolled figure, not half. _cf_table row 1 col 3 = 1048576 =
         // DAM_RANDOM_HIT exactly; raw 60 → chance = 60 + 25 = 85 → col 3. Later draws repeat 60
         // clamped: the pool index Next(0, 1) → 0, and the 5-12 weapon roll → 12.
@@ -182,7 +182,7 @@ rather than the simplification. The method becomes:
     // starts at 0 — so a HURT_SELF fumble is worth exactly 1-5 and takes no damage roll. This method is
     // the HIT_SELF/RANDOM_HIT half; the HURT_SELF half calls ApplyCritFailDamage directly with the 1-5.
     // ported from fallout2-ce src/combat.cc attackComputeDamage(): the reference passes
-    // bonusDamageMultiplier = 2 (combat.cc:4230 for HIT_SELF, :3486 for RANDOM_HIT), which multiplies at
+    // bonusDamageMultiplier = 2 (combat.cc:4230 for HIT_SELF, :4260 for RANDOM_HIT), which multiplies at
     // :4586 and is undone by the `damage /= 2` at :4601 — a net x1, i.e. the FULL rolled figure. Our
     // critMultiplier feeds the same `raw * critMultiplier / 2` shape, so 2 is what reproduces vanilla;
     // passing 1 halved every crit-failure hit (F11, fixed 2026-08-15 with a deliberate re-record).
@@ -559,7 +559,7 @@ F13 moved no fixture.
 
 Add a new entry recording what Task 1 deliberately did not do: the reference rolls a **ranged**
 `DAM_HIT_SELF` `attack->ammoQuantity` times (`combat.cc:4229` — a burst fumble self-hits once per
-round) and `DAM_RANDOM_HIT` likewise (`:3486`); Hexwaste rolls once. Mark it **re-record tier**:
+round) and `DAM_RANDOM_HIT` likewise (`:4260`); Hexwaste rolls once. Mark it **re-record tier**:
 changing the roll count changes the RNG draw count, which is a materially larger blast radius than
 changing a multiplier.
 
