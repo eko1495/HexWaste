@@ -1227,11 +1227,23 @@ public sealed class CombatEngine
     // DAM_HURT_SELF is a separate branch that just adds randomBetween(1, 5) to attackerDamage — which
     // starts at 0 — so a HURT_SELF fumble is worth exactly 1-5 and takes no damage roll. This method is
     // the HIT_SELF/RANDOM_HIT half; the HURT_SELF half calls ApplyCritFailDamage directly with the 1-5.
+    // ported from fallout2-ce src/combat.cc attackComputeDamage(): the reference passes
+    // bonusDamageMultiplier = 2 (combat.cc:4230 for HIT_SELF, :4260 for RANDOM_HIT), which multiplies at
+    // :4586 and is undone by the `damage /= 2` at :4601 — a net x1, i.e. the FULL rolled figure. Our
+    // critMultiplier feeds the same `raw * critMultiplier / 2` shape, so 2 is what reproduces vanilla;
+    // passing 1 halved every crit-failure hit (F11, fixed 2026-08-15). Confirmed byte-identical
+    // against tests/golden-combat: no committed fixture's fumble sets DAM_HIT_SELF/DAM_RANDOM_HIT
+    // (the one crit-failure fixture, arcaves-crit-fail-day6, fumbles to flags=0x8000, LOSE_TURN
+    // only), so this branch has zero golden-fixture blast radius today — proven only by the two
+    // mutation-verified unit tests below.
+    // CARRIED DIVERGENCE: for a RANGED fumble the reference rolls attack->ammoQuantity times
+    // (a burst self-hits once per round); we roll once. Changing the roll COUNT changes the RNG draw
+    // count, so it is its own cycle — see docs/BACKLOG.md.
     private void CritFailDamage(CritterState attacker, CritterState victimState, ProtoInfo? weaponProto, string tag)
     {
         int dmg = weaponProto?.Weapon is { } w
-            ? CombatMath.RollWeaponDamage(_rng, attacker, victimState, w.MinDamage, w.MaxDamage, 1, false, 0)
-            : CombatMath.RollDamage(_rng, attacker, victimState, 1, false, 0);
+            ? CombatMath.RollWeaponDamage(_rng, attacker, victimState, w.MinDamage, w.MaxDamage, 2, false, 0)
+            : CombatMath.RollDamage(_rng, attacker, victimState, 2, false, 0);
         ApplyCritFailDamage(attacker, victimState, dmg, weaponProto, tag);
     }
 

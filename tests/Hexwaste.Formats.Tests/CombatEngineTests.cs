@@ -2480,13 +2480,10 @@ public class CombatEngineTests
         // col 4 = 65536 = DAM_HIT_SELF exactly, so a gun whose criticalFailureType is 1 fumbling at
         // max severity self-hits. SequenceRng: to-hit 100 (miss), upgrade 1 (crit-fail), severity raw
         // 80 → chance = 80 + 25 = 105 → col 4; later draws repeat 80 clamped, so the 5-12 weapon roll
-        // yields its max, 12 — and 12 then becomes 6 of HP, because CritFailDamage passes
-        // critMultiplier: 1 into RollWeaponDamage, whose body is `raw * critMultiplier / 2`.
-        // That halving is a KNOWN pre-existing fidelity bug, not the shape of the reference:
-        // e97087b's attackComputeDamage(attack, n, 2) multiplies by bonusDamageMultiplier 2 and then
-        // divides by 2 (combat.cc:4586 and the `damage /= 2` at :4601), i.e. x1, so vanilla
-        // self-damage is the full 12. This
-        // test pins TODAY's behaviour; see docs/BACKLOG.md F11 for the fix, which moves fixtures.
+        // yields its max, 12 — and all 12 land, because attackComputeDamage(attack, n, 2) multiplies
+        // by bonusDamageMultiplier 2 (combat.cc:4586) and then divides by 2 (:4601), i.e. x1: vanilla
+        // self-damage is the FULL rolled figure. (F11: this asserted 30 − 6 until 2026-08-15, when
+        // CritFailDamage stopped passing critMultiplier: 1 into `raw * critMultiplier / 2`.)
         var host = new FakeCombatHost
         {
             CriticalsEnabled = true,
@@ -2503,7 +2500,32 @@ public class CombatEngineTests
 
         Assert.Contains(host.Transcripts, t => t.StartsWith("crit-fail-self:"));
         Assert.DoesNotContain((1, 6), rng.Draws);   // the 1-5 HURT_SELF roll is NOT part of this path
-        Assert.Equal(24, dude.CurrentHp);           // 30 − 6, the weapon-damage roll
+        Assert.Equal(18, dude.CurrentHp);           // 30 − 12, the FULL weapon-damage roll
+    }
+
+    [Fact]
+    public void RandomHitFumbleAppliesFullWeaponDamageToTheWildVictim()
+    {
+        // The OTHER caller of CritFailDamage. DAM_RANDOM_HIT takes the same shape as DAM_HIT_SELF in
+        // the reference — attackComputeDamage(attack, ammoQuantity, 2) at combat.cc:4260 — so its
+        // victim also takes the full rolled figure, not half. _cf_table row 1 col 3 = 1048576 =
+        // DAM_RANDOM_HIT exactly; raw 60 → chance = 60 + 25 = 85 → col 3. Later draws repeat 60
+        // clamped: the pool index Next(0, 1) → 0, and the 5-12 weapon roll → 12.
+        var host = new FakeCombatHost
+        {
+            CriticalsEnabled = true,
+            DudeCritFailuresEnabled = true,
+            LoadedAmmoCount = 10,
+            Equipped = MakeGun(critFailType: 1),
+        };
+        host.SetDude(NewCritter(20100, hp: 30, ap: 10));
+        MapObject enemy = host.AddCritter(NewCritter(HexGrid.TileInDirection(20100, 0), hp: 100));
+        var engine = new CombatEngine(host, new SequenceRng(100, 1, 60));
+
+        Assert.True(engine.TryAttack(enemy));
+
+        Assert.Contains(host.Transcripts, t => t.StartsWith("crit-fail-random-hit:"));
+        Assert.Equal(88, enemy.CurrentHp); // 100 − 12, the FULL weapon-damage roll (was 100 − 6)
     }
 
     [Fact]
