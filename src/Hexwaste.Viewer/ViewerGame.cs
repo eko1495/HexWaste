@@ -874,6 +874,10 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
         /// <summary>P110 QA: start a scripted NPC walk (StartNpcWalk) from the critter at NpcHex to
         /// TargetHex — e2e-drives NPC door pathing headlessly with --advance-ms.</summary>
         public sealed record NpcWalk(int NpcHex, int TargetHex, bool Run = false) : StartupAction;
+        /// <summary>F21 QA: start a walk, pump it to completion, then start a SECOND walk for the same
+        /// critter — proves (or disproves) that a finished walker still blocks a later StartNpcWalk call
+        /// because it was never removed from _npcWalkers.</summary>
+        public sealed record WalkerRestartProbe(int Hex, int Target1, int Target2) : StartupAction;
         /// <summary>Fidelity probe: lists ground items within the NpcHex critter's perception+5, then runs
         /// the AI weapon switch (as-is — no weapon is stripped first) against the critter at TargetHex,
         /// exercising the ground-pickup fallback (_ai_search_environ → _ai_retrieve_object) when its
@@ -3325,7 +3329,15 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
     /// <summary>Starts a script- or ambient-driven NPC walk (shared walker plumbing).</summary>
     private bool StartNpcWalk(MapObject npc, int target, bool run = false)
     {
-        if (npc == _dude?.Dude || _npcWalkers.ContainsKey(npc)
+        // ported from fallout2-ce src/animation.cc animationIsBusy (:581): the reference's busy test
+        // is LIVENESS-based — it walks only sequences actually in use (field_0 != -1000) and reports
+        // busy only for a live animation. Ours asked whether the critter had EVER walked: a finished
+        // walker stays in _npcWalkers (it is pruned only inside UpdateAmbientLife, :3261-3276, which
+        // the autoplay harness loops never call and which returns early under DisableAmbientLife /
+        // _worldmapOpen), so the critter was frozen for the rest of the run while callers kept logging
+        // movement it never performed (F21). A stale idle entry is replaced by the assignment at :3395.
+        if (npc == _dude?.Dude
+            || (_npcWalkers.TryGetValue(npc, out DudeController? active) && active.Moving)
             || Fid.Type(npc.Fid) is not ObjectType.Critter)
             return false;
 

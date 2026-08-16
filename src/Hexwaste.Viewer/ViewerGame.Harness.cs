@@ -870,6 +870,35 @@ public sealed partial class ViewerGame
                         _npcWalkProbe = (nwNpc, nwTarget);
                     break;
                 }
+                case StartupAction.WalkerRestartProbe(var wrHex, var wrTarget1, var wrTarget2):
+                {
+                    // F21: start a walk, pump it to completion, then start a SECOND walk for the same
+                    // critter. Before the fix, the finished walker is never removed from _npcWalkers, so
+                    // StartNpcWalk's membership guard (:3328) refuses the second call even though the
+                    // walker is no longer Moving.
+                    MapObject? wrNpc = CritterAt(wrHex, aliveOnly: true);
+                    if (wrNpc is null) { Console.Error.WriteLine($"walker-restart-probe: no critter at {wrHex}"); break; }
+
+                    bool wrStarted1 = StartNpcWalk(wrNpc, wrTarget1);
+
+                    // Pump with a large dt so the walk completes in one step, exactly as the autoplay
+                    // pump loops do (ViewerGame.Harness.cs:2035-2038 / :205-208).
+                    for (int g = 0; g < 40000 && _npcWalkers.Values.Any(w => w.Moving); g++)
+                    {
+                        foreach (DudeController walker in _npcWalkers.Values)
+                            walker.Update(100000);
+                    }
+
+                    bool wrMovingAfterPump = _npcWalkers.TryGetValue(wrNpc, out DudeController? wrWalker1) && wrWalker1.Moving;
+                    bool wrInDict = _npcWalkers.ContainsKey(wrNpc);
+
+                    bool wrStarted2 = StartNpcWalk(wrNpc, wrTarget2);
+
+                    Console.WriteLine($"walker-restart-probe: from {wrHex} t1={wrTarget1} started1={(wrStarted1 ? 1 : 0)}"
+                        + $" movingAfterPump={(wrMovingAfterPump ? 1 : 0)} inDict={(wrInDict ? 1 : 0)}"
+                        + $" t2={wrTarget2} started2={(wrStarted2 ? 1 : 0)} tile={wrNpc.HexTile}");
+                    break;
+                }
                 case StartupAction.BlockedProbe(var bpHex):
                 {
                     // P109 QA: the live blocked-set truth around a tile — each neighbor's blocked
