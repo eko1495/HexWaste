@@ -308,7 +308,8 @@ because it got hurt or ran low on HP could never be marked FLEEING, and could ne
 DISENGAGING to let a fight actually end.
 
 **F18 — SHIPPED 2026-08-15 (`64500e8`, `ec736ad`), `denbus2-fight-flee` deliberately re-recorded
-(the only fixture that moved). NOT fully closed — see F21.** *Was Effort M · re-record tier.*
+(the only fixture that moved). Fully closed as of F21 (SHIPPED 2026-08-17) — the residual phantom
+flee noted below was F21's cause, now fixed.** *Was Effort M · re-record tier.*
 `64500e8` ported `Pathfinder.FindPath`'s `requireFreeDestination` parameter, the reference's `a5`
 argument (`animation.cc:1716-1722`): with it set, a blocked destination yields no path before any
 search runs. Defaults to `false` (`a5 = 0`, the unconditional goal exemption Hexwaste always had),
@@ -326,10 +327,11 @@ dudeHp=0, gameOver=True).
 regardless of outcome) rather than the cause (the destination itself being illegal), and doing both
 would have made the fixture delta impossible to attribute to either change individually.
 
-**Not fully closed.** The re-recorded fixture still contains one phantom flee — `flee: Healthy
-Slave@10270 -> 8870`, logged in rounds 3 and 4 with the critter at tile 10270 both times, lines
-byte-identical before and after this fix (8870 is not blocked, so the new destination check
-correctly leaves that pair alone; a different bug is responsible). See F21.
+**Not fully closed by this fix alone.** The re-recorded fixture still contained one phantom flee —
+`flee: Healthy Slave@10270 -> 8870`, logged in rounds 3 and 4 with the critter at tile 10270 both
+times, lines byte-identical before and after this fix (8870 is not blocked, so the new destination
+check correctly leaves that pair alone; a different bug was responsible). Explained and fixed by F21
+(SHIPPED 2026-08-17): the line is gone from the fixture as re-recorded there.
 
 **F19 — Out of scope for now: the reference's second `DISENGAGING` setter, at the tail of
 `_combat_ai`, is unported.** *Effort M–L · **re-record tier** once attempted.* Beyond `_ai_run_away`
@@ -357,9 +359,10 @@ reachability probe). Auditing means finding and citing each site's reference cou
 value in `animation.cc`/`combat_ai.cc`, not assuming `0` is correct by default. Changing any site
 found to need `a5 = 1` is re-record tier — it moves movement transcripts, per the F18 precedent.
 
-**F21 — LIVE BUG, most consequential finding of the F1/F18 sub-project: a stale `_npcWalkers` entry
-freezes a critter while its `flee:` log keeps firing — and the golden fixtures have been recording a
-harness artefact as game behaviour.** *Effort M · re-record tier once fixed.* Surfaced reviewing F18:
+**F21 — SHIPPED 2026-08-17 (`ad4b79f`, `633a617`, `f64b5d4`), two fixtures deliberately re-recorded.**
+*Was Effort M · re-record tier.* Most consequential finding of the F1/F18 sub-project: a stale
+`_npcWalkers` entry froze a critter while its `flee:` log kept firing — and the golden fixtures had
+been recording a harness artefact as game behaviour. Surfaced reviewing F18:
 `denbus2-fight-flee` still logs `flee: Healthy Slave@10270 -> 8870` in rounds 3 and 4, byte-identical,
 with the critter's origin tile frozen at 10270 both times — 8870 is not blocked, so F18's new
 destination check correctly leaves this pair alone; the cause is different and F18 could not have
@@ -385,6 +388,62 @@ touched it. Mechanism, traced through the actual code:
   like this one baked in as if they were engine behaviour. Resolve the underlying membership-vs-`Moving`
   bug (and confirm/fix the brawl-watch loop) before those transcripts can be trusted; expect any fix to
   move fixtures, hence re-record tier.
+
+**Shipped — the fix, in three steps.**
+- `ad4b79f` replaced `StartNpcWalk`'s guard (`ViewerGame.cs:3356`) with
+  `_npcWalkers.TryGetValue(npc, out var active) && active.Moving`, testing walker **liveness** instead
+  of dictionary **membership** — ported from `animationIsBusy` (`animation.cc:581`), whose busy test
+  walks only sequences actually in use. Because `StartNpcWalk` is a private `ViewerGame` member and
+  `tests/` holds only `Hexwaste.Formats.Tests` (no viewer test project), the proof is a live harness
+  probe, `--walker-restart-probe <hex> <t1> <t2>` (`Program.cs`, `ViewerGame.Harness.cs:872-895`): start
+  a walk, pump it to completion, then start a second walk for the same critter. The dictionary state is
+  identical in both runs; only the guard's interpretation of it changed:
+  ```
+  before: walker-restart-probe: from 14716 t1=14718 started1=1 movingAfterPump=0 inDict=1 t2=14716 started2=0 tile=14718
+  after:  walker-restart-probe: from 14716 t1=14718 started1=1 movingAfterPump=0 inDict=1 t2=14716 started2=1 tile=14718
+  ```
+- `633a617` re-recorded the two fixtures this freed. **Measured, not assumed**: the spec warned the
+  blast radius could not be predicted and might be large; the complete failing set across every suite
+  was exactly two fixtures, because the suite exercises the frozen-walker path in only two places.
+  - `tests/golden-combat/denbus2-fight-flee.txt` — **directly observed**: `Villager@11872` was frozen
+    and now moves to `11670`, attacking from there (to-hit shifts 42% → 41% with the new position). The
+    duplicate `flee: Healthy Slave@10270 -> 8870` line is gone — that is exactly the residual phantom
+    flee F18 could not fix and which this entry predicted had a different cause. The prediction is
+    confirmed: this entry was filed while fixing F18 precisely because that pair of lines could not be
+    explained by F18, and this fix is that explanation.
+  - `tests/golden-encounter/brawl-watch.txt` — `rounds=9 → 6`, `winTeam=[1] → [2]`, survivors=2 and
+    dudeHp=30 unchanged. **This justification is inferred from mechanism, not observed**, and is
+    strictly weaker evidence than the combat fixture above: brawl-watch is a summary-only fixture with
+    no movement lines, so no specific critter can be pointed at unfreezing. What is directly proven is
+    that the brawl autoplay loop never pruned finished walkers and that the probe proved the old guard
+    refused a second walk on a stale entry. Frozen critters cannot close, so the brawl dragged to 9
+    rounds and resolved by attrition; unfrozen ones close and settle it in 6.
+- `f64b5d4` hoisted finished-walker pruning out of `UpdateAmbientLife` into its own
+  `PruneFinishedWalkers(double)` (`ViewerGame.cs:3265`), called from `Update` independently of the
+  `DisableAmbientLife || _worldmapOpen` early return that used to gate it, and used by both autoplay
+  loops (`ViewerGame.Harness.cs:207`, dt `100000` for brawl-watch; `:2066`, dt `10` for `--fight`; each
+  kept its original dt). Behaviour-neutral by construction after the guard fix: no fixture moved here.
+  `dotnet test`: 914 passed; combat-golden: 16/16.
+
+**The brawl-watch open question, answered.** This entry's own text above asked for the brawl-watch loop
+to be "checked for the same defect before this is called fixed." It was: the loop shared the identical
+no-prune shape, it now calls `PruneFinishedWalkers`, and brawl-watch was one of the two fixtures that
+moved as a direct result.
+
+**Suite-credibility consequence, now measured instead of warned.** This entry originally warned that
+fixtures recorded through the autoplay paths might contain frozen-critter artefacts baked in as engine
+behaviour, with an unknown blast radius. The answer: exactly two fixtures were affected, and both are
+now corrected. The concern was real but narrow.
+
+**Rejected alternative, on purpose (same reasoning as F18):** reordering `CombatEngine.TryFlee`'s
+`flee:` transcript line to after a successful `StartWalk` was considered and not done. It would treat
+the symptom — the log line appearing regardless of outcome — rather than the cause (the stale guard
+refusing the walk), and the correct fix makes the line truthful instead of merely quieter.
+
+**Do not "tidy" the probe's pump loop.** `ViewerGame.Harness.cs:889` deliberately calls
+`walker.Update(...)` directly on every entry in `_npcWalkers.Values` rather than routing through
+`PruneFinishedWalkers` — draining the dictionary there would remove the stale entry the probe exists to
+test, and the proof would silently become vacuous.
 
 ### Dialog and party
 
