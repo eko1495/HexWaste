@@ -2818,6 +2818,10 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
         // game clock through _pendingDrugEvents, like the dude's (item.cc _insert_drug_effect).
         _dude?.Update(gameTime.ElapsedGameTime.TotalMilliseconds);
         PumpPendingInteraction();
+        // F21: walker lifecycle is not a side effect of ambient fidgeting — prune independently of
+        // UpdateAmbientLife's own DisableAmbientLife / _worldmapOpen early return (below, both are
+        // already false here: _worldmapOpen would have returned out of Update above).
+        PruneFinishedWalkers(gameTime.ElapsedGameTime.TotalMilliseconds);
         UpdateAmbientLife(gameTime.ElapsedGameTime.TotalMilliseconds);
         TickAmbientSfx(gameTime.ElapsedGameTime.TotalMilliseconds); // P34-M5 ambient sfx
         _floatText.Tick(gameTime.ElapsedGameTime.TotalMilliseconds); // P45 floating combat text
@@ -3251,6 +3255,28 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
     }
 
     /// <summary>
+    /// F21: advance every active NPC walker exactly once and drop the ones that finished. Hexwaste's
+    /// own structure (no fallout2-ce counterpart) — this used to live inside UpdateAmbientLife, after
+    /// its DisableAmbientLife / _worldmapOpen early return, so walker lifecycle was a side effect of
+    /// ambient fidgeting: --no-ambient and an open worldmap leaked finished walkers, and the autoplay
+    /// harness loops (which never called UpdateAmbientLife) leaked them always. Called from Update
+    /// independently of that gate, and by the autoplay loops in ViewerGame.Harness.cs.
+    /// </summary>
+    private void PruneFinishedWalkers(double elapsedMs)
+    {
+        List<MapObject>? finished = null;
+        foreach ((MapObject npc, DudeController walker) in _npcWalkers)
+        {
+            walker.Update(elapsedMs);
+            if (!walker.Moving)
+                (finished ??= []).Add(npc);
+        }
+        if (finished is not null)
+            foreach (MapObject npc in finished)
+                _npcWalkers.Remove(npc);
+    }
+
+    /// <summary>
     /// Ambient NPC life, no VM. Fidget ported from fallout2-ce
     /// src/animation.cc _dude_fidget(): every 1..10 s (faster with more
     /// candidates) one visible, standing, non-walking critter replays its
@@ -3262,18 +3288,6 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
     {
         if (DisableAmbientLife || _worldmapOpen)
             return;
-
-        // Advance active NPC walks; drop finished walkers.
-        List<MapObject>? finished = null;
-        foreach ((MapObject npc, DudeController walker) in _npcWalkers)
-        {
-            walker.Update(elapsedMs);
-            if (!walker.Moving)
-                (finished ??= []).Add(npc);
-        }
-        if (finished is not null)
-            foreach (MapObject npc in finished)
-                _npcWalkers.Remove(npc);
 
         AdvanceRegAnimQueue(elapsedMs); // P114: dispatch the next queued reg_anim action once its blocker finished
 
@@ -3332,10 +3346,12 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
         // ported from fallout2-ce src/animation.cc animationIsBusy (:581): the reference's busy test
         // is LIVENESS-based — it walks only sequences actually in use (field_0 != -1000) and reports
         // busy only for a live animation. Ours asked whether the critter had EVER walked: a finished
-        // walker stays in _npcWalkers (it is pruned only inside UpdateAmbientLife, :3261-3276, which
-        // the autoplay harness loops never call and which returns early under DisableAmbientLife /
-        // _worldmapOpen), so the critter was frozen for the rest of the run while callers kept logging
-        // movement it never performed (F21). A stale idle entry is replaced by the assignment at :3395.
+        // walker stays in _npcWalkers until pruned, so before this guard tested .Moving the critter was
+        // frozen for the rest of the run while callers kept logging movement it never performed (F21).
+        // Pruning itself used to live only inside UpdateAmbientLife (gated on DisableAmbientLife /
+        // _worldmapOpen, and never reached by the autoplay harness loops); it is now PruneFinishedWalkers
+        // (:3265), called independently from Update and by both autoplay loops. A stale idle entry is
+        // also replaced by the assignment at :3411.
         if (npc == _dude?.Dude
             || (_npcWalkers.TryGetValue(npc, out DudeController? active) && active.Moving)
             || Fid.Type(npc.Fid) is not ObjectType.Critter)

@@ -204,8 +204,7 @@ public sealed partial class ViewerGame
                     {
                         _animator.Update(100000);
                         _combat.Step();
-                        foreach (DudeController walker in _npcWalkers.Values)
-                            walker.Update(100000);
+                        PruneFinishedWalkers(100000); // F21: also drains finished walkers here
                     }
                     // The brawl is over: surviving critters are the winning team (Hostiles is cleared on
                     // EndCombat, so census the live map critters by team).
@@ -882,7 +881,8 @@ public sealed partial class ViewerGame
                     bool wrStarted1 = StartNpcWalk(wrNpc, wrTarget1);
 
                     // Pump with a large dt so the walk completes in one step, exactly as the autoplay
-                    // pump loops do (ViewerGame.Harness.cs:2035-2038 / :205-208).
+                    // pump loops do (ViewerGame.Harness.cs:2063-2065 / :205-207, both now via
+                    // PruneFinishedWalkers — F21).
                     for (int g = 0; g < 40000 && _npcWalkers.Values.Any(w => w.Moving); g++)
                     {
                         foreach (DudeController walker in _npcWalkers.Values)
@@ -2063,8 +2063,7 @@ public sealed partial class ViewerGame
 
                         _animator.Update(10);
                         _combat.Step();
-                        foreach (DudeController walker in _npcWalkers.Values)
-                            walker.Update(10);
+                        PruneFinishedWalkers(10); // F21: also drains finished walkers here
                     }
 
                     Console.WriteLine($"fight-result: rounds={_combat.Round} dudeHp={_dude?.Dude.CurrentHp}"
