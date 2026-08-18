@@ -35,9 +35,12 @@ So walker lifecycle management is a side effect of ambient fidgeting. Three ways
 - the `--fight` autoplay harness never calls `UpdateAmbientLife` at all — it pumps
   `walker.Update(10)` directly over `_npcWalkers.Values` (`ViewerGame.Harness.cs:2037-2038`);
 - the brawl-watch autoplay loop has the identical shape (`ViewerGame.Harness.cs:207-208`);
-- **in the real interactive game**, `--no-ambient` or an open worldmap takes the early return.
+- **in the real interactive game**, `--no-ambient` takes the early return.
 
-The last one is why this is not merely a test-harness artefact.
+The last one is why this is not merely a test-harness artefact. **Correction (final review):** an open
+worldmap does *not* independently defeat the prune — `Update` itself returns early whenever
+`_worldmapOpen` is true, before `UpdateAmbientLife` is reached at all, so no walker advances while the
+worldmap is open and none can go stale from that state. `--no-ambient` is the only real interactive arm.
 
 ### The observable
 

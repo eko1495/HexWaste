@@ -376,10 +376,15 @@ touched it. Mechanism, traced through the actual code:
   walker is never removed, and every later `TryFlee` call for that critter hits the stale guard:
   `StartWalk` fails silently while the `flee:` transcript line and the AP-zeroing (`CombatEngine.cs`,
   same shape as the failure mode F18 fixed, but a different cause) have already fired.
-- **Not purely a harness artefact.** The prune sits *after* `if (DisableAmbientLife || _worldmapOpen)
-  return;` (`ViewerGame.cs:3259-3260`) inside `UpdateAmbientLife` itself, so `--no-ambient` and an open
-  worldmap defeat the same prune in the real interactive game — walker lifecycle management is nested
-  inside an unrelated cosmetic feature's early return, not solely a test-loop omission.
+- **Not purely a harness artefact — but only via `--no-ambient`, not an open worldmap.** The prune
+  sits *after* `if (DisableAmbientLife || _worldmapOpen) return;` (`ViewerGame.cs:3259-3260`) inside
+  `UpdateAmbientLife` itself, so `--no-ambient` defeats the same prune in the real interactive game —
+  walker lifecycle management is nested inside an unrelated cosmetic feature's early return, not
+  solely a test-loop omission. **The open-worldmap half of that claim does not hold**, corrected during
+  final review: `Update` itself returns early whenever `_worldmapOpen` is true, before `UpdateAmbientLife`
+  is ever called, so no walker advances while the worldmap is open and none can go stale from that path
+  — the worldmap being open just means nothing moves, not that pruning is skipped for movement that did
+  happen. The real non-harness arm is `--no-ambient` alone.
 - The brawl-watch autoplay loop (`ViewerGame.Harness.cs:203-209`) shares the identical
   `walker.Update(...)`-without-prune shape and should be checked for the same defect before this is
   called fixed.
@@ -412,12 +417,25 @@ touched it. Mechanism, traced through the actual code:
     confirmed: this entry was filed while fixing F18 precisely because that pair of lines could not be
     explained by F18, and this fix is that explanation.
   - `tests/golden-encounter/brawl-watch.txt` — `rounds=9 → 6`, `winTeam=[1] → [2]`, survivors=2 and
-    dudeHp=30 unchanged. **This justification is inferred from mechanism, not observed**, and is
-    strictly weaker evidence than the combat fixture above: brawl-watch is a summary-only fixture with
-    no movement lines, so no specific critter can be pointed at unfreezing. What is directly proven is
-    that the brawl autoplay loop never pruned finished walkers and that the probe proved the old guard
-    refused a second walk on a stale entry. Frozen critters cannot close, so the brawl dragged to 9
-    rounds and resolved by attrition; unfrozen ones close and settle it in 6.
+    dudeHp=30 unchanged. **Originally recorded here as "inferred from mechanism, not observed" — that
+    claim was wrong, caught in final review, and corrected below with the actual observation.** The
+    "no movement lines to point at" excuse does not hold: the movement lines exist in the fixture's own
+    unfiltered stdout, `scripts/encounter-golden.sh`'s `FILTER` regex just strips them out of the
+    committed `.txt`. Running the fixture's own command
+    (`--brawl-watch desert1.map ARRO_War_Party 2 ARRO_Cannibals 2 --rng-seed 3`) unfiltered against a
+    pre-fix build (worktree at `9e90d84`) and the committed post-fix build:
+    - both runs reproduce their fixture summaries exactly (`rounds=9 winTeam=[1]` pre, `rounds=6
+      winTeam=[2]` post) — deterministic, so the delta is attributable to this change;
+    - the pre-fix output contains the F21 signature verbatim: `flee: Cannibal@19901 -> 19109` logged
+      **twice**, origin frozen at 19901 both times — the same phantom flee as `denbus2-fight-flee`.
+      Post-fix, both lines are gone;
+    - post-fix a `Cannibal` attacks from hex `20099` late in the fight, with no `knockback:` line
+      getting it there; pre-fix no Cannibal ever occupies that hex (Cannibal positions pre-fix change
+      only via `knockback:`/`flee:`).
+
+    So the winner flip is movement-driven and of the same class as the combat fixture, observed rather
+    than inferred. Frozen critters cannot close, so the brawl dragged to 9 rounds and resolved by
+    attrition; unfrozen ones close and settle it in 6.
 - `f64b5d4` hoisted finished-walker pruning out of `UpdateAmbientLife` into its own
   `PruneFinishedWalkers(double)` (`ViewerGame.cs:3265`), called from `Update` independently of the
   `DisableAmbientLife || _worldmapOpen` early return that used to gate it, and used by both autoplay

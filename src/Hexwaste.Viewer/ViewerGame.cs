@@ -2819,8 +2819,11 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
         _dude?.Update(gameTime.ElapsedGameTime.TotalMilliseconds);
         PumpPendingInteraction();
         // F21: walker lifecycle is not a side effect of ambient fidgeting — prune independently of
-        // UpdateAmbientLife's own DisableAmbientLife / _worldmapOpen early return (below, both are
-        // already false here: _worldmapOpen would have returned out of Update above).
+        // UpdateAmbientLife's own DisableAmbientLife / _worldmapOpen early return (below). _worldmapOpen
+        // is always false here (Update already returned above when it's true, so that guard is moot at
+        // this point), but DisableAmbientLife is NOT necessarily false here — that is the real reason
+        // for the hoist: with --no-ambient set, UpdateAmbientLife's early return would otherwise skip
+        // pruning every frame, and this call is what keeps walker lifecycle live on that path.
         PruneFinishedWalkers(gameTime.ElapsedGameTime.TotalMilliseconds);
         UpdateAmbientLife(gameTime.ElapsedGameTime.TotalMilliseconds);
         TickAmbientSfx(gameTime.ElapsedGameTime.TotalMilliseconds); // P34-M5 ambient sfx
@@ -3350,8 +3353,8 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
         // frozen for the rest of the run while callers kept logging movement it never performed (F21).
         // Pruning itself used to live only inside UpdateAmbientLife (gated on DisableAmbientLife /
         // _worldmapOpen, and never reached by the autoplay harness loops); it is now PruneFinishedWalkers
-        // (:3265), called independently from Update and by both autoplay loops. A stale idle entry is
-        // also replaced by the assignment at :3411.
+        // (:3268), called independently from Update and by both autoplay loops. A stale idle entry is
+        // also replaced by the assignment at :3414.
         if (npc == _dude?.Dude
             || (_npcWalkers.TryGetValue(npc, out DudeController? active) && active.Moving)
             || Fid.Type(npc.Fid) is not ObjectType.Critter)

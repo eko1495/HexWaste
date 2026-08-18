@@ -873,15 +873,15 @@ public sealed partial class ViewerGame
                 {
                     // F21: start a walk, pump it to completion, then start a SECOND walk for the same
                     // critter. Before the fix, the finished walker is never removed from _npcWalkers, so
-                    // StartNpcWalk's membership guard (:3328) refuses the second call even though the
-                    // walker is no longer Moving.
+                    // StartNpcWalk's membership guard (ViewerGame.cs:3358-3360) refuses the second call
+                    // even though the walker is no longer Moving.
                     MapObject? wrNpc = CritterAt(wrHex, aliveOnly: true);
                     if (wrNpc is null) { Console.Error.WriteLine($"walker-restart-probe: no critter at {wrHex}"); break; }
 
                     bool wrStarted1 = StartNpcWalk(wrNpc, wrTarget1);
 
                     // Pump with a large dt so the walk completes in one step, exactly as the autoplay
-                    // pump loops do (ViewerGame.Harness.cs:2063-2065 / :205-207, both now via
+                    // pump loops do (ViewerGame.Harness.cs:2066 / :207, both now via
                     // PruneFinishedWalkers — F21).
                     for (int g = 0; g < 40000 && _npcWalkers.Values.Any(w => w.Moving); g++)
                     {
