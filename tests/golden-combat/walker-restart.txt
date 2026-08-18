@@ -1,0 +1,4 @@
+dude sheet: None (gender 0), SPECIAL 5/5/5/5/5/5/5, tags []
+animating 0 multi-frame scenery/misc object(s)
+override_map_start: tile=18932 elevation=0 rotation=1
+walker-restart-probe: from 14716 t1=14718 started1=1 movingAfterPump=0 inDict=1 t2=14716 started2=1 tile=14718
