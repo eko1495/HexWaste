@@ -275,19 +275,73 @@ ledger prose. Each is independently actionable. Summary + context:
 
 ### Combat AI
 
-**F1 — A fleeing critter never stops fleeing: the `max_dist` gate and `CRITTER_MANEUVER_DISENGAGING`
-are absent.** *Effort M · **re-record tier**.* In `e97087b`'s `_ai_run_away`
-(`combat_ai.cc:1183`) a critter already at or beyond `max_dist` from its threat takes the `else`
-branch — it sets `CRITTER_MANEUVER_DISENGAGING` instead of running. Hexwaste has no distance
-predicate at all: all four `TryFlee` call sites (`CombatEngine.cs:2807,2811,2818,2911`, plus the two
-ally sites) run unconditionally, so flight never terminates. `AiPacket.MaxDist` (`AiPackets.cs:18`)
-is parsed and dead — its only reference outside the ledger is `AiPacketTests.cs:40`. Closing this
-means porting the DISENGAGING maneuver semantics too, not just adding a comparison.
-**Implementation detail, do not get this wrong:** use `<`, matching `e97087b`. The fork's PR #675
-flips it to `<=`; we rejected that hunk as ungrounded (no disassembly, no issue, no symptom), so
-porting the gate with the fork's comparison would import the very change we declined.
-`denbus2-fight-flee` is a live golden fixture, so this changes recorded bytes — treat as a
-deliberate, diff-reviewed re-record on the P120 precedent, not a byte-identical port.
+**F1 — SHIPPED 2026-08-15 (`57e6ce6`), byte-identical, no fixture re-recorded.** *Was Effort M ·
+re-record tier (prediction falsified — see below).* Ported `e97087b`'s `_ai_run_away`
+(`combat_ai.cc:1173-1217`) into `CombatEngine.TryFlee`: inside `max_dist` the critter is marked
+`CRITTER_MANUEVER_FLEEING` (`:1184`) and runs as before; at or beyond it, the `else` sets
+`CRITTER_MANEUVER_DISENGAGING` (`:1216`) and the critter takes no movement, no AP and no attack.
+The comparison is `<`, matching `e97087b` (`:1183`) — the fork's PR #675 flips it to `<=` and that
+hunk was rejected as ungrounded. A null AI packet keeps the pre-gate behaviour (always flee) rather
+than inventing a default `max_dist`. Six hermetic tests, four mutation-verified; four pre-existing
+tests repaired from the placeholder `MaxDist: 0` to a realistic `10`.
+
+**This entry originally predicted `denbus2-fight-flee` would move and be re-recorded on the P120
+precedent. That prediction was wrong, and the wrongness is the useful fact for a future reader:**
+every fleeing critter in that fixture stays inside its packet's `max_dist` (recorded distance ≤ 8
+against `max_dist` 10), so the gate never fires there and the fixture came out byte-identical.
+`dotnet test`: 910 passed / 0 failed / 91 skipped. `combat-golden.sh check`: 16/16. Don't assume a
+"live golden fixture" claim in a backlog entry means the fixture *will* move — verify against the
+actual recorded values before touching `record`.
+
+**Corrected framing (the original entry's diagnosis was too broad).** The entry originally claimed
+Hexwaste "has no distance predicate at all." The sharper, verified finding: the maneuver flags, all
+of their consumers, and the script-side setters already existed and were correct —
+`WantToJoin`'s ENGAGING/DISENGAGING|FLEEING checks (`CombatEngine.cs:1995,1997`), the turn-order
+filter that drops disengaging critters (`:2085`), `WantsToStopFighting`'s
+DISENGAGING|FLEEING short-circuit (`:2213-2217`, the real predicate behind `TryEndCombat`), the
+enemy and ally flee-continuation checks (`:2840`, `:3147`), and the script-side setters
+`CritterSetFleeState` (`ScriptHost.cs:1805`), the script-attack ENGAGING mark (`:2113`), and
+`TerminateCombat`'s DISENGAGING mark (`:2282`). The gap was narrower: the **engine's own AI never
+set the flags on an engine-initiated flight** — the only engine write to `Maneuver` before this fix
+was the `= 0` reset once a critter joined combat (`CombatEngine.cs:2016`) — so a critter that fled
+because it got hurt or ran low on HP could never be marked FLEEING, and could never reach
+DISENGAGING to let a fight actually end.
+
+**F18 — LIVE BUG (found doing F1): a "successful" flee that never moves the critter.**
+*Effort M · **re-record tier** (the bug is in transcript territory — fixing it moves recorded
+lines).* `denbus2-fight-flee` records `flee: Cute Slave@11272 -> 10480` at fixture lines 25, 39, 57
+and 75 — the same critter, from the same tile, logging a *successful* flee four times and never
+moving, while `Healthy Slave` in the same fight advances normally (11670 → 10270 → 8870). Not
+caused by the F1 gate (Cute Slave never reaches `max_dist`, so this is the plain always-flee path).
+Traced by instrumenting `TryFlee` (`CombatEngine.cs:3049`) and `StartNpcWalk`
+(`ViewerGame.cs:3326`) directly (temporary stderr probes, added, run, reverted — no diff remains;
+confirmed with `git diff --stat`): `TryFlee` writes its `flee:` transcript line and calls
+`_host.StartWalk` **unconditionally**, before knowing whether the walk succeeds. `Pathfinder.FindPath`
+picks destination tile 10480 and reports a path exists — every round, since the critter's own tile
+never changes between its turns. But `StartNpcWalk`'s early-return guard
+(`ViewerGame.cs:3357-3359`) finds `_blockedTiles.Contains(10480)` true (not a door, so no exception)
+and returns `false` **before ever calling `WalkTo`**. So the pathfinder and the walker's own
+blocked-tile view disagree about whether 10480 is legal, and the transcript records a flight that
+never happens. Fix direction: either make `TryFlee`'s target search consult the same occupancy
+check `StartNpcWalk` uses so it never proposes an already-blocked destination, or move the `flee:`
+transcript line after a successful `StartWalk` (or both). **Fixing this WILL move
+`denbus2-fight-flee`** (the flee lines are exactly what's recorded), so treat as re-record tier on
+the P120 precedent. See the appendix in the F1 implementation task's report for the full repro and
+probe transcripts.
+
+**F19 — Out of scope for now: the reference's second `DISENGAGING` setter, at the tail of
+`_combat_ai`, is unported.** *Effort M–L · **re-record tier** once attempted.* Beyond `_ai_run_away`
+(F1, shipped), `e97087b` sets `CRITTER_MANEUVER_DISENGAGING` a second time, at `_combat_ai`'s tail
+(`combat_ai.cc:3098-3112`): when the target is alive, the critter has AP left, and
+`distance > max_dist`, it first tries to back away from a friendly corpse
+(`aiInfoGetFriendlyDead` + `_ai_move_away`, `:3102-3105`) and, failing that, tries
+`_ai_find_friend(a1, perception * 2, 5)` (`:3108`), setting DISENGAGING only if no friend is found
+(`:3109`). **Neither `aiInfoGetFriendlyDead`/`aiInfoSetFriendlyDead` nor `_ai_find_friend` exists
+anywhere in this repo** (repo-wide search, confirmed while writing this entry) — porting this needs
+friendly-corpse tracking and a friend search built first. Note the effect is the opposite of what it
+sounds like: porting it makes disengagement *harder*, not easier — a critter with a nearby friend
+keeps fighting instead of disengaging — so it will move fixtures. Re-record tier, not a docs-only
+follow-up.
 
 ### Dialog and party
 
