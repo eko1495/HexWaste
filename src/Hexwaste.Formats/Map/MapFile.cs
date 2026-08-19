@@ -120,6 +120,15 @@ public sealed class MapObject
     /// (combat_ai.cc _ai_danger_source). Cleared at combat end + on Reset.</summary>
     public MapObject? WhoHitMe { get; set; }
 
+    /// <summary>The task-2 retaliation port: the target this critter most recently attacked (transient,
+    /// not serialized) — Hexwaste's counterpart of aiInfoGetLastTarget/aiInfoSetLastTarget
+    /// (combat.h:28-29). The reference stamps it unconditionally (hit or miss) at the top of every
+    /// attack (combat.cc:3558 `aiInfoSetLastTarget(attacker, defender)`); CombatEngine stamps it at the
+    /// single point every attack/throw/burst is resolved. Consumed only by DangerSource's vanilla
+    /// ATTACK_WHO_WHOMEVER_ATTACKING_ME fallback (combat_ai.cc:1579/1604) — party-member-only and not
+    /// currently reachable from TryEnemyAction's call site.</summary>
+    public MapObject? LastAttackTarget { get; set; }
+
     /// <summary>Per-instance current HP (denbus1 critters carry individual values).</summary>
     public int CurrentHp { get; set; }
     public int Radiation { get; set; }
