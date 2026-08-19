@@ -2202,6 +2202,64 @@ public class CombatEngineTests
     }
 
     [Fact]
+    public void MissedShotsCollateralVictimRunsNoDamageProc()
+    {
+        // F12, ported from fallout2-ce src/combat.cc _damage_object() (:4821): _check_ranged_miss
+        // reassigns attack->defender to the bystander it struck, while attack->oops keeps the INTENDED
+        // target (set at :3485). The defender's damage call at :4723 therefore passes
+        // `attack->defender != attack->oops` = TRUE, and _damage_object gates the proc as `if (!a4)`
+        // (:4847) — so a collateral victim runs NO damage_p_proc. It still takes the HP loss and still
+        // runs the on-hit path; only the damage proc is suppressed.
+        int from = 20100;
+        int target = HexGrid.TileInDirection(from, 0, 3);
+
+        var host = new FakeCombatHost { CriticalsEnabled = false, LoadedAmmoCount = 10 };
+        host.SetDude(NewCritter(from, hp: 30, ap: 12, skill: 100));
+        MapObject enemy = host.AddCritter(NewCritter(target, hp: 500));
+        (ProtoInfo proto, MapObject item) = MakeBurstWeapon(rounds: 10, apCost2: 6, minDmg: 10, maxDmg: 10, maxRange: 40);
+        host.Equipped = (proto, item);
+
+        int endpoint = HexGrid.TileNumBeyond(from, target, 40);
+        var line = new List<int>();
+        LineOfFire.Trace(target, endpoint, t => { line.Add(t); return null; });
+        Assert.True(line.Count > 1, "there must be an overshoot tile beyond the target");
+        MapObject bystander = host.AddCritter(NewCritter(line[1], hp: 500));
+        bystander.Sid = 7; // scripted: a damage_p_proc COULD run — the point is that it must not
+
+        host.BlockerOverride = tile => host.CombatCritters.FirstOrDefault(c => c.HexTile == tile && !c.IsDead);
+
+        var engine = new CombatEngine(host, new SequenceRng(100));
+        Assert.True(engine.TryAttack(enemy));
+        host.Animating.Clear();
+        engine.ProcessAnimations();
+
+        Assert.True(bystander.CurrentHp < 500, "the overshoot should still have struck the bystander");
+        Assert.DoesNotContain(host.DamageProcCalls, c => c.Target == bystander);
+    }
+
+    [Fact]
+    public void OrdinaryDefenderStillRunsItsDamageProc()
+    {
+        // F12 boundary pin: the damage-proc suppression is specific to ApplyAccidentalHit's collateral
+        // victim (defender != oops). It must not leak to the ordinary defender path — a landed shot on
+        // the INTENDED target (defender == oops) still runs SCRIPT_PROC_DAMAGE (combat.cc:4723-4850-4851).
+        // This is a boundary pin, not a regression test: it is expected to pass both before and after F12.
+        var host = new FakeCombatHost { CriticalsEnabled = false, LoadedAmmoCount = 10 };
+        host.SetDude(NewCritter(20100, hp: 30, ap: 12, skill: 100));
+        MapObject enemy = host.AddCritter(NewCritter(HexGrid.TileInDirection(20100, 0), hp: 100));
+        enemy.Sid = 7; // scripted: a damage_p_proc can run
+        host.Equipped = MakeGun();
+        var engine = new CombatEngine(host, new MinRng()); // guaranteed to-hit success
+
+        Assert.True(engine.TryAttack(enemy));
+        host.Animating.Clear();
+        engine.ProcessAnimations();
+
+        Assert.True(enemy.CurrentHp < 100, "the shot must land for the proc to matter");
+        Assert.Contains(host.DamageProcCalls, c => c.Target == enemy);
+    }
+
+    [Fact]
     public void BurstConeCatchesACollateralBystanderOnALine()
     {
         // M2: a critter standing on the left cone line takes collateral fire, while the
@@ -2624,13 +2682,10 @@ public class CombatEngineTests
         // col 4 = 65536 = DAM_HIT_SELF exactly, so a gun whose criticalFailureType is 1 fumbling at
         // max severity self-hits. SequenceRng: to-hit 100 (miss), upgrade 1 (crit-fail), severity raw
         // 80 → chance = 80 + 25 = 105 → col 4; later draws repeat 80 clamped, so the 5-12 weapon roll
-        // yields its max, 12 — and 12 then becomes 6 of HP, because CritFailDamage passes
-        // critMultiplier: 1 into RollWeaponDamage, whose body is `raw * critMultiplier / 2`.
-        // That halving is a KNOWN pre-existing fidelity bug, not the shape of the reference:
-        // e97087b's attackComputeDamage(attack, n, 2) multiplies by bonusDamageMultiplier 2 and then
-        // divides by 2 (combat.cc:4586 and the `damage /= 2` at :4601), i.e. x1, so vanilla
-        // self-damage is the full 12. This
-        // test pins TODAY's behaviour; see docs/BACKLOG.md F11 for the fix, which moves fixtures.
+        // yields its max, 12 — and all 12 land, because attackComputeDamage(attack, n, 2) multiplies
+        // by bonusDamageMultiplier 2 (combat.cc:4586) and then divides by 2 (:4601), i.e. x1: vanilla
+        // self-damage is the FULL rolled figure. (F11: this asserted 30 − 6 until 2026-08-15, when
+        // CritFailDamage stopped passing critMultiplier: 1 into `raw * critMultiplier / 2`.)
         var host = new FakeCombatHost
         {
             CriticalsEnabled = true,
@@ -2647,7 +2702,32 @@ public class CombatEngineTests
 
         Assert.Contains(host.Transcripts, t => t.StartsWith("crit-fail-self:"));
         Assert.DoesNotContain((1, 6), rng.Draws);   // the 1-5 HURT_SELF roll is NOT part of this path
-        Assert.Equal(24, dude.CurrentHp);           // 30 − 6, the weapon-damage roll
+        Assert.Equal(18, dude.CurrentHp);           // 30 − 12, the FULL weapon-damage roll
+    }
+
+    [Fact]
+    public void RandomHitFumbleAppliesFullWeaponDamageToTheWildVictim()
+    {
+        // The OTHER caller of CritFailDamage. DAM_RANDOM_HIT takes the same shape as DAM_HIT_SELF in
+        // the reference — attackComputeDamage(attack, ammoQuantity, 2) at combat.cc:4260 — so its
+        // victim also takes the full rolled figure, not half. _cf_table row 1 col 3 = 1048576 =
+        // DAM_RANDOM_HIT exactly; raw 60 → chance = 60 + 25 = 85 → col 3. Later draws repeat 60
+        // clamped: the pool index Next(0, 1) → 0, and the 5-12 weapon roll → 12.
+        var host = new FakeCombatHost
+        {
+            CriticalsEnabled = true,
+            DudeCritFailuresEnabled = true,
+            LoadedAmmoCount = 10,
+            Equipped = MakeGun(critFailType: 1),
+        };
+        host.SetDude(NewCritter(20100, hp: 30, ap: 10));
+        MapObject enemy = host.AddCritter(NewCritter(HexGrid.TileInDirection(20100, 0), hp: 100));
+        var engine = new CombatEngine(host, new SequenceRng(100, 1, 60));
+
+        Assert.True(engine.TryAttack(enemy));
+
+        Assert.Contains(host.Transcripts, t => t.StartsWith("crit-fail-random-hit:"));
+        Assert.Equal(88, enemy.CurrentHp); // 100 − 12, the FULL weapon-damage roll (was 100 − 6)
     }
 
     [Fact]
@@ -2675,6 +2755,95 @@ public class CombatEngineTests
 
         Assert.Contains(host.Transcripts, t => t.StartsWith("crit-fail-self: "));
         Assert.Contains(host.DamageProcCalls, c => c.Target == enemy && c.Source == enemy);
+    }
+
+    [Fact]
+    public void ExplodeFumbleRunsTheSelfDamagedAttackersDamageProc()
+    {
+        // F13: PR #493's self-damage proc was wired into ApplyCritFailDamage, which only the
+        // DAM_HIT_SELF branch reaches. The sibling DAM_EXPLODE branch routes to Explode() and reached
+        // no proc at all — where the reference's attackComputeDamage(attack, 1, 2) self-damage feeds
+        // the same _apply_damage path (combat.cc:4231-4232). _cf_table row 4 col 4 = 4096 = DAM_EXPLODE
+        // exactly, so a critFailType-4 weapon fumbling at max severity detonates.
+        var host = new FakeCombatHost
+        {
+            CriticalsEnabled = true,
+            LoadedAmmoCount = 10,
+            Equipped = MakeGun(critFailType: 4),
+        };
+        host.SetDude(NewCritter(20100, hp: 100, ap: 10));
+        MapObject enemy = host.AddCritter(NewCritter(HexGrid.TileInDirection(20100, 0), hp: 60, ap: 10));
+        enemy.Sid = 7; // a scripted, unaffiliated NPC: its damage_p_proc can run
+        // Derived empirically with RecordingRng (rng.Draws printed against the armed NPC's AI/attack
+        // path) — the sibling test's sequence is for an unarmed NPC and does not apply here. Five draws
+        // land the fumble; a 6th (clamped to the 5th's value) is Explode()'s own blast-damage roll:
+        //   100 -> the DUDE's own to-hit roll (opens combat with a guaranteed miss)
+        //   1   -> the DUDE's TriggerCritFailure natural-upgrade roll: drawn (CriticalsEnabled), but
+        //          DudeCritFailuresEnabled defaults false so the dude's fumble has no further effect —
+        //          this draw is consumed and inert, exactly like NpcSelfDamageFumble's shape
+        //   100 -> the ENEMY's own to-hit roll (guaranteed miss, opens ITS crit-failure check)
+        //   1   -> the ENEMY's TriggerCritFailure natural-upgrade roll (1 <= -delta/10, upgrades)
+        //   80  -> CriticalFailure.Resolve's severity roll. Luck is 0 (NewCritter's default, unset),
+        //          so chance = 80 − 5·(0−5) = 105 (CriticalFailure.cs:25) → Severity(105) buckets to
+        //          column 4 (>95, CriticalFailure.cs:18) → _cf_table row 4 col 4 = 4096 = DAM_EXPLODE
+        //          (CriticalTables.g.cs row index 20-24). This is the Luck-0 trap: Luck 0 shifts
+        //          severity UP a column versus a naive "chance == raw roll" assumption — the same trap
+        //          an earlier plan's SequenceRng(100,1,80) fell into.
+        //   (80 again, clamped) -> Explode()'s rand(minDamage, maxDamage+1) blast roll, drawn once per
+        //          victim in range (here: both the enemy itself and the dude, radius 1)
+        var rng = new RecordingRng(new SequenceRng(100, 1, 100, 1, 80));
+        var engine = new CombatEngine(host, rng);
+
+        Assert.True(engine.TryAttack(enemy)); // open combat
+        host.Animating.Clear();
+        engine.ProcessAnimations();
+        engine.EndPlayerTurn();
+        for (int i = 0; i < 200 && engine.Phase == CombatPhase.EnemyTurn; i++)
+        {
+            host.Animating.Clear();
+            engine.Step();
+        }
+
+        Assert.Contains(host.Transcripts, t => t.StartsWith("crit-fail: ") && t.Contains("flags=0x1000"));
+        Assert.Contains(host.DamageProcCalls, c => c.Target == enemy && c.Source == enemy);
+    }
+
+    [Fact]
+    public void ExplodeSkipsAVictimKilledByAnEarlierVictimsDamageProc()
+    {
+        // ported from fallout2-ce src/combat.cc _apply_damage() (:4738): the extras loop re-checks
+        // DAM_DEAD for every entry before processing it, because an earlier entry's damage_p_proc can
+        // kill a later one. F13 made Explode()'s victim loop able to run a script (the self-damaged
+        // attacker's damage_p_proc) for the first time; before that, `ordered` was a pure data snapshot
+        // and no iteration could observe another entry's death mid-loop. Without the IsDead guard this
+        // adds, a proc that kills a not-yet-processed victim would not stop Explode from still applying
+        // blast damage (and, if lethal, a second KillCritter) to that already-dead victim.
+        const int center = 20100;
+        var host = new FakeCombatHost();
+        host.SetDude(NewCritter(Step(center, 0, 20), hp: 100)); // far away, not a victim
+        MapObject fumbler = host.AddCritter(NewCritter(center, hp: 100)); // processed first: ordered puts the centre tile first
+        fumbler.Sid = 5; // unaffiliated scripted critter: its damage_p_proc can run
+        int otherTile = Step(center, 0, 1);
+        MapObject other = host.AddCritter(NewCritter(otherTile, hp: 100)); // one hex away: processed after the centre
+
+        // Simulate the fumbler's damage_p_proc killing `other` via some unrelated script effect —
+        // exactly the hazard the reference's DAM_DEAD re-check guards against.
+        host.OnDamageProc = (target, _, _) =>
+        {
+            if (target == fumbler)
+                other.CombatResults |= CriticalTables.DamDead;
+        };
+
+        var engine = new CombatEngine(host, new MinRng()); // MinRng: damage == minDamage exactly, no DT/DR
+        engine.Explode(center, killer: null, minDamage: 10, maxDamage: 10, radius: 2, selfDamageProcFor: fumbler);
+
+        Assert.Contains(host.DamageProcCalls, c => c.Target == fumbler); // the proc did run
+        // The guard must stop Explode from touching `other` once the proc has killed it: no blast
+        // damage applied, no "explosion-hit" transcript, no second KillCritter/XP for an already-dead
+        // victim.
+        Assert.Equal(100, other.CurrentHp);
+        Assert.DoesNotContain(host.Transcripts, t => t.StartsWith("explosion-hit:") && t.Contains($"@{otherTile}"));
+        Assert.DoesNotContain(other, host.RecordedKills);
     }
 
     [Fact]
@@ -3387,9 +3556,11 @@ public class CombatEngineTests
         public void ConvertToCorpse(MapObject critter, int deathAnim) { }
         public void OnCritterRemoved(MapObject critter) { }
         public readonly List<(MapObject Target, MapObject? Source, int Damage)> DamageProcCalls = [];
+        public Action<MapObject, MapObject?, int>? OnDamageProc { get; set; } // a test side-effect (e.g. kill another victim)
         public IReadOnlyList<string> RunDamageProc(MapObject target, MapObject? source, int damage)
         {
             DamageProcCalls.Add((target, source, damage));
+            OnDamageProc?.Invoke(target, source, damage);
             return [];
         }
         public (IReadOnlyList<string> Lines, bool Overridden) RunDestroyProc(MapObject critter, MapObject? killer) => ([], false);
