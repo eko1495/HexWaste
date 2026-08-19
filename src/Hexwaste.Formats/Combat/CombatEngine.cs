@@ -2025,6 +2025,14 @@ public sealed class CombatEngine
         // whoHitMe/aiFindAttackers-driven acquisition finds nothing on round 1 (StartBrawl nulled every
         // combatant's whoHitMe above, and nobody has been attacked yet) and every combatant passes forever
         // — the reference avoids this because a scripted team fight always runs _caiTeamCombatInit first.
+        // Minor-5 note (Task-2 review): the reference's _caiTeamCombatInit (:1725-1755) loops the WHOLE
+        // combat list and seeds every member of either team, and also stamps whoHitMeCid there. This
+        // seeds only _hostiles — the dude and party members are left unseeded, and WhoHitMeCid is not
+        // touched at all. Left as-is: every shipped StartBrawl caller is a spectator/NPC-vs-NPC brawl
+        // (dude/party never participate as targets in that scenario, and DangerSource is only ever
+        // invoked for non-dude, non-party critters here), so the gap is immaterial to any observed
+        // behavior; widening it would touch dude/party WhoHitMe with no shipped caller to validate
+        // against.
         foreach (MapObject c in _hostiles)
             c.WhoHitMe = AiTargets.FindNearestTeam(c, c, sameTeam: false, CombatRoster(c));
 
@@ -2084,7 +2092,13 @@ public sealed class CombatEngine
     /// <see cref="_actingEnemyAp"/> itself, exactly as the reference implicitly requires a live combat.ap.
     /// NOT ported: throw-type weapons (Hexwaste's thrown items don't route through EquippedWeapon here)
     /// and the friendly-fire safety gate (a Hexwaste addition elsewhere, not part of vanilla's bad-shot
-    /// reasons) — see the DangerSource doc for the full soft-spot note.</summary>
+    /// reasons) — see the DangerSource doc for the full soft-spot note.
+    ///
+    /// Minor-3 note (Task-2 review): both shipped call sites pass <c>self</c> (DangerSource's own
+    /// parameter, the acting critter) as <paramref name="attacker"/>, so `_actingEnemyAp` is always that
+    /// critter's own AP in practice — left unparameterized rather than threading AP through the call, to
+    /// avoid widening a signature with no second caller to validate against yet (a future ally-AI
+    /// integration is the natural point to revisit this).</summary>
     private enum ShotStatus { Ok, AlreadyDead, ArmsCrippled, NotEnoughAp, OutOfRange, NoAmmo, AimBlocked }
 
     private ShotStatus CheckBadShot(MapObject attacker, MapObject defender)
@@ -2105,10 +2119,19 @@ public sealed class CombatEngine
         if (HexGrid.Distance(attacker.HexTile, defender.HexTile) > range)
             return ShotStatus.OutOfRange;
 
-        if (isGun && _host.WeaponAmmo(weaponProto!, weaponItem!) <= 0)
+        // ported from fallout2-ce src/combat.cc _combat_check_bad_shot (:5678-5680): gated on
+        // `ammoGetCapacity(weapon) > 0`, NOT on isGun — any weapon with an ammo slot draws this
+        // check. Matches the reference exactly; Hexwaste has no non-gun ammo-capacity weapon in
+        // practice, so this is a fidelity fix with no observed behavior change.
+        if ((weaponProto?.Weapon?.AmmoCapacity ?? 0) > 0 && _host.WeaponAmmo(weaponProto!, weaponItem!) <= 0)
             return ShotStatus.NoAmmo;
 
-        if (isGun)
+        // ported from fallout2-ce src/combat.cc _combat_check_bad_shot (:5682-5687): gated on
+        // `attackType == RANGED || THROW || weaponGetRange(hitMode) > 1`, NOT on isGun — a range-2
+        // (or longer) melee weapon (e.g. a spear) also draws the blocked-shot check. Hexwaste has no
+        // distinct THROW attack type here (see the NOT-ported note above), but `range > 1` already
+        // covers the melee-reach case the isGun-only gate was missing.
+        if (isGun || range > 1)
         {
             (MapObject? blocker, _) = LineOfFire.Trace(attacker.HexTile, defender.HexTile,
                 tile => _host.ShootBlockerAt(tile, attacker, defender));
@@ -2468,7 +2491,18 @@ public sealed class CombatEngine
         // persist on CombatResults (a Doctor clears them).
         _events.ClearAll();
         foreach (MapObject c in _hostiles.Concat(_host.PartyMembers).Append(_host.Dude!).Where(c => c is not null).Distinct())
+        {
             c.CombatResults &= ~(CriticalTables.DamKnockedOut | CriticalTables.DamLoseTurn);
+            // Minor-4 fix (Task-2 review): LastAttackTarget is a live MapObject reference stamped on
+            // every attack/throw/burst resolve (aiInfoSetLastTarget, combat.cc:3558) but, unlike
+            // WhoHitMe (:1642 party-only clear, plus the fresh-per-fight seed at StartBrawl), it was
+            // never cleared — a stale-handle shape this project has fixed before (cf. P126). Currently
+            // feeds only the unreached WhoeverAttackingMe branch, so this is a latent-bug close, not an
+            // observed one; no reference counterpart to cite for "clear at combat end" since the
+            // reference re-derives its own combat-list-index lookup (combat.cc:2101/2125-2133) rather
+            // than holding a raw pointer across fights.
+            c.LastAttackTarget = null;
+        }
         _knockedDown.Clear();
         _aiLastItem.Clear();
         _terminateRequested = false; // P35-M5
