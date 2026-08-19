@@ -2467,11 +2467,22 @@ public sealed class CombatEngine
     }
 
     /// <summary>ported from fallout2-ce src/combat.cc _combat_should_end():
-    /// combat is over when nothing hostile is left standing.</summary>
+    /// combat is over when nothing hostile is left standing OR still wants to fight.
+    /// Task 3 (correction): folds the same <see cref="WantsToStopFighting"/> query TryEndCombat
+    /// already uses for the player's manual "leave combat" gate into the automatic per-Step
+    /// check, instead of maintaining a second, mutating implementation of the same reference
+    /// function (see the history note on WantsToStopFighting/where PruneEscapedHostiles used
+    /// to live, just above StepTurnOrder).</summary>
     private bool CombatShouldEnd() => _dudeSpectator
         // P73: a dude-absent brawl ends when one team (or none) is left standing.
         ? _hostiles.Where(h => !h.IsDead).Select(h => h.Team).Distinct().Count() <= 1
-        : !_hostiles.Any(h => !h.IsDead);
+        // A knocked-out (but alive) hostile keeps blocking automatic end regardless of
+        // WantsToStopFighting's own KO branch — pre-existing Hexwaste design (P14-M2): it stays a
+        // live combat participant through its wake timer rather than letting the fight close under
+        // it. IsKnockedOut is the same pre-existing helper TryEnemyAction's own forfeit check uses,
+        // not a second port of _combatai_want_to_stop; it FORCES the block on regardless of what
+        // WantsToStopFighting's own (correct-for-the-exit-gate) KO branch would say.
+        : !_hostiles.Any(h => !h.IsDead && (IsKnockedOut(h) || !WantsToStopFighting(h)));
 
     private bool _terminateRequested;
 
@@ -2547,7 +2558,10 @@ public sealed class CombatEngine
     /// <summary>ported from fallout2-ce src/combat_ai.cc _combatai_want_to_stop (:3211): a critter stops
     /// fighting (does NOT block the player leaving combat) if it is dead/KO, fleeing/disengaging, or it no
     /// longer perceives a danger source. For the exit gate the danger source is the dude + his live party;
-    /// an alive, engaging animal that still perceives the dude (e.g. adjacent) keeps the fight open.</summary>
+    /// an alive, engaging animal that still perceives the dude (e.g. adjacent) keeps the fight open.
+    /// The ONE port of this reference function in the codebase — Task 3 (correction) folded it into
+    /// CombatShouldEnd() too (the automatic per-Step check) instead of adding a second, mutating
+    /// implementation there; see the history note above StepTurnOrder for what that replaced.</summary>
     private bool WantsToStopFighting(MapObject h)
     {
         if (h.IsDead || IsKnockedOut(h))
@@ -2624,46 +2638,40 @@ public sealed class CombatEngine
             return;
         }
 
-        // Disengage hostiles that have fled beyond sight of the whole team — they
-        // have escaped, so combat can end (the engine's flee/should-end behaviour;
-        // without this, an M1 flee that the dude doesn't chase never resolves).
-        PruneEscapedHostiles();
+        // Task 3 (correction): let the currently-active combatant's own turn run BEFORE asking
+        // CombatShouldEnd() whether anyone still wants to fight. WantsToStopFighting reads live
+        // Maneuver/KO/perception state that a critter's OWN turn this round is often what sets or
+        // resolves (TryFlee stamping FLEEING/DISENGAGING, the KO-forfeit branch, a script presetting
+        // the flee maneuver before combat even opens) — asking first would judge that state before
+        // the actor ever got to act on it. The original PruneEscapedHostiles ran its distance-only
+        // test before StepTurnOrder() safely, because raw position never changes except through an
+        // already-resolved move; WantsToStopFighting's richer state does not have that property, so
+        // the two calls swap places here.
+        if (_phase == CombatPhase.EnemyTurn)
+            StepTurnOrder();
 
         if (CombatShouldEnd())
         {
             EndCombat();
             return;
         }
-
-        if (_phase == CombatPhase.EnemyTurn)
-            StepTurnOrder();
     }
 
-    /// <summary>Remove living hostiles that have disengaged, ported from fallout2-ce
-    /// src/combat_ai.cc _combatai_want_to_stop (:3211): <c>Object* enemy = _ai_danger_source(a1);
-    /// return enemy == nullptr || !isWithinPerception(a1, enemy);</c> (:3227-3228). A hostile "wants
-    /// to stop" — and is dropped here — when it has no danger source at all, or when the danger
-    /// source it does have is no longer within its perception. This is NOT a flat distance-from-team
-    /// test: a hostile that fled far away but still has a LIVING whoHitMe (e.g. an attacker right
-    /// next to it) keeps a valid danger source and is correctly retained; a hostile sitting right
-    /// next to the dude's team with no danger source at all is correctly dropped. Task 3 (unblocked
-    /// by Task 2's <see cref="DangerSource"/> port).</summary>
-    private void PruneEscapedHostiles()
-    {
-        if (_dudeSpectator) // P73: dude-centric sight doesn't apply to a brawl he's not in
-            return;
-        MapObject? dude = _host.Dude;
-        if (dude is null)
-            return;
-        _hostiles.RemoveWhere(h =>
-        {
-            if (h.IsDead)
-                return false;
-            MapObject? enemy = DangerSource(h);
-            return enemy is null || !WithinPerception(h, enemy);
-        });
-    }
-
+    // HISTORY (Task 3, then corrected): this used to be PruneEscapedHostiles(), a Hexwaste
+    // invention with NO reference counterpart — it called this same _combatai_want_to_stop
+    // predicate (combat_ai.cc:3211) but MUTATED _hostiles, physically evicting any hostile that
+    // "wanted to stop". The reference's actual single caller of _combatai_want_to_stop,
+    // combatAttemptEnd() (combat.cc:3087), only ever QUERIES it — it blocks the player's manual
+    // "leave combat" attempt when any hostile still wants to fight, and never removes anyone from
+    // the combat list. The mutating version broke on a bootstrap gap: AddJoiners() (below) adds a
+    // freshly-joined critter to _hostiles without stamping its WhoHitMe, so a danger-source-based
+    // want-to-stop check found nothing, evicted it before its first turn, and AddJoiners then
+    // re-recruited it next round — an evict/rejoin oscillation traced live via
+    // "@9274 ... enemy=null" on every round of denbus2-fight-flee. The fix: don't mutate
+    // _hostiles at all. CombatShouldEnd() now folds the SAME query TryEndCombat() already used
+    // (WantsToStopFighting, just below) into its own per-Step check — one port of
+    // _combatai_want_to_stop in the codebase, used at both the manual and automatic exit points,
+    // exactly matching the reference's query-not-mutation shape.
 
     /// <summary>
     /// Step the INTERLEAVED round order one combatant at a time (ported from combat.cc _combat()'s

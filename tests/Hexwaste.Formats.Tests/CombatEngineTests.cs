@@ -3397,9 +3397,6 @@ public class CombatEngineTests
     private static System.Reflection.MethodInfo DangerSourceMethod() => typeof(CombatEngine).GetMethod(
         "DangerSource", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!;
 
-    private static System.Reflection.MethodInfo PruneEscapedHostilesMethod() => typeof(CombatEngine).GetMethod(
-        "PruneEscapedHostiles", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!;
-
     private static HashSet<MapObject> HostilesOf(CombatEngine engine) => (HashSet<MapObject>)typeof(CombatEngine)
         .GetField("_hostiles", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!
         .GetValue(engine)!;
@@ -3586,66 +3583,80 @@ public class CombatEngineTests
     }
 
     // ====================================================================
-    //  Task 3: PruneEscapedHostiles on the perception model — ported from fallout2-ce
-    //  src/combat_ai.cc _combatai_want_to_stop (:3211): `Object* enemy = _ai_danger_source(a1);
-    //  return enemy == nullptr || !isWithinPerception(a1, enemy);` (:3227-3228). PruneEscapedHostiles
-    //  is the inverse ("should this hostile stay?"), invoked via reflection to isolate it from the
-    //  rest of the Step()-driven turn machine.
+    //  Task 3 (correction): CombatShouldEnd folds WantsToStopFighting's query in directly instead
+    //  of a mutating PruneEscapedHostiles (see the HISTORY comment above StepTurnOrder in
+    //  CombatEngine.cs for what that replaced and why). The original two Task-3 tests
+    //  (FledHostileWithLivingWhoHitMeIsNotPruned / HostileWithNoDangerSourceIsPruned) exercised
+    //  PruneEscapedHostiles's DangerSource-based asymmetry directly via reflection; that method no
+    //  longer exists and nothing replaced its exact semantics (WantsToStopFighting tests
+    //  perception of the dude/party, not a DangerSource whoHitMe chain), so they were dropped
+    //  rather than adapted — keeping them alive under a different meaning would be worse than
+    //  losing them. In their place: a regression test for the actual bug (a freshly-joined
+    //  hostile must not be evicted from _hostiles before its first turn) and one proving the
+    //  automatic end-of-combat path this whole mechanism exists for still works.
     // ====================================================================
 
     [Fact]
-    public void FledHostileWithLivingWhoHitMeIsNotPruned()
+    public void JoiningHostileWithNoWhoHitMeYetIsNeverEvictedFromHostiles()
     {
-        // The exact case the old flat-sight-range heuristic got wrong: a hostile far outside
-        // SightRangeHexes (20050 is a validated far tile — see JoinSetup's far-tile assertions
-        // above) still has a LIVING whoHitMe (an attacker adjacent to IT, not to the dude/party) —
-        // a genuine danger source. _ai_danger_source's ungated living-whoHitMe early return
-        // (:1657) hands this straight back, and isWithinPerception(hostile, attacker) passes
-        // easily at distance 1, so _combatai_want_to_stop says "no" — the hostile must NOT be
-        // pruned even though it is nowhere near the dude's team.
+        // The regression net for the bug this correction fixed: AddJoiners() adds a fresh hostile
+        // to _hostiles WITHOUT stamping its WhoHitMe (traced live on denbus2-fight-flee — a
+        // Villager was evicted with DangerSource==null on round 1, then re-joined next round,
+        // then evicted again, every round). Under the old DangerSource-mutating prune this hostile
+        // would vanish on the very next Step(). Under the corrected design _hostiles is never
+        // mutated by the want-to-stop check at all, so it must still be there after several Steps.
         var host = new FakeCombatHost();
         MapObject dude = host.SetDude(NewCritter(tile: 20100, hp: 30, ap: 10));
-        MapObject hostile = host.AddCritter(NewCritter(tile: 20050, hp: 30, ap: 10));
-        hostile.Team = 1;
-        Assert.True(HexGrid.Distance(hostile.HexTile, dude.HexTile) > CombatRules.SightRangeHexes);
-
-        MapObject attacker = new()
-        {
-            Id = 9001, HexTile = HexGrid.TileInDirection(hostile.HexTile, 0), X = 0, Y = 0,
-            Frame = 0, Rotation = 0, Fid = 0x01000000, Flags = 0, Pid = 0x01000001, Sid = -1,
-        };
-        hostile.WhoHitMe = attacker; // a living danger source, just not the dude's team
+        MapObject attacker = host.AddCritter(NewCritter(tile: HexGrid.TileInDirection(20100, 0), hp: 30, ap: 10));
+        attacker.Team = 1;
+        // A same-team candidate within perception of the dude — WantToJoin's exact condition
+        // (_hostiles.Any(h => h.Team == c.Team) && WithinPerception(c, dude)) — but with NO
+        // whoHitMe of its own: nobody has fought it yet, matching a freshly recruited joiner.
+        MapObject candidate = host.AddCritter(NewCritter(tile: HexGrid.TileInDirection(20100, 1), hp: 30, ap: 10));
+        candidate.Team = 1;
+        Assert.Null(candidate.WhoHitMe);
 
         var engine = new CombatEngine(host, new MinRng());
-        HostilesOf(engine).Add(hostile);
+        engine.BeginScriptAggro(attacker, dude); // opens combat, runs AddJoiners over the candidate
+        Assert.Contains(candidate, engine.Hostiles); // sanity: it did join
 
-        PruneEscapedHostilesMethod().Invoke(engine, []);
+        for (int i = 0; i < 5; i++)
+        {
+            host.Animating.Clear();
+            engine.Step();
+            if (engine.Phase == CombatPhase.Idle)
+                break; // combat resolved (dude/attacker traded blows) — fine, just not an eviction
+        }
 
-        Assert.Contains(hostile, HostilesOf(engine));
+        Assert.Null(candidate.WhoHitMe); // still never acquired one...
+        Assert.True(candidate.IsDead || engine.Hostiles.Contains(candidate),
+            "a hostile must stay in the fight (or die in it) — never silently vanish for lack of a danger source");
     }
 
     [Fact]
-    public void HostileWithNoDangerSourceIsPruned()
+    public void CombatAutomaticallyEndsWhenTheSoleHostileDisengages()
     {
-        // The opposite asymmetric case: a hostile well WITHIN the old flat sight range (adjacent to
-        // the dude via TileInDirection) but whose danger source is genuinely gone (WhoHitMe null,
-        // nobody else on the roster is retaliating against or being retaliated by it) — the old
-        // distance-only heuristic would have kept this hostile forever; _ai_danger_source returns
-        // null, so _combatai_want_to_stop says "yes" and it must be pruned.
+        // The ORIGINAL purpose PruneEscapedHostiles existed for, now served by CombatShouldEnd's
+        // own WantsToStopFighting check: "without this, an M1 flee that the dude doesn't chase
+        // never resolves" (the old deleted doc comment). A wounded, low-HP hostile flees (TryFlee
+        // sets CRITTER_MANEUVER_FLEEING/DISENGAGING); once it's the sole hostile and no longer
+        // wants to fight, combat must end on its own — nobody has to manually chase it down or
+        // call TryEndCombat().
         var host = new FakeCombatHost();
         MapObject dude = host.SetDude(NewCritter(tile: 20100, hp: 30, ap: 10));
-        MapObject hostile = host.AddCritter(
-            NewCritter(tile: HexGrid.TileInDirection(20100, 2), hp: 30, ap: 10));
-        hostile.Team = 1;
-        hostile.WhoHitMe = null;
-        Assert.True(HexGrid.Distance(hostile.HexTile, dude.HexTile) <= CombatRules.SightRangeHexes);
+        MapObject enemy = host.AddCritter(NewCritter(tile: HexGrid.TileInDirection(20100, 0, 10), hp: 5, ap: 10));
+        host.AiPackets[enemy] = new AiPacket(13, "Thug", MinToHit: 0, MinHp: 10, 10, "", "");
 
         var engine = new CombatEngine(host, new MinRng());
-        HostilesOf(engine).Add(hostile);
+        engine.BeginScriptAggro(enemy, dude);
+        for (int i = 0; i < 20 && engine.Phase != CombatPhase.Idle; i++)
+        {
+            host.Animating.Clear();
+            engine.Step();
+        }
 
-        PruneEscapedHostilesMethod().Invoke(engine, []);
-
-        Assert.DoesNotContain(hostile, HostilesOf(engine));
+        Assert.Equal(CombatPhase.Idle, engine.Phase); // combat ended on its own
+        Assert.Contains(host.Transcripts, t => t.StartsWith("disengage:") || t.StartsWith("flee:"));
     }
 
     private static (MapObject Obj, CritterProtoStats Proto) NewCritter(
