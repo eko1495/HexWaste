@@ -312,6 +312,7 @@ public class CombatEngineTests
         var host = new FakeCombatHost();
         MapObject dude = host.SetDude(NewCritter(tile: 20100, hp: 30, ap: 10));
         MapObject enemy = host.AddCritter(NewCritter(tile: HexGrid.TileInDirection(20100, 0), hp: 30, ap: 10));
+        enemy.Team = 1; // Task 3: cross-team, like real game data — SetWhoHitMe/RegisterHit only stamp whoHitMe across teams
         var engine = new CombatEngine(host, new MinRng());
 
         Assert.True(engine.TryAttack(enemy)); // open combat
@@ -404,6 +405,7 @@ public class CombatEngineTests
         var host = new FakeCombatHost();
         MapObject dude = host.SetDude(NewCritter(tile: 20100, hp: 30, ap: 10));
         MapObject enemy = host.AddCritter(NewCritter(tile: HexGrid.TileInDirection(20100, 0), hp: 30, ap: 10));
+        enemy.Team = 1; // Task 3: cross-team, like real game data — SetWhoHitMe/RegisterHit only stamp whoHitMe across teams
         var engine = new CombatEngine(host, new MinRng());
 
         Assert.True(engine.TryAttack(enemy));
@@ -1420,7 +1422,16 @@ public class CombatEngineTests
         // AI packet's hurt_too_much mask matches (combat_ai.cc:3076) — independent of min_hp.
         var host = new FakeCombatHost();
         MapObject dude = host.SetDude(NewCritter(tile: 20100, hp: 30, ap: 10));
-        MapObject enemy = host.AddCritter(NewCritter(tile: HexGrid.TileInDirection(20100, 0), hp: 30, ap: 10));
+        // Task 3: PE 8, not the fixture-wide default of 5 — CritterState.Perception subtracts 5 flat
+        // when DamBlind is set (stat.cc:191 critterGetStat), and PruneEscapedHostiles now runs
+        // isWithinPerception(enemy, danger-source) every Step (combat_ai.cc _combatai_want_to_stop,
+        // :3227-3228) BEFORE the enemy's own turn/hurt_too_much decision executes. At the default PE 5,
+        // blind zeroes perception outright (5 − 5 = 0), so even an adjacent, living whoHitMe is never
+        // "perceived" and the enemy gets pruned from combat before it can take the very turn this test
+        // means to exercise. PE 8 leaves 3 after the blind malus, still enough to pass the fallback
+        // isWithinPerception check at distance 1 (PE×2 in combat = 6) — a critter that fights half-blind
+        // rather than one with literally zero perception, which is the scenario this test probes.
+        MapObject enemy = host.AddCritter(NewCritter(tile: HexGrid.TileInDirection(20100, 0), hp: 30, ap: 10, perception: 8));
         host.AiPackets[enemy] = new AiPacket(8, "Scorpion", MinToHit: 0, MinHp: 0, 10, "", "",
             HurtTooMuch: CriticalTables.DamBlind);
         enemy.CombatResults |= CriticalTables.DamBlind;
@@ -1767,6 +1778,7 @@ public class CombatEngineTests
         var host = new FakeCombatHost { CriticalsEnabled = true };
         host.SetDude(NewCritter(20100, hp: 30, ap: 12));
         MapObject enemy = host.AddCritter(NewCritter(HexGrid.TileInDirection(20100, 0), hp: 100, ap: 10));
+        enemy.Team = 1; // Task 3: cross-team, like real game data — SetWhoHitMe/RegisterHit only stamp whoHitMe across teams
         var engine = new CombatEngine(host, new MinRng());
 
         // Aimed RIGHT_LEG: MAN/RIGHT_LEG/sev0 = { 3, DAM_KNOCKED_DOWN } → prone.
@@ -3064,6 +3076,7 @@ public class CombatEngineTests
         MapObject ally = host.AddAlly(NewCritter(tile: HexGrid.TileInDirection(20100, 2), hp: 30, ap: 10), ai);
         ally.CurrentHp = 5; // badly wounded (5 / 30)
         MapObject enemy = host.AddCritter(NewCritter(tile: HexGrid.TileInDirection(20100, 0), hp: 30, ap: 10));
+        enemy.Team = 1; // Task 3: cross-team, like real game data — SetWhoHitMe/RegisterHit only stamp whoHitMe across teams
         var engine = new CombatEngine(host, new MinRng());
 
         Assert.True(engine.TryAttack(enemy)); // the dude opens combat (adjacent, unarmed) — the ally joins
@@ -3096,6 +3109,7 @@ public class CombatEngineTests
         host.AddAlly(NewCritter(tile: HexGrid.TileInDirection(20100, 2), hp: 100, ap: 10, skill: 100),
             CompanionAi.Default with { AreaAttack = AreaAttack.Always });
         MapObject enemy = host.AddCritter(NewCritter(tile: HexGrid.TileInDirection(20100, 0), hp: 100, ap: 10));
+        enemy.Team = 1; // Task 3: cross-team, like real game data — SetWhoHitMe/RegisterHit only stamp whoHitMe across teams
         host.Equipped = MakeBurstWeapon(rounds: 10, apCost2: 4); // shared: the dude single-shots, the ally bursts
         var engine = new CombatEngine(host, new MinRng());
 
@@ -3383,6 +3397,9 @@ public class CombatEngineTests
     private static System.Reflection.MethodInfo DangerSourceMethod() => typeof(CombatEngine).GetMethod(
         "DangerSource", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!;
 
+    private static System.Reflection.MethodInfo PruneEscapedHostilesMethod() => typeof(CombatEngine).GetMethod(
+        "PruneEscapedHostiles", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!;
+
     private static HashSet<MapObject> HostilesOf(CombatEngine engine) => (HashSet<MapObject>)typeof(CombatEngine)
         .GetField("_hostiles", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!
         .GetValue(engine)!;
@@ -3566,6 +3583,69 @@ public class CombatEngineTests
         dangerSource.Invoke(engine2, [self2]);
 
         Assert.Null(self2.WhoHitMe); // cleared — the party-gated branch ran
+    }
+
+    // ====================================================================
+    //  Task 3: PruneEscapedHostiles on the perception model — ported from fallout2-ce
+    //  src/combat_ai.cc _combatai_want_to_stop (:3211): `Object* enemy = _ai_danger_source(a1);
+    //  return enemy == nullptr || !isWithinPerception(a1, enemy);` (:3227-3228). PruneEscapedHostiles
+    //  is the inverse ("should this hostile stay?"), invoked via reflection to isolate it from the
+    //  rest of the Step()-driven turn machine.
+    // ====================================================================
+
+    [Fact]
+    public void FledHostileWithLivingWhoHitMeIsNotPruned()
+    {
+        // The exact case the old flat-sight-range heuristic got wrong: a hostile far outside
+        // SightRangeHexes (20050 is a validated far tile — see JoinSetup's far-tile assertions
+        // above) still has a LIVING whoHitMe (an attacker adjacent to IT, not to the dude/party) —
+        // a genuine danger source. _ai_danger_source's ungated living-whoHitMe early return
+        // (:1657) hands this straight back, and isWithinPerception(hostile, attacker) passes
+        // easily at distance 1, so _combatai_want_to_stop says "no" — the hostile must NOT be
+        // pruned even though it is nowhere near the dude's team.
+        var host = new FakeCombatHost();
+        MapObject dude = host.SetDude(NewCritter(tile: 20100, hp: 30, ap: 10));
+        MapObject hostile = host.AddCritter(NewCritter(tile: 20050, hp: 30, ap: 10));
+        hostile.Team = 1;
+        Assert.True(HexGrid.Distance(hostile.HexTile, dude.HexTile) > CombatRules.SightRangeHexes);
+
+        MapObject attacker = new()
+        {
+            Id = 9001, HexTile = HexGrid.TileInDirection(hostile.HexTile, 0), X = 0, Y = 0,
+            Frame = 0, Rotation = 0, Fid = 0x01000000, Flags = 0, Pid = 0x01000001, Sid = -1,
+        };
+        hostile.WhoHitMe = attacker; // a living danger source, just not the dude's team
+
+        var engine = new CombatEngine(host, new MinRng());
+        HostilesOf(engine).Add(hostile);
+
+        PruneEscapedHostilesMethod().Invoke(engine, []);
+
+        Assert.Contains(hostile, HostilesOf(engine));
+    }
+
+    [Fact]
+    public void HostileWithNoDangerSourceIsPruned()
+    {
+        // The opposite asymmetric case: a hostile well WITHIN the old flat sight range (adjacent to
+        // the dude via TileInDirection) but whose danger source is genuinely gone (WhoHitMe null,
+        // nobody else on the roster is retaliating against or being retaliated by it) — the old
+        // distance-only heuristic would have kept this hostile forever; _ai_danger_source returns
+        // null, so _combatai_want_to_stop says "yes" and it must be pruned.
+        var host = new FakeCombatHost();
+        MapObject dude = host.SetDude(NewCritter(tile: 20100, hp: 30, ap: 10));
+        MapObject hostile = host.AddCritter(
+            NewCritter(tile: HexGrid.TileInDirection(20100, 2), hp: 30, ap: 10));
+        hostile.Team = 1;
+        hostile.WhoHitMe = null;
+        Assert.True(HexGrid.Distance(hostile.HexTile, dude.HexTile) <= CombatRules.SightRangeHexes);
+
+        var engine = new CombatEngine(host, new MinRng());
+        HostilesOf(engine).Add(hostile);
+
+        PruneEscapedHostilesMethod().Invoke(engine, []);
+
+        Assert.DoesNotContain(hostile, HostilesOf(engine));
     }
 
     private static (MapObject Obj, CritterProtoStats Proto) NewCritter(

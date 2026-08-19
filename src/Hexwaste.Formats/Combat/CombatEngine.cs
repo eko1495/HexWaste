@@ -2639,14 +2639,15 @@ public sealed class CombatEngine
             StepTurnOrder();
     }
 
-    /// <summary>Remove living hostiles farther than sight range from every member
-    /// of the dude's team (they have disengaged). All hostiles START within sight
-    /// (AddJoiners), so this only drops critters that actually fled away.
-    /// P113 (4.3) NOTE: the fo2ce _combatai_want_to_stop disengage is perception-based
-    /// (!isWithinPerception of the danger source), but porting it here is DEFERRED — a fled
-    /// hostile keeps its whoHitMe danger source, so a naive perception prune both fails to drop
-    /// genuine fleers (they still "perceive" via whoHitMe) and wrongly drops a blind/rear-facing
-    /// adjacent enemy before it can take its flee turn. The flat sight-range drop is retained.</summary>
+    /// <summary>Remove living hostiles that have disengaged, ported from fallout2-ce
+    /// src/combat_ai.cc _combatai_want_to_stop (:3211): <c>Object* enemy = _ai_danger_source(a1);
+    /// return enemy == nullptr || !isWithinPerception(a1, enemy);</c> (:3227-3228). A hostile "wants
+    /// to stop" — and is dropped here — when it has no danger source at all, or when the danger
+    /// source it does have is no longer within its perception. This is NOT a flat distance-from-team
+    /// test: a hostile that fled far away but still has a LIVING whoHitMe (e.g. an attacker right
+    /// next to it) keeps a valid danger source and is correctly retained; a hostile sitting right
+    /// next to the dude's team with no danger source at all is correctly dropped. Task 3 (unblocked
+    /// by Task 2's <see cref="DangerSource"/> port).</summary>
     private void PruneEscapedHostiles()
     {
         if (_dudeSpectator) // P73: dude-centric sight doesn't apply to a brawl he's not in
@@ -2654,16 +2655,13 @@ public sealed class CombatEngine
         MapObject? dude = _host.Dude;
         if (dude is null)
             return;
-        _hostiles.RemoveWhere(h => !h.IsDead && DistanceToTeam(h, dude) > CombatRules.SightRangeHexes);
-    }
-
-    private int DistanceToTeam(MapObject from, MapObject dude)
-    {
-        int best = HexGrid.Distance(from.HexTile, dude.HexTile);
-        foreach (MapObject ally in _host.PartyMembers)
-            if (!ally.IsDead)
-                best = Math.Min(best, HexGrid.Distance(from.HexTile, ally.HexTile));
-        return best;
+        _hostiles.RemoveWhere(h =>
+        {
+            if (h.IsDead)
+                return false;
+            MapObject? enemy = DangerSource(h);
+            return enemy is null || !WithinPerception(h, enemy);
+        });
     }
 
 
