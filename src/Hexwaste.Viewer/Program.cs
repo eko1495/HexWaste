@@ -530,6 +530,11 @@ for (int i = 0; i < args.Length; i++)
             actions.Add(new ViewerGame.StartupAction.NpcWalk(int.Parse(args[i + 1]), int.Parse(args[i + 2]), Run: true));
             i += 2;
             break;
+        case "--walker-restart-probe" when i + 3 < args.Length: // F21 QA: does a finished walker block a second walk?
+            actions.Add(new ViewerGame.StartupAction.WalkerRestartProbe(
+                int.Parse(args[i + 1]), int.Parse(args[i + 2]), int.Parse(args[i + 3])));
+            i += 3;
+            break;
         case "--combat-over" when i + 1 < args.Length:
             // P100: run the map-script combat_p_proc "combat over" hook with a KO'er team (proves the seam).
             actions.Add(new ViewerGame.StartupAction.CombatOverProbe(int.Parse(args[++i])));

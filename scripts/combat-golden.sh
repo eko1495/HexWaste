@@ -44,6 +44,9 @@ SCENARIOS=(
   # P20-M4: the P13-M2 collateral CONE on real data — bursting at a Den slave from across
   # the cluster sweeps two real bystanders (Handsome + Cute Slave) on the left/right lines.
   "denbus2-burst-collateral|--character combat --map denbus2.map --give 9 --use-item 9 --burst-at 13270 11670 --rng-seed 1"
+  # F21: pins the walker-restart-probe's discriminating value (started2) so a regression reverting
+  # StartNpcWalk's guard back to ContainsKey is caught by an automated diff, not only by hand.
+  "walker-restart|--map denbus2.map --walker-restart-probe 14716 14718 14716"
 )
 
 echo "Building viewer..."

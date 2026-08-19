@@ -874,6 +874,10 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
         /// <summary>P110 QA: start a scripted NPC walk (StartNpcWalk) from the critter at NpcHex to
         /// TargetHex — e2e-drives NPC door pathing headlessly with --advance-ms.</summary>
         public sealed record NpcWalk(int NpcHex, int TargetHex, bool Run = false) : StartupAction;
+        /// <summary>F21 QA: start a walk, pump it to completion, then start a SECOND walk for the same
+        /// critter — proves (or disproves) that a finished walker still blocks a later StartNpcWalk call
+        /// because it was never removed from _npcWalkers.</summary>
+        public sealed record WalkerRestartProbe(int Hex, int Target1, int Target2) : StartupAction;
         /// <summary>Fidelity probe: lists ground items within the NpcHex critter's perception+5, then runs
         /// the AI weapon switch (as-is — no weapon is stripped first) against the critter at TargetHex,
         /// exercising the ground-pickup fallback (_ai_search_environ → _ai_retrieve_object) when its
@@ -2814,6 +2818,13 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
         // game clock through _pendingDrugEvents, like the dude's (item.cc _insert_drug_effect).
         _dude?.Update(gameTime.ElapsedGameTime.TotalMilliseconds);
         PumpPendingInteraction();
+        // F21: walker lifecycle is not a side effect of ambient fidgeting — prune independently of
+        // UpdateAmbientLife's own DisableAmbientLife / _worldmapOpen early return (below). _worldmapOpen
+        // is always false here (Update already returned above when it's true, so that guard is moot at
+        // this point), but DisableAmbientLife is NOT necessarily false here — that is the real reason
+        // for the hoist: with --no-ambient set, UpdateAmbientLife's early return would otherwise skip
+        // pruning every frame, and this call is what keeps walker lifecycle live on that path.
+        PruneFinishedWalkers(gameTime.ElapsedGameTime.TotalMilliseconds);
         UpdateAmbientLife(gameTime.ElapsedGameTime.TotalMilliseconds);
         TickAmbientSfx(gameTime.ElapsedGameTime.TotalMilliseconds); // P34-M5 ambient sfx
         _floatText.Tick(gameTime.ElapsedGameTime.TotalMilliseconds); // P45 floating combat text
@@ -3247,6 +3258,28 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
     }
 
     /// <summary>
+    /// F21: advance every active NPC walker exactly once and drop the ones that finished. Hexwaste's
+    /// own structure (no fallout2-ce counterpart) — this used to live inside UpdateAmbientLife, after
+    /// its DisableAmbientLife / _worldmapOpen early return, so walker lifecycle was a side effect of
+    /// ambient fidgeting: --no-ambient and an open worldmap leaked finished walkers, and the autoplay
+    /// harness loops (which never called UpdateAmbientLife) leaked them always. Called from Update
+    /// independently of that gate, and by the autoplay loops in ViewerGame.Harness.cs.
+    /// </summary>
+    private void PruneFinishedWalkers(double elapsedMs)
+    {
+        List<MapObject>? finished = null;
+        foreach ((MapObject npc, DudeController walker) in _npcWalkers)
+        {
+            walker.Update(elapsedMs);
+            if (!walker.Moving)
+                (finished ??= []).Add(npc);
+        }
+        if (finished is not null)
+            foreach (MapObject npc in finished)
+                _npcWalkers.Remove(npc);
+    }
+
+    /// <summary>
     /// Ambient NPC life, no VM. Fidget ported from fallout2-ce
     /// src/animation.cc _dude_fidget(): every 1..10 s (faster with more
     /// candidates) one visible, standing, non-walking critter replays its
@@ -3258,18 +3291,6 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
     {
         if (DisableAmbientLife || _worldmapOpen)
             return;
-
-        // Advance active NPC walks; drop finished walkers.
-        List<MapObject>? finished = null;
-        foreach ((MapObject npc, DudeController walker) in _npcWalkers)
-        {
-            walker.Update(elapsedMs);
-            if (!walker.Moving)
-                (finished ??= []).Add(npc);
-        }
-        if (finished is not null)
-            foreach (MapObject npc in finished)
-                _npcWalkers.Remove(npc);
 
         AdvanceRegAnimQueue(elapsedMs); // P114: dispatch the next queued reg_anim action once its blocker finished
 
@@ -3325,7 +3346,17 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
     /// <summary>Starts a script- or ambient-driven NPC walk (shared walker plumbing).</summary>
     private bool StartNpcWalk(MapObject npc, int target, bool run = false)
     {
-        if (npc == _dude?.Dude || _npcWalkers.ContainsKey(npc)
+        // ported from fallout2-ce src/animation.cc animationIsBusy (:581): the reference's busy test
+        // is LIVENESS-based — it walks only sequences actually in use (field_0 != -1000) and reports
+        // busy only for a live animation. Ours asked whether the critter had EVER walked: a finished
+        // walker stays in _npcWalkers until pruned, so before this guard tested .Moving the critter was
+        // frozen for the rest of the run while callers kept logging movement it never performed (F21).
+        // Pruning itself used to live only inside UpdateAmbientLife (gated on DisableAmbientLife /
+        // _worldmapOpen, and never reached by the autoplay harness loops); it is now PruneFinishedWalkers
+        // (:3268), called independently from Update and by both autoplay loops. A stale idle entry is
+        // also replaced by the assignment at :3414.
+        if (npc == _dude?.Dude
+            || (_npcWalkers.TryGetValue(npc, out DudeController? active) && active.Moving)
             || Fid.Type(npc.Fid) is not ObjectType.Critter)
             return false;
 
