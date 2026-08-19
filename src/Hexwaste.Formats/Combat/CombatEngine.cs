@@ -1751,12 +1751,36 @@ public sealed class CombatEngine
         return AiRating.Score(state.MeleeDamage, state.ArmorClass, proto?.Weapon?.MaxDamage ?? 0);
     }
 
+    /// <summary>Ports fallout2-ce src/critter.cc `_critter_set_who_hit_me` (:1285-1301) — the single gate
+    /// the reference uses everywhere it writes a critter's whoHitMe. The full reference condition is
+    /// `a2 == nullptr || a1.team != a2.team || (statRoll(a1, STAT_INTELLIGENCE, -1) < 2 &&
+    /// !(partyMember(a1) && partyMember(a2)))` (critter.cc:1295): a null attacker or a cross-team attacker
+    /// always writes; a same-team attacker writes only on a failed INT roll (INT 5 → 60% chance) and never
+    /// between two party members.
+    ///
+    /// DELIBERATE DIVERGENCE: Hexwaste simplifies the same-team INT-roll branch to an unconditional
+    /// REFUSAL — same team never writes, full stop. This keeps combat setup free of RNG for a reason
+    /// unrelated to this helper (drawing on the roll here would move golden fixtures). The cross-team
+    /// path — the only one the reference reaches without drawing RNG, since the `||` short-circuits on
+    /// `team != team` before the roll — is modelled EXACTLY. A null attacker also writes exactly (clears
+    /// whoHitMe), matching the reference's `a2 == nullptr` arm.
+    ///
+    /// Both call sites that stamp whoHitMe in the reference (`_combat_sequence_init`, combat.cc:3012/3016,
+    /// and the KO/DEAD bypass, combat.cc:4711-4716) route through this one helper here, so Hexwaste no
+    /// longer carries two contradictory models of the same reference gate.</summary>
+    private static void SetWhoHitMe(MapObject target, MapObject? attacker)
+    {
+        if (attacker is null || attacker.Team != target.Team)
+            target.WhoHitMe = attacker;
+    }
+
     /// <summary>Record who last hit a critter (whoHitMe) — ported from fallout2-ce combat.cc:4707 +
     /// combat_ai.cc _combatai_check_retaliation (:3484): an unset whoHitMe is taken unconditionally, but
     /// an existing one is REPLACED only by a strictly higher-rated attacker (_combatai_rating), so a
     /// critter keeps hunting the scarier enemy rather than whoever last scratched it. An equally-rated
-    /// attacker does not steal aggro. Hexwaste's team gate is retained — the engine's equivalent gate
-    /// lives in the callers and in `_critter_set_who_hit_me` itself. This moved the brawl-watch fixture
+    /// attacker does not steal aggro. Hexwaste's team gate is retained as an early exit here AND inside
+    /// `SetWhoHitMe` (the single helper now modelling `_critter_set_who_hit_me`) — the early exit is a
+    /// fast path only, both checks agree. This moved the brawl-watch fixture
     /// (deliberately re-recorded — see
     /// docs/superpowers/specs/2026-08-12-retaliation-rerecord-design.md).
     ///
@@ -1784,12 +1808,12 @@ public sealed class CombatEngine
             return;
         if (IsKnockedOut(target))
         {
-            target.WhoHitMe = attacker; // critter.cc:1285-1301 — bypasses only the rating gate below
+            SetWhoHitMe(target, attacker); // critter.cc:1285-1301 — bypasses only the rating gate below
             return;
         }
         if (target.WhoHitMe is { } current && Rating(attacker) <= Rating(current))
             return; // combat_ai.cc:3488 — only a STRICTLY greater rating retargets
-        target.WhoHitMe = attacker;
+        SetWhoHitMe(target, attacker);
     }
 
     /// <summary>True if the critter may take its turn (not knocked out, not on a
@@ -2328,27 +2352,33 @@ public sealed class CombatEngine
             _order.AddRange(combatants); // the rest, in collection order
 
             // Task-2 port: ported from fallout2-ce src/combat.cc _combat_sequence_init (:3011-3017) — the
-            // attacker/defender that opened this round stamp each other's whoHitMe UNCONDITIONALLY (hit or
-            // miss, before the opening attack even resolves, and regardless of whether either side is
-            // gDude — the `attacker != gDude && defender != gDude` guard at :2995 gates ONLY the "place
-            // dude third in the combat list" block above (closes at :3006); it does not reach the
-            // whoHitMe stamp at :3011-3017, which is unconditional). DangerSource's target ACQUISITION is
-            // now entirely whoHitMe/aiFindAttackers-driven (no "just pick nearest" fallback, matching the
-            // reference); without this stamp a combat opened by a MISSED first attack would leave the
-            // defender's whoHitMe unset (RegisterHit only fires on an actual hit) and it would never find a
-            // target on its first turn.
+            // attacker/defender that opened this round stamp each other's whoHitMe via
+            // `_critter_set_who_hit_me` (critter.cc:1285-1301), before the opening attack even resolves,
+            // and regardless of whether either side is gDude — the `attacker != gDude && defender != gDude`
+            // guard at :2995 gates ONLY the "place dude third in the combat list" block above (closes at
+            // :3006); it does not reach the whoHitMe stamp at :3011-3017. That stamp is NOT a raw
+            // assignment in the reference, so it is routed through `SetWhoHitMe` here — the same gated
+            // helper `RegisterHit` uses — rather than writing `WhoHitMe` directly. DangerSource's target
+            // ACQUISITION is now entirely whoHitMe/aiFindAttackers-driven (no "just pick nearest" fallback,
+            // matching the reference); without this stamp a combat opened by a MISSED first attack would
+            // leave the defender's whoHitMe unset (RegisterHit only fires on an actual hit) and it would
+            // never find a target on its first turn.
             //
-            // Stamped even when a side is gDude (byte-faithful to the reference) even though nothing in
+            // Routed through SetWhoHitMe even when a side is gDude (byte-faithful to the reference's own
+            // unconditional call — `SetWhoHitMe` decides whether to WRITE) even though nothing in
             // Hexwaste currently reads the dude's own WhoHitMe for an AI decision (DangerSource only runs
-            // for non-dude critters). This IS an observable change from pre-Task-2 Hexwaste:
-            // ASameTeamHitNeverRegistersWhoHitMe (CombatEngineTests.cs) previously relied on the ONLY path
-            // to dude.WhoHitMe being RegisterHit's team-gated rating check; this stamp now sets it first,
-            // unconditionally, at combat open — that test's assertion was updated to match (see its
-            // comment) rather than narrowing this port to preserve the old assertion.
+            // for non-dude critters). A cross-team pair (every golden, every real fight) writes exactly as
+            // before — SetWhoHitMe's gate only changes same-team behavior, where it now correctly REFUSES
+            // to write (matching RegisterHit's existing same-team simplification) instead of writing
+            // unconditionally. See ASameTeamHitNeverRegistersWhoHitMe.
+            //
+            // Kept behind the pre-existing "both non-null" guard (not the reference's two independent
+            // null checks at :3011/:3015) — this task's scope is the same-team gate, not the null-arg
+            // handling for the defender-less StartBrawl call (:2033); widening that is a separate change.
             if (attacker is not null && defender is not null)
             {
-                attacker.WhoHitMe = defender;
-                defender.WhoHitMe = attacker;
+                SetWhoHitMe(attacker, defender);
+                SetWhoHitMe(defender, attacker);
             }
         }
         else

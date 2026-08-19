@@ -194,6 +194,10 @@ public class CombatEngineTests
         var host = new FakeCombatHost();
         MapObject dude = host.SetDude(NewCritter(tile: 20100, hp: 30, ap: 10));
         MapObject enemy = host.AddCritter(NewCritter(tile: HexGrid.TileInDirection(20100, 0), hp: 30, ap: 10));
+        enemy.Team = 1; // Important-fix side effect (Task-2 review): the combat-open whoHitMe stamp is
+                         // now team-gated (SetWhoHitMe), so a same-team pair (the old default-team-0
+                         // fixture) no longer gives DangerSource a target to retaliate against — matches
+                         // real vanilla data, where a hostile is never on the dude's team.
         var engine = new CombatEngine(host, new MinRng());
 
         Assert.True(engine.TryAttack(enemy));     // open combat
@@ -336,6 +340,7 @@ public class CombatEngineTests
         var host = new FakeCombatHost();
         MapObject dude = host.SetDude(NewCritter(tile: 20100, hp: 30, ap: 10));
         MapObject enemy = host.AddCritter(NewCritter(tile: HexGrid.TileInDirection(20100, 0), hp: 30, ap: 10, endurance: 10));
+        enemy.Team = 1; // Important-fix side effect (Task-2 review): see RoundRolloverResetsDudeApAndEnemyRetaliates.
         var engine = new CombatEngine(host, new MinRng());
 
         Assert.True(engine.TryAttack(enemy));
@@ -367,6 +372,7 @@ public class CombatEngineTests
         MapObject dude = host.SetDude(NewCritter(tile: 20100, hp: 100, ap: 10, seq: 1)); // SLOW
         // ap 4 = exactly one 3-AP punch per turn (it's adjacent, so no move), making the count exact.
         MapObject fast = host.AddCritter(NewCritter(tile: HexGrid.TileInDirection(20100, 0), hp: 30, ap: 4, seq: 20));
+        fast.Team = 1; // Important-fix side effect (Task-2 review): see RoundRolloverResetsDudeApAndEnemyRetaliates.
         var engine = new CombatEngine(host, new MinRng());
 
         Assert.True(engine.TryAttack(fast)); // round 1: the dude (attacker) opens
@@ -2740,6 +2746,7 @@ public class CombatEngineTests
         MapObject dude = host.SetDude(NewCritter(20100, hp: 100, ap: 10));
         MapObject enemy = host.AddCritter(NewCritter(HexGrid.TileInDirection(20100, 0), hp: 30, ap: 10));
         enemy.Sid = 7; // a scripted NPC: damage_p_proc can run
+        enemy.Team = 1; // Important-fix side effect (Task-2 review): see RoundRolloverResetsDudeApAndEnemyRetaliates.
         var rng = new RecordingRng(new SequenceRng(100, 1, 100, 1, 60));
         var engine = new CombatEngine(host, rng);
 
@@ -2774,6 +2781,7 @@ public class CombatEngineTests
         host.SetDude(NewCritter(20100, hp: 100, ap: 10));
         MapObject enemy = host.AddCritter(NewCritter(HexGrid.TileInDirection(20100, 0), hp: 60, ap: 10));
         enemy.Sid = 7; // a scripted, unaffiliated NPC: its damage_p_proc can run
+        enemy.Team = 1; // Important-fix side effect (Task-2 review): see RoundRolloverResetsDudeApAndEnemyRetaliates.
         // Derived empirically with RecordingRng (rng.Draws printed against the armed NPC's AI/attack
         // path) — the sibling test's sequence is for an unarmed NPC and does not apply here. Five draws
         // land the fumble; a 6th (clamped to the 5th's value) is Explode()'s own blast-damage roll:
@@ -3213,7 +3221,7 @@ public class CombatEngineTests
     }
 
     [Fact]
-    public void ASameTeamHitNeverPromotesRegisterHitsOwnStampOverTheCombatOpenStamp()
+    public void ASameTeamHitNeverRegistersWhoHitMe()
     {
         // Finding 2 fix: the original "preservation guard" (SameTeamAndDeadTargetHitsStillNeverRegister-
         // WhoHitMe) mutation-tested as vacuous — with `RegisterHit` reduced to `if (attacker == target)
@@ -3224,20 +3232,16 @@ public class CombatEngineTests
         // same as the dude's default team, so BeginScriptAggro still opens combat and enemy still attacks
         // the dude (team is not consulted anywhere in target selection — only in RegisterHit itself).
         //
-        // Task-2 UPDATE (do not re-narrow this back to null): BuildTurnOrder now ports
-        // fallout2-ce src/combat.cc _combat_sequence_init's unconditional whoHitMe stamp (:3011-3017) —
-        // verified against the reference that the `attacker != gDude && defender != gDude` guard at
-        // :2995 gates ONLY the "place dude third in the combat list" block (closes :3006), NOT the
-        // whoHitMe stamp a few lines later, so the stamp fires even with gDude on one side. That means
-        // BeginScriptAggro(enemy, dude) already sets dude.WhoHitMe = enemy at combat OPEN, before any
-        // attack resolves — same-team or not, the reference does not gate this stamp on team either.
-        // So the assertion this test can still honestly make is narrower than before: RegisterHit's own
-        // team gate must not OVERWRITE that combat-open stamp with a second, redundant same-team write —
-        // it has nothing to overwrite it WITH (attacker == the already-stamped value), so this mostly
-        // proves RegisterHit doesn't throw/misbehave on a same-team hit against a non-null incumbent.
-        // The single behavior RegisterHit's team gate is left owning in observable isolation is pinned
-        // separately by ASameTeamKnockedOutCompanionStillBlocksWhoHitMe (a direct reflection call, no
-        // combat-open stamp involved).
+        // Task-2 history (renamed back after the Important-fix review): BuildTurnOrder ports
+        // fallout2-ce src/combat.cc _combat_sequence_init's whoHitMe stamp (:3011-3017), which is NOT a
+        // raw assignment in the reference — it's `_critter_set_who_hit_me` (critter.cc:1285-1301), gated
+        // on team (same-team writes only on a failed INT roll, which Hexwaste simplifies to "never" —
+        // see `SetWhoHitMe`). An earlier version of this port wrote WhoHitMe unconditionally at combat
+        // open, which briefly made this test assert `Assert.Same(enemy, dude.WhoHitMe)` — the UNFAITHFUL
+        // half of that bug, since `enemy` and `dude` are same-team here. Now that both the combat-open
+        // stamp (BuildTurnOrder) and RegisterHit route through the one gated `SetWhoHitMe` helper, neither
+        // writes for a same-team pair, and the original `Assert.Null` assertion is correct again — for the
+        // right reason this time (a real team gate, not an absent stamp).
         var host = new FakeCombatHost();
         MapObject dude = host.SetDude(NewCritter(tile: 20100, hp: 200, ap: 10));
         MapObject enemy = host.AddCritter(
@@ -3246,8 +3250,9 @@ public class CombatEngineTests
 
         var engine = new CombatEngine(host, new MinRng());
         engine.BeginScriptAggro(enemy, dude);
-        // The combat-open stamp already fired inside BeginScriptAggro/BuildTurnOrder, before any Step().
-        Assert.Same(enemy, dude.WhoHitMe);
+        // The combat-open stamp already ran inside BeginScriptAggro/BuildTurnOrder, before any Step() —
+        // same-team, so SetWhoHitMe refuses to write.
+        Assert.Null(dude.WhoHitMe);
 
         // Run a FIXED number of steps (not "until a hit-dispatch line appears" — that transcript line
         // is written at DISPATCH time, one Step() before ResolveAttack/RegisterHit actually run on the
@@ -3262,12 +3267,10 @@ public class CombatEngineTests
 
         // Proves a hit actually RESOLVED (host.Logs carries the post-resolution "hits you" line, written
         // from ResolveAttack right before RegisterHit — otherwise the gate below would be untested, same
-        // failure mode as before), then proves RegisterHit's own same-team gate left the combat-open
-        // stamp exactly as it was (still `enemy` — the only living candidate here, so this does not by
-        // itself distinguish "team gate ran and was a no-op" from "team gate never mattered"; that
-        // distinction is what ASameTeamKnockedOutCompanionStillBlocksWhoHitMe pins directly).
+        // failure mode as before), then proves RegisterHit's own same-team gate (via SetWhoHitMe) still
+        // refuses to write after that hit lands.
         Assert.Contains(host.Logs, l => l.Contains("hits you"));
-        Assert.Same(enemy, dude.WhoHitMe);
+        Assert.Null(dude.WhoHitMe);
     }
 
     [Fact]
