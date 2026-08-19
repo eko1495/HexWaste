@@ -716,8 +716,14 @@ public sealed class CombatEngine
         return new AccidentalHit(victim, dmg);
     }
 
-    /// <summary>Apply a missed shot's accidental bystander hit (mirrors ApplyBurstExtras — HP, damage_p_proc,
-    /// kill / on-hit proc; the dude routes to GameOver).</summary>
+    /// <summary>Apply a missed shot's accidental bystander hit (mirrors ApplyBurstExtras — HP, kill /
+    /// on-hit proc; the dude routes to GameOver). NO damage_p_proc: see below.</summary>
+    // ported from fallout2-ce src/combat.cc _damage_object() (:4821) + _check_ranged_miss(): the miss
+    // reassigns attack->defender to the bystander while attack->oops keeps the INTENDED target
+    // (:3485), so the defender damage call at :4723 passes `defender != oops` = true and the proc gate
+    // `if (!a4)` (:4847) skips SCRIPT_PROC_DAMAGE entirely. The collateral victim takes the HP loss and
+    // the on-hit path, but never its damage proc (F12, fixed 2026-08-15). The fork's PR #493 inverts a
+    // DIFFERENT call site's polarity and does not change this branch's outcome.
     private void ApplyAccidentalHit(AccidentalHit acc, MapObject attacker)
     {
         if (acc.Damage <= 0 || acc.Victim.IsDead)
@@ -725,9 +731,6 @@ public sealed class CombatEngine
         MapObject? dude = _host.Dude;
         acc.Victim.CurrentHp -= acc.Damage;
         _host.Log($"The shot goes wide and hits the {_host.ObjectName(acc.Victim)} for {acc.Damage} damage.");
-        if (acc.Victim != dude && acc.Victim.Sid != -1)
-            foreach (string line in _host.RunDamageProc(acc.Victim, attacker, acc.Damage))
-                _host.Log(line);
         if (acc.Victim.CurrentHp <= 0)
         {
             if (acc.Victim == dude)
@@ -1191,7 +1194,8 @@ public sealed class CombatEngine
         if ((flags & CriticalTables.DamHitSelf) != 0)
             CritFailDamage(attacker, attacker, weaponProto, "crit-fail-self");
         else if ((flags & CriticalTables.DamExplode) != 0)
-            Explode(self.HexTile, self, weaponProto?.Weapon?.MinDamage ?? 1, weaponProto?.Weapon?.MaxDamage ?? 6, 1);
+            Explode(self.HexTile, self, weaponProto?.Weapon?.MinDamage ?? 1, weaponProto?.Weapon?.MaxDamage ?? 6, 1,
+                selfDamageProcFor: self);
 
         if ((flags & CriticalTables.DamHurtSelf) != 0)
             ApplyCritFailDamage(attacker, attacker, _rng.Next(1, 6), weaponProto, "crit-fail-self");
@@ -1227,11 +1231,23 @@ public sealed class CombatEngine
     // DAM_HURT_SELF is a separate branch that just adds randomBetween(1, 5) to attackerDamage — which
     // starts at 0 — so a HURT_SELF fumble is worth exactly 1-5 and takes no damage roll. This method is
     // the HIT_SELF/RANDOM_HIT half; the HURT_SELF half calls ApplyCritFailDamage directly with the 1-5.
+    // ported from fallout2-ce src/combat.cc attackComputeDamage(): the reference passes
+    // bonusDamageMultiplier = 2 (combat.cc:4230 for HIT_SELF, :4260 for RANDOM_HIT), which multiplies at
+    // :4586 and is undone by the `damage /= 2` at :4601 — a net x1, i.e. the FULL rolled figure. Our
+    // critMultiplier feeds the same `raw * critMultiplier / 2` shape, so 2 is what reproduces vanilla;
+    // passing 1 halved every crit-failure hit (F11, fixed 2026-08-15). Confirmed byte-identical
+    // against tests/golden-combat: no committed fixture's fumble sets DAM_HIT_SELF/DAM_RANDOM_HIT
+    // (the one crit-failure fixture, arcaves-crit-fail-day6, fumbles to flags=0x8000, LOSE_TURN
+    // only), so this branch has zero golden-fixture blast radius today — proven only by the two
+    // mutation-verified unit tests below.
+    // CARRIED DIVERGENCE: for a RANGED fumble the reference rolls attack->ammoQuantity times
+    // (a burst self-hits once per round); we roll once. Changing the roll COUNT changes the RNG draw
+    // count, so it is its own cycle — see docs/BACKLOG.md.
     private void CritFailDamage(CritterState attacker, CritterState victimState, ProtoInfo? weaponProto, string tag)
     {
         int dmg = weaponProto?.Weapon is { } w
-            ? CombatMath.RollWeaponDamage(_rng, attacker, victimState, w.MinDamage, w.MaxDamage, 1, false, 0)
-            : CombatMath.RollDamage(_rng, attacker, victimState, 1, false, 0);
+            ? CombatMath.RollWeaponDamage(_rng, attacker, victimState, w.MinDamage, w.MaxDamage, 2, false, 0)
+            : CombatMath.RollDamage(_rng, attacker, victimState, 2, false, 0);
         ApplyCritFailDamage(attacker, victimState, dmg, weaponProto, tag);
     }
 
@@ -1595,7 +1611,8 @@ public sealed class CombatEngine
     /// _obj_blocking_at also yields a single object per tile, and can itself pick a wall over a
     /// critter) would have processed whichever object it found there. Not changed: judged more
     /// faithful than less, but gameplay-visible, so documented here.</summary>
-    public void Explode(int centerTile, MapObject? killer, int minDamage, int maxDamage, int radius)
+    public void Explode(int centerTile, MapObject? killer, int minDamage, int maxDamage, int radius,
+        MapObject? selfDamageProcFor = null)
     {
         const int maxTargets = 6;
         const int explosionDt = CritterStat.DamageThreshold + 6; // STAT_DAMAGE_THRESHOLD_EXPLOSION
@@ -1631,6 +1648,15 @@ public sealed class CombatEngine
         {
             if (hits >= maxTargets)
                 break;
+            // ported from fallout2-ce src/combat.cc _apply_damage() (:4738): the extras loop re-checks
+            // `(obj->data.critter.combat.results & DAM_DEAD) == 0` for every entry before processing it,
+            // because an earlier entry's damage_p_proc can kill a later one. `ordered` is a snapshot
+            // list built before any script runs, and now that the self-damage proc (F13) can run a
+            // script mid-loop, a proc that kills a not-yet-processed victim would otherwise reach
+            // `KillCritter` a second time — a double destroy_p_proc and double XP award, since
+            // KillCritter itself has no IsDead early-return.
+            if (victim.IsDead)
+                continue;
             // Line-of-sight from the blast centre (walls shield).
             (MapObject? blocker, _) = LineOfFire.Trace(centerTile, victim.HexTile,
                 t => _host.ShootBlockerAt(t, victim, victim));
@@ -1651,6 +1677,29 @@ public sealed class CombatEngine
             victim.CurrentHp -= damage;
             _host.Log($"The blast hits the {_host.ObjectName(victim)} for {damage} damage.");
             _host.Transcript($"explosion-hit: {_host.ObjectName(victim)}@{victim.HexTile} damage={damage}");
+
+            // ported from fallout2-ce src/combat.cc _damage_object() (:4847, community fix #493): the
+            // DAM_EXPLODE crit-failure branch self-damages through attackComputeDamage(attack, 1, 2)
+            // (:4231-4232) and lands in the same _apply_damage path as DAM_HIT_SELF, so the fumbling
+            // critter runs its own damage_p_proc — with itself as both damaged object and source. The
+            // proc is skipped when object and source are both party members, which for self-damage means
+            // every party member including the dude, so only an unaffiliated critter runs it. It fires
+            // BEFORE the kill check because the reference's proc gate (:4847) precedes its DAM_DEAD
+            // destroy block (:4855). selfDamageProcFor is null for every other caller — an ordinary
+            // blast has no self-damaged attacker — so this is inert by construction (F13, fixed 2026-08-15).
+            // Firing the proc before the Shove call below is NOT an arbitrary choice: for this exact
+            // event, attackComputeCriticalFailure() clears DAM_HIT (combat.cc:4180) before calling
+            // attackComputeDamage(), which then takes the attacker-damage branch and sets
+            // knockbackDistancePtr = nullptr unconditionally (combat.cc:4517) — the reference computes
+            // NO knockback for the fumbling attacker's own self-damage, so there is no reference
+            // knockback for this proc to precede or follow. Explode()'s unconditional Shove call below
+            // is inherited from the shared grenade-blast path (`actionExplode` / `_compute_explosion_*`,
+            // see the class-level doc comment above), not from this crit-failure event, so it has no
+            // reference ordering to match here either way.
+            if (victim == selfDamageProcFor && victim.Sid != -1
+                && victim != _host.Dude && !_host.PartyMembers.Contains(victim))
+                foreach (string line in _host.RunDamageProc(victim, victim, damage))
+                    _host.Log(line);
 
             if ((victim.Flags & OBJECT_MULTIHEX) == 0)
                 Shove(centerTile, victim, damage / 10);
