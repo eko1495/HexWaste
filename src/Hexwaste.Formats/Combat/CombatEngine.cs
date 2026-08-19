@@ -2720,6 +2720,25 @@ public sealed class CombatEngine
                 StartNewRound();
                 if (_order.Count == 0)
                     return; // nothing left (CombatShouldEnd guards the real end)
+                // Task 3 (correction, round 2): ported from fallout2-ce src/combat.cc _combat()'s
+                // own round loop — `} while (!_combat_should_end());` (:3446) — checked once per
+                // round, right after the round transition (_combat_sequence()/StartNewRound here),
+                // BEFORE processing the new round's actors. Without this, a round with nothing left
+                // to do (every remaining actor's TryEnemyAction/TryAllyAction returns false — e.g.
+                // the opposing team is already fully eliminated) falls straight through every actor,
+                // back to the top of this while(true), and into ANOTHER StartNewRound() — all inside
+                // this single StepTurnOrder() call, with no return to the caller in between. The
+                // caller-side CombatShouldEnd() check below UpdateCombat's StepTurnOrder() call never
+                // gets a chance to run until this loop itself gives up — which, for a dude-absent
+                // brawl, is only the unrelated MaxSpectatorBrawlRounds stalemate cap. Traced live: an
+                // already-decided fight (team 1 fully dead) spun from round 7 to round 100 with the
+                // EXACT SAME sequence of prior attack transcripts, byte-identical up to that point —
+                // confirming this was a control-flow gap, not a fidelity/perception issue.
+                if (CombatShouldEnd())
+                {
+                    EndCombat();
+                    return;
+                }
             }
 
             MapObject actor = _order[_orderIndex];
