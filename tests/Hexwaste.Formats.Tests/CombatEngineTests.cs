@@ -2414,6 +2414,231 @@ public class CombatEngineTests
     }
 
     [Fact]
+    public void DudeBurstCritFailureAppliesEffectsAndLosesTheTurn()
+    {
+        // F26 (Test A): the burst's own inception roll (RollBurst, ported from combat.cc:3703-3720
+        // _compute_spray — the ALREADY-EXISTING detection, unchanged here) aborts on a
+        // CRITICAL_FAILURE. This pins that the abort now reaches the shared crit-fail effects
+        // dispatch every attack shape reaches (combat.cc:3933-3934 case ROLL_CRITICAL_FAILURE ->
+        // attackComputeCriticalFailure), instead of silently discarding the fumble.
+        // SequenceRng: skill 0 keeps accuracy at/near the floor so the inception d100=100 lands well
+        // below it — delta = accuracy-100 is a large negative, so -delta/10 is large too, and the
+        // trigger roll=1 always lands the fumble (a high-accuracy shooter would make -delta/10 too
+        // small for a fixed roll=1 to reliably clear — this is why skill is pinned low here rather
+        // than left at a "normal" value). severity=30 (with Luck 0 the Luck-shifted chance is
+        // 30+25=55 -> CriticalFailure.Severity bucket 2; row 0 (unarmed/default weapon
+        // criticalFailureType) cols 1 AND 2 are both 32768 = DamLoseTurn only, matching the existing
+        // single-shot CriticalFailureFiresOnAMissAndHonorsTheDudeDay6Gate recipe).
+        var host = new FakeCombatHost { CriticalsEnabled = true, DudeCritFailuresEnabled = true, LoadedAmmoCount = 10 };
+        MapObject dude = host.SetDude(NewCritter(20100, hp: 30, ap: 10, skill: 0));
+        MapObject enemy = host.AddCritter(NewCritter(HexGrid.TileInDirection(20100, 0), hp: 500));
+        host.Equipped = MakeBurstWeapon(rounds: 10, apCost2: 6, minDmg: 10, maxDmg: 10);
+        var engine = new CombatEngine(host, new SequenceRng(100, 1, 30));
+
+        Assert.True(engine.TryBurst(enemy));
+
+        Assert.Contains(host.Transcripts, t => t.StartsWith("crit-fail: ") && t.Contains("flags=0x8000"));
+        Assert.Contains(host.Transcripts, t => t.StartsWith("burst ") && t.Contains("hit=0 damage=0"));
+        Assert.Equal(500, enemy.CurrentHp);   // the burst aborted — nothing connected
+        Assert.Equal(0, engine.DudeAp);       // DamLoseTurn zeroes the pool that matters for the dude (:369-370)
+    }
+
+    [Fact]
+    public void BurstHitSelfFumbleRollsDamageOncePerRoundSpent()
+    {
+        // F15 (combat.cc:4229 ternary + :4589 loop): a burst that fumbles into DAM_HIT_SELF rolls
+        // weapon damage once per round SPENT (combat.cc:3713 assigns *roundsSpentPtr = ammoQuantity
+        // BEFORE the inception roll, so the count holds even though the aborted burst connects with
+        // nothing — "rounds spent", not "rounds hit"). PRIMARY assertion is the DRAW COUNT, not the
+        // damage total: a total-only assertion would still pass if the roll count silently became 1
+        // and RollWeaponDamage's fixed 10-per-round happened to match some other total — this is
+        // exactly the shape of bug that hid F11 for months.
+        // Weapon: burst, 9 rounds, CriticalFailureType 1 (row 1 in _cf_table). skill 0 keeps accuracy
+        // at the floor so the d100=100 inception roll is a guaranteed miss (mirrors
+        // DudeBurstCritFailureAppliesEffectsAndLosesTheTurn's recipe). SequenceRng(100, 1, 80): 100 =
+        // inception d100 (miss), 1 <= -delta/10 (CRITICAL_FAILURE), severity raw 80 -> with Luck 0 the
+        // chance is 80+25=105 -> CriticalFailure.Severity bucket 4 -> _cf_table row 1 col 4 = 65536 =
+        // DAM_HIT_SELF exactly (same severity recipe as HitSelfFumbleStillRollsWeaponDamage). minDmg =
+        // maxDmg = 10 makes the per-round damage draw deterministic regardless of its returned value.
+        var w = new WeaponProtoStats(0, 10, 10, 0, 40, 40, 0, 0, 5, 6, 9, 0, -1, 30, 0, CriticalFailureType: 1);
+        var proto = new ProtoInfo(0x09, 0, 0x06000000, 0, 0x76, 3, Weapon: w);
+        var item = new MapObject
+        {
+            Id = 9, HexTile = 0, X = 0, Y = 0, Frame = 0, Rotation = 0,
+            Fid = 0x06000000, Flags = 0, Pid = 0x09, Sid = -1, AmmoQuantity = 10,
+        };
+        var host = new FakeCombatHost { CriticalsEnabled = true, DudeCritFailuresEnabled = true, LoadedAmmoCount = 10 };
+        MapObject dude = host.SetDude(NewCritter(20100, hp: 200, ap: 12, skill: 0));
+        MapObject enemy = host.AddCritter(NewCritter(HexGrid.TileInDirection(20100, 0), hp: 500));
+        host.Equipped = (proto, item);
+        var rng = new RecordingRng(new SequenceRng(100, 1, 80));
+        var engine = new CombatEngine(host, rng);
+
+        Assert.True(engine.TryBurst(enemy));
+
+        Assert.Contains(host.Transcripts, t => t.StartsWith("crit-fail: ") && t.Contains("flags=0x10000"));
+        Assert.Contains(host.Transcripts, t => t.StartsWith("crit-fail-self:"));
+        // n = min(loadedAmmo 10, weapon.Rounds 9) = 9 rounds spent -> 9 weapon-damage draws (10, 11),
+        // not the 1 a single-shot/pre-F15 path would take.
+        Assert.Equal(9, rng.Draws.Count(d => d == (10, 11)));
+        Assert.Equal(500, enemy.CurrentHp);  // the fumble hits the ATTACKER, not the intended target
+        Assert.Equal(110, dude.CurrentHp);   // 200 − 9×10, the full per-round-spent damage
+    }
+
+    [Fact]
+    public void SingleShotHitSelfFumbleStillRollsExactlyOnce()
+    {
+        // Non-regression B: a single-shot ranged fumble takes the default roundCount=1 path unchanged.
+        // Identical recipe/assertions to HitSelfFumbleStillRollsWeaponDamage, plus the explicit draw-count
+        // check this task adds.
+        var host = new FakeCombatHost
+        {
+            CriticalsEnabled = true,
+            DudeCritFailuresEnabled = true,
+            LoadedAmmoCount = 10,
+            Equipped = MakeGun(critFailType: 1),
+        };
+        MapObject dude = host.SetDude(NewCritter(20100, hp: 30, ap: 10));
+        MapObject enemy = host.AddCritter(NewCritter(HexGrid.TileInDirection(20100, 0), hp: 100));
+        var rng = new RecordingRng(new SequenceRng(100, 1, 80));
+        var engine = new CombatEngine(host, rng);
+
+        Assert.True(engine.TryAttack(enemy));
+
+        Assert.Equal(1, rng.Draws.Count(d => d == (5, 13))); // MakeGun's min 5 .. max 12 inclusive
+        Assert.Equal(18, dude.CurrentHp); // 30 − 12, the FULL weapon-damage roll, exactly one draw
+    }
+
+    [Fact]
+    public void MeleeHitSelfFumbleStillRollsExactlyOnce()
+    {
+        // Non-regression C: an unarmed/melee fumble also takes the default roundCount=1 path, doubly
+        // inert per the reference — attackType != ATTACK_TYPE_RANGED collapses ammoQuantity to 1 at
+        // combat.cc:4229 regardless of anything this task plumbs. Uses CriticalFailureAppliesTheTableEffect's
+        // recipe (unarmed, row 0) but at a severity that lands DAM_HIT_SELF instead of CRIP_RANDOM: row 0
+        // col 4 doesn't carry HIT_SELF in the table, so we exercise this through a melee WEAPON
+        // (criticalFailureType 1, row 1) with 0 rounds/no burst — RollAttack's ordinary single-hit path.
+        var host = new FakeCombatHost { CriticalsEnabled = true, DudeCritFailuresEnabled = true };
+        MapObject dude = host.SetDude(NewCritter(20100, hp: 30, ap: 10));
+        MapObject enemy = host.AddCritter(NewCritter(HexGrid.TileInDirection(20100, 0), hp: 100));
+        var w = new WeaponProtoStats(0, 3, 8, 0, 1, 1, 0, 0, 3, 0, 0, 0, -1, 0, 0, CriticalFailureType: 1);
+        var proto = new ProtoInfo(0x0A, 0, 0x06000000, 0, 0x03, 3, Weapon: w); // ext 0x03 = swing melee anim
+        var item = new MapObject { Id = 10, HexTile = 0, X = 0, Y = 0, Frame = 0, Rotation = 0, Fid = 0x06000000, Flags = 0, Pid = 0x0A, Sid = -1, AmmoQuantity = -1 };
+        host.Equipped = (proto, item);
+        var rng = new RecordingRng(new SequenceRng(100, 1, 80));
+        var engine = new CombatEngine(host, rng);
+
+        Assert.True(engine.TryAttack(enemy));
+
+        Assert.Equal(1, rng.Draws.Count(d => d == (3, 9))); // min 3 .. max 8 inclusive, exactly one draw
+        Assert.Equal(22, dude.CurrentHp); // 30 − 8, the FULL weapon-damage roll
+    }
+
+    private static System.Reflection.MethodInfo TryAllyBurstMethod() => typeof(CombatEngine).GetMethod(
+        "TryAllyBurst", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!;
+
+    private static System.Reflection.MethodInfo TryEnemyBurstMethod() => typeof(CombatEngine).GetMethod(
+        "TryEnemyBurst", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!;
+
+    private static void SetActingAllyAp(CombatEngine engine, int ap) => typeof(CombatEngine)
+        .GetField("_actingAllyAp", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!
+        .SetValue(engine, ap);
+
+    private static void SetActingEnemyAp2(CombatEngine engine, int ap) => typeof(CombatEngine)
+        .GetField("_actingEnemyAp", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!
+        .SetValue(engine, ap);
+
+    [Fact]
+    public void AllyBurstCritFailureAppliesEffectsAndLosesTheTurn()
+    {
+        // F26 (Test B, ally half): the coverage brief flags THIS as the test that catches "wired
+        // one of three call sites" — driven directly via reflection (like RegisterHit/DangerSource
+        // above) since routing this exact RNG sequence through the full AI turn loop would be
+        // RNG-fragile (unrelated AI decisions share the same rng instance). Same recipe as the dude
+        // test: inception=100, trigger=1, severity=30 -> row0 col2 = DamLoseTurn (32768).
+        var host = new FakeCombatHost { CriticalsEnabled = true, LoadedAmmoCount = 10 };
+        host.SetDude(NewCritter(20100, hp: 30, ap: 10));
+        MapObject ally = host.AddAlly(NewCritter(HexGrid.TileInDirection(20100, 2), hp: 30, ap: 10, skill: 0),
+            CompanionAi.Default with { AreaAttack = AreaAttack.Always });
+        MapObject enemy = host.AddCritter(NewCritter(HexGrid.TileInDirection(20100, 0), hp: 500));
+        (ProtoInfo proto, MapObject item) = MakeBurstWeapon(rounds: 10, apCost2: 6, minDmg: 10, maxDmg: 10);
+        var engine = new CombatEngine(host, new SequenceRng(100, 1, 30));
+        SetActingAllyAp(engine, 10);
+
+        CritterState attacker = host.GetCritterState(ally)!;
+        CritterState defender = host.GetCritterState(enemy)!;
+        int distance = HexGrid.Distance(ally.HexTile, enemy.HexTile);
+        object? result = TryAllyBurstMethod().Invoke(engine,
+            [ally, enemy, attacker, defender, proto, item, distance, 0, AreaAttack.Always]);
+
+        Assert.True((bool)result!);
+        Assert.Contains(host.Transcripts, t => t.StartsWith("crit-fail: ") && t.Contains("flags=0x8000"));
+        Assert.Contains(host.Transcripts, t => t.StartsWith("ally-burst") && t.Contains("hit=0 damage=0"));
+        Assert.Equal(500, enemy.CurrentHp);
+        Assert.Equal(0, (int)typeof(CombatEngine)
+            .GetField("_actingAllyAp", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!
+            .GetValue(engine)!);
+    }
+
+    [Fact]
+    public void EnemyBurstCritFailureAppliesEffectsAndLosesTheTurn()
+    {
+        // F26 (Test B, enemy half). Same shape as the ally test above.
+        var host = new FakeCombatHost { CriticalsEnabled = true, LoadedAmmoCount = 10 };
+        MapObject dude = host.SetDude(NewCritter(20100, hp: 500, ap: 10));
+        MapObject enemy = host.AddCritter(NewCritter(HexGrid.TileInDirection(20100, 0), hp: 30, ap: 10, skill: 0));
+        (ProtoInfo proto, MapObject item) = MakeBurstWeapon(rounds: 10, apCost2: 6, minDmg: 10, maxDmg: 10);
+        var engine = new CombatEngine(host, new SequenceRng(100, 1, 30));
+        SetActingEnemyAp2(engine, 10);
+
+        CritterState attacker = host.GetCritterState(enemy)!;
+        CritterState defender = host.GetCritterState(dude)!;
+        int distance = HexGrid.Distance(enemy.HexTile, dude.HexTile);
+        var ai = new AiPacket(13, "Thug", MinToHit: 0, MinHp: 0, 0, "", "", AreaAttackMode: "always");
+        object? result = TryEnemyBurstMethod().Invoke(engine,
+            [enemy, dude, attacker, defender, proto, item, distance, 0, ai]);
+
+        Assert.True((bool)result!);
+        Assert.Contains(host.Transcripts, t => t.StartsWith("crit-fail: ") && t.Contains("flags=0x8000"));
+        Assert.Contains(host.Transcripts, t => t.StartsWith("enemy-burst") && t.Contains("hit=0 damage=0"));
+        Assert.Equal(500, dude.CurrentHp);
+        Assert.Equal(0, (int)typeof(CombatEngine)
+            .GetField("_actingEnemyAp", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!
+            .GetValue(engine)!);
+    }
+
+    [Fact]
+    public void BurstThatDoesNotCritFailIsUnchanged_Pin()
+    {
+        // F26 (Test C — a PIN, not a regression test): a burst whose inception roll does NOT land on
+        // a CRITICAL_FAILURE must be entirely untouched by this change — same rounds fired, same
+        // hits, same damage, and no extra RNG draw beyond what the pre-existing detection already
+        // drew. SequenceRng: inception=1 (delta = accuracy-1, positive for any accuracy > 1, so the
+        // ROLL_SUCCESS/ROLL_CRITICAL_SUCCESS branch runs, never the abort), crit-success check=100
+        // (fails for any realistic accuracy/criticalChance, so this stays a PLAIN success — no +20),
+        // then 1 repeating for every per-round hit check (1 <= accuracy always hits) and every damage
+        // roll (min==max==10 makes the damage roll deterministic regardless of the draw). Same
+        // weapon/ammo shape (rounds:10, apCost2:6) as the abort tests above, so n=10, centerRounds=3,
+        // mainTargetExposure=3 -> 3 hits * 10 damage = 30, exactly matching the pre-existing
+        // CriticalsEnabled:false burst-hit fixtures' numbers (e.g. BurstFiresAtMostTheLoadedAmmoOrWeaponRounds's
+        // sibling tests), which is the "unchanged" being pinned.
+        var host = new FakeCombatHost { CriticalsEnabled = true, LoadedAmmoCount = 10 };
+        host.SetDude(NewCritter(20100, hp: 30, ap: 12, skill: 80));
+        MapObject enemy = host.AddCritter(NewCritter(HexGrid.TileInDirection(20100, 0), hp: 500));
+        host.Equipped = MakeBurstWeapon(rounds: 10, apCost2: 6, minDmg: 10, maxDmg: 10);
+        var rng = new RecordingRng(new SequenceRng(1, 100, 1));
+        var engine = new CombatEngine(host, rng);
+
+        Assert.True(engine.TryBurst(enemy));
+
+        Assert.DoesNotContain(host.Transcripts, t => t.StartsWith("crit-fail:"));
+        Assert.Contains(host.Transcripts, t => t.StartsWith("burst ") && t.Contains("hit=3 damage=30"));
+        Assert.Equal(6, engine.DudeAp);       // ordinary AP spend, no lose-turn zeroing
+        // Exactly the pre-existing draw count: inception + crit-success-check + 3×(hit-check + damage-roll).
+        Assert.Equal(8, rng.Draws.Count);
+    }
+
+    [Fact]
     public void EndPlayerTurnWaitsForAPendingBurstToResolve()
     {
         // #9 review (HIGH): the turn must not hand over to the enemy while the dude's

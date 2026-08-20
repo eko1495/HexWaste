@@ -491,8 +491,12 @@ public sealed class CombatEngine
         dude.Rotation = HexGrid.RotationTo(dude.HexTile, target.HexTile);
 
         int ammoBefore = _host.WeaponAmmo(weaponProto, weaponItem);
-        (int accuracy, int roundsFired, int roundsHit, int totalDamage, List<BurstExtra> extras) =
+        (int accuracy, int roundsFired, int roundsHit, int totalDamage, List<BurstExtra> extras, bool loseTurn) =
             RollBurst(dude, target, attacker, defender, weaponProto, weaponItem, distance, crittersInPath, ammoBefore);
+        // F26: a burst that critical-fails on its inception roll aborts with no hits; the fumble can also
+        // cost the dude the rest of its turn (matches the single-shot pattern at :369-370).
+        if (loseTurn)
+            _dudeAp = 0;
 
         // Ammo is consumed in a single batch AT RESOLVE (after damage, combat.cc:5349)
         // — burst deliberately differs from the single-shot eager decrement in TryAttack.
@@ -521,7 +525,7 @@ public sealed class CombatEngine
     /// fresh roll per hit round, summed (combat.cc:4589-4615). Returns the bullets
     /// fired (always n — they leave the barrel even on an abort), the rounds that
     /// connected, and the accumulated damage.</summary>
-    private (int Accuracy, int RoundsFired, int RoundsHit, int TotalDamage, List<BurstExtra> Extras) RollBurst(
+    private (int Accuracy, int RoundsFired, int RoundsHit, int TotalDamage, List<BurstExtra> Extras, bool LoseTurn) RollBurst(
         MapObject dudeObj, MapObject targetObj, CritterState attacker, CritterState defender,
         ProtoInfo weaponProto, MapObject weaponItem, int distance, int crittersInPath, int loadedAmmo,
         bool attackerIsDude = true) // P51: an ally burst (area-attack) passes false
@@ -541,7 +545,22 @@ public sealed class CombatEngine
             if (delta < 0)
             {
                 if (_rng.Next(1, 101) <= -delta / 10)
-                    return (accuracy, n, 0, 0, []); // CRITICAL_FAILURE: burst aborts, bullets still spent
+                {
+                    // CRITICAL_FAILURE: burst aborts, bullets still spent. The detection above is the
+                    // existing, already-faithful port of _compute_spray's inception roll (combat.cc:3703,
+                    // early-returns at :3718-3719); this call is what was missing — the shared dispatch
+                    // every attack shape reaches (combat.cc:3933-3934 case ROLL_CRITICAL_FAILURE) applies
+                    // attackComputeCriticalFailure's effects. No second trigger roll: the roll just above
+                    // IS the trigger, so this calls the effects-only half directly (see
+                    // ApplyCritFailureEffects). Folding it in here — rather than at each of the three call
+                    // sites — makes it structurally impossible for a burst to abort without effects.
+                    // combat.cc:3713 — *roundsSpentPtr = ammoQuantity is assigned BEFORE the inception
+                    // roll, so `n` (rounds spent, not rounds hit — a fumbled burst connects with none)
+                    // is exactly the ammoQuantity a DAM_HIT_SELF/DAM_RANDOM_HIT branch rolls damage for
+                    // (combat.cc:4229/:4259 ternary, ATTACK_TYPE_RANGED always true for a burst).
+                    bool loseTurn = ApplyCritFailureEffects(attacker, attackerIsDude, weaponProto, weaponItem, n);
+                    return (accuracy, n, 0, 0, [], loseTurn);
+                }
             }
             else if (_rng.Next(1, 101) <= delta / 10 + attacker.Stat(CritterStat.CriticalChance))
             {
@@ -591,7 +610,7 @@ public sealed class CombatEngine
         List<BurstExtra> extras = ConeCollateral(dudeObj, targetObj, attacker, weaponProto,
             weaponItem, ammo, centerRounds - roundsHit, leftRounds, rightRounds, accuracy, diffMod);
 
-        return (accuracy, n, roundsHit, totalDamage, extras);
+        return (accuracy, n, roundsHit, totalDamage, extras, false);
     }
 
     /// <summary>Walk the burst cone's three lines (center/left/right) and roll collateral
@@ -1161,6 +1180,23 @@ public sealed class CombatEngine
         if (!critFail)
             return false;
 
+        return ApplyCritFailureEffects(attacker, attackerIsDude, weaponProto, weaponItem);
+    }
+
+    /// <summary>The critical-failure EFFECTS (combat.cc:4178 attackComputeCriticalFailure), split out of
+    /// <see cref="TriggerCritFailure"/> so a caller that already knows the roll landed on a fumble — without
+    /// having to re-draw the trigger — can apply them directly. Used by TriggerCritFailure itself (single
+    /// shot / melee / thrown misses, whose OWN day-gated + Jinxed roll decides the trigger above), and by
+    /// <see cref="RollBurst"/> (combat.cc:3703-3720 _compute_spray's inception roll IS the trigger — its
+    /// ROLL_CRITICAL_FAILURE return dispatches straight into attackComputeCriticalFailure at the shared
+    /// switch, combat.cc:3933-3934, with no second roll). Do not call this without first confirming the
+    /// fumble landed; it does not re-check.</summary>
+    /// <param name="roundCount">Rounds spent this attack (combat.cc:3713 `*roundsSpentPtr`), used by the
+    /// DAM_HIT_SELF/DAM_RANDOM_HIT damage rolls below (combat.cc:4229/:4259 `ammoQuantity`). Defaults to 1
+    /// so single-shot/melee/thrown callers — none of which know a burst's round count — are unchanged.</param>
+    private bool ApplyCritFailureEffects(CritterState attacker, bool attackerIsDude,
+        ProtoInfo? weaponProto, MapObject? weaponItem, int roundCount = 1)
+    {
         // combat.cc:4190 — the dude's fumble has no EFFECT before day 6 (the trigger above still drew).
         if (attackerIsDude && !_host.DudeCritFailuresEnabled)
             return false;
@@ -1194,7 +1230,7 @@ public sealed class CombatEngine
         // simplification). HURT_SELF is a SEPARATE, much milder branch: a flat 1-5, with no damage roll at
         // all. _cf_table never pairs HURT_SELF with HIT_SELF, so the two never stack.
         if ((flags & CriticalTables.DamHitSelf) != 0)
-            CritFailDamage(attacker, attacker, weaponProto, "crit-fail-self");
+            CritFailDamage(attacker, attacker, weaponProto, "crit-fail-self", roundCount);
         else if ((flags & CriticalTables.DamExplode) != 0)
             // F16: the crit-fail explode also resolves through _compute_explosion_on_extras
             // (combat.cc:3976, isFromAttacker=1) — attackSourced: true so the OTHER victims of the
@@ -1222,7 +1258,7 @@ public sealed class CombatEngine
         {
             MapObject? victim = RandomNearbyCritter(self);
             if (victim is not null && _host.GetCritterState(victim) is { } vd)
-                CritFailDamage(attacker, vd, weaponProto, "crit-fail-random-hit");
+                CritFailDamage(attacker, vd, weaponProto, "crit-fail-random-hit", roundCount);
         }
 
         // DAM_DUD / DAM_ON_FIRE are cosmetic on this slice (no jam-state / fire model) — documented.
@@ -1246,14 +1282,22 @@ public sealed class CombatEngine
     // (the one crit-failure fixture, arcaves-crit-fail-day6, fumbles to flags=0x8000, LOSE_TURN
     // only), so this branch has zero golden-fixture blast radius today — proven only by the two
     // mutation-verified unit tests below.
-    // CARRIED DIVERGENCE: for a RANGED fumble the reference rolls attack->ammoQuantity times
-    // (a burst self-hits once per round); we roll once. Changing the roll COUNT changes the RNG draw
-    // count, so it is its own cycle — see docs/BACKLOG.md.
-    private void CritFailDamage(CritterState attacker, CritterState victimState, ProtoInfo? weaponProto, string tag)
+    // F15: for a RANGED fumble the reference rolls attack->ammoQuantity times (combat.cc:4229/:4589) —
+    // a burst self-hits once per round SPENT (combat.cc:3713 assigns *roundsSpentPtr before the
+    // inception roll, so this holds even though the aborted burst connects with nothing).
+    // <paramref name="roundCount"/> defaults to 1 so single-shot/melee callers are unchanged by
+    // construction (melee is doubly inert: the reference's own ternary collapses ammoQuantity to 1 off
+    // ATTACK_TYPE_RANGED). RollBurst passes its rounds-spent count through ApplyCritFailureEffects.
+    private void CritFailDamage(CritterState attacker, CritterState victimState, ProtoInfo? weaponProto,
+        string tag, int roundCount = 1)
     {
-        int dmg = weaponProto?.Weapon is { } w
-            ? CombatMath.RollWeaponDamage(_rng, attacker, victimState, w.MinDamage, w.MaxDamage, 2, false, 0)
-            : CombatMath.RollDamage(_rng, attacker, victimState, 2, false, 0);
+        int dmg = 0;
+        for (int i = 0; i < roundCount; i++)
+        {
+            dmg += weaponProto?.Weapon is { } w
+                ? CombatMath.RollWeaponDamage(_rng, attacker, victimState, w.MinDamage, w.MaxDamage, 2, false, 0)
+                : CombatMath.RollDamage(_rng, attacker, victimState, 2, false, 0);
+        }
         ApplyCritFailDamage(attacker, victimState, dmg, weaponProto, tag);
     }
 
@@ -3753,8 +3797,11 @@ public sealed class CombatEngine
         _actingAllyAp -= apCost;
         ally.Rotation = HexGrid.RotationTo(ally.HexTile, target.HexTile);
         int ammoBefore = _host.WeaponAmmo(weaponProto, weaponItem);
-        (int acc, int fired, int hits, int total, List<BurstExtra> extras) = RollBurst(
+        (int acc, int fired, int hits, int total, List<BurstExtra> extras, bool loseTurn) = RollBurst(
             ally, target, attacker, defender, weaponProto, weaponItem, distance, crittersInPath, ammoBefore, attackerIsDude: false);
+        // F26: a burst fumble can cost the ally the rest of its turn.
+        if (loseTurn)
+            _actingAllyAp = 0;
         _pendingBurst = new PendingBurst(ally, target, weaponProto, weaponItem, ammoBefore, fired, hits, total, extras);
         _host.Transcript($"ally-burst {_host.ObjectName(ally)} -> {_host.ObjectName(target)}@{target.HexTile}"
             + $" [{_host.ObjectNameByPid(weaponProto.Pid)} {ammoBefore}rnd d{distance}]: chance={acc}% rounds={fired} hit={hits} damage={total}");
@@ -3782,8 +3829,11 @@ public sealed class CombatEngine
         _actingEnemyAp -= apCost;
         enemy.Rotation = HexGrid.RotationTo(enemy.HexTile, target.HexTile);
         int ammoBefore = _host.WeaponAmmo(weaponProto, weaponItem);
-        (int acc, int fired, int hits, int total, List<BurstExtra> extras) = RollBurst(
+        (int acc, int fired, int hits, int total, List<BurstExtra> extras, bool loseTurn) = RollBurst(
             enemy, target, attacker, defender, weaponProto, weaponItem, distance, crittersInPath, ammoBefore, attackerIsDude: false);
+        // F26: a burst fumble can cost the enemy the rest of its turn.
+        if (loseTurn)
+            _actingEnemyAp = 0;
         _pendingBurst = new PendingBurst(enemy, target, weaponProto, weaponItem, ammoBefore, fired, hits, total, extras);
         _host.Transcript($"enemy-burst {_host.ObjectName(enemy)} -> {_host.ObjectName(target)}@{target.HexTile}"
             + $" [{_host.ObjectNameByPid(weaponProto.Pid)} {ammoBefore}rnd d{distance}]: chance={acc}% rounds={fired} hit={hits} damage={total}");
