@@ -1743,11 +1743,18 @@ public sealed class CombatEngine
             // never a critter. attackSourced is the explicit opt-in that ambiguity needs; only the two
             // callers that resolve a genuine Attack (the grenade throw and the crit-fail explode) set it.
             //
-            // The party gate mirrors _damage_object's `if (!objectIsPartyMember(a1) ||
-            // !objectIsPartyMember(a5))` (:4849) exactly: skip only when BOTH victim and killer are party
-            // members. This deliberately does NOT match ApplyBurstExtras's simpler `!= dude` gate — a
-            // difference between two Hexwaste sites modelling the same reference behaviour, worth flagging
-            // rather than silently matching the nearer sibling.
+            // The party half of the gate ports _damage_object's `if (!objectIsPartyMember(a1) ||
+            // !objectIsPartyMember(a5))` (:4849): skip only when BOTH victim and killer are party members.
+            // This deliberately does NOT match ApplyBurstExtras's simpler `!= dude` gate — a difference
+            // between two Hexwaste sites modelling the same reference behaviour, worth flagging rather
+            // than silently matching the nearer sibling.
+            //
+            // DOCUMENTED DIVERGENCE (do not read the line above as "identical to :4849"): the extra
+            // `victim != _host.Dude` term has NO counterpart in the reference. :4849 is a PAIR gate only,
+            // so vanilla DOES run the dude's damage_p_proc when an enemy-sourced blast catches him. The
+            // exclusion is kept here to match the surrounding Hexwaste convention (ApplyBurstExtras, the
+            // F13 self-damage tail), not because the reference supports it. Removing it is a behaviour
+            // change that would reach nearly every fixture — see the BACKLOG entry that tracks it.
             if (attackSourced && victim != killer && victim.Sid != -1 && victim != _host.Dude
                 && !(_host.PartyMembers.Contains(victim) && killer is not null && _host.PartyMembers.Contains(killer)))
                 foreach (string line in _host.RunDamageProc(victim, killer, damage))

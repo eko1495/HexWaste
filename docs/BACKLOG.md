@@ -902,6 +902,20 @@ shape. Closing this properly needs a marker-object concept Hexwaste doesn't curr
 existing `SpawnExplosionMarker` is visual-only); documented here by the F16 implementer as a real,
 cited gap rather than implemented.
 
+**F29 — The blast/burst `damage_p_proc` gates carry a `!= dude` term the reference does not have.**
+*Effort S · re-record tier · found by the F16/F17 whole-branch review (2026-08-20).* `_damage_object`
+gates the proc as a **pair** test only — `if (!objectIsPartyMember(a1) || !objectIsPartyMember(a5))`
+(`combat.cc:4849`) — so vanilla **does** run the dude's `damage_p_proc` when an enemy-sourced blast
+or burst catches him. Every Hexwaste site that models this carries an additional `victim != dude`
+exclusion with no reference counterpart: the new F16 blast gate (`CombatEngine.cs:~1751`),
+`ApplyBurstExtras` (`:977`), and F13's self-damage tail. The F16 comment originally claimed its gate
+"mirrors :4849 exactly"; that claim was corrected in place rather than the behaviour, because
+removing the term is a real behaviour change that would reach nearly every fixture (the dude is in
+almost all of them) and deserves its own measured item. Related to F27, which tracks the *other*
+inconsistency between those same two sites — the party gate that `ApplyBurstExtras` lacks entirely.
+Closing F27 and F29 together would leave one coherent model of `_damage_object`'s proc gate instead
+of three near-misses.
+
 ### Pointer
 
 **F10 — Surveyed-but-unbuilt QoL catalogue.** *Not scheduled work.*
