@@ -783,22 +783,26 @@ no fumble can ever take both draws and the RNG stream cannot diverge. Recorded s
 either branch does not re-derive this, and so anyone who *adds* a table entry knows the order is
 wrong before they trip over a moved fixture.
 
-**F15 — BLOCKED, not merely open: reference ranged self-hits roll `attack->ammoQuantity` times per
-fumble; Hexwaste rolls once — but `ammoQuantity` is rounds *fired*, not magazine contents, so this
-is unreachable until F26 (below) ships.** *Effort S–M · re-record tier · **blocked on F26**.*
-`attackComputeDamage` initializes `int v26 = 1;` (`combat.cc:3845`) and only raises it via
-`_compute_spray(attack, accuracy, &ammoQuantity, &v26, anim)` (`:3850`), called exclusively when
-`anim == ANIM_FIRE_BURST || anim == ANIM_FIRE_CONTINUOUS`; the result is assigned at
-`attack->ammoQuantity = v26;` (`:3888`). For every **single-shot** ranged attack `v26` stays `1`, so
-`attackComputeDamage`'s `for (int index = 0; index < ammoQuantity; index++)` loop
-(`:4589`) already rolls exactly once — which is exactly what Hexwaste does today. The divergence
-this entry originally described only exists for a **burst** fumble (`ammoQuantity` = rounds fired,
-matching the F14/F15 sibling note at `:4229-4230`/`:4259-4260`), and Hexwaste's burst path cannot
-reach a crit-failure roll at all (F26) — `TriggerCritFailure` is never called from `RollBurst` or
-`TryBurst`. F15 therefore has no live code path to fix yet: closing F26 first is a prerequisite, not
-just a nearby entry. Once F26 lands, F15 becomes the burst-fumble self-hit roll-count fix described
-below and remains **re-record tier** for the same reason as before — rolling N times instead of once
-changes the RNG draw *count*, not just the resulting figure.
+**F15 — SHIPPED 2026-08-20 (`205da73`), 948 tests, combat-golden 17/17, 0 fixtures moved.** *Was
+Effort S–M · re-record tier (moved nothing — no committed burst fixture lands its inception roll on
+a fumble at its recorded seed).* Unblocked once F26 landed. Before implementing, confirmed
+**reachable and non-vacuous** rather than assumed: a plausible reading of `_compute_spray`'s early
+return on critical failure (`combat.cc:3718-3719`) could have concluded the rounds-spent out-param is
+never actually set on the fumble path, and closed this entry as unreachable instead. It isn't —
+`*roundsSpentPtr = ammoQuantity;` (`combat.cc:3713`) runs *before* the roll at `:3716`, so
+`attack->ammoQuantity` (assigned at `:3888`) carries the burst's rounds-spent count into both the
+`DAM_HIT_SELF` ternary (`:4229`) and the `DAM_RANDOM_HIT` ternary (`:4259`, an identical
+`attackType == ATTACK_TYPE_RANGED ? attack->ammoQuantity : 1`), both feeding
+`attackComputeDamage`'s per-round loop (`:4589`). Changed `CritFailDamage` (`CombatEngine.cs:1291`)
+and `ApplyCritFailureEffects` (`:1197`) to take a `roundCount` parameter (default `1`, so every
+non-burst call site is unaffected by construction), threaded through both the `DamHitSelf` and
+`DamRandomHit` branches — the reference treats the two identically, so Hexwaste now does too.
+`RollBurst`'s abort call (`:561`) passes `n`, its already-computed rounds-spent count (`:537`), as
+`roundCount`. The primary test asserts the draw *count* (9 draws of the same damage roll for a
+9-round burst), not just the resulting total, since a correct sum can hide a wrong count; it failed
+pre-change with `Expected: 9, Actual: 1` — a genuine draw-count regression, not a scaffolding
+artifact. Single-shot and melee behaviour (`roundCount` defaults to `1`) is pinned unchanged by two
+non-regression tests.
 
 **F16 — SHIPPED 2026-08-20 (`2f2c483`), 941 tests, combat-golden 17/17, 0 fixtures moved.**
 *Was Effort S–M · re-record tier (moved nothing).* `Explode`'s OTHER blast victims now run their
@@ -853,23 +857,41 @@ shoved normally (boundary-pinned by a dedicated test). Surfaced during the F13 f
 (2026-08-15): the shipped `Explode` comment already recorded the reference behaviour in prose, but
 the divergence itself was untracked, which is the same failure mode F16 exists to prevent.
 
-**F26 — Hexwaste's burst attacks never trigger critical failure at all.** *Effort M ·
-**re-record tier** · blocks F15.* `TriggerCritFailure` (`CombatEngine.cs:1153`) has exactly three
-callers, and all three are single-attack paths: `TryAttack` (`CombatEngine.cs:369`), the ally
-single-attack path (`:3671`), and the enemy single-attack path (`:3802`). `TryBurst`
-(`CombatEngine.cs:420-515`) and its `RollBurst` engine (`:524` on) have no crit-failure branch
-anywhere in them — nor do the parallel `TryAllyBurst` (`:3734`) / `TryEnemyBurst` (`:3764`) paths. In
-the reference, every attack shape reaches `attackComputeCriticalFailure` through the same shared
-`case ROLL_CRITICAL_FAILURE:` arm of the post-roll switch (`combat.cc:3933-3934`), which a burst's
-inception roll (`_compute_spray`, `:3850`) can land on exactly like a single shot's roll can — bursts
-are not exempt in vanilla. **Consequence, stated plainly: no burst attack can ever drop its weapon,
-hit itself, lose ammo, or cripple the shooter — in a game where burst-capable weapons (SMGs,
-shotguns, miniguns) are common and heavily used.** Mark **re-record tier**: wiring a crit-failure
-branch into the burst inception roll changes the RNG draw sequence for every fixture where a burst
-attack currently misses cleanly (the crit-failure check consumes/branches on the same roll that
-currently just resolves to a plain miss), so this is a deliberate, diff-reviewed re-record, not a
-byte-identical port. F15 is blocked behind this: F15's actual content (roll `ammoQuantity` times on a
-burst self-hit) has nothing to fix until a burst can reach `DAM_HIT_SELF` in the first place.
+**F26 — SHIPPED 2026-08-20 (`c5001ac`), 945 tests, combat-golden 17/17, 0 fixtures moved.** *Was
+Effort M (predicted **re-record tier**; landed **byte-identical** instead — see correction below).*
+
+**Correction to this entry's own original claims — it was wrong on two counts, and a wrong closed
+entry misleads as much as a wrong open one, so both are recorded rather than silently dropped:**
+1. It claimed `TryBurst`/`RollBurst` "have no crit-failure branch anywhere in them." **False.** The
+   detection — the inception roll, its RNG draws, the day-2 `_host.CriticalsEnabled` gate, and the
+   abort-with-bullets-spent — was already present in `RollBurst` (`CombatEngine.cs:528`, the abort at
+   `:543-563`) and was already a correct, faithful port of `_compute_spray` (`combat.cc:3703-3720`).
+   Only the *effects* half — `attackComputeCriticalFailure`'s drop/destroy/explode/cripple/self-hit
+   consequences — was missing.
+2. It claimed wiring this in "changes the RNG draw sequence for every fixture where a burst attack
+   currently misses cleanly." **False.** The detection draw already existed and is untouched by this
+   fix; a cleanly-missing burst fixture draws exactly the same random numbers it always did. Only a
+   fixture whose burst *actually lands on* a critical failure at its recorded seed could move, and
+   none of the three committed burst fixtures (`arcaves-burst-smg`, `arcaves-burst-shotgun`,
+   `denbus2-burst-collateral`) does — hence 0/3 moved, not a coincidence of scope.
+
+**Lesson, same shape as F11's:** a prediction about which fixtures a change will move, and about what
+code does or doesn't already exist, is a factual claim that needs the same verification as everything
+else in this file — both went unchecked here and were wrong.
+
+Implementation: `TriggerCritFailure` (single-shot/melee/thrown trigger, `CombatEngine.cs:1172`) was
+split into itself (still owns its own day-gated + Jinxed trigger roll) plus a new
+`ApplyCritFailureEffects` (`:1197`, effects only, no re-roll), which it now calls once its trigger
+lands. `RollBurst`'s abort branch (`:561`) calls `ApplyCritFailureEffects` directly — no second roll,
+because the burst's own inception roll already *is* the trigger in the reference: `_compute_spray`'s
+`ROLL_CRITICAL_FAILURE` return dispatches straight into the shared `case ROLL_CRITICAL_FAILURE:` arm
+of `attackCompute`'s post-roll switch (`combat.cc:3933-3934`), with no independent trigger draw the
+way single-shot's `attackCompute` has at `:3849`. The effects call lives inside `RollBurst`'s one
+abort branch rather than at each of the three call sites (`TryBurst` `:420`, `TryAllyBurst` `:3785`,
+`TryEnemyBurst` `:3818`), making it structurally impossible for a burst path to abort without
+applying effects. `RollBurst`'s return tuple grew a `bool LoseTurn` member so the AP-zeroing
+consequence reaches all three callers, mirroring the existing single-shot pattern at `:369-370`.
+F15 (above) was the burst-fumble self-hit roll-count fix this unblocked.
 
 **F27 — `ApplyBurstExtras` lacks the party gate the new F16 `Explode` code carries.** *Effort S ·
 tracked, not fixed.* `_damage_object` skips `SCRIPT_PROC_DAMAGE` when **both** the victim and the
