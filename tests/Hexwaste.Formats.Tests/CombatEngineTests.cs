@@ -2874,6 +2874,125 @@ public class CombatEngineTests
     }
 
     [Fact]
+    public void ExplodeDoesNotShoveTheSelfDamagedAttacker()
+    {
+        // F17: ported from fallout2-ce src/combat.cc attackComputeCriticalFailure (:4180), which clears
+        // DAM_HIT as its very first statement, before calling attackComputeDamage (:4513-4517): with
+        // DAM_HIT cleared, attackComputeDamage takes the attacker-damage (else) branch and sets
+        // knockbackDistancePtr = nullptr UNCONDITIONALLY. The reference therefore computes ZERO
+        // knockback for a fumbler's own self-damage. Explode()'s per-victim tail previously called
+        // Shove() for every non-multihex victim including the fumbler standing on the blast tile —
+        // where HexGrid.RotationTo(centerTile, centerTile) is degenerate and can push it in an
+        // arbitrary direction. Assert BOTH the tile is unchanged AND no knockback: line names it: a
+        // tile-only assertion would pass even with the bug present, since a degenerate rotation can
+        // resolve back to the starting tile.
+        const int center = 20100;
+        var host = new FakeCombatHost();
+        MapObject fumbler = host.AddCritter(NewCritter(center, hp: 100));
+        int start = fumbler.HexTile;
+
+        var engine = new CombatEngine(host, new MinRng()); // MinRng: damage == minDamage exactly, no DT/DR
+        engine.Explode(center, killer: null, minDamage: 50, maxDamage: 50, radius: 1, selfDamageProcFor: fumbler);
+
+        Assert.Equal(start, fumbler.HexTile);
+        Assert.DoesNotContain(host.Transcripts, t => t.StartsWith("knockback:") && t.Contains($"@{start}"));
+    }
+
+    [Fact]
+    public void ExplodeStillShovesOtherBlastVictims()
+    {
+        // Boundary pin (F17): the self-damage suppression must be scoped to selfDamageProcFor only.
+        // "Delete the Shove() call" would also make ExplodeDoesNotShoveTheSelfDamagedAttacker above
+        // pass, so this confirms an ordinary blast victim (not the fumbler) is still knocked back.
+        // This is expected to pass BOTH before and after the fix — it is a boundary pin, not a
+        // regression test.
+        const int center = 20100;
+        var host = new FakeCombatHost();
+        MapObject fumbler = host.AddCritter(NewCritter(center, hp: 100));
+        int otherTile = Step(center, 0, 1);
+        MapObject other = host.AddCritter(NewCritter(otherTile, hp: 100));
+        int otherStart = other.HexTile;
+
+        var engine = new CombatEngine(host, new MinRng());
+        engine.Explode(center, killer: null, minDamage: 50, maxDamage: 50, radius: 2, selfDamageProcFor: fumbler);
+
+        Assert.NotEqual(otherStart, other.HexTile);
+        Assert.Contains(host.Transcripts, t => t.StartsWith("knockback:") && t.Contains($"@{otherStart}"));
+    }
+
+    [Fact]
+    public void ExplodeRunsAnAttackSourcedVictimsDamageProc()
+    {
+        // F16: the sibling of F13/#493's self-damage proc. ported from fallout2-ce src/combat.cc
+        // _apply_damage() extras loop (:4751, community fix #493): every OTHER critter caught in an
+        // attack-sourced blast (a thrown grenade, or a crit-fail explode's other victims) also runs its
+        // damage_p_proc — source = the blast's ATTACKER (attack->attacker at :4751), never the victim
+        // itself (that shape is F13's self-damage branch, and getting it backwards is the easy mistake
+        // here).
+        //
+        // At bare e97087b, the flag passed to _damage_object() at this site is `attack->defender ==
+        // attack->oops` (:4751 pre-#493) — for this event `defender == oops` (Explode() never diverges a
+        // victim from what it targeted), so the flag is TRUE and _damage_object's `if (!a4)` gate (:4847)
+        // suppresses the proc entirely: at bare e97087b this proc would NOT run. Hexwaste has adopted
+        // #493's polarity throughout (see F13's comment above), which replaces all three site-specific
+        // oops/defender expressions with one `hitUnintendedTarget = attack->defender != attack->
+        // intendedTarget` (:4751 post-#493) — always false here for the same reason — so under the
+        // polarity Hexwaste carries, the proc DOES run. Hexwaste took the attacker-self half of this (F13)
+        // and not the extras half; this is the other half.
+        const int center = 20100;
+        var host = new FakeCombatHost();
+        MapObject attacker = host.AddCritter(NewCritter(tile: Step(center, 0, 5), hp: 100)); // the thrower/fumbler; outside radius 1, not itself a victim
+        MapObject bystander = host.AddCritter(NewCritter(tile: center, hp: 100));
+        bystander.Sid = 9; // unaffiliated scripted critter: its damage_p_proc can run
+
+        var engine = new CombatEngine(host, new MinRng()); // MinRng: damage == minDamage exactly, no DT/DR
+        engine.Explode(center, killer: attacker, minDamage: 10, maxDamage: 10, radius: 1, attackSourced: true);
+
+        Assert.Contains(host.DamageProcCalls, c => c.Target == bystander && c.Source == attacker);
+    }
+
+    [Fact]
+    public void ExplodeSkipsAPartyMemberVictimOfAPartyMemberAttacker()
+    {
+        // Boundary pin (F16): mirrors _damage_object's party gate exactly (combat.cc:4849,
+        // `if (!objectIsPartyMember(a1) || !objectIsPartyMember(a5))`) — skip only when BOTH the victim
+        // (a1) and the blast's attacker (a5) are party members. May pass both before and after the fix
+        // (before: no extras proc ran for anyone; after: this specific pairing is still gated off) — this
+        // pins the gate, it does not by itself prove the fix landed.
+        const int center = 20100;
+        var host = new FakeCombatHost();
+        MapObject attacker = host.AddCritter(NewCritter(tile: Step(center, 0, 5), hp: 100));
+        host.Allies.Add(attacker); // party-member attacker
+        MapObject victim = host.AddCritter(NewCritter(tile: center, hp: 100));
+        victim.Sid = 3;
+        host.Allies.Add(victim); // party-member victim
+
+        var engine = new CombatEngine(host, new MinRng());
+        engine.Explode(center, killer: attacker, minDamage: 10, maxDamage: 10, radius: 1, attackSourced: true);
+
+        Assert.DoesNotContain(host.DamageProcCalls, c => c.Target == victim);
+    }
+
+    [Fact]
+    public void ExplodeRunsNoVictimProcsForANonAttackSourcedBlast()
+    {
+        // Boundary pin (F16): an environmental blast (a scripted `explosion` opcode, or a planted-charge
+        // detonation) is NOT attack-sourced in Hexwaste's model — Explode() defaults attackSourced to
+        // false, and every real environmental caller leaves it at that default. May pass both before and
+        // after the fix (before: no extras proc existed at all; after: this call opts out) — this pins the
+        // scope of the fix, it does not by itself prove the fix landed.
+        const int center = 20100;
+        var host = new FakeCombatHost();
+        MapObject victim = host.AddCritter(NewCritter(tile: center, hp: 100));
+        victim.Sid = 4;
+
+        var engine = new CombatEngine(host, new MinRng());
+        engine.Explode(center, killer: null, minDamage: 10, maxDamage: 10, radius: 1); // attackSourced defaults false
+
+        Assert.DoesNotContain(host.DamageProcCalls, c => c.Target == victim);
+    }
+
+    [Fact]
     public void NoCriticalFailureWithoutCriticalsOrJinxed()
     {
         // The inert invariant: a non-Jinxed dude before day 2 (CriticalsEnabled false) draws NOTHING

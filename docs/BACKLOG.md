@@ -783,61 +783,138 @@ no fumble can ever take both draws and the RNG stream cannot diverge. Recorded s
 either branch does not re-derive this, and so anyone who *adds* a table entry knows the order is
 wrong before they trip over a moved fixture.
 
-**F15 — Reference ranged self-hits roll `attack->ammoQuantity` times per fumble; Hexwaste rolls
-once.** *Effort S–M · **re-record tier**.* The reference's `attackComputeDamage` closes a
-`for (int index = 0; index < ammoQuantity; index++)` loop around its per-round damage roll
-(`combat.cc:4589`). A ranged `DAM_HIT_SELF` fumble passes
-`ammoQuantity = attackType == ATTACK_TYPE_RANGED ? attack->ammoQuantity : 1` (`combat.cc:4229-4230`
-— a burst fumble self-hits once per round fired), and the `DAM_RANDOM_HIT` branch computes the same
-thing the same way (`:4259-4260`). F11 (above) fixed the *multiplier* (net ×1, not ×0.5) but left
-the *roll count* at one regardless of `attackType` — deliberately out of scope for that fix, per its
-own commit message. Melee/unarmed fumbles are unaffected (`ammoQuantity` collapses to 1 off
-`ATTACK_TYPE_RANGED`); only burst-capable ranged weapons diverge, and only on a fumble that draws
-`DAM_HIT_SELF` or `DAM_RANDOM_HIT` with more than one round in the burst. Mark **re-record tier**,
-not a one-line change: rolling N times instead of once changes the RNG draw *count* for the affected
-fumble, not just the resulting figure — a materially larger blast radius than F11 (whose fix changed
-no RNG draw count at all). Expect this to move any fixture that reaches a multi-round ranged
-crit-failure self-hit; treat it as a deliberate, diff-reviewed re-record on the P120 precedent, not a
-byte-identical port. (As of F11/F12/F13 shipping, no committed golden fixture reaches this code path
-at all — see F11's correction note — so the first fixture to exercise it may need to be recorded
-fresh rather than merely re-recorded.)
+**F15 — BLOCKED, not merely open: reference ranged self-hits roll `attack->ammoQuantity` times per
+fumble; Hexwaste rolls once — but `ammoQuantity` is rounds *fired*, not magazine contents, so this
+is unreachable until F26 (below) ships.** *Effort S–M · re-record tier · **blocked on F26**.*
+`attackComputeDamage` initializes `int v26 = 1;` (`combat.cc:3845`) and only raises it via
+`_compute_spray(attack, accuracy, &ammoQuantity, &v26, anim)` (`:3850`), called exclusively when
+`anim == ANIM_FIRE_BURST || anim == ANIM_FIRE_CONTINUOUS`; the result is assigned at
+`attack->ammoQuantity = v26;` (`:3888`). For every **single-shot** ranged attack `v26` stays `1`, so
+`attackComputeDamage`'s `for (int index = 0; index < ammoQuantity; index++)` loop
+(`:4589`) already rolls exactly once — which is exactly what Hexwaste does today. The divergence
+this entry originally described only exists for a **burst** fumble (`ammoQuantity` = rounds fired,
+matching the F14/F15 sibling note at `:4229-4230`/`:4259-4260`), and Hexwaste's burst path cannot
+reach a crit-failure roll at all (F26) — `TriggerCritFailure` is never called from `RollBurst` or
+`TryBurst`. F15 therefore has no live code path to fix yet: closing F26 first is a prerequisite, not
+just a nearby entry. Once F26 lands, F15 becomes the burst-fumble self-hit roll-count fix described
+below and remains **re-record tier** for the same reason as before — rolling N times instead of once
+changes the RNG draw *count*, not just the resulting figure.
 
-**F16 — `Explode`'s OTHER blast victims still run no `damage_p_proc`; F13 only fixed the fumbler's
-own proc.** *Effort S–M · re-record tier.* The same reference event F13 ports — a `DAM_EXPLODE`
-crit-failure — models *two* things: the attacker's own self-damage (`attackComputeDamage(attack, 1,
-2)`, `combat.cc:4232`, applied through `_damage_object` at `:4683`, which is what F13 wired up) *and*
-`_compute_explosion_on_extras(attack, 1, …)` (`:3976`) for every other critter caught in the blast,
-whose damage is applied through the extras loop's own `_damage_object` call at `combat.cc:4751`.
-Under the community-fix #493 polarity Hexwaste already carries — and which Hexwaste's own extras
-site, `ApplyBurstExtras` (`CombatEngine.cs:976`), already applies — those other blast victims should
-also run `damage_p_proc`. `Explode` runs the proc for none of them (only for the critter named by
-`selfDamageProcFor`). So after F13 the engine is internally asymmetric on a single reference event:
-the fumbler gets its `damage_p_proc`, the bystanders caught in his exploding gun do not. This is
-vanilla-faithful at the pinned `alexbatalov e97087b` (where the extras path's `a4` gate reduces to
-`defender == oops` = true for this event, i.e. no proc there either in the reference's own general
-extras case) and is out of this branch's stated scope — `Explode` is Hexwaste's *generic* grenade/
-blast path, not the extras path, so wiring this in means giving `Explode` the same per-victim
-`Sid`/party/`Dude` gate F13 gave the fumbler, for every victim in `ordered`, not just one. Recorded
-here so it is tracked rather than lost — leaving it undocumented is exactly how F13 itself went
-unnoticed until this review. Mark **re-record tier**: wiring a live `RunDamageProc` call into a path
-every `Explode` caller (including the two `explosion-hit` fixtures) can reach is not inert by
-construction the way F13's `selfDamageProcFor` parameter was.
+**F16 — SHIPPED 2026-08-20 (`2f2c483`), 941 tests, combat-golden 17/17, 0 fixtures moved.**
+*Was Effort S–M · re-record tier (moved nothing).* `Explode`'s OTHER blast victims now run their
+`damage_p_proc`, closing the asymmetry F13 left: the fumbler got its self-damage proc, the bystanders
+caught in his exploding gun did not. `Explode` gained an `attackSourced` opt-in (default `false`,
+mirroring `selfDamageProcFor`'s shape) wired `true` only at the two callers that resolve a genuine
+reference `Attack` — the grenade-throw `Explode` call in `ResolveThrow`
+(`CombatEngine.cs:883`, citing `combat.cc:3973-3976`) and the crit-fail-explode call in
+`ApplyCritFailDamage`'s `DamExplode` branch (`CombatEngine.cs:1204`, citing `combat.cc:3976`,
+`isFromAttacker=1`). For every victim other than the one named by `selfDamageProcFor`, when
+`attackSourced` is set, the proc now runs gated by `Sid != -1` and the same party-both-members check
+`_damage_object` applies (`combat.cc:4849`, `!objectIsPartyMember(a1) || !objectIsPartyMember(a5)`).
+**Read this polarity note against `e97087b`, not against Hexwaste's own behaviour, or it looks like a
+bug:** at the bare pinned reference the extras loop's `_damage_object` call passes
+`attack->defender == attack->oops` as its proc-suppression flag (`combat.cc:4751`), and for a
+`DAM_EXPLODE` crit-failure that expression is **true** (`Explode` never diverges a defender from its
+intended target), so `_damage_object`'s `if (!a4)` gate (`:4847`) would suppress the proc — at bare
+`alexbatalov e97087b` this proc would **not** run. Hexwaste, however, already carries community fix
+`#493` at these three `_apply_damage` call sites (F13 ported the attacker-side half): #493 replaces
+all three site-specific `oops`/`defender` expressions with one collapsed
+`hitUnintendedTarget = attack->defender != attack->intendedTarget`, which is **false** for this event
+— so under **the polarity Hexwaste has already adopted**, the proc should run. F16 is a divergence
+from that adopted polarity, not from `e97087b`'s literal text; a future reader who checks only
+`e97087b` and sees the proc firing here needs this paragraph, not a revert.
+**Scope question, resolved against the drafted recommendation:** the recommendation was to gate the
+new proc on `killer is not null` ("this blast had an attacker"). That heuristic is falsified by
+`ProcessArmedCharges` (`ViewerGame.cs:4348`), which passes `killer: _dude?.Dude` (non-null) for a
+*planted* C4 charge — not an attack-sourced blast in the reference's sense. Traced in the reference:
+`actionExplode` (`actions.cc:1582`) builds a synthetic `Attack` via
+`attackInit(attack, explosion, critter, HIT_MODE_PUNCH, HIT_LOCATION_TORSO)` (`actions.cc:1631`)
+whose attacker is the transient misc-10 explosion-marker object, never the placer/`sourceObj`
+(`queue.cc:486` passes `gDude` only as `sourceObj`, used later purely for XP/reputation at
+`actions.cc:1727`). So `killer != null` cannot distinguish "genuine attack" from "planted charge with
+a known placer" — the explicit `attackSourced` opt-in was added instead, verified against this
+falsifying caller directly rather than trusted from the brief.
+**Flagged, not fixed here (tracked as F27 and F28 below):** `ApplyBurstExtras`
+(`CombatEngine.cs:977`) models the same reference predicate with a simpler `!= dude && Sid != -1`
+gate, no party check — a second site now modelling one reference behaviour two different ways; and
+the C4/scripted-`explosion` paths still don't build the reference's synthetic-attacker shape at all.
 
-**F17 — A fumbling attacker is knocked back by its own `DAM_EXPLODE` blast; vanilla computes no
-knockback for self-damage at all.** *Effort S · **re-record tier**.* `attackComputeCriticalFailure`
-clears `DAM_HIT` as its first statement (`combat.cc:4180`), so the `attackComputeDamage` call it then
-makes for `DAM_HIT_SELF` / `DAM_EXPLODE` takes the attacker-damage branch, which sets
-`knockbackDistancePtr = nullptr` unconditionally (`:4513-4517`) — the reference computes **zero**
-knockback for the fumbler's own self-damage. Hexwaste routes the explode branch through the generic
-`Explode`, whose per-victim tail calls `Shove(centerTile, victim, damage / 10)` for every non-multihex
-victim including the attacker standing on the blast tile. `HexGrid.RotationTo(centerTile, centerTile)`
-is degenerate for that critter, so a self-blast dealing ≥ 10 damage shoves the fumbler one or more
-tiles in an arbitrary direction where vanilla moves it not at all. Surfaced during the F13 final-fix
-round (2026-08-15): the shipped `Explode` comment records the reference behaviour in prose, but the
-divergence itself was untracked, which is the same failure mode F16 exists to prevent. Closing it
-means suppressing the shove for `selfDamageProcFor` — or, more faithfully, for any victim whose
-damage came from its own fumble — and that moves recorded `knockback:` transcript lines wherever a
-fixture blast reaches 10 damage, hence the tier.
+**F17 — SHIPPED 2026-08-20 (`f1c9aa7`), 938 tests, combat-golden 17/17, 0 fixtures moved (no golden
+exercises a ≥10-damage self-blast).** *Was Effort S · re-record tier (moved nothing).* A fumbling
+attacker is no longer knocked back by its own `DAM_EXPLODE` blast; vanilla computes no knockback for
+self-damage at all. `attackComputeCriticalFailure` clears `DAM_HIT` as its first statement
+(`combat.cc:4180`), so the `attackComputeDamage` call it then makes for `DAM_HIT_SELF` /
+`DAM_EXPLODE` takes the attacker-damage branch, which sets `knockbackDistancePtr = nullptr`
+unconditionally (`:4513-4517`) — the reference computes **zero** knockback for the fumbler's own
+self-damage. Hexwaste's generic `Explode` was shoving the attacker standing on the blast tile
+(`HexGrid.RotationTo(centerTile, centerTile)` degenerate self-to-self case). Fixed by gating the
+per-victim `Shove` call on `victim != selfDamageProcFor`; other victims of the same blast are still
+shoved normally (boundary-pinned by a dedicated test). Surfaced during the F13 final-fix round
+(2026-08-15): the shipped `Explode` comment already recorded the reference behaviour in prose, but
+the divergence itself was untracked, which is the same failure mode F16 exists to prevent.
+
+**F26 — Hexwaste's burst attacks never trigger critical failure at all.** *Effort M ·
+**re-record tier** · blocks F15.* `TriggerCritFailure` (`CombatEngine.cs:1153`) has exactly three
+callers, and all three are single-attack paths: `TryAttack` (`CombatEngine.cs:369`), the ally
+single-attack path (`:3671`), and the enemy single-attack path (`:3802`). `TryBurst`
+(`CombatEngine.cs:420-515`) and its `RollBurst` engine (`:524` on) have no crit-failure branch
+anywhere in them — nor do the parallel `TryAllyBurst` (`:3734`) / `TryEnemyBurst` (`:3764`) paths. In
+the reference, every attack shape reaches `attackComputeCriticalFailure` through the same shared
+`case ROLL_CRITICAL_FAILURE:` arm of the post-roll switch (`combat.cc:3933-3934`), which a burst's
+inception roll (`_compute_spray`, `:3850`) can land on exactly like a single shot's roll can — bursts
+are not exempt in vanilla. **Consequence, stated plainly: no burst attack can ever drop its weapon,
+hit itself, lose ammo, or cripple the shooter — in a game where burst-capable weapons (SMGs,
+shotguns, miniguns) are common and heavily used.** Mark **re-record tier**: wiring a crit-failure
+branch into the burst inception roll changes the RNG draw sequence for every fixture where a burst
+attack currently misses cleanly (the crit-failure check consumes/branches on the same roll that
+currently just resolves to a plain miss), so this is a deliberate, diff-reviewed re-record, not a
+byte-identical port. F15 is blocked behind this: F15's actual content (roll `ammoQuantity` times on a
+burst self-hit) has nothing to fix until a burst can reach `DAM_HIT_SELF` in the first place.
+
+**F27 — `ApplyBurstExtras` lacks the party gate the new F16 `Explode` code carries.** *Effort S ·
+tracked, not fixed.* `_damage_object` skips `SCRIPT_PROC_DAMAGE` when **both** the victim and the
+damage source are party members (`combat.cc:4849`,
+`if (!objectIsPartyMember(a1) || !objectIsPartyMember(a5))`), which F16's new `Explode` block now
+implements verbatim. Hexwaste's other extras site, `ApplyBurstExtras` (`CombatEngine.cs:977`), gates
+the same proc call on the simpler `ex.Victim != dude && ex.Victim.Sid != -1` — no party check at all.
+Two sites now model one reference behaviour with two different shapes; if `ApplyBurstExtras` is ever
+exercised with a party-member attacker and a party-member bystander it will run the proc where the
+reference (and F16's own code) would not. This is exactly the shape that produced a Critical finding
+earlier in this crit-failure work (F13 going unnoticed until F16's review), so it is recorded as its
+own entry rather than left as a stray comment. Flagged by the F16 implementer during that task, not
+fixed there — out of that task's stated scope.
+
+**F28 — The C4/planted-charge and scripted-`explosion` detonation paths don't match `actionExplode`'s
+attacker shape.** *Effort M–L · documented, not implemented.* In the reference, both the
+planted-charge detonation (`queue.cc:486`) and the scripted `explosion` opcode (`scripts.cc:1004`)
+route through `actionExplode(tile, elevation, minDamage, maxDamage, sourceObj, animate)`
+(`actions.cc:1582`), which builds a synthetic `Attack` via `attackInit(attack, explosion, critter,
+HIT_MODE_PUNCH, HIT_LOCATION_TORSO)` (`:1631`) — the attacker is the transient misc-10 explosion
+marker object, never `sourceObj`/the placer. `sourceObj` (`gDude` for the C4 path) is used only later,
+in `_report_explosion` (`:1727`), for XP/reputation bookkeeping. Because the marker is a non-critter
+object, `_damage_object`'s party gate (`!objectIsPartyMember(a5)`) is trivially true for it, so a
+faithful port would run the victim `damage_p_proc` for blasts on these paths too, sourced from the
+marker rather than the placer. Hexwaste has no marker-object concept — `ProcessArmedCharges`
+(`ViewerGame.cs:4348`) passes the placer (`_dude?.Dude`) directly as `killer`, and F16 deliberately
+left `attackSourced: false` at this call site and at the scripted-`explosion` site
+(`ViewerGame.cs:1282`, `killer: null`) rather than approximate the reference's synthetic-attacker
+shape. Closing this properly needs a marker-object concept Hexwaste doesn't currently model (the
+existing `SpawnExplosionMarker` is visual-only); documented here by the F16 implementer as a real,
+cited gap rather than implemented.
+
+**F29 — The blast/burst `damage_p_proc` gates carry a `!= dude` term the reference does not have.**
+*Effort S · re-record tier · found by the F16/F17 whole-branch review (2026-08-20).* `_damage_object`
+gates the proc as a **pair** test only — `if (!objectIsPartyMember(a1) || !objectIsPartyMember(a5))`
+(`combat.cc:4849`) — so vanilla **does** run the dude's `damage_p_proc` when an enemy-sourced blast
+or burst catches him. Every Hexwaste site that models this carries an additional `victim != dude`
+exclusion with no reference counterpart: the new F16 blast gate (`CombatEngine.cs:~1751`),
+`ApplyBurstExtras` (`:977`), and F13's self-damage tail. The F16 comment originally claimed its gate
+"mirrors :4849 exactly"; that claim was corrected in place rather than the behaviour, because
+removing the term is a real behaviour change that would reach nearly every fixture (the dude is in
+almost all of them) and deserves its own measured item. Related to F27, which tracks the *other*
+inconsistency between those same two sites — the party gate that `ApplyBurstExtras` lacks entirely.
+Closing F27 and F29 together would leave one coherent model of `_damage_object`'s proc gate instead
+of three near-misses.
 
 ### Pointer
 
