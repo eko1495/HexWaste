@@ -758,7 +758,7 @@ commit `75c6dfb` (2026-08-15), byte-identical, no fixture moved.** *Effort S.*
 `attack->oops` keeps the originally-intended target, set once at attack-init time and never
 reassigned (`:3485`). So the defender damage call at `:4723` passes `defender != oops` = true, and
 `_damage_object`'s gate `if (!a4)` at `:4847` skips `SCRIPT_PROC_DAMAGE`. `ApplyAccidentalHit`
-(`CombatEngine.cs:729`) called `RunDamageProc(acc.Victim, attacker, …)` unconditionally for any
+(`CombatEngine.cs:746`, was `:729`) called `RunDamageProc(acc.Victim, attacker, …)` unconditionally for any
 scripted non-dude bystander; the call was removed to match. HP loss, on-hit path and kill path
 unchanged.
 
@@ -839,7 +839,7 @@ whose attacker is the transient misc-10 explosion-marker object, never the place
 a known placer" — the explicit `attackSourced` opt-in was added instead, verified against this
 falsifying caller directly rather than trusted from the brief.
 **Flagged, not fixed here (tracked as F27 and F28 below):** `ApplyBurstExtras`
-(`CombatEngine.cs:977`) models the same reference predicate with a simpler `!= dude && Sid != -1`
+(`CombatEngine.cs:996`, was `:977`) modelled the same reference predicate with a simpler `!= dude && Sid != -1`
 gate, no party check — a second site now modelling one reference behaviour two different ways; and
 the C4/scripted-`explosion` paths still don't build the reference's synthetic-attacker shape at all.
 
@@ -893,18 +893,29 @@ applying effects. `RollBurst`'s return tuple grew a `bool LoseTurn` member so th
 consequence reaches all three callers, mirroring the existing single-shot pattern at `:369-370`.
 F15 (above) was the burst-fumble self-hit roll-count fix this unblocked.
 
-**F27 — `ApplyBurstExtras` lacks the party gate the new F16 `Explode` code carries.** *Effort S ·
-tracked, not fixed.* `_damage_object` skips `SCRIPT_PROC_DAMAGE` when **both** the victim and the
-damage source are party members (`combat.cc:4849`,
-`if (!objectIsPartyMember(a1) || !objectIsPartyMember(a5))`), which F16's new `Explode` block now
-implements verbatim. Hexwaste's other extras site, `ApplyBurstExtras` (`CombatEngine.cs:977`), gates
-the same proc call on the simpler `ex.Victim != dude && ex.Victim.Sid != -1` — no party check at all.
-Two sites now model one reference behaviour with two different shapes; if `ApplyBurstExtras` is ever
-exercised with a party-member attacker and a party-member bystander it will run the proc where the
-reference (and F16's own code) would not. This is exactly the shape that produced a Critical finding
-earlier in this crit-failure work (F13 going unnoticed until F16's review), so it is recorded as its
-own entry rather than left as a stray comment. Flagged by the F16 implementer during that task, not
-fixed there — out of that task's stated scope.
+**F27 — SHIPPED 2026-08-20 (`e34189c`), 953 tests, combat-golden 17/17, 0 fixtures moved (no golden
+pits a party member against another party member).** *Was Effort S · tracked, not fixed.*
+`_damage_object` skips `SCRIPT_PROC_DAMAGE` when **both** the victim and the damage source are party
+members (`combat.cc:4849`, `if (!objectIsPartyMember(a1) || !objectIsPartyMember(a5))`).
+
+**Correction to this entry's original scope claim:** it attributed the missing party gate to
+`ApplyBurstExtras` alone. In fact **four of the six** `RunDamageProc` call sites had no party-pair
+consideration at all (only F16's new `Explode` blast gate and its self-damage tail carried one, each
+written separately rather than shared) — so a party member's ordinary hit, burst, or burst-extra
+could run a companion's `damage_p_proc`, which the reference suppresses. Fixed by extracting one
+`ShouldRunDamageProc(MapObject target, MapObject? source)` helper (`CombatEngine.cs:1629`) carrying
+the shared predicate — `target.Sid == -1` precondition plus the `:4849` pair gate, with `_host.Dude`
+counted as a party member — `partyMemberAdd(gDude)` at object load, `object.cc:347`, which stamps the id at `party_member.cc:398` — and routing all six sites through it
+(`CombatEngine.cs:964, 996, 1329, 1560, 1792, 1829`). Site-specific conditions (`victim ==
+attacker.Critter && dmg > 0`, `victim == selfDamageProcFor`, `attackSourced && victim != killer`)
+deliberately stayed at their own sites rather than being folded into the shared helper — doing so
+would have recreated the F12 failure mode (a boundary condition silently absorbed into a shared gate).
+Regression test added proving the pre-change gap failed (a dude-fired burst extra ran a companion's
+proc); F12/F16's existing boundary pins re-verified to still hold post-change.
+
+**Test-coverage note (new, tracked as F32 below):** no fixture in the combat-golden corpus pits a
+party member against another party member, so this fix is exercised only by unit tests, never
+end-to-end through a real map/script — see F32.
 
 **F28 — The C4/planted-charge and scripted-`explosion` detonation paths don't match `actionExplode`'s
 attacker shape.** *Effort M–L · documented, not implemented.* In the reference, both the
@@ -924,19 +935,55 @@ shape. Closing this properly needs a marker-object concept Hexwaste doesn't curr
 existing `SpawnExplosionMarker` is visual-only); documented here by the F16 implementer as a real,
 cited gap rather than implemented.
 
-**F29 — The blast/burst `damage_p_proc` gates carry a `!= dude` term the reference does not have.**
-*Effort S · re-record tier · found by the F16/F17 whole-branch review (2026-08-20).* `_damage_object`
-gates the proc as a **pair** test only — `if (!objectIsPartyMember(a1) || !objectIsPartyMember(a5))`
-(`combat.cc:4849`) — so vanilla **does** run the dude's `damage_p_proc` when an enemy-sourced blast
-or burst catches him. Every Hexwaste site that models this carries an additional `victim != dude`
-exclusion with no reference counterpart: the new F16 blast gate (`CombatEngine.cs:~1751`),
-`ApplyBurstExtras` (`:977`), and F13's self-damage tail. The F16 comment originally claimed its gate
-"mirrors :4849 exactly"; that claim was corrected in place rather than the behaviour, because
-removing the term is a real behaviour change that would reach nearly every fixture (the dude is in
-almost all of them) and deserves its own measured item. Related to F27, which tracks the *other*
-inconsistency between those same two sites — the party gate that `ApplyBurstExtras` lacks entirely.
-Closing F27 and F29 together would leave one coherent model of `_damage_object`'s proc gate instead
-of three near-misses.
+**F29 — RESOLVED 2026-08-20 (`e34189c`) as an inert dead-code cleanup, NOT a behavioural fix.**
+*Was Effort S · re-record tier (predicted; landed byte-identical instead — see below).* Originally
+filed as: every Hexwaste site modelling `_damage_object`'s proc gate carried an extra `!= dude`
+exclusion with no reference counterpart, since `combat.cc:4849` gates on the party **pair** only
+(`if (!objectIsPartyMember(a1) || !objectIsPartyMember(a5))`) and vanilla genuinely runs the dude's
+`damage_p_proc` when an enemy-sourced blast or burst catches him.
+
+**What Task 1's investigation (predecessor to this fix) actually found, and why the term was
+inert rather than live:** the dude's `MapObject` (`ViewerGame.cs`, `SpawnDude`) never set `Sid` at
+construction, so it held C#'s `int` default, `0` — not `-1`. Every `Sid != -1` guard in the codebase
+(including the pre-change per-site `!= dude` gates) therefore *passed* for the dude, meaning the term
+did technically evaluate against a live, non-sentinel value. It was nonetheless behaviourally inert
+because sid `0` can never be a real object-bound script: in the map-format's `sid >> 24` type scheme,
+type `0` is "system" (map-level, not object-bound); Task 1 loaded all 146 loadable campaign maps and
+confirmed `ScriptsBySid` never contains key `0` on any of them — only types 1 (spatial), 3 (item), and
+4 (critter) ever appear. So `RunObjectProc`/`RunDamageProc` resolved to a no-op for the dude on every
+real map regardless of the `!= dude` term, and removing it changes nothing observable on shipped data.
+
+**The reference does the opposite of what the removed term implied**: it actively wires the dude up
+for this hook rather than suppressing it. `scriptsSetDudeScript` (`scripts.cc:1460-1489`, called from
+`scriptsReset` at game start and from `_obj_load_dude` after a save load) gives the dude a real, live
+`sid` bound to a genuine critter-type script, specifically so hooks like `damage_p_proc` can fire; the
+gate at `:4849` is pair-only with no dude-specific carve-out anywhere in `_damage_object` or its
+sibling branch. Hexwaste's divergence from this was real in principle but unobservable in practice —
+the dude's Hexwaste `Sid` was never live enough to reach the difference.
+
+**Hardening applied alongside the cleanup:** `SpawnDude` now sets `Sid = -1` explicitly
+(`ViewerGame.cs:3042`), turning "inert because no shipped map happens to bind sid 0 to an object" into
+"inert by construction." This was applied only after Task 2's codebase-wide survey of 44 `Sid != -1`
+/ `Sid == -1` sites confirmed every one of them either already excludes the dude explicitly, never
+receives the dude object at all, or wraps a `ScriptsBySid.TryGetValue` lookup that fails identically
+for key `0` and key `-1` — i.e. the change was *checked*, not assumed, before landing. It is worth
+recording that this was a real behavioural change in principle even though nothing flipped: the
+dude's `Sid` genuinely was `0`, not `-1`, before this commit.
+
+**Correction to this entry's original supporting argument:** the spec that filed this item cited two
+`ViewerGame.cs` sites (the `map_exit_p_proc` sweep and the start/`map_enter` pass) as evidence of a
+deliberate "the dude's script never runs from engine hooks" convention. On review both are map-wide
+**object-sweep** filters that skip the dude because the reference iterates the map's `Object` list
+nodes and the player isn't one of them — they say nothing about damage hooks specifically, and using
+them as grounding for F29 was a weak inference. Recorded here so the next reader doesn't re-derive the
+same inference and mistake it for evidence; the real grounding is the `combat.cc:4849` pair-gate trace
+above.
+
+Result: `ShouldRunDamageProc` (`CombatEngine.cs:1629`) carries no dude-specific term at all — only the
+`Sid == -1` precondition and the pair gate, with `_host.Dude` counted as a party member per
+`object.cc:347` (`partyMemberAdd(gDude)`). 953 tests, combat-golden 17/17 byte-identical, 0 fixtures moved (predicted
+re-record tier; the prediction was wrong for the same reason F26's was — see F26's own correction
+above for the general lesson about unverified fixture-movement predictions).
 
 **F30 — An INVULNERABLE critter still suffers critical-failure effects; the reference exempts it
 outright.** *Effort S · found by the F26/F15 whole-branch review (2026-08-20).*
@@ -966,6 +1013,18 @@ weapon.Rounds)` directly with no cost-scaling step. Consequence: any weapon whos
 is not 1 spends the wrong number of rounds, and the reference's abort-on-failure path has no
 counterpart. Unmeasured — the blast radius depends on which shipped weapons carry a non-unit ammo
 cost, which should be established from the proto data before this is scheduled.
+
+**F32 — No party-on-party fixture exists in the combat-golden corpus; F27's fix is unverified
+end-to-end.** *Effort S (fixture authoring) · test-coverage gap, not a defect · found during F27/F29
+closeout (2026-08-20).* F27 fixed a real bug — four of the six `RunDamageProc` call sites could run a
+party member's `damage_p_proc` when another party member damaged them, which the reference suppresses
+— but none of the 17 fixtures in `tests/golden-combat/` stages a party member attacking another party
+member, so the fix is exercised only by `CombatEngineTests` unit tests, never through a real
+map/script end-to-end. This is why closing F27 moved 0 fixtures rather than a sign the fix did
+nothing. Worth tracking so a future companion-vs-companion friendly-fire scenario (e.g. a
+crit-failure/burst-collateral fixture with two party members in the blast) gets recorded as a golden
+fixture, giving the golden suite a way to catch a regression of this behaviour that it currently
+cannot.
 
 ### Pointer
 

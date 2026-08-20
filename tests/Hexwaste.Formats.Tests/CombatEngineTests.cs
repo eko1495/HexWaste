@@ -2342,6 +2342,50 @@ public class CombatEngineTests
     }
 
     [Fact]
+    public void BurstExtraOnAPartyMemberByAPartyMemberAttackerRunsNoDamageProc()
+    {
+        // F27 (Task 2, B — this is the bug being fixed): ported from fallout2-ce src/combat.cc
+        // _apply_damage() (:4849, `if (!objectIsPartyMember(a1) || !objectIsPartyMember(a5))`) — the
+        // proc is skipped whenever BOTH the damaged object and its source are party members, and the
+        // dude counts as a party member (gPartyMembers[0], party_member.cc:725). ApplyBurstExtras's old
+        // gate (`ex.Victim != dude`) only ever excluded the dude himself — it never looked at whether
+        // the ATTACKER was a party member, so a dude-fired burst catching a companion in its cone ran
+        // that companion's damage_p_proc, which the reference suppresses (dude+companion are both
+        // party members). MUST FAIL before the shared pair-gate helper lands.
+        int from = 20100;
+        int target = HexGrid.TileInDirection(from, 0, 3);
+
+        var host = new FakeCombatHost { CriticalsEnabled = false, LoadedAmmoCount = 10 };
+        MapObject dude = host.SetDude(NewCritter(from, hp: 30, ap: 12, skill: 100));
+        MapObject enemy = host.AddCritter(NewCritter(target, hp: 500));
+        (ProtoInfo proto, MapObject item) = MakeBurstWeapon(rounds: 10, apCost2: 6, minDmg: 10, maxDmg: 10);
+        host.Equipped = (proto, item);
+
+        // Same cone geometry as BurstConeCatchesACollateralBystanderOnALine — a companion standing on
+        // the left cone line takes the collateral hit.
+        int pivot = HexGrid.Distance(from, target) <= 3 ? HexGrid.TileNumBeyond(from, target, 3) : target;
+        int rotation = HexGrid.RotationTo(pivot, from);
+        int leftTile = HexGrid.TileInDirection(pivot, (rotation + 1) % 6, 1);
+        int leftEnd = HexGrid.TileNumBeyond(from, leftTile, 40);
+        var leftLine = new List<int>();
+        LineOfFire.Trace(from, leftEnd, t => { leftLine.Add(t); return null; });
+        Assert.NotEmpty(leftLine);
+        MapObject companion = host.AddAlly(NewCritter(leftLine[Math.Min(2, leftLine.Count - 1)], hp: 500), CompanionAi.Default);
+        companion.Sid = 11; // scripted: a damage_p_proc COULD run — the point is that it must not
+
+        host.BlockerOverride = tile => host.CombatCritters.Concat(host.Allies)
+            .FirstOrDefault(c => c.HexTile == tile && !c.IsDead);
+
+        var engine = new CombatEngine(host, new MinRng()); // every round connects
+        Assert.True(engine.TryBurst(enemy));
+        host.Animating.Clear();
+        engine.ProcessAnimations();
+
+        Assert.True(companion.CurrentHp < 500, "the cone's left line should still have caught the companion");
+        Assert.DoesNotContain(host.DamageProcCalls, c => c.Target == companion);
+    }
+
+    [Fact]
     public void BurstConsumesTheWholeMagazineOnResolveNotOnRoll()
     {
         var host = new FakeCombatHost { CriticalsEnabled = false, LoadedAmmoCount = 10 };
@@ -3174,6 +3218,93 @@ public class CombatEngineTests
         engine.Explode(center, killer: attacker, minDamage: 10, maxDamage: 10, radius: 1, attackSourced: true);
 
         Assert.Contains(host.DamageProcCalls, c => c.Target == bystander && c.Source == attacker);
+    }
+
+    // ====================================================================
+    //  Task 2 (F27 unification): ShouldRunDamageProc's four quadrants.
+    //  ported from fallout2-ce src/combat.cc _damage_object() (:4849, `if (!objectIsPartyMember(a1) ||
+    //  !objectIsPartyMember(a5))`) — skip only when BOTH the damaged object (a1) and its source (a5)
+    //  are party members. gDude counts as a party member (gPartyMembers[0], party_member.cc:725).
+    //  Explode() is used as the vehicle because it accepts an arbitrary killer/victim pair directly;
+    //  this is the shared predicate's OWN content, not any one site's extra conditions.
+    // ====================================================================
+
+    [Fact]
+    public void APartyMembersDamageProcRunsWhenTheAttackerIsNotAPartyMember()
+    {
+        // Quadrant 1: enemy -> party member. Not both party members -> the pair gate does not fire.
+        const int center = 20100;
+        var host = new FakeCombatHost();
+        MapObject enemy = host.AddCritter(NewCritter(tile: Step(center, 0, 5), hp: 100)); // NOT a party member
+        MapObject companion = host.AddCritter(NewCritter(tile: center, hp: 100));
+        host.Allies.Add(companion); // party-member victim (Explode reads CombatCritters for its victim pool)
+        companion.Sid = 21;
+
+        var engine = new CombatEngine(host, new MinRng());
+        engine.Explode(center, killer: enemy, minDamage: 10, maxDamage: 10, radius: 1, attackSourced: true);
+
+        Assert.Contains(host.DamageProcCalls, c => c.Target == companion && c.Source == enemy);
+    }
+
+    [Fact]
+    public void APartyMembersDamageProcIsSkippedWhenTheAttackerIsAlsoAPartyMember()
+    {
+        // Quadrant 2: party member -> party member. Both party members -> the pair gate fires.
+        // (Same shape as ExplodeSkipsAPartyMemberVictimOfAPartyMemberAttacker below, which pins this
+        // for the F16 site specifically; this one exercises the shared helper in isolation.)
+        const int center = 20100;
+        var host = new FakeCombatHost();
+        MapObject attacker = host.AddCritter(NewCritter(tile: Step(center, 0, 5), hp: 100));
+        host.Allies.Add(attacker); // party-member attacker
+        MapObject victim = host.AddCritter(NewCritter(tile: center, hp: 100));
+        host.Allies.Add(victim); // party-member victim
+        victim.Sid = 22;
+
+        var engine = new CombatEngine(host, new MinRng());
+        engine.Explode(center, killer: attacker, minDamage: 10, maxDamage: 10, radius: 1, attackSourced: true);
+
+        Assert.DoesNotContain(host.DamageProcCalls, c => c.Target == victim);
+    }
+
+    [Fact]
+    public void TheDudesDamageProcRunsWhenAnEnemyAttacks()
+    {
+        // Quadrant 3 (Task 1's dude finding): the dude counts as gPartyMembers[0], so the pair gate
+        // fires only when BOTH sides are party members — an enemy-sourced hit on the dude is NOT both,
+        // so vanilla runs it (combat.cc:4849 is a pair gate only; there is no reference dude exclusion).
+        // The old `!= dude` term at every site suppressed this unconditionally; this proves the shared
+        // helper does not. The dude's Sid is forced to a live value here (simulating
+        // scriptsSetDudeScript's real in-game sid, scripts.cc:1460-1489) purely to isolate the pair-gate
+        // logic from the separate Sid==-1 precondition — SpawnDude leaves the real dude's Sid at -1
+        // (Task 1's hardening), so in production this quadrant is masked by that precondition and never
+        // observably fires; see BACKLOG F29.
+        const int center = 20100;
+        var host = new FakeCombatHost();
+        MapObject dude = host.SetDude(NewCritter(tile: center, hp: 100));
+        dude.Sid = 5; // simulate a live dude script sid (Task 1, scripts.cc:1460-1489)
+        MapObject enemy = host.AddCritter(NewCritter(tile: Step(center, 0, 5), hp: 100)); // NOT a party member
+
+        var engine = new CombatEngine(host, new MinRng());
+        engine.Explode(center, killer: enemy, minDamage: 10, maxDamage: 10, radius: 1, attackSourced: true);
+
+        Assert.Contains(host.DamageProcCalls, c => c.Target == dude && c.Source == enemy);
+    }
+
+    [Fact]
+    public void TheDudesDamageProcIsSkippedWhenAPartyMemberAttacks()
+    {
+        // Quadrant 4: the dude and a companion are both party members -> the pair gate fires exactly
+        // like any other both-party-members pairing. Same Sid-forcing note as the quadrant-3 test above.
+        const int center = 20100;
+        var host = new FakeCombatHost();
+        MapObject dude = host.SetDude(NewCritter(tile: center, hp: 100));
+        dude.Sid = 6; // simulate a live dude script sid
+        MapObject companion = host.AddAlly(NewCritter(tile: Step(center, 0, 5), hp: 100), CompanionAi.Default);
+
+        var engine = new CombatEngine(host, new MinRng());
+        engine.Explode(center, killer: companion, minDamage: 10, maxDamage: 10, radius: 1, attackSourced: true);
+
+        Assert.DoesNotContain(host.DamageProcCalls, c => c.Target == dude);
     }
 
     [Fact]
