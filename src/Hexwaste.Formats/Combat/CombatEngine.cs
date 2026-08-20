@@ -1698,16 +1698,24 @@ public sealed class CombatEngine
             // attackComputeDamage(), which then takes the attacker-damage branch and sets
             // knockbackDistancePtr = nullptr unconditionally (combat.cc:4517) — the reference computes
             // NO knockback for the fumbling attacker's own self-damage, so there is no reference
-            // knockback for this proc to precede or follow. Explode()'s unconditional Shove call below
-            // is inherited from the shared grenade-blast path (`actionExplode` / `_compute_explosion_*`,
-            // see the class-level doc comment above), not from this crit-failure event, so it has no
-            // reference ordering to match here either way.
+            // knockback for this proc to precede or follow. Explode()'s Shove call below is inherited
+            // from the shared grenade-blast path (`actionExplode` / `_compute_explosion_*`, see the
+            // class-level doc comment above), not from this crit-failure event; F17 (below) suppresses
+            // it for this victim specifically, so it has no reference ordering to match here either way.
             if (victim == selfDamageProcFor && victim.Sid != -1
                 && victim != _host.Dude && !_host.PartyMembers.Contains(victim))
                 foreach (string line in _host.RunDamageProc(victim, victim, damage))
                     _host.Log(line);
 
-            if ((victim.Flags & OBJECT_MULTIHEX) == 0)
+            // F17: ported from fallout2-ce src/combat.cc attackComputeCriticalFailure (:4180), which
+            // clears DAM_HIT as its very first statement, before calling attackComputeDamage
+            // (:4513-4517): with DAM_HIT cleared, attackComputeDamage takes the attacker-damage (else)
+            // branch and sets knockbackDistancePtr = nullptr UNCONDITIONALLY — the reference computes
+            // ZERO knockback for a fumbler's own self-damage. This is a suppression of a Hexwaste-only
+            // side effect (Explode()'s Shove call, inherited from the shared grenade-blast path), not a
+            // tuning choice: without it, HexGrid.RotationTo(centerTile, centerTile) is degenerate for
+            // the fumbler standing on the blast tile and can push it in an arbitrary direction.
+            if ((victim.Flags & OBJECT_MULTIHEX) == 0 && victim != selfDamageProcFor)
                 Shove(centerTile, victim, damage / 10);
 
             if (victim.CurrentHp <= 0)

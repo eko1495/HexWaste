@@ -2874,6 +2874,53 @@ public class CombatEngineTests
     }
 
     [Fact]
+    public void ExplodeDoesNotShoveTheSelfDamagedAttacker()
+    {
+        // F17: ported from fallout2-ce src/combat.cc attackComputeCriticalFailure (:4180), which clears
+        // DAM_HIT as its very first statement, before calling attackComputeDamage (:4513-4517): with
+        // DAM_HIT cleared, attackComputeDamage takes the attacker-damage (else) branch and sets
+        // knockbackDistancePtr = nullptr UNCONDITIONALLY. The reference therefore computes ZERO
+        // knockback for a fumbler's own self-damage. Explode()'s per-victim tail previously called
+        // Shove() for every non-multihex victim including the fumbler standing on the blast tile —
+        // where HexGrid.RotationTo(centerTile, centerTile) is degenerate and can push it in an
+        // arbitrary direction. Assert BOTH the tile is unchanged AND no knockback: line names it: a
+        // tile-only assertion would pass even with the bug present, since a degenerate rotation can
+        // resolve back to the starting tile.
+        const int center = 20100;
+        var host = new FakeCombatHost();
+        MapObject fumbler = host.AddCritter(NewCritter(center, hp: 100));
+        int start = fumbler.HexTile;
+
+        var engine = new CombatEngine(host, new MinRng()); // MinRng: damage == minDamage exactly, no DT/DR
+        engine.Explode(center, killer: null, minDamage: 50, maxDamage: 50, radius: 1, selfDamageProcFor: fumbler);
+
+        Assert.Equal(start, fumbler.HexTile);
+        Assert.DoesNotContain(host.Transcripts, t => t.StartsWith("knockback:") && t.Contains($"@{start}"));
+    }
+
+    [Fact]
+    public void ExplodeStillShovesOtherBlastVictims()
+    {
+        // Boundary pin (F17): the self-damage suppression must be scoped to selfDamageProcFor only.
+        // "Delete the Shove() call" would also make ExplodeDoesNotShoveTheSelfDamagedAttacker above
+        // pass, so this confirms an ordinary blast victim (not the fumbler) is still knocked back.
+        // This is expected to pass BOTH before and after the fix — it is a boundary pin, not a
+        // regression test.
+        const int center = 20100;
+        var host = new FakeCombatHost();
+        MapObject fumbler = host.AddCritter(NewCritter(center, hp: 100));
+        int otherTile = Step(center, 0, 1);
+        MapObject other = host.AddCritter(NewCritter(otherTile, hp: 100));
+        int otherStart = other.HexTile;
+
+        var engine = new CombatEngine(host, new MinRng());
+        engine.Explode(center, killer: null, minDamage: 50, maxDamage: 50, radius: 2, selfDamageProcFor: fumbler);
+
+        Assert.NotEqual(otherStart, other.HexTile);
+        Assert.Contains(host.Transcripts, t => t.StartsWith("knockback:") && t.Contains($"@{otherStart}"));
+    }
+
+    [Fact]
     public void NoCriticalFailureWithoutCriticalsOrJinxed()
     {
         // The inert invariant: a non-Jinxed dude before day 2 (CriticalsEnabled false) draws NOTHING
