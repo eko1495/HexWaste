@@ -124,9 +124,14 @@ public sealed class MapObject
     /// not serialized) — Hexwaste's counterpart of aiInfoGetLastTarget/aiInfoSetLastTarget
     /// (combat.h:28-29). The reference stamps it unconditionally (hit or miss) at the top of every
     /// attack (combat.cc:3558 `aiInfoSetLastTarget(attacker, defender)`); CombatEngine stamps it at the
-    /// single point every attack/throw/burst is resolved. Consumed only by DangerSource's vanilla
-    /// ATTACK_WHO_WHOMEVER_ATTACKING_ME fallback (combat_ai.cc:1579/1604) — party-member-only and not
-    /// currently reachable from TryEnemyAction's call site.</summary>
+    /// single point every attack/throw/burst is resolved.
+    ///
+    /// INERT GROUNDWORK — stated plainly rather than implied: nothing in the shipped engine reads this.
+    /// Its one consumer is DangerSource's vanilla ATTACK_WHO_WHOMEVER_ATTACKING_ME fallback
+    /// (combat_ai.cc:1597-1631), which sits behind the party-member gate at :1541; DangerSource's only
+    /// shipped call site (TryEnemyAction) never passes a party member, and TryAllyAction does not call
+    /// DangerSource at all. So the stamps, the combat-end clear, and this property exist for a future
+    /// ally-AI integration and are exercised today only by unit tests. Do not cite it as live behaviour.</summary>
     public MapObject? LastAttackTarget { get; set; }
 
     /// <summary>Per-instance current HP (denbus1 critters carry individual values).</summary>

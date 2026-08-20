@@ -2064,15 +2064,31 @@ public sealed class CombatEngine
             _host.DudeIsActivelySneaking, _host.DudeHasSneakFlag, inCombat: true);
     }
 
-    /// <summary>The reference's <c>_curr_crit_list</c> for a <see cref="DangerSource"/> call: every
-    /// combatant (hostiles + party + dude), <paramref name="self"/> included (the helpers below skip it
-    /// by identity, matching the reference's in-place self-skip), sorted nearest-first from
-    /// <paramref name="self"/> — <c>_ai_sort_list_distance(_curr_crit_list, _curr_crit_num, a1)</c>, run
-    /// once and shared by both the whoHitMe fallback and aiFindAttackers (both re-sort from the same
-    /// origin in the reference, so one sort here is equivalent). Hexwaste divergence: <c>_dudeSpectator</c>
-    /// (P73) drops the dude from the roster when he isn't part of THIS brawl — the reference always
-    /// includes gDude in <c>_curr_crit_list</c>; Hexwaste supports dude-absent brawls the reference has no
-    /// counterpart for, so this is a carried, documented divergence, not a fidelity gap.</summary>
+    /// <summary>Hexwaste's stand-in for the reference's <c>_curr_crit_list</c> in a
+    /// <see cref="DangerSource"/> call: the current combatants (hostiles + party + dude),
+    /// <paramref name="self"/> included (the helpers below skip it by identity, matching the reference's
+    /// in-place self-skip), sorted nearest-first from <paramref name="self"/> —
+    /// <c>_ai_sort_list_distance(_curr_crit_list, _curr_crit_num, a1)</c>, run once and shared by both
+    /// the whoHitMe fallback and aiFindAttackers (both re-sort from the same origin in the reference, so
+    /// one sort here is equivalent).
+    ///
+    /// DIVERGENCE 1 — MEMBERSHIP IS NARROWER, and this is the material one. The reference's list is NOT
+    /// the combatant list: <c>_combat_ai_begin(_list_total, _combat_list)</c> (combat.cc:2649, its only
+    /// caller) snapshots — once, at combat start, fixed for the whole fight — the list built at
+    /// combat.cc:2574 by <c>objectListCreate(-1, _combat_elev, OBJ_TYPE_CRITTER, &amp;_combat_list)</c>:
+    /// EVERY critter on the combat elevation, combatants and non-combatants alike (<c>_list_total</c>,
+    /// not <c>_list_com</c>). So vanilla's <c>aiFindAttackers</c> and <c>_ai_find_nearest_team</c> can
+    /// legitimately return a bystander who never joined the fight — reachable through the
+    /// <c>whoHitByFriend</c> slot and through the dead-whoHitMe <c>FindNearestTeam</c> fallback. Hexwaste's
+    /// roster cannot: it is only the live combatant set, and it is recomputed per call rather than frozen
+    /// at combat start. Consequence: in a multi-faction fight Hexwaste's AI will pick a different target
+    /// than vanilla wherever vanilla would have picked a bystander. Widening this to the elevation's
+    /// critters is the faithful fix; it is deliberately NOT done here because it moves target decisions
+    /// (and therefore goldens) across every fixture, which is its own change.
+    ///
+    /// DIVERGENCE 2 — <c>_dudeSpectator</c> (P73) drops the dude from the roster when he isn't part of
+    /// THIS brawl. The reference always includes gDude; Hexwaste supports dude-absent brawls the
+    /// reference has no counterpart for, so this one is a carried design divergence, not a gap.</summary>
     private List<MapObject> CombatRoster(MapObject self)
     {
         IEnumerable<MapObject> all = _hostiles.Concat(_host.PartyMembers);
@@ -2151,7 +2167,8 @@ public sealed class CombatEngine
     /// the strength/weakness/distance sort → the perception + (reachability OR legal-shot) scan.
     ///
     /// EXCLUDED (decided, CLAUDE.md out-of-scope): the "// CE:" previous-target-continuation improvement
-    /// wrapping the ATTACK_WHO_WHOMEVER_ATTACKING_ME case (:1565-1607) — non-vanilla QoL. The vanilla
+    /// wrapping the ATTACK_WHO_WHOMEVER_ATTACKING_ME case (the `if (1)` block, :1564-1637, whose CE arm is
+    /// :1565-1590) — non-vanilla QoL. The vanilla
     /// fallback loop it wraps (nearest critter, cross-team, alive, currently attacking the dude, reachable,
     /// and not a definitively-bad shot) IS ported, using <see cref="MapObject.LastAttackTarget"/> for
     /// "currently attacking the dude" (aiInfoGetLastTarget).
@@ -2171,8 +2188,10 @@ public sealed class CombatEngine
     /// reachable only via a direct call (e.g. a unit test) — kept faithful/generic rather than narrowed
     /// to match the one caller, since a future ally-AI integration should be able to reuse it unchanged.
     ///
-    /// <c>_dudeSpectator</c> (P73): see <see cref="CombatRoster"/> — the dude is dropped from the roster
-    /// entirely in a brawl he isn't part of; a carried Hexwaste divergence with no reference counterpart.
+    /// ROSTER (read <see cref="CombatRoster"/>'s note in full): the candidate list this function scans is
+    /// narrower than the reference's <c>_curr_crit_list</c> — live combatants only, where vanilla snapshots
+    /// every critter on the elevation including non-combatant bystanders — and, under
+    /// <c>_dudeSpectator</c> (P73), excludes the dude entirely.
     /// </summary>
     private MapObject? DangerSource(MapObject self)
     {
@@ -2194,7 +2213,7 @@ public sealed class CombatEngine
             attackWho = ai.AttackWho; // :1561
             switch (ai.AttackWho)
             {
-                case AttackWho.WhoeverAttackingMe: // :1569-1608, vanilla fallback only (CE wrapper omitted)
+                case AttackWho.WhoeverAttackingMe: // case :1563, `if (1)` block :1564-1637; vanilla fallback loop :1597-1631
                     foreach (MapObject critter in roster)
                     {
                         if (critter == self)
@@ -2235,19 +2254,19 @@ public sealed class CombatEngine
             }
             else if (whoHitMe.Team != self.Team)
             {
-                target0 = AiTargets.FindNearestTeam(self, whoHitMe, sameTeam: true, roster); // :1662-1664
+                target0 = AiTargets.FindNearestTeam(self, whoHitMe, sameTeam: true, roster); // :1661
             }
         }
 
-        (MapObject? t1, MapObject? t2, MapObject? t3) = AiTargets.FindAttackers(self, roster); // :1666
+        (MapObject? t1, MapObject? t2, MapObject? t3) = AiTargets.FindAttackers(self, roster); // :1668
         MapObject?[] targets = [target0, t1, t2, t3];
 
-        if (ignoreFleeingCritters) // :1668-1673
+        if (ignoreFleeingCritters) // :1670-1676
             for (int i = 0; i < targets.Length; i++)
                 if (targets[i] is { } c && (c.Maneuver & ManeuverFleeing) != 0)
                     targets[i] = null;
 
-        // :1675-1689 — non-null candidates only (the reference's qsort pushes nulls to the tail, so
+        // :1678-1691 — non-null candidates only (the reference's qsort pushes nulls to the tail, so
         // filtering first and sorting the rest is equivalent for this scan-first-hit loop).
         IEnumerable<MapObject> live = targets.OfType<MapObject>();
         List<MapObject> sorted = attackWho switch
@@ -2260,7 +2279,7 @@ public sealed class CombatEngine
             _ => live.OrderBy(c => HexGrid.Distance(self.HexTile, c.HexTile)).ToList(),
         };
 
-        foreach (MapObject candidate in sorted) // :1691-1703
+        foreach (MapObject candidate in sorted) // :1693-1702
         {
             if (!WithinPerception(self, candidate))
                 continue;
