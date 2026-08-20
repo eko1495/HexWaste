@@ -138,3 +138,40 @@ Three commits with a measurement between each; five hermetic tests green and con
 pre-change; every re-recorded fixture enumerated and classified; all four suites green;
 `docs/BACKLOG.md` reconciled with F15–F17 shipped and the `#493`-polarity reasoning recorded in both
 the code and the entry.
+
+---
+
+## SCOPE CORRECTION (2026-08-20, before implementation): F15 is BLOCKED and drops out
+
+Grounding the plan turned up a fact that removes F15 from this batch.
+
+**`attack->ammoQuantity` is rounds FIRED, not magazine contents.** `int v26 = 1` (`combat.cc:3845`)
+is the default; only `_compute_spray` raises it (`:3850`), and it is assigned at `:3888`. So a
+*single-shot* ranged fumble rolls exactly once — which is already what Hexwaste does. The divergence
+F15 describes needs **more than one round fired**, i.e. a **burst** fumble.
+
+**Hexwaste's burst path cannot fumble at all.** `TriggerCritFailure` has exactly three callers —
+`TryAttack` (`:369`), `TryAllyAction` (`:3617`) and `EnemyAttack` (`:3748`) — all single-attack paths.
+The burst method (`CombatEngine.cs:420-540`) contains no crit-failure path whatsoever.
+
+In the reference, `attackComputeCriticalFailure` is called from the shared `ROLL_CRITICAL_FAILURE`
+case of the attack-roll switch (`combat.cc:3933-3934`), which every attack shape reaches — bursts
+included.
+
+So F15 is not a one-site fix sitting behind an easy change; it is **unreachable** until burst attacks
+can fumble. Implementing the `ammoQuantity` loop now would add code no path can exercise, and its test
+would have to fabricate a state the engine cannot produce — precisely the "wired but inert" shape this
+project's P114 lesson warns about.
+
+**Therefore:**
+- **F15 drops out of this batch** and stays open, marked blocked.
+- The blocker is filed as its own entry: **Hexwaste's burst attacks never trigger critical failure**,
+  a previously untracked gap that is larger and more consequential than F15 itself — it means no
+  burst can ever drop a weapon, hit itself, lose ammo, or cripple the shooter, in a game where burst
+  weapons are common.
+- **This batch ships F17 then F16**, in that order, with a fixture measurement between them.
+
+The blocker is also a re-record-tier item in its own right, and a substantial one: wiring the
+crit-failure upgrade into the burst path adds an RNG draw to every missed burst, which shifts every
+downstream draw in every fixture that misses with a burst. It wants its own spec, not a corner of
+this one.
