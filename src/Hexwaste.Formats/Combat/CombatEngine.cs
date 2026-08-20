@@ -961,7 +961,7 @@ public sealed class CombatEngine
             ? $"You riddle the {targetName} with {b.RoundsHit} rounds for {b.TotalDamage} damage."
             : $"The {attackerName} riddles you with {b.RoundsHit} rounds for {b.TotalDamage} damage.");
 
-        if (b.Target != dude && b.Target.Sid != -1)
+        if (ShouldRunDamageProc(b.Target, b.Attacker))
             foreach (string line in _host.RunDamageProc(b.Target, b.Attacker, b.TotalDamage))
                 _host.Log(line);
 
@@ -993,7 +993,7 @@ public sealed class CombatEngine
             ex.Victim.CurrentHp -= ex.Damage;
             _host.Log($"The burst also catches the {_host.ObjectName(ex.Victim)} for {ex.Damage} damage.");
 
-            if (ex.Victim != dude && ex.Victim.Sid != -1)
+            if (ShouldRunDamageProc(ex.Victim, b.Attacker))
                 foreach (string line in _host.RunDamageProc(ex.Victim, b.Attacker, ex.Damage))
                     _host.Log(line);
 
@@ -1326,8 +1326,7 @@ public sealed class CombatEngine
         // so source_obj keeps whatever the previous call left there and a script reading it here reads a
         // stale handle. We pass
         // the victim itself — a well-defined choice, since "the attacker damaged itself" is what happened.
-        if (victim == attacker.Critter && dmg > 0 && victim.Sid != -1
-            && victim != _host.Dude && !_host.PartyMembers.Contains(victim))
+        if (victim == attacker.Critter && dmg > 0 && ShouldRunDamageProc(victim, victim))
             foreach (string line in _host.RunDamageProc(victim, victim, dmg))
                 _host.Log(line);
 
@@ -1558,7 +1557,7 @@ public sealed class CombatEngine
 
         // damage_p_proc runs as damage applies, fixedParam = amount, source =
         // attacker (combat.cc:4850-4851; party-on-party skip is moot here).
-        if (attack.Target != dude && attack.Target.Sid != -1)
+        if (ShouldRunDamageProc(attack.Target, attack.Attacker))
             foreach (string line in _host.RunDamageProc(attack.Target, attack.Attacker, attack.Damage))
                 _host.Log(line);
 
@@ -1596,6 +1595,44 @@ public sealed class CombatEngine
             return;
         foreach (string line in _host.RunCombatProc(attacker, 2, defender).Lines)
             _host.Log(line);
+    }
+
+    /// <summary>
+    /// Task 2 (F27 unification): the shared damage_p_proc precondition every RunDamageProc call site
+    /// needs, ported from fallout2-ce src/combat.cc _damage_object() (:4847/4849-4851):
+    /// <code>
+    /// if (!a4) {
+    ///     if (!objectIsPartyMember(a1) || !objectIsPartyMember(a5)) {
+    ///         scriptSetFixedParam(a1->sid, damage);
+    ///         scriptExecProc(a1->sid, SCRIPT_PROC_DAMAGE);
+    ///     }
+    /// }
+    /// </code>
+    /// (the `sid`-bound object-has-a-script check that gates scriptExecProc itself is Sid == -1, the
+    /// same precondition RunObjectProc/RunCombatProc use elsewhere in this port). This helper carries
+    /// ONLY that shared pair: `target.Sid != -1`, and skip when target and source are BOTH party
+    /// members — <c>_host.Dude</c> counts as a party member (gPartyMembers[0],
+    /// party_member.cc:725: `gPartyMembers->object = gDude;`, set on party init/load). It does NOT
+    /// carry the `!a4` term itself (fallout2-ce's "hit an unintended target" flag) — each call site's
+    /// own `hitUnintendedTarget`/`attackSourced`/`victim == selfDamageProcFor`/`victim == attacker`/
+    /// `dmg > 0` conditions stay AT the site (F12, F13, F16 each established theirs deliberately;
+    /// folding them in here would silently recreate F12, where a missed shot's collateral victim would
+    /// run a proc the reference suppresses).
+    ///
+    /// Per Task 1's investigation: the old per-site `target != _host.Dude` term has NO reference
+    /// counterpart (:4849 is a pair gate only — vanilla DOES run the dude's damage_p_proc against an
+    /// enemy-sourced hit) and is dropped here. It was behaviourally inert against every shipped map
+    /// (the dude's Sid never resolves to a real object script — see BACKLOG F29), so dropping it changes
+    /// no observable output; it only lets a hypothetical live-sid dude (as the reference genuinely wires
+    /// up via scriptsSetDudeScript, scripts.cc:1460-1489) reach the same pair gate as everyone else.
+    /// </summary>
+    private bool ShouldRunDamageProc(MapObject target, MapObject? source)
+    {
+        if (target.Sid == -1)
+            return false;
+        bool targetIsPartyMember = target == _host.Dude || _host.PartyMembers.Contains(target);
+        bool sourceIsPartyMember = source is not null && (source == _host.Dude || _host.PartyMembers.Contains(source));
+        return !(targetIsPartyMember && sourceIsPartyMember);
     }
 
     /// <summary>Knockback shove (melee/unarmed/explosion, never guns) + persisting
@@ -1752,8 +1789,7 @@ public sealed class CombatEngine
             // from the shared grenade-blast path (`actionExplode` / `_compute_explosion_*`, see the
             // class-level doc comment above), not from this crit-failure event; F17 (below) suppresses
             // it for this victim specifically, so it has no reference ordering to match here either way.
-            if (victim == selfDamageProcFor && victim.Sid != -1
-                && victim != _host.Dude && !_host.PartyMembers.Contains(victim))
+            if (victim == selfDamageProcFor && ShouldRunDamageProc(victim, victim))
                 foreach (string line in _host.RunDamageProc(victim, victim, damage))
                     _host.Log(line);
 
@@ -1787,20 +1823,10 @@ public sealed class CombatEngine
             // never a critter. attackSourced is the explicit opt-in that ambiguity needs; only the two
             // callers that resolve a genuine Attack (the grenade throw and the crit-fail explode) set it.
             //
-            // The party half of the gate ports _damage_object's `if (!objectIsPartyMember(a1) ||
-            // !objectIsPartyMember(a5))` (:4849): skip only when BOTH victim and killer are party members.
-            // This deliberately does NOT match ApplyBurstExtras's simpler `!= dude` gate — a difference
-            // between two Hexwaste sites modelling the same reference behaviour, worth flagging rather
-            // than silently matching the nearer sibling.
-            //
-            // DOCUMENTED DIVERGENCE (do not read the line above as "identical to :4849"): the extra
-            // `victim != _host.Dude` term has NO counterpart in the reference. :4849 is a PAIR gate only,
-            // so vanilla DOES run the dude's damage_p_proc when an enemy-sourced blast catches him. The
-            // exclusion is kept here to match the surrounding Hexwaste convention (ApplyBurstExtras, the
-            // F13 self-damage tail), not because the reference supports it. Removing it is a behaviour
-            // change that would reach nearly every fixture — see the BACKLOG entry that tracks it.
-            if (attackSourced && victim != killer && victim.Sid != -1 && victim != _host.Dude
-                && !(_host.PartyMembers.Contains(victim) && killer is not null && _host.PartyMembers.Contains(killer)))
+            // The party half of the gate is ShouldRunDamageProc (:4849's pair gate, shared by all six
+            // RunDamageProc call sites as of Task 2/F27 — see its doc comment for the full port note and
+            // the F29 resolution of the dude-exclusion question this block used to carry inline).
+            if (attackSourced && victim != killer && ShouldRunDamageProc(victim, killer))
                 foreach (string line in _host.RunDamageProc(victim, killer, damage))
                     _host.Log(line);
 

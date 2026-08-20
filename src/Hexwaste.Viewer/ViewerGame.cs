@@ -3029,6 +3029,17 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
             LightIntensity = Formats.Light.LightGrid.IntensityMax,
             LightDistance = 4,
             Pid = 0x01000001,
+            // Task 1/Task 2 hardening (F29): explicit, not the C# int default (0). The reference gives
+            // the dude a real, live sid in play (scriptsSetDudeScript, scripts.cc:1460-1489) so its
+            // damage_p_proc/etc. CAN fire — Hexwaste models no dude script at all, so -1 ("no script") is
+            // the honest value, matching every other unscripted MapObject's Sid convention. Before this,
+            // the dude's Sid silently defaulted to 0, which every `Sid != -1` guard in the codebase
+            // treated as "has a script" — harmless only because map format type-0 sids are never
+            // object-bound (Task 1's 146-map survey), so ScriptsBySid[0] never resolves. Verified safe
+            // codebase-wide (Task 2's Sid != -1 survey): every other such guard either already excludes
+            // `!= dude` explicitly, never receives the dude object, or is immediately followed by (or
+            // wraps) a ScriptsBySid.TryGetValue lookup that fails identically for Sid 0 and Sid -1.
+            Sid = -1,
         };
 
         // Combat numbers come from the dude's gcd sheet (the critter proto is
