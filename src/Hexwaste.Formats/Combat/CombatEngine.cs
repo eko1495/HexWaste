@@ -2466,23 +2466,39 @@ public sealed class CombatEngine
         }
     }
 
-    /// <summary>ported from fallout2-ce src/combat.cc _combat_should_end():
-    /// combat is over when nothing hostile is left standing OR still wants to fight.
-    /// Task 3 (correction): folds the same <see cref="WantsToStopFighting"/> query TryEndCombat
-    /// already uses for the player's manual "leave combat" gate into the automatic per-Step
-    /// check, instead of maintaining a second, mutating implementation of the same reference
-    /// function (see the history note on WantsToStopFighting/where PruneEscapedHostiles used
-    /// to live, just above StepTurnOrder).</summary>
+    /// <summary>ported from fallout2-ce src/combat.cc _combat_should_end (:3339-3376): the AUTOMATIC
+    /// end-of-combat test, run once per round from <c>_combat()</c>'s <c>} while (!_combat_should_end());</c>
+    /// (:3446). It reads <c>_list_com</c> — the combatant list AFTER <c>_combat_sequence()</c> (:3023) has
+    /// already evicted, that same round, every critter that is dead (:3030-3042) or is knocked out /
+    /// <c>CRITTER_MANEUVER_DISENGAGING</c> (:3044-3060, moved to the non-combatant list, from which
+    /// <c>_combat_add_noncoms()</c> (:2899) may re-admit it later). So the predicate that decides who
+    /// still counts as a live participant is <b>dead / KO / DISENGAGING</b> — and that is what this
+    /// method applies to <c>_hostiles</c>. It is the SAME predicate <see cref="BuildTurnOrder"/> already
+    /// applies when building <c>_order</c>, which is Hexwaste's stand-in for the post-eviction
+    /// <c>_list_com</c>.
+    ///
+    /// NOT ported here: <c>_combatai_want_to_stop</c>. Its sole caller in the reference is
+    /// <c>combatAttemptEnd</c> (combat.cc:3087) — the PLAYER's manual "leave combat" gate — and
+    /// <c>_combat_should_end</c> never calls it. Folding it in here would add two terms vanilla never
+    /// applies automatically: <c>ManeuverFleeing</c> (a fleer still inside <c>ai->max_dist</c> keeps
+    /// FLEEING, not DISENGAGING, stays in <c>_list_com</c>, and the fight continues) and the perception
+    /// term (vanilla keeps fighting an enemy that momentarily cannot see the dude). See
+    /// <see cref="WantsToStopFighting"/>, which stays where the reference puts it:
+    /// <see cref="TryEndCombat"/> alone.
+    ///
+    /// Hexwaste shape: the reference's team scan over the full <c>_list_com</c> ("end unless someone is
+    /// on a team other than the dude's, or has a whoHitMe on the dude's team") is expressed here as
+    /// "no live, non-evicted hostile remains" — <c>_hostiles</c> IS the dude-hostile set by
+    /// construction, so the cross-team test is already satisfied by membership.</summary>
     private bool CombatShouldEnd() => _dudeSpectator
-        // P73: a dude-absent brawl ends when one team (or none) is left standing.
+        // P73: a dude-absent brawl ends when one team (or none) is left standing. No reference
+        // counterpart (vanilla's _list_com always contains gDude); a carried Hexwaste divergence.
         ? _hostiles.Where(h => !h.IsDead).Select(h => h.Team).Distinct().Count() <= 1
-        // A knocked-out (but alive) hostile keeps blocking automatic end regardless of
-        // WantsToStopFighting's own KO branch — pre-existing Hexwaste design (P14-M2): it stays a
-        // live combat participant through its wake timer rather than letting the fight close under
-        // it. IsKnockedOut is the same pre-existing helper TryEnemyAction's own forfeit check uses,
-        // not a second port of _combatai_want_to_stop; it FORCES the block on regardless of what
-        // WantsToStopFighting's own (correct-for-the-exit-gate) KO branch would say.
-        : !_hostiles.Any(h => !h.IsDead && (IsKnockedOut(h) || !WantsToStopFighting(h)));
+        // A knocked-out (but alive) hostile keeps blocking automatic end even though the reference
+        // would have evicted it at :3044-3060 — pre-existing Hexwaste design (P14-M2): a KO critter
+        // stays a live combat participant through its wake timer rather than letting the fight close
+        // under it. That is the one deliberate departure from _combat_sequence's predicate here.
+        : !_hostiles.Any(h => !h.IsDead && (IsKnockedOut(h) || (h.Maneuver & ManeuverDisengaging) == 0));
 
     private bool _terminateRequested;
 
@@ -2497,6 +2513,14 @@ public sealed class CombatEngine
 
     private void EndCombat()
     {
+        // Idempotent: StepTurnOrder() can itself end the fight (the MaxSpectatorBrawlRounds cap and the
+        // per-round CombatShouldEnd() check) and return, after which UpdateCombat's own post-Step
+        // CombatShouldEnd() is trivially true (_hostiles is empty) and would tear down a SECOND time —
+        // duplicate wake/clear passes, a second ResetDudeAp, a second "Combat ends." log. The goldens
+        // never caught it because Log is not transcripted. One teardown per fight.
+        if (_phase == CombatPhase.Idle)
+            return;
+
         // Force-wake every combatant so knockout never leaks past the fight
         // (combat.cc:2840 _combat_over → knockoutEventProcess); crippled/blind bits
         // persist on CombatResults (a Doctor clears them).
@@ -2556,22 +2580,33 @@ public sealed class CombatEngine
     }
 
     /// <summary>ported from fallout2-ce src/combat_ai.cc _combatai_want_to_stop (:3211): a critter stops
-    /// fighting (does NOT block the player leaving combat) if it is dead/KO, fleeing/disengaging, or it no
-    /// longer perceives a danger source. For the exit gate the danger source is the dude + his live party;
-    /// an alive, engaging animal that still perceives the dude (e.g. adjacent) keeps the fight open.
-    /// The ONE port of this reference function in the codebase — Task 3 (correction) folded it into
-    /// CombatShouldEnd() too (the automatic per-Step check) instead of adding a second, mutating
-    /// implementation there; see the history note above StepTurnOrder for what that replaced.</summary>
+    /// fighting (does NOT block the player leaving combat) if it is DISENGAGING (:3215), dead/KO (:3219),
+    /// FLEEING (:3223), or it has no danger source it can still perceive (:3227-3228,
+    /// <c>enemy == nullptr || !isWithinPerception(a1, enemy)</c>).
+    ///
+    /// The last term is a <see cref="DangerSource"/> call in the reference — NOT a hardcoded "can it see
+    /// the dude or his party". That distinction matters: with a hardcoded dude-side, two hostile teams
+    /// brawling out of the dude's perception would all report "wants to stop". Now that
+    /// <c>_ai_danger_source</c> is ported, this is the real thing.
+    ///
+    /// The ONE port of this reference function in the codebase, and — matching the reference, whose only
+    /// caller is <c>combatAttemptEnd</c> (combat.cc:3087) — its only consumer is
+    /// <see cref="TryEndCombat"/>, the player's manual exit gate. The AUTOMATIC end check
+    /// (<see cref="CombatShouldEnd"/>) deliberately does NOT use it; see that method's note.
+    ///
+    /// Caveat carried from <see cref="CheckBadShot"/>: DangerSource reads <see cref="_actingEnemyAp"/>
+    /// for its AP gate, which is only meaningful for the critter currently acting — the reference has the
+    /// same property (it reads the critter's live <c>combat.ap</c>) and <c>combatAttemptEnd</c> calls it
+    /// off-turn just the same, so this is faithful rather than a Hexwaste soft spot.</summary>
     private bool WantsToStopFighting(MapObject h)
     {
         if (h.IsDead || IsKnockedOut(h))
             return true;
         if ((h.Maneuver & (ManeuverDisengaging | ManeuverFleeing)) != 0)
             return true;
-        MapObject? dude = _host.Dude;
-        IEnumerable<MapObject> dudeSide = (dude is { IsDead: false } ? [dude] : Array.Empty<MapObject>())
-            .Concat(_host.PartyMembers.Where(p => !p.IsDead));
-        return !dudeSide.Any(e => WithinPerception(h, e)); // no perceivable danger source → it wants to stop
+        // :3227-3228 — the danger source is whatever _ai_danger_source finds for THIS critter, and the
+        // perception check is against THAT, not against the dude.
+        return DangerSource(h) is not { } enemy || !WithinPerception(h, enemy);
     }
 
     /// <summary>Public so a non-combat death (script/trap damage) can trigger the
@@ -2650,28 +2685,37 @@ public sealed class CombatEngine
         if (_phase == CombatPhase.EnemyTurn)
             StepTurnOrder();
 
-        if (CombatShouldEnd())
+        // _phase guard: StepTurnOrder() may already have ended the fight (see EndCombat's idempotency
+        // note) — don't re-evaluate a trivially-true CombatShouldEnd() over an emptied _hostiles.
+        if (_phase != CombatPhase.Idle && CombatShouldEnd())
         {
             EndCombat();
             return;
         }
     }
 
-    // HISTORY (Task 3, then corrected): this used to be PruneEscapedHostiles(), a Hexwaste
-    // invention with NO reference counterpart — it called this same _combatai_want_to_stop
-    // predicate (combat_ai.cc:3211) but MUTATED _hostiles, physically evicting any hostile that
-    // "wanted to stop". The reference's actual single caller of _combatai_want_to_stop,
-    // combatAttemptEnd() (combat.cc:3087), only ever QUERIES it — it blocks the player's manual
-    // "leave combat" attempt when any hostile still wants to fight, and never removes anyone from
-    // the combat list. The mutating version broke on a bootstrap gap: AddJoiners() (below) adds a
-    // freshly-joined critter to _hostiles without stamping its WhoHitMe, so a danger-source-based
-    // want-to-stop check found nothing, evicted it before its first turn, and AddJoiners then
-    // re-recruited it next round — an evict/rejoin oscillation traced live via
-    // "@9274 ... enemy=null" on every round of denbus2-fight-flee. The fix: don't mutate
-    // _hostiles at all. CombatShouldEnd() now folds the SAME query TryEndCombat() already used
-    // (WantsToStopFighting, just below) into its own per-Step check — one port of
-    // _combatai_want_to_stop in the codebase, used at both the manual and automatic exit points,
-    // exactly matching the reference's query-not-mutation shape.
+    // HISTORY (Task 3, then corrected twice): this used to be PruneEscapedHostiles(), which ran a
+    // FLAT ~20-hex sight-distance test over _hostiles every Step and physically evicted whoever was
+    // past it. THAT GATE was the invention — nothing in e97087b decides participation by a fixed
+    // hex radius. The eviction itself is NOT an invention, and an earlier revision of this comment
+    // was wrong to say the reference "never removes anyone from the fight": _combat_sequence()
+    // (combat.cc:3023, called once per round from _combat()'s loop at :3443) removes dead critters
+    // (:3030-3042) and moves knocked-out / CRITTER_MANEUVER_DISENGAGING critters to the
+    // non-combatant list (:3044-3060), from which _combat_add_noncoms() (:2899) can re-admit them
+    // via _combatai_want_to_join. Evict-and-re-add every round IS the reference's architecture, and
+    // _ai_run_away (combat_ai.cc:1183/1216) is what sets DISENGAGING — precisely when a fleeing
+    // critter is at or past its packet's ai->max_dist, i.e. the reference's own "a hostile that
+    // escaped leaves the fight" mechanism, which the flat prune was crudely approximating.
+    //
+    // So the evict/rejoin oscillation traced live on denbus2-fight-flee ("@9274 ... enemy=null" on
+    // every round, from AddJoiners() adding a fresh hostile without stamping its WhoHitMe) was
+    // evidence that the GATE was wrong, not that mutation was wrong.
+    //
+    // The shipped shape: Hexwaste does not maintain a second, mutable combatant list — _order (built
+    // by BuildTurnOrder) already applies _combat_sequence's own dead/KO/DISENGAGING predicate, and
+    // CombatShouldEnd() applies the same predicate to _hostiles, which is what _combat_should_end
+    // reads the post-eviction _list_com for. _combatai_want_to_stop stays where the reference puts
+    // it — TryEndCombat(), the player's manual exit gate — and is NOT part of the automatic check.
 
     /// <summary>
     /// Step the INTERLEAVED round order one combatant at a time (ported from combat.cc _combat()'s

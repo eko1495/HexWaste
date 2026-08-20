@@ -2150,6 +2150,13 @@ public class CombatEngineTests
         var host = new FakeCombatHost { CriticalsEnabled = false };
         host.SetDude(NewCritter(20100, hp: 30, ap: 10, skill: 100));
         MapObject enemy = host.AddCritter(NewCritter(HexGrid.TileInDirection(20100, 0), hp: 500, perception: 5));
+        // A REAL team split (NewCritter defaults everyone to team 0). WantsToStopFighting now derives its
+        // danger source from DangerSource (_combatai_want_to_stop's :3227 `_ai_danger_source(a1)`) rather
+        // than hardcoding "the dude + party", and every reference path into a danger source — the
+        // whoHitMe stamp via _critter_set_who_hit_me's cross-team gate (critter.cc:1296) and
+        // aiFindAttackers' own cross-team filter — is cross-team. A same-team "enemy" has no danger
+        // source in vanilla either, so leaving both on team 0 would have been testing an impossible fight.
+        enemy.Team = 1;
         var engine = new CombatEngine(host, new MinRng());
         Assert.True(engine.TryAttack(enemy)); // opens combat; enemy is a live, adjacent, engaging hostile
         host.Animating.Clear();
