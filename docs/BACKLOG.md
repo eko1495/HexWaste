@@ -938,6 +938,35 @@ inconsistency between those same two sites — the party gate that `ApplyBurstEx
 Closing F27 and F29 together would leave one coherent model of `_damage_object`'s proc gate instead
 of three near-misses.
 
+**F30 — An INVULNERABLE critter still suffers critical-failure effects; the reference exempts it
+outright.** *Effort S · found by the F26/F15 whole-branch review (2026-08-20).*
+`attackComputeCriticalFailure` early-returns before resolving any flags when the attacker carries
+`CRITTER_INVULNERABLE` (`combat.cc:4182-4183`):
+
+```c
+if (attack->attacker != nullptr && _critter_flag_check(attack->attacker->pid, CRITTER_INVULNERABLE)) {
+    return 0;
+}
+```
+
+Hexwaste has **no invulnerability check anywhere in `CombatEngine`** — a grep for `Invulnerable`
+returns nothing — so `ApplyCritFailureEffects` resolves and applies the full `_cf_table` result for
+such a critter: it can drop or destroy its weapon, hit itself, lose its ammo, be crippled or blinded,
+and lose its turn. Scripted invulnerable NPCs are a normal content device, so this is reachable in
+ordinary play rather than a theoretical case. Narrow but real; the fix is a guard at the head of the
+effects path, mirroring the reference's early return. Note the reference places it **after** the
+`DAM_HIT` clear at `:4180` and before any flag resolution, so it exempts the critter from the effects
+without disturbing the attack's own bookkeeping.
+
+**F31 — The reference scales a burst's ammo cost through `_item_w_compute_ammo_cost`; Hexwaste does
+not model it.** *Effort S–M · found by the F26/F15 whole-branch review (2026-08-20).* `_compute_attack`
+routes `attack->ammoQuantity` through `_item_w_compute_ammo_cost(attack->weapon, &(attack->ammoQuantity))`
+(`combat.cc:3905`) and aborts the whole attack on `-1`. Hexwaste's burst spends `min(loadedAmmo,
+weapon.Rounds)` directly with no cost-scaling step. Consequence: any weapon whose ammo cost per shot
+is not 1 spends the wrong number of rounds, and the reference's abort-on-failure path has no
+counterpart. Unmeasured — the blast radius depends on which shipped weapons carry a non-unit ammo
+cost, which should be established from the proto data before this is scheduled.
+
 ### Pointer
 
 **F10 — Surveyed-but-unbuilt QoL catalogue.** *Not scheduled work.*
