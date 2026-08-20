@@ -878,7 +878,9 @@ public sealed class CombatEngine
             // via the misc-10 marker, the metarule(49) door path).
             _host.Log($"The {_host.ObjectNameByPid(t.Proto.Pid)} explodes!");
             _host.SpawnExplosionMarker(t.TargetTile);
-            Explode(t.TargetTile, t.Thrower, t.MinDamage, t.MaxDamage, radius: 3);
+            // F16: a thrown grenade resolves through the in-attack _compute_explosion_on_extras path
+            // (combat.cc:3973-3976), where attack->attacker is the real thrower — attackSourced: true.
+            Explode(t.TargetTile, t.Thrower, t.MinDamage, t.MaxDamage, radius: 3, attackSourced: true);
             return;
         }
 
@@ -1194,8 +1196,12 @@ public sealed class CombatEngine
         if ((flags & CriticalTables.DamHitSelf) != 0)
             CritFailDamage(attacker, attacker, weaponProto, "crit-fail-self");
         else if ((flags & CriticalTables.DamExplode) != 0)
+            // F16: the crit-fail explode also resolves through _compute_explosion_on_extras
+            // (combat.cc:3976, isFromAttacker=1) — attackSourced: true so the OTHER victims of the
+            // fumbler's own blast also run their damage_p_proc (source = the fumbler), not just the
+            // fumbler itself (selfDamageProcFor, F13).
             Explode(self.HexTile, self, weaponProto?.Weapon?.MinDamage ?? 1, weaponProto?.Weapon?.MaxDamage ?? 6, 1,
-                selfDamageProcFor: self);
+                selfDamageProcFor: self, attackSourced: true);
 
         if ((flags & CriticalTables.DamHurtSelf) != 0)
             ApplyCritFailDamage(attacker, attacker, _rng.Next(1, 6), weaponProto, "crit-fail-self");
@@ -1618,7 +1624,7 @@ public sealed class CombatEngine
     /// critter) would have processed whichever object it found there. Not changed: judged more
     /// faithful than less, but gameplay-visible, so documented here.</summary>
     public void Explode(int centerTile, MapObject? killer, int minDamage, int maxDamage, int radius,
-        MapObject? selfDamageProcFor = null)
+        MapObject? selfDamageProcFor = null, bool attackSourced = false)
     {
         const int maxTargets = 6;
         const int explosionDt = CritterStat.DamageThreshold + 6; // STAT_DAMAGE_THRESHOLD_EXPLOSION
@@ -1705,6 +1711,46 @@ public sealed class CombatEngine
             if (victim == selfDamageProcFor && victim.Sid != -1
                 && victim != _host.Dude && !_host.PartyMembers.Contains(victim))
                 foreach (string line in _host.RunDamageProc(victim, victim, damage))
+                    _host.Log(line);
+
+            // F16: the sibling of the block above. ported from fallout2-ce src/combat.cc _apply_damage()
+            // extras loop (:4751, community fix #493): every OTHER critter caught in an attack-sourced
+            // blast (a thrown grenade, or a crit-fail explode's other victims) also runs its
+            // damage_p_proc, with the SOURCE being the blast's attacker (attack->attacker at :4751) —
+            // never the victim itself; that shape is F13's self-damage block above.
+            //
+            // At bare e97087b the flag passed to _damage_object() here is `attack->defender ==
+            // attack->oops` (:4751 pre-#493); for this event defender == oops (Explode() never diverges a
+            // victim from what it targeted, so the two are always equal here), making the flag TRUE —
+            // _damage_object's `if (!a4)` gate (:4847) then suppresses the proc entirely, so AT BARE
+            // E97087B THIS PROC WOULD NOT RUN. Hexwaste does not carry that polarity: F13 already adopted
+            // #493's rewrite, which collapses all three site-specific oops/defender expressions into one
+            // `hitUnintendedTarget = attack->defender != attack->intendedTarget` — always false here for
+            // the same reason — so under the polarity Hexwaste carries, the proc DOES run. Not porting
+            // this half while F13 ported the self-damage half is exactly the asymmetry this closes.
+            //
+            // `attackSourced` is a Hexwaste-only gate, not a reference concept — the reference's
+            // _apply_damage extras loop is reached from two different callers: the in-attack
+            // _compute_explosion_on_extras (grenades, crit-fail explode — attack->attacker is the real
+            // attacking critter, i.e. our `killer`) and actionExplode (the scripted `explosion` opcode +
+            // queue.cc's planted-charge detonation), where attackInit(attack, explosion, critter, ...)
+            // (actions.cc:1631) makes attack->attacker the transient misc-10 explosion marker object —
+            // NEVER the placer (queue.cc passes gDude only as a bookkeeping `sourceObj` to
+            // _report_explosion, not as attack->attacker). Hexwaste's Explode() conflates both reference
+            // shapes behind one `killer` parameter and does not model the marker object, so `killer`
+            // being non-null cannot be used to detect "this was a real attack" — the planted-charge caller
+            // (ViewerGame.cs ProcessArmedCharges) passes killer=dude even though its reference source is
+            // never a critter. attackSourced is the explicit opt-in that ambiguity needs; only the two
+            // callers that resolve a genuine Attack (the grenade throw and the crit-fail explode) set it.
+            //
+            // The party gate mirrors _damage_object's `if (!objectIsPartyMember(a1) ||
+            // !objectIsPartyMember(a5))` (:4849) exactly: skip only when BOTH victim and killer are party
+            // members. This deliberately does NOT match ApplyBurstExtras's simpler `!= dude` gate — a
+            // difference between two Hexwaste sites modelling the same reference behaviour, worth flagging
+            // rather than silently matching the nearer sibling.
+            if (attackSourced && victim != killer && victim.Sid != -1 && victim != _host.Dude
+                && !(_host.PartyMembers.Contains(victim) && killer is not null && _host.PartyMembers.Contains(killer)))
+                foreach (string line in _host.RunDamageProc(victim, killer, damage))
                     _host.Log(line);
 
             // F17: ported from fallout2-ce src/combat.cc attackComputeCriticalFailure (:4180), which
