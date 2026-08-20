@@ -71,8 +71,79 @@ what's left is smaller and more precisely scoped than the 2026-07-16 pass below.
   (`combat_ai.cc:1544`), so Hexwaste's companion-only application of it is faithful, not a gap;
   `_combatai_rating` also keys `_compare_strength`/`_compare_weakness` (the previous HP-based
   companion ranking was an undocumented divergence, now fixed); perception-based disengage was
-  already ported (`WantsToStopFighting`) — the piece still deferred is `PruneEscapedHostiles`,
-  which needs the golden-moving `_ai_danger_source`.
+  already ported (`WantsToStopFighting`).
+- **Shipped: `_ai_danger_source` port, and the deletion of `PruneEscapedHostiles`
+  (2026-08-20, `feat/ai-danger-source`, commits `f4392bb`, `effabf1`, `d76eb14`, `ce2ee04`,
+  `775fd8d`, `83864fe`, `9ae21b7`, `84af67b`).** This closes the item this tier had been carrying
+  since the batch above as "the piece still deferred." Full account:
+  - `f4392bb` ports `aiFindAttackers` (`combat_ai.cc:1457-1525`) and `_ai_find_nearest_team`
+    (`:1397-1423`) as pure, inert helpers — no caller yet, so this commit cannot move a fixture by
+    construction.
+  - `effabf1` ports `_ai_danger_source` itself (`combat_ai.cc:1529-1705`) as
+    `CombatEngine.DangerSource(MapObject)`, replacing `TryEnemyAction`'s hand-rolled
+    target-selection prologue (`FriendAttacker` deleted as subsumed). Four scope expansions rode
+    in with it, all shipped: `CheckBadShot`/`ShotStatus`, a port of `_combat_check_bad_shot`
+    (`combat.cc:5643-5694` — Hexwaste had no unified version of this before); `CombatRoster`, the
+    `_curr_crit_list` equivalent; `StartBrawl`'s whoHitMe seeding, a port of `_caiTeamCombatInit`
+    (`combat_ai.cc:1725-1755`) generalized from two teams to N (every reference call site passes
+    `flags=1`/same-team; `StartBrawl` supports arbitrary team counts, so it widens the flag
+    argument rather than hardcoding it); and `MapObject.LastAttackTarget`, backing
+    `aiInfoSetLastTarget` (defined `combat.cc:2469`, the call this ports is at `:3558`).
+  - `d76eb14` and `ce2ee04` are review fixes: routing `BuildTurnOrder`'s combat-open whoHitMe
+    stamp through a single `SetWhoHitMe` helper carrying `_critter_set_who_hit_me`'s team gate
+    (`critter.cc:1285-1301`) instead of a raw assignment, plus `CheckBadShot` fidelity and clearing
+    `LastAttackTarget` at combat end.
+  - **Two marker decisions, recorded so neither is re-litigated:** the `// CE:` "Whomever is
+    attacking me" targeting improvement at `combat_ai.cc:1565` was **excluded** — CLAUDE.md puts
+    fork/CE quality-of-life out of scope, and because the block is purely additive (an `if (1)`
+    wrapping extra logic ahead of the vanilla fallback, not a replacement of it), omitting it
+    leaves the vanilla `e97087b` behavior intact underneath. The `// SFALL: Add `continue`...`
+    one-slot-per-candidate fix inside `aiFindAttackers` (`combat_ai.cc:1481-1482`) was **ported** —
+    precedent already set by `EventQueue.cs` (SFALL multi-event dedup, cites `combat.cc:4802`) and
+    `AiBestWeapon.cs` (SFALL avg-damage fix), both of which already treat a cited SFALL correction
+    as part of the baseline to port, not fork-only QoL.
+  - **The plan's original design was wrong, and the correction is the useful part.** The plan
+    (`ee7f7c5`/`ca1dedc`, the spec/plan docs commits preceding this sub-project) told the
+    implementer to put the danger-source test inside a mutating `PruneEscapedHostiles`. `775fd8d`
+    did exactly that — and re-recorded
+    `denbus2-fight-flee` with `hostilesLeft` 16→6, a large, unreviewed-feeling swing. `83864fe`
+    caught the error: `_combatai_want_to_stop` (`combat_ai.cc:3211`) was **already** correctly
+    ported, as `WantsToStopFighting`/`TryEndCombat`, non-mutating, tested, and wired to the
+    reference's actual and only call site (`combatAttemptEnd`, `combat.cc:3087`, which only
+    *queries* whether combat may end — the reference never evicts anyone from a fight). Following
+    the plan produced a **second** implementation of one reference function, and the duplicate had
+    a bootstrap gap: `AddJoiners` adds a critter to `_hostiles` without stamping `WhoHitMe`, so a
+    fresh joiner had no danger source, was evicted before its first turn by the new mutating prune,
+    and `WantToJoin` re-added it next round — measured live as `Villager@9274` evicted every round
+    with `enemy=null`. `83864fe` deleted `PruneEscapedHostiles` entirely and routed
+    `WantsToStopFighting` into `CombatShouldEnd` instead: no mutation, no vacancy for `AddJoiners`
+    to refill, so the oscillation became structurally impossible rather than tuned away.
+  - That correction exposed a second, unrelated live bug (`9ae21b7`): `StepTurnOrder`'s
+    `while (true)` loop calls `StartNewRound()` with no return, so once one team is fully
+    eliminated and every remaining actor's turn returns `false`, it free-runs through rounds
+    inside a single `StepTurnOrder()` call and never reaches the caller's `CombatShouldEnd()`. The
+    only backstop was `MaxSpectatorBrawlRounds` — a P73 cap built for two teams that can't reach
+    each other, not for an already-decided fight. Proven with an unfiltered trace in which all 34
+    `enemy-attack`/`knockback` lines were byte-identical to a pre-fix baseline and only the round
+    counter differed. Fixed by porting `combat.cc:3446`'s own
+    `} while (!_combat_should_end());`, checked once per round (the increment precedes the check,
+    `combat.cc:3445-3446` — `84af67b` re-recorded `brawl-watch`'s round count 7→8 to match that
+    increment-then-check order; reproducing 7 was explicitly declined as bending the port to
+    preserve a fixture).
+  - **Blast radius, measured: exactly two fixture lines, not the broad move this tier's own
+    framing above led readers to expect.** `denbus2-fight-flee`: `joins: Vic@17070` 5→1 and
+    `fight-result hostilesLeft` 16→17 — Vic was oscillating under the OLD flat-distance
+    `PruneEscapedHostiles` before this sub-project ever started; removing the mutation fixed
+    pre-existing churn as a side effect, it did not introduce new churn. `brawl-watch`: `rounds`
+    7→8, everything else (teamsAtStart, ended, survivors, winTeam, dudeHp) unchanged. Why so small:
+    the entire `tests/golden-combat/` suite is dude-initiated 1v1/1v-few combat, where old
+    hand-rolled target selection and the new `_ai_danger_source` converge on the same target almost
+    everywhere — only the multi-team, dude-absent `tests/golden-encounter/` fixtures had any real
+    chance of showing a difference, and only two of those did. Final verification:
+    `dotnet test` 936 passed / 0 failed / 91 skipped; `combat-golden.sh check` 17/17;
+    `encounter-golden.sh check` 187 ok plus the one justified re-record.
+  - **Open follow-up, not fixed here, tracked as F24 below:** `BeginScriptAggro` joins a critter
+    to combat without the `WithinPerception` gate that `WantToJoin` applies.
 - **Shipped BYTE-IDENTICAL, not as a re-record (2026-08-13):** the ring-spiral explosion victim
   walk (`ExplosionSpiral.Tiles`, ported from `_compute_explosion_on_extras`, `combat.cc:4022-4045`),
   `Explode`'s ordering by that spiral with the centre critter kept primary, and the `_ai_best_weapon`
@@ -102,10 +173,13 @@ what's left is smaller and more precisely scoped than the 2026-07-16 pass below.
 - **Still in the re-record tier** (unchanged by this batch — see the individual re-record-tier
   bullets below for detail): `_combat_safety_invalidate_weapon` +
   `_cai_retargetTileFromFriendlyFire` (ally-in-LoF weapon-switch invalidation + snipe-back is
-  partial, `FriendlyOnFireLine`, `CombatEngine.cs:2382-2390`); `_ai_danger_source` + perception-based
-  `PruneEscapedHostiles`. Rating-gated retaliation left this tier when its branch merged
-  (2026-08-15) — it was the one item here that did move a fixture, and `brawl-watch` was
-  deliberately re-recorded for it.
+  partial, `FriendlyOnFireLine`, `CombatEngine.cs:2382-2390`). Rating-gated retaliation left this
+  tier when its branch merged (2026-08-15) — it was the one item here that did move a fixture, and
+  `brawl-watch` was deliberately re-recorded for it. `_ai_danger_source` + `PruneEscapedHostiles`
+  left this tier when the `feat/ai-danger-source` branch merged (2026-08-20) — see the shipped
+  bullet above; despite the tier's name, the actual blast radius was two fixture lines, not a broad
+  move, because the golden suite is almost entirely dude-initiated 1v1 combat where old and new
+  target selection agree.
 - **Final-review follow-ups (not implemented — documentation only):**
   - The out-of-range switch trigger (`CombatEngine.cs` `TryEnemyAction`, `:2732-2753`) is ordered
     AHEAD of the reference's flee check: the engine's `COMBAT_BAD_SHOT_OUT_OF_RANGE` branch
@@ -462,6 +536,66 @@ refusing the walk), and the correct fix makes the line truthful instead of merel
 `walker.Update(...)` directly on every entry in `_npcWalkers.Values` rather than routing through
 `PruneFinishedWalkers` — draining the dictionary there would remove the stale entry the probe exists to
 test, and the proof would silently become vacuous.
+
+**F22 — SHIPPED 2026-08-20 (`83864fe`), the `PruneEscapedHostiles` deletion — a Hexwaste invention
+with no reference counterpart survived because a deferral note described it as merely awaiting a
+port.** *Was carried inside A2's re-record tier as "the piece still deferred."* Hexwaste had a
+`PruneEscapedHostiles` method, called every `Step()`, that **removed** hostiles from `_hostiles`
+once they were judged to have escaped. No such removal exists anywhere in `e97087b`: the reference
+function this was meant to port, `_combatai_want_to_stop` (`combat_ai.cc:3211`), has exactly one
+caller — `combatAttemptEnd()` (`combat.cc:3087`), the manual "player tries to leave combat" gate —
+and it only **queries** whether the player may safely disengage; it never evicts anyone from the
+fight. The `feat/ai-danger-source` plan (docs commits `ee7f7c5`/`ca1dedc`) told the implementer to
+port the danger-source test into this existing mutating method, which is how the duplicate got
+built in the first place (`775fd8d`): a second implementation of `_combatai_want_to_stop`,
+alongside the already-correct, already-tested, already-wired `WantsToStopFighting`/`TryEndCombat`.
+Nobody grepped for an existing port of the reference function before specifying a new home for its
+logic. The duplicate immediately exposed a bootstrap gap — `AddJoiners` adds a critter to
+`_hostiles` without stamping `WhoHitMe`, so a fresh joiner had no danger source, was evicted by the
+mutating prune before its own first turn, and was re-added by `AddJoiners` next round: measured
+live as `Villager@9274` evicted every round with `enemy=null` on `denbus2-fight-flee`. Fix:
+`PruneEscapedHostiles` deleted outright; `WantsToStopFighting` now feeds `CombatShouldEnd` as well
+as `TryEndCombat`, so the one port of `_combatai_want_to_stop` is reused at both the manual and
+automatic exit points and never mutates `_hostiles`. No mutation means no vacancy for `AddJoiners`
+to refill, so the oscillation is now structurally impossible rather than tuned away. **Lesson for
+future backlog entries:** a deferral note that says "needs a port of X" should be treated as a
+prompt to search for an existing port of X before scoping new work, not just a statement that X is
+missing.
+
+**F23 — SHIPPED 2026-08-20 (`9ae21b7`), `StepTurnOrder`'s round loop free-ran through every
+remaining round once one team was eliminated, silently skipping the automatic end-of-combat
+check.** *Live bug, fixed as a direct consequence of F22.* `StepTurnOrder`'s `while (true)` loop
+calls `StartNewRound()` with no `return`, so once one team is fully eliminated and every remaining
+actor's `TryEnemyAction`/`TryAllyAction` returns `false` (nothing left to fight), the loop falls
+through every actor, back to the top, and into another `StartNewRound()` — repeatedly, all inside a
+single `StepTurnOrder()` call, never returning to the caller where `CombatShouldEnd()` (F22's fix)
+could run. The only backstop was `MaxSpectatorBrawlRounds`, a P73 stalemate cap built for two teams
+that structurally cannot reach each other, not for a fight that has already been decided. **Proof,
+not inference:** an unfiltered, deterministic double-run (`--brawl-watch desert1.map ARRO_War_Party
+2 ARRO_Cannibals 2 --rng-seed 3`) against this build and a pre-F22 baseline worktree showed all 34
+`enemy-attack`/`knockback` transcript lines byte-identical between the two — same actions, same
+hits, same misses, same damage, same order — with only the final round count differing (7 vs 100),
+confirming a pure control-flow spin rather than an AI or RNG change. Fixed by porting the
+reference's own round-loop shape, `combat.cc:3446`'s `} while (!_combat_should_end());`, checked
+once per round immediately after `StartNewRound()` — not before each actor's turn, so an actor's
+own turn (flee, KO forfeit, a script-preset maneuver) still runs before any want-to-stop judgment.
+Because the reference increments its round counter and *then* evaluates the end condition
+(`combat.cc:3445-3446`: `_combatNumTurns += 1;` then the `while`), the faithful port also corrected
+`brawl-watch`'s round count from a pre-increment 7 to a post-increment 8 (`84af67b`) — reproducing
+7 was explicitly declined as bending the port to preserve a fixture.
+
+**F24 — OPEN, not fixed: `BeginScriptAggro` joins a critter to combat without the
+`WithinPerception` gate that `WantToJoin` applies.** *Effort unknown · needs its own investigation
+before scoping.* `WantToJoin` (`CombatEngine.cs:2284-2299`) requires
+`WithinPerception(c, dude)` before a critter joins an in-progress fight; `BeginScriptAggro`
+(`CombatEngine.cs:2432`) — the script-driven aggro entry point — has no equivalent gate. This
+surfaced during the `feat/ai-danger-source` work via a test where a blind enemy at Perception 5
+(the blind malus of −5 zeroing effective perception exactly) behaved differently than expected
+under the new `WithinPerception`-based prune; the test was adjusted to Perception 8 to sidestep
+the zero-perception edge case, and the underlying `BeginScriptAggro`/`WantToJoin` asymmetry was
+left as-is (see the Task-3 report's "Concerns" section for the specific interaction). Not yet
+grounded against the reference's own script-aggro join site — record here so it is tracked instead
+of re-discovered, not so it is assumed to be a bug without checking `e97087b` first.
 
 ### Dialog and party
 
