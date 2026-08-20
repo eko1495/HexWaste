@@ -1754,7 +1754,7 @@ public sealed class CombatEngine
     /// <summary>Ports fallout2-ce src/critter.cc `_critter_set_who_hit_me` (:1285-1301) — the single gate
     /// the reference uses everywhere it writes a critter's whoHitMe. The full reference condition is
     /// `a2 == nullptr || a1.team != a2.team || (statRoll(a1, STAT_INTELLIGENCE, -1) < 2 &&
-    /// !(partyMember(a1) && partyMember(a2)))` (critter.cc:1295): a null attacker or a cross-team attacker
+    /// !(partyMember(a1) && partyMember(a2)))` (critter.cc:1296, in _critter_set_who_hit_me at :1285): a null attacker or a cross-team attacker
     /// always writes; a same-team attacker writes only on a failed INT roll (INT 5 → 60% chance) and never
     /// between two party members.
     ///
