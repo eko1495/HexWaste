@@ -1612,7 +1612,9 @@ public sealed class CombatEngine
     /// same precondition RunObjectProc/RunCombatProc use elsewhere in this port). This helper carries
     /// ONLY that shared pair: `target.Sid != -1`, and skip when target and source are BOTH party
     /// members — <c>_host.Dude</c> counts as a party member (gPartyMembers[0],
-    /// party_member.cc:725: `gPartyMembers->object = gDude;`, set on party init/load). It does NOT
+    /// The dude counts as a party member: object.cc:347 calls `partyMemberAdd(gDude)` at object load
+    /// (which stamps his id at party_member.cc:398); party_member.cc:725's `gPartyMembers->object = gDude`
+    /// is the save-load path of the same fact., set on party init/load). It does NOT
     /// carry the `!a4` term itself (fallout2-ce's "hit an unintended target" flag) — each call site's
     /// own `hitUnintendedTarget`/`attackSourced`/`victim == selfDamageProcFor`/`victim == attacker`/
     /// `dmg > 0` conditions stay AT the site (F12, F13, F16 each established theirs deliberately;

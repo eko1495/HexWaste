@@ -758,7 +758,7 @@ commit `75c6dfb` (2026-08-15), byte-identical, no fixture moved.** *Effort S.*
 `attack->oops` keeps the originally-intended target, set once at attack-init time and never
 reassigned (`:3485`). So the defender damage call at `:4723` passes `defender != oops` = true, and
 `_damage_object`'s gate `if (!a4)` at `:4847` skips `SCRIPT_PROC_DAMAGE`. `ApplyAccidentalHit`
-(`CombatEngine.cs:729`) called `RunDamageProc(acc.Victim, attacker, …)` unconditionally for any
+(`CombatEngine.cs:746`, was `:729`) called `RunDamageProc(acc.Victim, attacker, …)` unconditionally for any
 scripted non-dude bystander; the call was removed to match. HP loss, on-hit path and kill path
 unchanged.
 
@@ -839,7 +839,7 @@ whose attacker is the transient misc-10 explosion-marker object, never the place
 a known placer" — the explicit `attackSourced` opt-in was added instead, verified against this
 falsifying caller directly rather than trusted from the brief.
 **Flagged, not fixed here (tracked as F27 and F28 below):** `ApplyBurstExtras`
-(`CombatEngine.cs:977`) models the same reference predicate with a simpler `!= dude && Sid != -1`
+(`CombatEngine.cs:996`, was `:977`) modelled the same reference predicate with a simpler `!= dude && Sid != -1`
 gate, no party check — a second site now modelling one reference behaviour two different ways; and
 the C4/scripted-`explosion` paths still don't build the reference's synthetic-attacker shape at all.
 
@@ -905,7 +905,7 @@ written separately rather than shared) — so a party member's ordinary hit, bur
 could run a companion's `damage_p_proc`, which the reference suppresses. Fixed by extracting one
 `ShouldRunDamageProc(MapObject target, MapObject? source)` helper (`CombatEngine.cs:1629`) carrying
 the shared predicate — `target.Sid == -1` precondition plus the `:4849` pair gate, with `_host.Dude`
-counted as a party member per `party_member.cc:725` — and routing all six sites through it
+counted as a party member — `partyMemberAdd(gDude)` at object load, `object.cc:347`, which stamps the id at `party_member.cc:398` — and routing all six sites through it
 (`CombatEngine.cs:964, 996, 1329, 1560, 1792, 1829`). Site-specific conditions (`victim ==
 attacker.Critter && dmg > 0`, `victim == selfDamageProcFor`, `attackSourced && victim != killer`)
 deliberately stayed at their own sites rather than being folded into the shared helper — doing so
@@ -981,7 +981,7 @@ above.
 
 Result: `ShouldRunDamageProc` (`CombatEngine.cs:1629`) carries no dude-specific term at all — only the
 `Sid == -1` precondition and the pair gate, with `_host.Dude` counted as a party member per
-`party_member.cc:725`. 953 tests, combat-golden 17/17 byte-identical, 0 fixtures moved (predicted
+`object.cc:347` (`partyMemberAdd(gDude)`). 953 tests, combat-golden 17/17 byte-identical, 0 fixtures moved (predicted
 re-record tier; the prediction was wrong for the same reason F26's was — see F26's own correction
 above for the general lesson about unverified fixture-movement predictions).
 
