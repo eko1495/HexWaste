@@ -1448,18 +1448,24 @@ public sealed class CombatEngine
         if (_pendingAttack is { } attack && !_host.IsAnimating(attack.Attacker))
         {
             _pendingAttack = null;
+            // Task-2 port: aiInfoSetLastTarget(attacker, defender) (combat.cc:3558) — stamped
+            // unconditionally (hit or miss), same as the reference.
+            attack.Attacker.LastAttackTarget = attack.Target;
             ResolveAttack(attack);
         }
 
         if (_pendingThrow is { } thrown && !_host.IsAnimating(thrown.Thrower))
         {
             _pendingThrow = null;
+            if (thrown.Target is not null)
+                thrown.Thrower.LastAttackTarget = thrown.Target;
             ResolveThrow(thrown);
         }
 
         if (_pendingBurst is { } burst && !_host.IsAnimating(burst.Attacker))
         {
             _pendingBurst = null;
+            burst.Attacker.LastAttackTarget = burst.Target;
             ResolveBurst(burst);
         }
 
@@ -1745,12 +1751,36 @@ public sealed class CombatEngine
         return AiRating.Score(state.MeleeDamage, state.ArmorClass, proto?.Weapon?.MaxDamage ?? 0);
     }
 
+    /// <summary>Ports fallout2-ce src/critter.cc `_critter_set_who_hit_me` (:1285-1301) — the single gate
+    /// the reference uses everywhere it writes a critter's whoHitMe. The full reference condition is
+    /// `a2 == nullptr || a1.team != a2.team || (statRoll(a1, STAT_INTELLIGENCE, -1) < 2 &&
+    /// !(partyMember(a1) && partyMember(a2)))` (critter.cc:1296, in _critter_set_who_hit_me at :1285): a null attacker or a cross-team attacker
+    /// always writes; a same-team attacker writes only on a failed INT roll (INT 5 → 60% chance) and never
+    /// between two party members.
+    ///
+    /// DELIBERATE DIVERGENCE: Hexwaste simplifies the same-team INT-roll branch to an unconditional
+    /// REFUSAL — same team never writes, full stop. This keeps combat setup free of RNG for a reason
+    /// unrelated to this helper (drawing on the roll here would move golden fixtures). The cross-team
+    /// path — the only one the reference reaches without drawing RNG, since the `||` short-circuits on
+    /// `team != team` before the roll — is modelled EXACTLY. A null attacker also writes exactly (clears
+    /// whoHitMe), matching the reference's `a2 == nullptr` arm.
+    ///
+    /// Both call sites that stamp whoHitMe in the reference (`_combat_sequence_init`, combat.cc:3012/3016,
+    /// and the KO/DEAD bypass, combat.cc:4711-4716) route through this one helper here, so Hexwaste no
+    /// longer carries two contradictory models of the same reference gate.</summary>
+    private static void SetWhoHitMe(MapObject target, MapObject? attacker)
+    {
+        if (attacker is null || attacker.Team != target.Team)
+            target.WhoHitMe = attacker;
+    }
+
     /// <summary>Record who last hit a critter (whoHitMe) — ported from fallout2-ce combat.cc:4707 +
     /// combat_ai.cc _combatai_check_retaliation (:3484): an unset whoHitMe is taken unconditionally, but
     /// an existing one is REPLACED only by a strictly higher-rated attacker (_combatai_rating), so a
     /// critter keeps hunting the scarier enemy rather than whoever last scratched it. An equally-rated
-    /// attacker does not steal aggro. Hexwaste's team gate is retained — the engine's equivalent gate
-    /// lives in the callers and in `_critter_set_who_hit_me` itself. This moved the brawl-watch fixture
+    /// attacker does not steal aggro. Hexwaste's team gate is retained as an early exit here AND inside
+    /// `SetWhoHitMe` (the single helper now modelling `_critter_set_who_hit_me`) — the early exit is a
+    /// fast path only, both checks agree. This moved the brawl-watch fixture
     /// (deliberately re-recorded — see
     /// docs/superpowers/specs/2026-08-12-retaliation-rerecord-design.md).
     ///
@@ -1778,12 +1808,12 @@ public sealed class CombatEngine
             return;
         if (IsKnockedOut(target))
         {
-            target.WhoHitMe = attacker; // critter.cc:1285-1301 — bypasses only the rating gate below
+            SetWhoHitMe(target, attacker); // critter.cc:1285-1301 — bypasses only the rating gate below
             return;
         }
         if (target.WhoHitMe is { } current && Rating(attacker) <= Rating(current))
             return; // combat_ai.cc:3488 — only a STRICTLY greater rating retargets
-        target.WhoHitMe = attacker;
+        SetWhoHitMe(target, attacker);
     }
 
     /// <summary>True if the critter may take its turn (not knocked out, not on a
@@ -1985,6 +2015,27 @@ public sealed class CombatEngine
                 c.WhoHitMeCid = -1;
                 c.WhoHitMe = null; // P101 (bucket 3): fresh retaliation state per fight
             }
+        // Task-2 port: seed every combatant's initial danger source — ported from fallout2-ce
+        // src/combat_ai.cc _caiTeamCombatInit (:1725-1755), generalized past its fixed
+        // attacker/defender-TEAM-pair shape (StartBrawl supports N teams, not just two): each hostile's
+        // whoHitMe starts as the nearest critter on ANY other team — AiTargets.FindNearestTeam(self, self,
+        // sameTeam: false, ...), the "different team" branch Task 1 documented as unused by any SHIPPED
+        // reference call site (every existing caller passes flags=1/sameTeam); StartBrawl is a new,
+        // Hexwaste-specific caller that legitimately needs it. Without this, DangerSource's entirely
+        // whoHitMe/aiFindAttackers-driven acquisition finds nothing on round 1 (StartBrawl nulled every
+        // combatant's whoHitMe above, and nobody has been attacked yet) and every combatant passes forever
+        // — the reference avoids this because a scripted team fight always runs _caiTeamCombatInit first.
+        // Minor-5 note (Task-2 review): the reference's _caiTeamCombatInit (:1725-1755) loops the WHOLE
+        // combat list and seeds every member of either team, and also stamps whoHitMeCid there. This
+        // seeds only _hostiles — the dude and party members are left unseeded, and WhoHitMeCid is not
+        // touched at all. Left as-is: every shipped StartBrawl caller is a spectator/NPC-vs-NPC brawl
+        // (dude/party never participate as targets in that scenario, and DangerSource is only ever
+        // invoked for non-dude, non-party critters here), so the gap is immaterial to any observed
+        // behavior; widening it would touch dude/party WhoHitMe with no shipped caller to validate
+        // against.
+        foreach (MapObject c in _hostiles)
+            c.WhoHitMe = AiTargets.FindNearestTeam(c, c, sameTeam: false, CombatRoster(c));
+
         if (!dudeSpectator && _host.GetCritterState(dude) is { } stats)
             ResetDudeAp(stats);
         BuildTurnOrder(firstRound: true, dudeSpectator ? null : dude, null);
@@ -2013,17 +2064,233 @@ public sealed class CombatEngine
             _host.DudeIsActivelySneaking, _host.DudeHasSneakFlag, inCombat: true);
     }
 
-    /// <summary>P114: friend-attacked targeting (combat_ai.cc aiFindAttackers whoHitFriend branch,
-    /// :1495-1507). A critter with no danger source of its own can still engage the attacker of a wounded
-    /// team-mate — the NEAREST such cross-team attacker it PERCEIVES wins (perception-gated like
-    /// _ai_danger_source:1695). Additive: only consulted when the perception gate left no target, so a
-    /// lone-dude fight — where every team-mate's whoHitMe is the dude (== the nearest target) — is unchanged.</summary>
-    private MapObject? FriendAttacker(MapObject enemy) =>
-        _hostiles.Where(f => f.Team == enemy.Team && !f.IsDead && f != enemy)
-                 .Select(f => f.WhoHitMe)
-                 .Where(a => a is { IsDead: false } && a.Team != enemy.Team && WithinPerception(enemy, a))
-                 .OrderBy(a => HexGrid.Distance(enemy.HexTile, a!.HexTile))
-                 .FirstOrDefault();
+    /// <summary>Hexwaste's stand-in for the reference's <c>_curr_crit_list</c> in a
+    /// <see cref="DangerSource"/> call: the current combatants (hostiles + party + dude),
+    /// <paramref name="self"/> included (the helpers below skip it by identity, matching the reference's
+    /// in-place self-skip), sorted nearest-first from <paramref name="self"/> —
+    /// <c>_ai_sort_list_distance(_curr_crit_list, _curr_crit_num, a1)</c>, run once and shared by both
+    /// the whoHitMe fallback and aiFindAttackers (both re-sort from the same origin in the reference, so
+    /// one sort here is equivalent).
+    ///
+    /// DIVERGENCE 1 — MEMBERSHIP IS NARROWER, and this is the material one. The reference's list is NOT
+    /// the combatant list: <c>_combat_ai_begin(_list_total, _combat_list)</c> (combat.cc:2649, its only
+    /// caller) snapshots — once, at combat start, fixed for the whole fight — the list built at
+    /// combat.cc:2574 by <c>objectListCreate(-1, _combat_elev, OBJ_TYPE_CRITTER, &amp;_combat_list)</c>:
+    /// EVERY critter on the combat elevation, combatants and non-combatants alike (<c>_list_total</c>,
+    /// not <c>_list_com</c>). So vanilla's <c>aiFindAttackers</c> and <c>_ai_find_nearest_team</c> can
+    /// legitimately return a bystander who never joined the fight — reachable through the
+    /// <c>whoHitByFriend</c> slot and through the dead-whoHitMe <c>FindNearestTeam</c> fallback. Hexwaste's
+    /// roster cannot: it is only the live combatant set, and it is recomputed per call rather than frozen
+    /// at combat start. Consequence: in a multi-faction fight Hexwaste's AI will pick a different target
+    /// than vanilla wherever vanilla would have picked a bystander. Widening this to the elevation's
+    /// critters is the faithful fix; it is deliberately NOT done here because it moves target decisions
+    /// (and therefore goldens) across every fixture, which is its own change.
+    ///
+    /// DIVERGENCE 2 — <c>_dudeSpectator</c> (P73) drops the dude from the roster when he isn't part of
+    /// THIS brawl. The reference always includes gDude; Hexwaste supports dude-absent brawls the
+    /// reference has no counterpart for, so this one is a carried design divergence, not a gap.</summary>
+    private List<MapObject> CombatRoster(MapObject self)
+    {
+        IEnumerable<MapObject> all = _hostiles.Concat(_host.PartyMembers);
+        if (!_dudeSpectator && _host.Dude is { } dude)
+            all = all.Concat([dude]);
+        return all.Distinct().OrderBy(c => HexGrid.Distance(self.HexTile, c.HexTile)).ToList();
+    }
+
+    /// <summary>ported from fallout2-ce src/combat.cc _combat_check_bad_shot (:5643-5694), the single
+    /// mutually-exclusive bad-shot reason for <paramref name="attacker"/> firing its CURRENTLY EQUIPPED
+    /// weapon (the reference's HIT_MODE_RIGHT_WEAPON_PRIMARY, aiming=false) at <paramref name="defender"/>.
+    /// Checked in the reference's own order so each guard's status is the first one that applies. AP is
+    /// read from <see cref="_actingEnemyAp"/> — the reference reads the attacker's own live combat.ap,
+    /// which for the critter whose turn DangerSource runs on IS <see cref="_actingEnemyAp"/> (set at
+    /// TryEnemyAction's turn start, decremented as AP is spent) — so this is only meaningful for the
+    /// critter currently acting; a caller invoking DangerSource off-turn (e.g. a unit test) must seed
+    /// <see cref="_actingEnemyAp"/> itself, exactly as the reference implicitly requires a live combat.ap.
+    /// NOT ported: throw-type weapons (Hexwaste's thrown items don't route through EquippedWeapon here)
+    /// and the friendly-fire safety gate (a Hexwaste addition elsewhere, not part of vanilla's bad-shot
+    /// reasons) — see the DangerSource doc for the full soft-spot note.
+    ///
+    /// Minor-3 note (Task-2 review): both shipped call sites pass <c>self</c> (DangerSource's own
+    /// parameter, the acting critter) as <paramref name="attacker"/>, so `_actingEnemyAp` is always that
+    /// critter's own AP in practice — left unparameterized rather than threading AP through the call, to
+    /// avoid widening a signature with no second caller to validate against yet (a future ally-AI
+    /// integration is the natural point to revisit this).</summary>
+    private enum ShotStatus { Ok, AlreadyDead, ArmsCrippled, NotEnoughAp, OutOfRange, NoAmmo, AimBlocked }
+
+    private ShotStatus CheckBadShot(MapObject attacker, MapObject defender)
+    {
+        if (defender.IsDead)
+            return ShotStatus.AlreadyDead;
+
+        (ProtoInfo? weaponProto, MapObject? weaponItem) = _host.EquippedWeapon(attacker);
+        if (WeaponBlockedByCrippledArms(attacker, weaponProto) is not null)
+            return ShotStatus.ArmsCrippled;
+
+        int apCost = weaponProto?.Weapon?.ApCost ?? CombatMath.PunchApCost;
+        if (apCost > _actingEnemyAp)
+            return ShotStatus.NotEnoughAp;
+
+        bool isGun = weaponProto?.Weapon is { } w && w.IsGun(weaponProto.ExtendedFlags);
+        int range = isGun ? weaponProto!.Weapon!.MaxRange1 : Math.Min(weaponProto?.Weapon?.MaxRange1 ?? 1, 2);
+        if (HexGrid.Distance(attacker.HexTile, defender.HexTile) > range)
+            return ShotStatus.OutOfRange;
+
+        // ported from fallout2-ce src/combat.cc _combat_check_bad_shot (:5678-5680): gated on
+        // `ammoGetCapacity(weapon) > 0`, NOT on isGun — any weapon with an ammo slot draws this
+        // check. Matches the reference exactly; Hexwaste has no non-gun ammo-capacity weapon in
+        // practice, so this is a fidelity fix with no observed behavior change.
+        if ((weaponProto?.Weapon?.AmmoCapacity ?? 0) > 0 && _host.WeaponAmmo(weaponProto!, weaponItem!) <= 0)
+            return ShotStatus.NoAmmo;
+
+        // ported from fallout2-ce src/combat.cc _combat_check_bad_shot (:5682-5687): gated on
+        // `attackType == RANGED || THROW || weaponGetRange(hitMode) > 1`, NOT on isGun — a range-2
+        // (or longer) melee weapon (e.g. a spear) also draws the blocked-shot check. Hexwaste has no
+        // distinct THROW attack type here (see the NOT-ported note above), but `range > 1` already
+        // covers the melee-reach case the isGun-only gate was missing.
+        if (isGun || range > 1)
+        {
+            (MapObject? blocker, _) = LineOfFire.Trace(attacker.HexTile, defender.HexTile,
+                tile => _host.ShootBlockerAt(tile, attacker, defender));
+            if (blocker is not null)
+                return ShotStatus.AimBlocked;
+        }
+
+        return ShotStatus.Ok;
+    }
+
+    /// <summary>ported from fallout2-ce src/combat_ai.cc _ai_danger_source (:1529-1705): the critter's
+    /// single most urgent target this turn. Order matches the reference exactly: the party-only
+    /// disposition/attack_who read → the (party-only) ATTACK_WHO_WHOMEVER_ATTACKING_ME short-circuit and
+    /// the STRONGEST/WEAKEST/CLOSEST whoHitMe clear → the LIVING-whoHitMe early return (:1657, ungated —
+    /// no perception/reachability check; this applies to every critter, party or not) → the
+    /// dead-whoHitMe FindNearestTeam fallback → aiFindAttackers' three candidates → the fleeing filter →
+    /// the strength/weakness/distance sort → the perception + (reachability OR legal-shot) scan.
+    ///
+    /// EXCLUDED (decided, CLAUDE.md out-of-scope): the "// CE:" previous-target-continuation improvement
+    /// wrapping the ATTACK_WHO_WHOMEVER_ATTACKING_ME case (the `if (1)` block, :1564-1637, whose CE arm is
+    /// :1565-1590) — non-vanilla QoL. The vanilla
+    /// fallback loop it wraps (nearest critter, cross-team, alive, currently attacking the dude, reachable,
+    /// and not a definitively-bad shot) IS ported, using <see cref="MapObject.LastAttackTarget"/> for
+    /// "currently attacking the dude" (aiInfoGetLastTarget).
+    ///
+    /// SOFT SPOT (established, not assumed): before this port, Hexwaste had NO _combat_check_bad_shot
+    /// counterpart at all — only scattered inline range/ammo/LoF/crippled-arm checks duplicated at each
+    /// attack call site (TryAttack, TryEnemyAction, TryAllyAction, ...). <see cref="CheckBadShot"/> is the
+    /// first unified port, built for this function; it covers dead/crippled-arms/AP/range/ammo/LoF (the
+    /// reference's 6 gates for a non-throw weapon) but does not model throw-type weapons or the
+    /// ATTACK_TYPE_THROW range>1 branch distinctly — Hexwaste's range formula already folds thrown-item
+    /// range into MaxRange1/2 elsewhere, so this is a documented narrowing, not a silent gap.
+    ///
+    /// PARTY GATING (:1541/:1648): the whole disposition/attack_who apparatus is gated on
+    /// <c>_host.PartyMembers.Contains(self)</c> — a non-party critter takes attackWho = -1 (never
+    /// consults AttackWho; the STRONGEST/WEAKEST/CLOSEST whoHitMe-clear is party-only). Hexwaste's only
+    /// current call site (TryEnemyAction) never passes a party member, so this branch is presently
+    /// reachable only via a direct call (e.g. a unit test) — kept faithful/generic rather than narrowed
+    /// to match the one caller, since a future ally-AI integration should be able to reuse it unchanged.
+    ///
+    /// ROSTER (read <see cref="CombatRoster"/>'s note in full): the candidate list this function scans is
+    /// narrower than the reference's <c>_curr_crit_list</c> — live combatants only, where vanilla snapshots
+    /// every critter on the elevation including non-combatant bystanders — and, under
+    /// <c>_dudeSpectator</c> (P73), excludes the dude entirely.
+    /// </summary>
+    private MapObject? DangerSource(MapObject self)
+    {
+        bool ignoreFleeingCritters = false;
+        AttackWho? attackWho = null; // null == the reference's attackWho = -1 (non-party, :1648)
+        List<MapObject> roster = CombatRoster(self);
+
+        if (_host.PartyMembers.Contains(self)) // :1541
+        {
+            CompanionAi ai = _host.CompanionSettings(self).Effective();
+
+            // :1543-1556 — Hexwaste's Disposition enum has no DISPOSITION_NONE/BERKSERK=false-only
+            // counterpart split; every disposition ignores fleeing critters except Berserk (matching the
+            // reference's case list: Custom/Coward/Defensive/Aggressive -> true, None/Berserk -> false).
+            ignoreFleeingCritters = ai.Disposition != Disposition.Berserk;
+            if (ignoreFleeingCritters && ai.Distance == Distance.Charge) // :1557-1559
+                ignoreFleeingCritters = false;
+
+            attackWho = ai.AttackWho; // :1561
+            switch (ai.AttackWho)
+            {
+                case AttackWho.WhoeverAttackingMe: // case :1563, `if (1)` block :1564-1637; vanilla fallback loop :1597-1631
+                    foreach (MapObject critter in roster)
+                    {
+                        if (critter == self)
+                            continue;
+                        if (critter.IsDead || IsKnockedOut(critter)
+                            || critter.Team == self.Team
+                            || critter.LastAttackTarget != _host.Dude)
+                            continue;
+                        if (Pathfinder.FindPath(self.HexTile, critter.HexTile, tile => _host.IsBlocked(tile),
+                                requireFreeDestination: false) is null)
+                            continue;
+                        ShotStatus shot = CheckBadShot(self, critter);
+                        if (shot != ShotStatus.Ok && shot != ShotStatus.NoAmmo && shot != ShotStatus.OutOfRange)
+                            continue;
+                        if (ignoreFleeingCritters && (critter.Maneuver & ManeuverFleeing) != 0)
+                            continue;
+                        return critter;
+                    }
+                    break;
+                case AttackWho.Strongest:
+                case AttackWho.Weakest:
+                case AttackWho.Closest:
+                    self.WhoHitMe = null; // :1642 — party-only whoHitMe clear
+                    break;
+            }
+        }
+
+        MapObject? target0 = null;
+        MapObject? whoHitMe = self.WhoHitMe;
+        if (whoHitMe is not null && whoHitMe != self)
+        {
+            if (!whoHitMe.IsDead)
+            {
+                // :1657 — the ungated early return: NO perception check, NO reachability check, applies
+                // to every non-party critter (attackWho == null) and to a party member set to WHOMEVER.
+                if (attackWho is null or AttackWho.Whomever)
+                    return whoHitMe;
+            }
+            else if (whoHitMe.Team != self.Team)
+            {
+                target0 = AiTargets.FindNearestTeam(self, whoHitMe, sameTeam: true, roster); // :1661
+            }
+        }
+
+        (MapObject? t1, MapObject? t2, MapObject? t3) = AiTargets.FindAttackers(self, roster); // :1668
+        MapObject?[] targets = [target0, t1, t2, t3];
+
+        if (ignoreFleeingCritters) // :1670-1676
+            for (int i = 0; i < targets.Length; i++)
+                if (targets[i] is { } c && (c.Maneuver & ManeuverFleeing) != 0)
+                    targets[i] = null;
+
+        // :1678-1691 — non-null candidates only (the reference's qsort pushes nulls to the tail, so
+        // filtering first and sorting the rest is equivalent for this scan-first-hit loop).
+        IEnumerable<MapObject> live = targets.OfType<MapObject>();
+        List<MapObject> sorted = attackWho switch
+        {
+            // VANILLA QUIRK (see CompanionAi.Better's comment): _compare_strength sorts ASCENDING, so
+            // STRONGEST targets the LOWEST-rated candidate and WEAKEST (_compare_weakness, descending)
+            // targets the HIGHEST-rated one. Deliberate — do not "correct" it.
+            AttackWho.Strongest => live.OrderBy(c => Rating(c)).ToList(),
+            AttackWho.Weakest => live.OrderByDescending(c => Rating(c)).ToList(),
+            _ => live.OrderBy(c => HexGrid.Distance(self.HexTile, c.HexTile)).ToList(),
+        };
+
+        foreach (MapObject candidate in sorted) // :1693-1702
+        {
+            if (!WithinPerception(self, candidate))
+                continue;
+            byte[]? path = Pathfinder.FindPath(self.HexTile, candidate.HexTile,
+                tile => _host.IsBlocked(tile), requireFreeDestination: false);
+            if (path is not null || CheckBadShot(self, candidate) == ShotStatus.Ok)
+                return candidate;
+        }
+
+        return null;
+    }
 
     /// <summary>
     /// Does a candidate critter join the fight, ported from fallout2-ce src/combat_ai.cc
@@ -2125,6 +2392,36 @@ public sealed class CombatEngine
             if (attacker != dude && defender != dude)
                 PlaceFirst(dude);
             _order.AddRange(combatants); // the rest, in collection order
+
+            // Task-2 port: ported from fallout2-ce src/combat.cc _combat_sequence_init (:3011-3017) — the
+            // attacker/defender that opened this round stamp each other's whoHitMe via
+            // `_critter_set_who_hit_me` (critter.cc:1285-1301), before the opening attack even resolves,
+            // and regardless of whether either side is gDude — the `attacker != gDude && defender != gDude`
+            // guard at :2995 gates ONLY the "place dude third in the combat list" block above (closes at
+            // :3006); it does not reach the whoHitMe stamp at :3011-3017. That stamp is NOT a raw
+            // assignment in the reference, so it is routed through `SetWhoHitMe` here — the same gated
+            // helper `RegisterHit` uses — rather than writing `WhoHitMe` directly. DangerSource's target
+            // ACQUISITION is now entirely whoHitMe/aiFindAttackers-driven (no "just pick nearest" fallback,
+            // matching the reference); without this stamp a combat opened by a MISSED first attack would
+            // leave the defender's whoHitMe unset (RegisterHit only fires on an actual hit) and it would
+            // never find a target on its first turn.
+            //
+            // Routed through SetWhoHitMe even when a side is gDude (byte-faithful to the reference's own
+            // unconditional call — `SetWhoHitMe` decides whether to WRITE) even though nothing in
+            // Hexwaste currently reads the dude's own WhoHitMe for an AI decision (DangerSource only runs
+            // for non-dude critters). A cross-team pair (every golden, every real fight) writes exactly as
+            // before — SetWhoHitMe's gate only changes same-team behavior, where it now correctly REFUSES
+            // to write (matching RegisterHit's existing same-team simplification) instead of writing
+            // unconditionally. See ASameTeamHitNeverRegistersWhoHitMe.
+            //
+            // Kept behind the pre-existing "both non-null" guard (not the reference's two independent
+            // null checks at :3011/:3015) — this task's scope is the same-team gate, not the null-arg
+            // handling for the defender-less StartBrawl call (:2033); widening that is a separate change.
+            if (attacker is not null && defender is not null)
+            {
+                SetWhoHitMe(attacker, defender);
+                SetWhoHitMe(defender, attacker);
+            }
         }
         else
         {
@@ -2188,12 +2485,39 @@ public sealed class CombatEngine
         }
     }
 
-    /// <summary>ported from fallout2-ce src/combat.cc _combat_should_end():
-    /// combat is over when nothing hostile is left standing.</summary>
+    /// <summary>ported from fallout2-ce src/combat.cc _combat_should_end (:3339-3376): the AUTOMATIC
+    /// end-of-combat test, run once per round from <c>_combat()</c>'s <c>} while (!_combat_should_end());</c>
+    /// (:3446). It reads <c>_list_com</c> — the combatant list AFTER <c>_combat_sequence()</c> (:3023) has
+    /// already evicted, that same round, every critter that is dead (:3030-3042) or is knocked out /
+    /// <c>CRITTER_MANEUVER_DISENGAGING</c> (:3044-3060, moved to the non-combatant list, from which
+    /// <c>_combat_add_noncoms()</c> (:2899) may re-admit it later). So the predicate that decides who
+    /// still counts as a live participant is <b>dead / KO / DISENGAGING</b> — and that is what this
+    /// method applies to <c>_hostiles</c>. It is the SAME predicate <see cref="BuildTurnOrder"/> already
+    /// applies when building <c>_order</c>, which is Hexwaste's stand-in for the post-eviction
+    /// <c>_list_com</c>.
+    ///
+    /// NOT ported here: <c>_combatai_want_to_stop</c>. Its sole caller in the reference is
+    /// <c>combatAttemptEnd</c> (combat.cc:3087) — the PLAYER's manual "leave combat" gate — and
+    /// <c>_combat_should_end</c> never calls it. Folding it in here would add two terms vanilla never
+    /// applies automatically: <c>ManeuverFleeing</c> (a fleer still inside <c>ai->max_dist</c> keeps
+    /// FLEEING, not DISENGAGING, stays in <c>_list_com</c>, and the fight continues) and the perception
+    /// term (vanilla keeps fighting an enemy that momentarily cannot see the dude). See
+    /// <see cref="WantsToStopFighting"/>, which stays where the reference puts it:
+    /// <see cref="TryEndCombat"/> alone.
+    ///
+    /// Hexwaste shape: the reference's team scan over the full <c>_list_com</c> ("end unless someone is
+    /// on a team other than the dude's, or has a whoHitMe on the dude's team") is expressed here as
+    /// "no live, non-evicted hostile remains" — <c>_hostiles</c> IS the dude-hostile set by
+    /// construction, so the cross-team test is already satisfied by membership.</summary>
     private bool CombatShouldEnd() => _dudeSpectator
-        // P73: a dude-absent brawl ends when one team (or none) is left standing.
+        // P73: a dude-absent brawl ends when one team (or none) is left standing. No reference
+        // counterpart (vanilla's _list_com always contains gDude); a carried Hexwaste divergence.
         ? _hostiles.Where(h => !h.IsDead).Select(h => h.Team).Distinct().Count() <= 1
-        : !_hostiles.Any(h => !h.IsDead);
+        // A knocked-out (but alive) hostile keeps blocking automatic end even though the reference
+        // would have evicted it at :3044-3060 — pre-existing Hexwaste design (P14-M2): a KO critter
+        // stays a live combat participant through its wake timer rather than letting the fight close
+        // under it. That is the one deliberate departure from _combat_sequence's predicate here.
+        : !_hostiles.Any(h => !h.IsDead && (IsKnockedOut(h) || (h.Maneuver & ManeuverDisengaging) == 0));
 
     private bool _terminateRequested;
 
@@ -2208,12 +2532,31 @@ public sealed class CombatEngine
 
     private void EndCombat()
     {
+        // Idempotent: StepTurnOrder() can itself end the fight (the MaxSpectatorBrawlRounds cap and the
+        // per-round CombatShouldEnd() check) and return, after which UpdateCombat's own post-Step
+        // CombatShouldEnd() is trivially true (_hostiles is empty) and would tear down a SECOND time —
+        // duplicate wake/clear passes, a second ResetDudeAp, a second "Combat ends." log. The goldens
+        // never caught it because Log is not transcripted. One teardown per fight.
+        if (_phase == CombatPhase.Idle)
+            return;
+
         // Force-wake every combatant so knockout never leaks past the fight
         // (combat.cc:2840 _combat_over → knockoutEventProcess); crippled/blind bits
         // persist on CombatResults (a Doctor clears them).
         _events.ClearAll();
         foreach (MapObject c in _hostiles.Concat(_host.PartyMembers).Append(_host.Dude!).Where(c => c is not null).Distinct())
+        {
             c.CombatResults &= ~(CriticalTables.DamKnockedOut | CriticalTables.DamLoseTurn);
+            // Minor-4 fix (Task-2 review): LastAttackTarget is a live MapObject reference stamped on
+            // every attack/throw/burst resolve (aiInfoSetLastTarget, combat.cc:3558) but, unlike
+            // WhoHitMe (:1642 party-only clear, plus the fresh-per-fight seed at StartBrawl), it was
+            // never cleared — a stale-handle shape this project has fixed before (cf. P126). Currently
+            // feeds only the unreached WhoeverAttackingMe branch, so this is a latent-bug close, not an
+            // observed one; no reference counterpart to cite for "clear at combat end" since the
+            // reference re-derives its own combat-list-index lookup (combat.cc:2101/2125-2133) rather
+            // than holding a raw pointer across fights.
+            c.LastAttackTarget = null;
+        }
         _knockedDown.Clear();
         _aiLastItem.Clear();
         _terminateRequested = false; // P35-M5
@@ -2256,19 +2599,33 @@ public sealed class CombatEngine
     }
 
     /// <summary>ported from fallout2-ce src/combat_ai.cc _combatai_want_to_stop (:3211): a critter stops
-    /// fighting (does NOT block the player leaving combat) if it is dead/KO, fleeing/disengaging, or it no
-    /// longer perceives a danger source. For the exit gate the danger source is the dude + his live party;
-    /// an alive, engaging animal that still perceives the dude (e.g. adjacent) keeps the fight open.</summary>
+    /// fighting (does NOT block the player leaving combat) if it is DISENGAGING (:3215), dead/KO (:3219),
+    /// FLEEING (:3223), or it has no danger source it can still perceive (:3227-3228,
+    /// <c>enemy == nullptr || !isWithinPerception(a1, enemy)</c>).
+    ///
+    /// The last term is a <see cref="DangerSource"/> call in the reference — NOT a hardcoded "can it see
+    /// the dude or his party". That distinction matters: with a hardcoded dude-side, two hostile teams
+    /// brawling out of the dude's perception would all report "wants to stop". Now that
+    /// <c>_ai_danger_source</c> is ported, this is the real thing.
+    ///
+    /// The ONE port of this reference function in the codebase, and — matching the reference, whose only
+    /// caller is <c>combatAttemptEnd</c> (combat.cc:3087) — its only consumer is
+    /// <see cref="TryEndCombat"/>, the player's manual exit gate. The AUTOMATIC end check
+    /// (<see cref="CombatShouldEnd"/>) deliberately does NOT use it; see that method's note.
+    ///
+    /// Caveat carried from <see cref="CheckBadShot"/>: DangerSource reads <see cref="_actingEnemyAp"/>
+    /// for its AP gate, which is only meaningful for the critter currently acting — the reference has the
+    /// same property (it reads the critter's live <c>combat.ap</c>) and <c>combatAttemptEnd</c> calls it
+    /// off-turn just the same, so this is faithful rather than a Hexwaste soft spot.</summary>
     private bool WantsToStopFighting(MapObject h)
     {
         if (h.IsDead || IsKnockedOut(h))
             return true;
         if ((h.Maneuver & (ManeuverDisengaging | ManeuverFleeing)) != 0)
             return true;
-        MapObject? dude = _host.Dude;
-        IEnumerable<MapObject> dudeSide = (dude is { IsDead: false } ? [dude] : Array.Empty<MapObject>())
-            .Concat(_host.PartyMembers.Where(p => !p.IsDead));
-        return !dudeSide.Any(e => WithinPerception(h, e)); // no perceivable danger source → it wants to stop
+        // :3227-3228 — the danger source is whatever _ai_danger_source finds for THIS critter, and the
+        // perception check is against THAT, not against the dude.
+        return DangerSource(h) is not { } enemy || !WithinPerception(h, enemy);
     }
 
     /// <summary>Public so a non-combat death (script/trap damage) can trigger the
@@ -2335,48 +2692,49 @@ public sealed class CombatEngine
             return;
         }
 
-        // Disengage hostiles that have fled beyond sight of the whole team — they
-        // have escaped, so combat can end (the engine's flee/should-end behaviour;
-        // without this, an M1 flee that the dude doesn't chase never resolves).
-        PruneEscapedHostiles();
+        // Task 3 (correction): let the currently-active combatant's own turn run BEFORE asking
+        // CombatShouldEnd() whether anyone still wants to fight. WantsToStopFighting reads live
+        // Maneuver/KO/perception state that a critter's OWN turn this round is often what sets or
+        // resolves (TryFlee stamping FLEEING/DISENGAGING, the KO-forfeit branch, a script presetting
+        // the flee maneuver before combat even opens) — asking first would judge that state before
+        // the actor ever got to act on it. The original PruneEscapedHostiles ran its distance-only
+        // test before StepTurnOrder() safely, because raw position never changes except through an
+        // already-resolved move; WantsToStopFighting's richer state does not have that property, so
+        // the two calls swap places here.
+        if (_phase == CombatPhase.EnemyTurn)
+            StepTurnOrder();
 
-        if (CombatShouldEnd())
+        // _phase guard: StepTurnOrder() may already have ended the fight (see EndCombat's idempotency
+        // note) — don't re-evaluate a trivially-true CombatShouldEnd() over an emptied _hostiles.
+        if (_phase != CombatPhase.Idle && CombatShouldEnd())
         {
             EndCombat();
             return;
         }
-
-        if (_phase == CombatPhase.EnemyTurn)
-            StepTurnOrder();
     }
 
-    /// <summary>Remove living hostiles farther than sight range from every member
-    /// of the dude's team (they have disengaged). All hostiles START within sight
-    /// (AddJoiners), so this only drops critters that actually fled away.
-    /// P113 (4.3) NOTE: the fo2ce _combatai_want_to_stop disengage is perception-based
-    /// (!isWithinPerception of the danger source), but porting it here is DEFERRED — a fled
-    /// hostile keeps its whoHitMe danger source, so a naive perception prune both fails to drop
-    /// genuine fleers (they still "perceive" via whoHitMe) and wrongly drops a blind/rear-facing
-    /// adjacent enemy before it can take its flee turn. The flat sight-range drop is retained.</summary>
-    private void PruneEscapedHostiles()
-    {
-        if (_dudeSpectator) // P73: dude-centric sight doesn't apply to a brawl he's not in
-            return;
-        MapObject? dude = _host.Dude;
-        if (dude is null)
-            return;
-        _hostiles.RemoveWhere(h => !h.IsDead && DistanceToTeam(h, dude) > CombatRules.SightRangeHexes);
-    }
-
-    private int DistanceToTeam(MapObject from, MapObject dude)
-    {
-        int best = HexGrid.Distance(from.HexTile, dude.HexTile);
-        foreach (MapObject ally in _host.PartyMembers)
-            if (!ally.IsDead)
-                best = Math.Min(best, HexGrid.Distance(from.HexTile, ally.HexTile));
-        return best;
-    }
-
+    // HISTORY (Task 3, then corrected twice): this used to be PruneEscapedHostiles(), which ran a
+    // FLAT ~20-hex sight-distance test over _hostiles every Step and physically evicted whoever was
+    // past it. THAT GATE was the invention — nothing in e97087b decides participation by a fixed
+    // hex radius. The eviction itself is NOT an invention, and an earlier revision of this comment
+    // was wrong to say the reference "never removes anyone from the fight": _combat_sequence()
+    // (combat.cc:3023, called once per round from _combat()'s loop at :3443) removes dead critters
+    // (:3030-3042) and moves knocked-out / CRITTER_MANEUVER_DISENGAGING critters to the
+    // non-combatant list (:3044-3060), from which _combat_add_noncoms() (:2899) can re-admit them
+    // via _combatai_want_to_join. Evict-and-re-add every round IS the reference's architecture, and
+    // _ai_run_away (combat_ai.cc:1183/1216) is what sets DISENGAGING — precisely when a fleeing
+    // critter is at or past its packet's ai->max_dist, i.e. the reference's own "a hostile that
+    // escaped leaves the fight" mechanism, which the flat prune was crudely approximating.
+    //
+    // So the evict/rejoin oscillation traced live on denbus2-fight-flee ("@9274 ... enemy=null" on
+    // every round, from AddJoiners() adding a fresh hostile without stamping its WhoHitMe) was
+    // evidence that the GATE was wrong, not that mutation was wrong.
+    //
+    // The shipped shape: Hexwaste does not maintain a second, mutable combatant list — _order (built
+    // by BuildTurnOrder) already applies _combat_sequence's own dead/KO/DISENGAGING predicate, and
+    // CombatShouldEnd() applies the same predicate to _hostiles, which is what _combat_should_end
+    // reads the post-eviction _list_com for. _combatai_want_to_stop stays where the reference puts
+    // it — TryEndCombat(), the player's manual exit gate — and is NOT part of the automatic check.
 
     /// <summary>
     /// Step the INTERLEAVED round order one combatant at a time (ported from combat.cc _combat()'s
@@ -2425,6 +2783,25 @@ public sealed class CombatEngine
                 StartNewRound();
                 if (_order.Count == 0)
                     return; // nothing left (CombatShouldEnd guards the real end)
+                // Task 3 (correction, round 2): ported from fallout2-ce src/combat.cc _combat()'s
+                // own round loop — `} while (!_combat_should_end());` (:3446) — checked once per
+                // round, right after the round transition (_combat_sequence()/StartNewRound here),
+                // BEFORE processing the new round's actors. Without this, a round with nothing left
+                // to do (every remaining actor's TryEnemyAction/TryAllyAction returns false — e.g.
+                // the opposing team is already fully eliminated) falls straight through every actor,
+                // back to the top of this while(true), and into ANOTHER StartNewRound() — all inside
+                // this single StepTurnOrder() call, with no return to the caller in between. The
+                // caller-side CombatShouldEnd() check below UpdateCombat's StepTurnOrder() call never
+                // gets a chance to run until this loop itself gives up — which, for a dude-absent
+                // brawl, is only the unrelated MaxSpectatorBrawlRounds stalemate cap. Traced live: an
+                // already-decided fight (team 1 fully dead) spun from round 7 to round 100 with the
+                // EXACT SAME sequence of prior attack transcripts, byte-identical up to that point —
+                // confirming this was a control-flow gap, not a fidelity/perception issue.
+                if (CombatShouldEnd())
+                {
+                    EndCombat();
+                    return;
+                }
             }
 
             MapObject actor = _order[_orderIndex];
@@ -2820,61 +3197,12 @@ public sealed class CombatEngine
                 return false; // standing used the whole turn
         }
 
-        // Enemies pick the nearest of the dude and his living companions. P73: in a dude-absent
-        // brawl the dude+party are NOT targets — only the cross-team loop below seeds the defender.
-        MapObject? defenderObj = _dudeSpectator ? null : dude;
-        int bestDistance = _dudeSpectator ? int.MaxValue : HexGrid.Distance(enemy.HexTile, dude.HexTile);
-        if (!_dudeSpectator)
-            foreach (MapObject ally in _host.PartyMembers)
-            {
-                if (ally.IsDead)
-                    continue;
-                int d = HexGrid.Distance(enemy.HexTile, ally.HexTile);
-                if (d < bestDistance)
-                {
-                    bestDistance = d;
-                    defenderObj = ally;
-                }
-            }
-
-        // Cross-team targeting (phase-16 M3, X-FIGHTING-Y): a critter also targets the
-        // nearest HOSTILE on a DIFFERENT team — so two spawned enemy groups brawl each
-        // other, not just the dude. Considered AFTER the dude+party loop and skipping the
-        // enemy's own team, so a single-enemy-team fight (every golden) is byte-identical:
-        // its only other-team critters are the dude+party, already chosen above.
-        foreach (MapObject other in _hostiles)
-        {
-            if (other.IsDead || other == enemy || other.Team == enemy.Team)
-                continue;
-            int d = HexGrid.Distance(enemy.HexTile, other.HexTile);
-            if (d < bestDistance)
-            {
-                bestDistance = d;
-                defenderObj = other;
-            }
-        }
-
-        // P113 (4.3): the nearest-picked target is a valid danger source only if the enemy PERCEIVES it
-        // (isWithinPerception, combat_ai.cc:1693). Its whoHitMe (last attacker / script-aggro target) is
-        // EXEMPT — checked first, ungated (combat_ai.cc:1655). Out of sight/hearing with no whoHitMe → no
-        // danger source: a rear-facing or distant critter no longer beelines the dude the moment combat
-        // starts elsewhere.
-        if (defenderObj is not null && defenderObj != enemy.WhoHitMe && !WithinPerception(enemy, defenderObj))
-            defenderObj = null;
-
-        // P114: help-shout / friend-attacked. With no danger source of its own, this critter engages the
-        // perceived attacker of a wounded team-mate (combat_ai.cc aiFindAttackers:1495) rather than passing.
-        // Additive — lone-dude fights (the friend's attacker IS the dude, already the nearest) are unchanged.
-        if (defenderObj is null && FriendAttacker(enemy) is { } friendTarget)
-            defenderObj = friendTarget;
-
-        // P101 (bucket 3): RETALIATION — prefer whoever last hit this critter over the nearest target,
-        // when that attacker is still a live cross-team combatant (combat_ai.cc _ai_danger_source returns
-        // whoHitMe first). Byte-identical in a lone-dude duel (whoHitMe == the dude == nearest).
-        if (enemy.WhoHitMe is { IsDead: false } avenger && avenger.Team != enemy.Team
-            && (avenger == _host.Dude || _hostiles.Contains(avenger) || _host.PartyMembers.Contains(avenger)))
-            defenderObj = avenger;
-
+        // Task-2 port: the whole nearest-dude/party/cross-team + perception + help-shout + retaliation
+        // prologue that used to live here is now a single DangerSource call, ported from fallout2-ce
+        // src/combat_ai.cc _ai_danger_source (:1529-1705) — see its doc comment for the full order and
+        // the documented exclusions/divergences (the CE previous-target block, the bad-shot soft spot,
+        // the _dudeSpectator carry-over).
+        MapObject? defenderObj = DangerSource(enemy);
         if (defenderObj is null) // P73: a spectator-brawl critter with no cross-team target left → pass
             return false;
         int dudeTile = defenderObj.HexTile;

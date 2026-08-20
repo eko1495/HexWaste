@@ -194,6 +194,10 @@ public class CombatEngineTests
         var host = new FakeCombatHost();
         MapObject dude = host.SetDude(NewCritter(tile: 20100, hp: 30, ap: 10));
         MapObject enemy = host.AddCritter(NewCritter(tile: HexGrid.TileInDirection(20100, 0), hp: 30, ap: 10));
+        enemy.Team = 1; // Important-fix side effect (Task-2 review): the combat-open whoHitMe stamp is
+                         // now team-gated (SetWhoHitMe), so a same-team pair (the old default-team-0
+                         // fixture) no longer gives DangerSource a target to retaliate against — matches
+                         // real vanilla data, where a hostile is never on the dude's team.
         var engine = new CombatEngine(host, new MinRng());
 
         Assert.True(engine.TryAttack(enemy));     // open combat
@@ -308,6 +312,7 @@ public class CombatEngineTests
         var host = new FakeCombatHost();
         MapObject dude = host.SetDude(NewCritter(tile: 20100, hp: 30, ap: 10));
         MapObject enemy = host.AddCritter(NewCritter(tile: HexGrid.TileInDirection(20100, 0), hp: 30, ap: 10));
+        enemy.Team = 1; // Task 3: cross-team, like real game data — SetWhoHitMe/RegisterHit only stamp whoHitMe across teams
         var engine = new CombatEngine(host, new MinRng());
 
         Assert.True(engine.TryAttack(enemy)); // open combat
@@ -336,6 +341,7 @@ public class CombatEngineTests
         var host = new FakeCombatHost();
         MapObject dude = host.SetDude(NewCritter(tile: 20100, hp: 30, ap: 10));
         MapObject enemy = host.AddCritter(NewCritter(tile: HexGrid.TileInDirection(20100, 0), hp: 30, ap: 10, endurance: 10));
+        enemy.Team = 1; // Important-fix side effect (Task-2 review): see RoundRolloverResetsDudeApAndEnemyRetaliates.
         var engine = new CombatEngine(host, new MinRng());
 
         Assert.True(engine.TryAttack(enemy));
@@ -367,6 +373,7 @@ public class CombatEngineTests
         MapObject dude = host.SetDude(NewCritter(tile: 20100, hp: 100, ap: 10, seq: 1)); // SLOW
         // ap 4 = exactly one 3-AP punch per turn (it's adjacent, so no move), making the count exact.
         MapObject fast = host.AddCritter(NewCritter(tile: HexGrid.TileInDirection(20100, 0), hp: 30, ap: 4, seq: 20));
+        fast.Team = 1; // Important-fix side effect (Task-2 review): see RoundRolloverResetsDudeApAndEnemyRetaliates.
         var engine = new CombatEngine(host, new MinRng());
 
         Assert.True(engine.TryAttack(fast)); // round 1: the dude (attacker) opens
@@ -398,6 +405,7 @@ public class CombatEngineTests
         var host = new FakeCombatHost();
         MapObject dude = host.SetDude(NewCritter(tile: 20100, hp: 30, ap: 10));
         MapObject enemy = host.AddCritter(NewCritter(tile: HexGrid.TileInDirection(20100, 0), hp: 30, ap: 10));
+        enemy.Team = 1; // Task 3: cross-team, like real game data — SetWhoHitMe/RegisterHit only stamp whoHitMe across teams
         var engine = new CombatEngine(host, new MinRng());
 
         Assert.True(engine.TryAttack(enemy));
@@ -1414,7 +1422,16 @@ public class CombatEngineTests
         // AI packet's hurt_too_much mask matches (combat_ai.cc:3076) — independent of min_hp.
         var host = new FakeCombatHost();
         MapObject dude = host.SetDude(NewCritter(tile: 20100, hp: 30, ap: 10));
-        MapObject enemy = host.AddCritter(NewCritter(tile: HexGrid.TileInDirection(20100, 0), hp: 30, ap: 10));
+        // Task 3: PE 8, not the fixture-wide default of 5 — CritterState.Perception subtracts 5 flat
+        // when DamBlind is set (stat.cc:191 critterGetStat), and PruneEscapedHostiles now runs
+        // isWithinPerception(enemy, danger-source) every Step (combat_ai.cc _combatai_want_to_stop,
+        // :3227-3228) BEFORE the enemy's own turn/hurt_too_much decision executes. At the default PE 5,
+        // blind zeroes perception outright (5 − 5 = 0), so even an adjacent, living whoHitMe is never
+        // "perceived" and the enemy gets pruned from combat before it can take the very turn this test
+        // means to exercise. PE 8 leaves 3 after the blind malus, still enough to pass the fallback
+        // isWithinPerception check at distance 1 (PE×2 in combat = 6) — a critter that fights half-blind
+        // rather than one with literally zero perception, which is the scenario this test probes.
+        MapObject enemy = host.AddCritter(NewCritter(tile: HexGrid.TileInDirection(20100, 0), hp: 30, ap: 10, perception: 8));
         host.AiPackets[enemy] = new AiPacket(8, "Scorpion", MinToHit: 0, MinHp: 0, 10, "", "",
             HurtTooMuch: CriticalTables.DamBlind);
         enemy.CombatResults |= CriticalTables.DamBlind;
@@ -1761,6 +1778,7 @@ public class CombatEngineTests
         var host = new FakeCombatHost { CriticalsEnabled = true };
         host.SetDude(NewCritter(20100, hp: 30, ap: 12));
         MapObject enemy = host.AddCritter(NewCritter(HexGrid.TileInDirection(20100, 0), hp: 100, ap: 10));
+        enemy.Team = 1; // Task 3: cross-team, like real game data — SetWhoHitMe/RegisterHit only stamp whoHitMe across teams
         var engine = new CombatEngine(host, new MinRng());
 
         // Aimed RIGHT_LEG: MAN/RIGHT_LEG/sev0 = { 3, DAM_KNOCKED_DOWN } → prone.
@@ -2132,6 +2150,13 @@ public class CombatEngineTests
         var host = new FakeCombatHost { CriticalsEnabled = false };
         host.SetDude(NewCritter(20100, hp: 30, ap: 10, skill: 100));
         MapObject enemy = host.AddCritter(NewCritter(HexGrid.TileInDirection(20100, 0), hp: 500, perception: 5));
+        // A REAL team split (NewCritter defaults everyone to team 0). WantsToStopFighting now derives its
+        // danger source from DangerSource (_combatai_want_to_stop's :3227 `_ai_danger_source(a1)`) rather
+        // than hardcoding "the dude + party", and every reference path into a danger source — the
+        // whoHitMe stamp via _critter_set_who_hit_me's cross-team gate (critter.cc:1296) and
+        // aiFindAttackers' own cross-team filter — is cross-team. A same-team "enemy" has no danger
+        // source in vanilla either, so leaving both on team 0 would have been testing an impossible fight.
+        enemy.Team = 1;
         var engine = new CombatEngine(host, new MinRng());
         Assert.True(engine.TryAttack(enemy)); // opens combat; enemy is a live, adjacent, engaging hostile
         host.Animating.Clear();
@@ -2740,6 +2765,7 @@ public class CombatEngineTests
         MapObject dude = host.SetDude(NewCritter(20100, hp: 100, ap: 10));
         MapObject enemy = host.AddCritter(NewCritter(HexGrid.TileInDirection(20100, 0), hp: 30, ap: 10));
         enemy.Sid = 7; // a scripted NPC: damage_p_proc can run
+        enemy.Team = 1; // Important-fix side effect (Task-2 review): see RoundRolloverResetsDudeApAndEnemyRetaliates.
         var rng = new RecordingRng(new SequenceRng(100, 1, 100, 1, 60));
         var engine = new CombatEngine(host, rng);
 
@@ -2774,6 +2800,7 @@ public class CombatEngineTests
         host.SetDude(NewCritter(20100, hp: 100, ap: 10));
         MapObject enemy = host.AddCritter(NewCritter(HexGrid.TileInDirection(20100, 0), hp: 60, ap: 10));
         enemy.Sid = 7; // a scripted, unaffiliated NPC: its damage_p_proc can run
+        enemy.Team = 1; // Important-fix side effect (Task-2 review): see RoundRolloverResetsDudeApAndEnemyRetaliates.
         // Derived empirically with RecordingRng (rng.Draws printed against the armed NPC's AI/attack
         // path) — the sibling test's sequence is for an unarmed NPC and does not apply here. Five draws
         // land the fumble; a 6th (clamped to the 5th's value) is Explode()'s own blast-damage roll:
@@ -3056,6 +3083,7 @@ public class CombatEngineTests
         MapObject ally = host.AddAlly(NewCritter(tile: HexGrid.TileInDirection(20100, 2), hp: 30, ap: 10), ai);
         ally.CurrentHp = 5; // badly wounded (5 / 30)
         MapObject enemy = host.AddCritter(NewCritter(tile: HexGrid.TileInDirection(20100, 0), hp: 30, ap: 10));
+        enemy.Team = 1; // Task 3: cross-team, like real game data — SetWhoHitMe/RegisterHit only stamp whoHitMe across teams
         var engine = new CombatEngine(host, new MinRng());
 
         Assert.True(engine.TryAttack(enemy)); // the dude opens combat (adjacent, unarmed) — the ally joins
@@ -3088,6 +3116,7 @@ public class CombatEngineTests
         host.AddAlly(NewCritter(tile: HexGrid.TileInDirection(20100, 2), hp: 100, ap: 10, skill: 100),
             CompanionAi.Default with { AreaAttack = AreaAttack.Always });
         MapObject enemy = host.AddCritter(NewCritter(tile: HexGrid.TileInDirection(20100, 0), hp: 100, ap: 10));
+        enemy.Team = 1; // Task 3: cross-team, like real game data — SetWhoHitMe/RegisterHit only stamp whoHitMe across teams
         host.Equipped = MakeBurstWeapon(rounds: 10, apCost2: 4); // shared: the dude single-shots, the ally bursts
         var engine = new CombatEngine(host, new MinRng());
 
@@ -3222,8 +3251,18 @@ public class CombatEngineTests
         // two-critter host. This test genuinely exercises RegisterHit's team gate
         // (attacker.Team == target.Team, CombatEngine.cs:1658): `enemy` is left on the DEFAULT team (0),
         // same as the dude's default team, so BeginScriptAggro still opens combat and enemy still attacks
-        // the dude (team is not consulted anywhere in target selection — only in RegisterHit itself), but
-        // every landed hit must be rejected before it ever writes dude.WhoHitMe.
+        // the dude (team is not consulted anywhere in target selection — only in RegisterHit itself).
+        //
+        // Task-2 history (renamed back after the Important-fix review): BuildTurnOrder ports
+        // fallout2-ce src/combat.cc _combat_sequence_init's whoHitMe stamp (:3011-3017), which is NOT a
+        // raw assignment in the reference — it's `_critter_set_who_hit_me` (critter.cc:1285-1301), gated
+        // on team (same-team writes only on a failed INT roll, which Hexwaste simplifies to "never" —
+        // see `SetWhoHitMe`). An earlier version of this port wrote WhoHitMe unconditionally at combat
+        // open, which briefly made this test assert `Assert.Same(enemy, dude.WhoHitMe)` — the UNFAITHFUL
+        // half of that bug, since `enemy` and `dude` are same-team here. Now that both the combat-open
+        // stamp (BuildTurnOrder) and RegisterHit route through the one gated `SetWhoHitMe` helper, neither
+        // writes for a same-team pair, and the original `Assert.Null` assertion is correct again — for the
+        // right reason this time (a real team gate, not an absent stamp).
         var host = new FakeCombatHost();
         MapObject dude = host.SetDude(NewCritter(tile: 20100, hp: 200, ap: 10));
         MapObject enemy = host.AddCritter(
@@ -3232,6 +3271,10 @@ public class CombatEngineTests
 
         var engine = new CombatEngine(host, new MinRng());
         engine.BeginScriptAggro(enemy, dude);
+        // The combat-open stamp already ran inside BeginScriptAggro/BuildTurnOrder, before any Step() —
+        // same-team, so SetWhoHitMe refuses to write.
+        Assert.Null(dude.WhoHitMe);
+
         // Run a FIXED number of steps (not "until a hit-dispatch line appears" — that transcript line
         // is written at DISPATCH time, one Step() before ResolveAttack/RegisterHit actually run on the
         // following Step(), so stopping on it would exit before the gate under test is ever reached).
@@ -3245,7 +3288,8 @@ public class CombatEngineTests
 
         // Proves a hit actually RESOLVED (host.Logs carries the post-resolution "hits you" line, written
         // from ResolveAttack right before RegisterHit — otherwise the gate below would be untested, same
-        // failure mode as before), then proves the team gate blocked it from reaching dude.WhoHitMe.
+        // failure mode as before), then proves RegisterHit's own same-team gate (via SetWhoHitMe) still
+        // refuses to write after that hit lands.
         Assert.Contains(host.Logs, l => l.Contains("hits you"));
         Assert.Null(dude.WhoHitMe);
     }
@@ -3347,6 +3391,279 @@ public class CombatEngineTests
 
         // If the KO branch ran before the team gate, this would be stamped unconditionally instead.
         Assert.Null(companion.WhoHitMe);
+    }
+
+    // ====================================================================
+    //  Task 2: DangerSource (fallout2-ce src/combat_ai.cc _ai_danger_source, :1529-1705) — the six
+    //  proof obligations from the task-2 brief. Each drives the private DangerSource method directly
+    //  via reflection (like RegisterHit above), seeding CombatEngine's private _hostiles/_actingEnemyAp
+    //  fields where a scenario needs the roster or a bad-shot AP check, since these tests exercise
+    //  DangerSource in isolation rather than through a full Step()-driven turn.
+    // ====================================================================
+
+    private static System.Reflection.MethodInfo DangerSourceMethod() => typeof(CombatEngine).GetMethod(
+        "DangerSource", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!;
+
+    private static HashSet<MapObject> HostilesOf(CombatEngine engine) => (HashSet<MapObject>)typeof(CombatEngine)
+        .GetField("_hostiles", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!
+        .GetValue(engine)!;
+
+    private static void SetActingEnemyAp(CombatEngine engine, int ap) => typeof(CombatEngine)
+        .GetField("_actingEnemyAp", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!
+        .SetValue(engine, ap);
+
+    [Fact]
+    public void ADangerSourceLivingWhoHitMeShortCircuitsPerceptionAndReachability()
+    {
+        // ported from fallout2-ce src/combat_ai.cc _ai_danger_source (:1651-1660): a LIVING whoHitMe is
+        // returned IMMEDIATELY for a non-party critter (attackWho == -1, :1648) — NO perception check,
+        // NO reachability check. Only the fallback scan (targets[0..3]) is gated by either. Proven by
+        // placing the avenger far outside perception range (30 hexes, beyond both the PE*5=25 wide-cone
+        // sighted tier and the PE*2=10 hearing fallback) AND behind a universally-blocked path: applying
+        // the perception/reachability gate here (the natural-looking mistake the task brief calls out)
+        // would return null instead.
+        var host = new FakeCombatHost { IsBlockedOverride = _ => true }; // every tile blocked → path always fails
+        MapObject dude = host.SetDude(NewCritter(tile: 20100, hp: 30, ap: 10));
+        MapObject self = host.AddCritter(NewCritter(tile: HexGrid.TileInDirection(20100, 0), hp: 30, ap: 10));
+        MapObject avenger = host.AddCritter(
+            NewCritter(tile: HexGrid.TileInDirection(20100, 0, 30), hp: 30, ap: 10)); // far outside perception (beyond PE*5=25 wide-cone AND PE*2=10 fallback)
+        self.Team = 1;
+        avenger.Team = 0;
+        self.WhoHitMe = avenger;
+
+        var engine = new CombatEngine(host, new MinRng());
+        Assert.Same(avenger, DangerSourceMethod().Invoke(engine, [self]));
+    }
+
+    [Fact]
+    public void ADangerSourceDeadWhoHitMeFallsThroughToNearestTeam()
+    {
+        // ported from fallout2-ce src/combat_ai.cc _ai_danger_source (:1660-1665): a DEAD whoHitMe does
+        // NOT short-circuit — it falls to _ai_find_nearest_team(self, whoHitMe, sameTeam=1) for a live
+        // replacement on the SAME team as the dead attacker.
+        var host = new FakeCombatHost();
+        MapObject dude = host.SetDude(NewCritter(tile: 20100, hp: 30, ap: 10));
+        MapObject self = host.AddCritter(NewCritter(tile: HexGrid.TileInDirection(20100, 0), hp: 30, ap: 10));
+        MapObject deadAttacker = host.AddCritter(NewCritter(tile: HexGrid.TileInDirection(20100, 1), hp: 30, ap: 10));
+        MapObject replacement = host.AddCritter(NewCritter(tile: HexGrid.TileInDirection(20100, 2), hp: 30, ap: 10));
+        self.Team = 1;
+        // team 2, NOT the dude's default team 0 — otherwise FindNearestTeam(sameTeam) would match the
+        // (closer) dude instead of `replacement`, since both are living team-0 critters in the roster.
+        deadAttacker.Team = 2;
+        replacement.Team = 2; // same team as the dead attacker → the valid replacement
+        deadAttacker.CombatResults |= 0x80; // DAM_DEAD
+        self.WhoHitMe = deadAttacker;
+
+        var engine = new CombatEngine(host, new MinRng());
+        HostilesOf(engine).Add(self);
+        HostilesOf(engine).Add(deadAttacker);
+        HostilesOf(engine).Add(replacement);
+        SetActingEnemyAp(engine, 10);
+
+        Assert.Same(replacement, DangerSourceMethod().Invoke(engine, [self]));
+    }
+
+    [Fact]
+    public void ADangerSourceWithNoWhoHitMeFindsACritterAttackingMe()
+    {
+        // ported from fallout2-ce src/combat_ai.cc _ai_danger_source (:1666) → aiFindAttackers
+        // (:1487-1493, ported Task 1): with self.whoHitMe null, the aiFindAttackers "WhoHitMe" candidate
+        // (a critter whose OWN whoHitMe points back at self) is wired into targets[1] and — being the
+        // only candidate — picked by the perception+reachability scan.
+        var host = new FakeCombatHost();
+        MapObject dude = host.SetDude(NewCritter(tile: 20100, hp: 30, ap: 10));
+        MapObject self = host.AddCritter(NewCritter(tile: HexGrid.TileInDirection(20100, 0), hp: 30, ap: 10));
+        MapObject attacker = host.AddCritter(NewCritter(tile: HexGrid.TileInDirection(20100, 1), hp: 30, ap: 10));
+        self.Team = 1;
+        attacker.Team = 0;
+        attacker.WhoHitMe = self; // attacker is currently attacking ME (self); self.WhoHitMe stays null
+
+        var engine = new CombatEngine(host, new MinRng());
+        HostilesOf(engine).Add(self);
+        HostilesOf(engine).Add(attacker);
+        SetActingEnemyAp(engine, 10);
+
+        Assert.Same(attacker, DangerSourceMethod().Invoke(engine, [self]));
+    }
+
+    [Fact]
+    public void ADangerSourcePerceptionGatesTheFallbackOnly()
+    {
+        // ported from fallout2-ce src/combat_ai.cc _ai_danger_source (:1691-1703): the perception check
+        // gates the targets[0..3] scan — proven here by sorting an OUT-of-perception candidate FIRST
+        // (AttackWho.Strongest sorts ASCENDING by rating, the documented vanilla quirk — a low-rated
+        // candidate sorts before a high-rated one) and confirming the scan moves on to the next,
+        // in-perception candidate rather than stopping (or wrongly returning the unperceived one).
+        var host = new FakeCombatHost();
+        MapObject dude = host.SetDude(NewCritter(tile: 20100, hp: 30, ap: 10));
+        MapObject self = host.AddAlly(
+            NewCritter(tile: HexGrid.TileInDirection(20100, 3, 5), hp: 30, ap: 10),
+            new CompanionAi(Disposition.Custom, AttackWho.Strongest));
+        MapObject teammate = host.AddAlly(
+            NewCritter(tile: HexGrid.TileInDirection(self.HexTile, 1), hp: 30, ap: 10),
+            new CompanionAi(Disposition.Custom, AttackWho.Closest));
+        self.Team = 1;
+        teammate.Team = 1;
+
+        MapObject candidateFar = host.AddCritter(
+            NewCritter(tile: HexGrid.TileInDirection(self.HexTile, 0, 30), hp: 30, ap: 10, meleeDmg: 1)); // lowest rating → sorts FIRST; 30 hexes (beyond PE*5=25 AND PE*2=10) → out of perception
+        MapObject candidateNear = host.AddCritter(
+            NewCritter(tile: HexGrid.TileInDirection(self.HexTile, 2), hp: 30, ap: 10, meleeDmg: 5)); // higher rating → sorts second; adjacent → perceivable + reachable
+        candidateFar.Team = 0;
+        candidateNear.Team = 0;
+        candidateFar.WhoHitMe = self;       // fills the "WhoHitMe" slot (targets[1])
+        teammate.WhoHitMe = candidateNear;  // fills the "WhoHitFriend" slot (targets[2]) as candidateNear
+
+        var engine = new CombatEngine(host, new MinRng());
+        HostilesOf(engine).Add(candidateFar);
+        HostilesOf(engine).Add(candidateNear);
+        SetActingEnemyAp(engine, 10);
+
+        Assert.Same(candidateNear, DangerSourceMethod().Invoke(engine, [self]));
+    }
+
+    [Fact]
+    public void ADangerSourceReachabilityIsADisjunctionWithLegalShot()
+    {
+        // ported from fallout2-ce src/combat_ai.cc _ai_danger_source (:1698-1699): a candidate is taken
+        // when EITHER a path exists OR the shot is legal (OR, not AND). The candidate here is totally
+        // UNREACHABLE (every tile reports blocked) while the shot itself is legal (adjacent, unarmed
+        // melee, ample AP) — an AND-bug would refuse it and this test would see null instead.
+        var host = new FakeCombatHost { IsBlockedOverride = _ => true };
+        MapObject dude = host.SetDude(NewCritter(tile: 20100, hp: 30, ap: 10));
+        MapObject self = host.AddCritter(NewCritter(tile: HexGrid.TileInDirection(20100, 0), hp: 30, ap: 10));
+        MapObject candidate = host.AddCritter(
+            NewCritter(tile: HexGrid.TileInDirection(self.HexTile, 1), hp: 30, ap: 10));
+        self.Team = 1;
+        candidate.Team = 0;
+        candidate.WhoHitMe = self;
+
+        var engine = new CombatEngine(host, new MinRng());
+        HostilesOf(engine).Add(candidate);
+        SetActingEnemyAp(engine, 10); // ample AP for an unarmed (fists) swing
+
+        Assert.Same(candidate, DangerSourceMethod().Invoke(engine, [self]));
+    }
+
+    [Fact]
+    public void ADangerSourcePartyGatingAppliesOnlyToPartyMembers()
+    {
+        // ported from fallout2-ce src/combat_ai.cc _ai_danger_source (:1541/:1648): the whole
+        // disposition/attack_who apparatus — including the STRONGEST/WEAKEST/CLOSEST whoHitMe-clear at
+        // :1642 — is gated on objectIsPartyMember(self); a non-party critter takes attackWho = -1 and
+        // never reaches the switch, no matter what AI settings a host might report for it.
+
+        // Half 1: a NON-party critter with a disposition on file (as if the party gate were missing)
+        // still takes the whoHitMe early return untouched — the settings are never consulted.
+        var host1 = new FakeCombatHost();
+        MapObject dude1 = host1.SetDude(NewCritter(tile: 20100, hp: 30, ap: 10));
+        MapObject self1 = host1.AddCritter(NewCritter(tile: HexGrid.TileInDirection(20100, 0), hp: 30, ap: 10));
+        MapObject avenger1 = host1.AddCritter(NewCritter(tile: HexGrid.TileInDirection(20100, 1), hp: 30, ap: 10));
+        self1.Team = 1;
+        avenger1.Team = 0;
+        self1.WhoHitMe = avenger1;
+        // NOT added via AddAlly (self1 is not a party member) — only its Dispositions entry is set, to
+        // prove the gate checks PartyMembers membership, not whether AI settings merely exist.
+        host1.Dispositions[self1] = new CompanionAi(Disposition.Custom, AttackWho.Strongest);
+
+        var engine1 = new CombatEngine(host1, new MinRng());
+        System.Reflection.MethodInfo dangerSource = DangerSourceMethod();
+        Assert.Same(avenger1, dangerSource.Invoke(engine1, [self1]));
+        Assert.Same(avenger1, self1.WhoHitMe); // untouched — the STRONGEST clear never ran
+
+        // Half 2: an ACTUAL party member with AttackWho.Strongest DOES run the switch — its whoHitMe is
+        // cleared (:1642), even though it had a living one.
+        var host2 = new FakeCombatHost();
+        MapObject dude2 = host2.SetDude(NewCritter(tile: 20100, hp: 30, ap: 10));
+        MapObject self2 = host2.AddAlly(
+            NewCritter(tile: HexGrid.TileInDirection(20100, 0), hp: 30, ap: 10),
+            new CompanionAi(Disposition.Custom, AttackWho.Strongest));
+        MapObject avenger2 = host2.AddCritter(NewCritter(tile: HexGrid.TileInDirection(20100, 1), hp: 30, ap: 10));
+        self2.Team = 1;
+        avenger2.Team = 0;
+        self2.WhoHitMe = avenger2;
+
+        var engine2 = new CombatEngine(host2, new MinRng());
+        dangerSource.Invoke(engine2, [self2]);
+
+        Assert.Null(self2.WhoHitMe); // cleared — the party-gated branch ran
+    }
+
+    // ====================================================================
+    //  Task 3 (correction): CombatShouldEnd folds WantsToStopFighting's query in directly instead
+    //  of a mutating PruneEscapedHostiles (see the HISTORY comment above StepTurnOrder in
+    //  CombatEngine.cs for what that replaced and why). The original two Task-3 tests
+    //  (FledHostileWithLivingWhoHitMeIsNotPruned / HostileWithNoDangerSourceIsPruned) exercised
+    //  PruneEscapedHostiles's DangerSource-based asymmetry directly via reflection; that method no
+    //  longer exists and nothing replaced its exact semantics (WantsToStopFighting tests
+    //  perception of the dude/party, not a DangerSource whoHitMe chain), so they were dropped
+    //  rather than adapted — keeping them alive under a different meaning would be worse than
+    //  losing them. In their place: a regression test for the actual bug (a freshly-joined
+    //  hostile must not be evicted from _hostiles before its first turn) and one proving the
+    //  automatic end-of-combat path this whole mechanism exists for still works.
+    // ====================================================================
+
+    [Fact]
+    public void JoiningHostileWithNoWhoHitMeYetIsNeverEvictedFromHostiles()
+    {
+        // The regression net for the bug this correction fixed: AddJoiners() adds a fresh hostile
+        // to _hostiles WITHOUT stamping its WhoHitMe (traced live on denbus2-fight-flee — a
+        // Villager was evicted with DangerSource==null on round 1, then re-joined next round,
+        // then evicted again, every round). Under the old DangerSource-mutating prune this hostile
+        // would vanish on the very next Step(). Under the corrected design _hostiles is never
+        // mutated by the want-to-stop check at all, so it must still be there after several Steps.
+        var host = new FakeCombatHost();
+        MapObject dude = host.SetDude(NewCritter(tile: 20100, hp: 30, ap: 10));
+        MapObject attacker = host.AddCritter(NewCritter(tile: HexGrid.TileInDirection(20100, 0), hp: 30, ap: 10));
+        attacker.Team = 1;
+        // A same-team candidate within perception of the dude — WantToJoin's exact condition
+        // (_hostiles.Any(h => h.Team == c.Team) && WithinPerception(c, dude)) — but with NO
+        // whoHitMe of its own: nobody has fought it yet, matching a freshly recruited joiner.
+        MapObject candidate = host.AddCritter(NewCritter(tile: HexGrid.TileInDirection(20100, 1), hp: 30, ap: 10));
+        candidate.Team = 1;
+        Assert.Null(candidate.WhoHitMe);
+
+        var engine = new CombatEngine(host, new MinRng());
+        engine.BeginScriptAggro(attacker, dude); // opens combat, runs AddJoiners over the candidate
+        Assert.Contains(candidate, engine.Hostiles); // sanity: it did join
+
+        for (int i = 0; i < 5; i++)
+        {
+            host.Animating.Clear();
+            engine.Step();
+            if (engine.Phase == CombatPhase.Idle)
+                break; // combat resolved (dude/attacker traded blows) — fine, just not an eviction
+        }
+
+        Assert.Null(candidate.WhoHitMe); // still never acquired one...
+        Assert.True(candidate.IsDead || engine.Hostiles.Contains(candidate),
+            "a hostile must stay in the fight (or die in it) — never silently vanish for lack of a danger source");
+    }
+
+    [Fact]
+    public void CombatAutomaticallyEndsWhenTheSoleHostileDisengages()
+    {
+        // The ORIGINAL purpose PruneEscapedHostiles existed for, now served by CombatShouldEnd's
+        // own WantsToStopFighting check: "without this, an M1 flee that the dude doesn't chase
+        // never resolves" (the old deleted doc comment). A wounded, low-HP hostile flees (TryFlee
+        // sets CRITTER_MANEUVER_FLEEING/DISENGAGING); once it's the sole hostile and no longer
+        // wants to fight, combat must end on its own — nobody has to manually chase it down or
+        // call TryEndCombat().
+        var host = new FakeCombatHost();
+        MapObject dude = host.SetDude(NewCritter(tile: 20100, hp: 30, ap: 10));
+        MapObject enemy = host.AddCritter(NewCritter(tile: HexGrid.TileInDirection(20100, 0, 10), hp: 5, ap: 10));
+        host.AiPackets[enemy] = new AiPacket(13, "Thug", MinToHit: 0, MinHp: 10, 10, "", "");
+
+        var engine = new CombatEngine(host, new MinRng());
+        engine.BeginScriptAggro(enemy, dude);
+        for (int i = 0; i < 20 && engine.Phase != CombatPhase.Idle; i++)
+        {
+            host.Animating.Clear();
+            engine.Step();
+        }
+
+        Assert.Equal(CombatPhase.Idle, engine.Phase); // combat ended on its own
+        Assert.Contains(host.Transcripts, t => t.StartsWith("disengage:") || t.StartsWith("flee:"));
     }
 
     private static (MapObject Obj, CritterProtoStats Proto) NewCritter(
