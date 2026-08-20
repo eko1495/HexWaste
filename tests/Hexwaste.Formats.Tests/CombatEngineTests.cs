@@ -2443,6 +2443,97 @@ public class CombatEngineTests
         Assert.Equal(0, engine.DudeAp);       // DamLoseTurn zeroes the pool that matters for the dude (:369-370)
     }
 
+    [Fact]
+    public void BurstHitSelfFumbleRollsDamageOncePerRoundSpent()
+    {
+        // F15 (combat.cc:4229 ternary + :4589 loop): a burst that fumbles into DAM_HIT_SELF rolls
+        // weapon damage once per round SPENT (combat.cc:3713 assigns *roundsSpentPtr = ammoQuantity
+        // BEFORE the inception roll, so the count holds even though the aborted burst connects with
+        // nothing — "rounds spent", not "rounds hit"). PRIMARY assertion is the DRAW COUNT, not the
+        // damage total: a total-only assertion would still pass if the roll count silently became 1
+        // and RollWeaponDamage's fixed 10-per-round happened to match some other total — this is
+        // exactly the shape of bug that hid F11 for months.
+        // Weapon: burst, 9 rounds, CriticalFailureType 1 (row 1 in _cf_table). skill 0 keeps accuracy
+        // at the floor so the d100=100 inception roll is a guaranteed miss (mirrors
+        // DudeBurstCritFailureAppliesEffectsAndLosesTheTurn's recipe). SequenceRng(100, 1, 80): 100 =
+        // inception d100 (miss), 1 <= -delta/10 (CRITICAL_FAILURE), severity raw 80 -> with Luck 0 the
+        // chance is 80+25=105 -> CriticalFailure.Severity bucket 4 -> _cf_table row 1 col 4 = 65536 =
+        // DAM_HIT_SELF exactly (same severity recipe as HitSelfFumbleStillRollsWeaponDamage). minDmg =
+        // maxDmg = 10 makes the per-round damage draw deterministic regardless of its returned value.
+        var w = new WeaponProtoStats(0, 10, 10, 0, 40, 40, 0, 0, 5, 6, 9, 0, -1, 30, 0, CriticalFailureType: 1);
+        var proto = new ProtoInfo(0x09, 0, 0x06000000, 0, 0x76, 3, Weapon: w);
+        var item = new MapObject
+        {
+            Id = 9, HexTile = 0, X = 0, Y = 0, Frame = 0, Rotation = 0,
+            Fid = 0x06000000, Flags = 0, Pid = 0x09, Sid = -1, AmmoQuantity = 10,
+        };
+        var host = new FakeCombatHost { CriticalsEnabled = true, DudeCritFailuresEnabled = true, LoadedAmmoCount = 10 };
+        MapObject dude = host.SetDude(NewCritter(20100, hp: 200, ap: 12, skill: 0));
+        MapObject enemy = host.AddCritter(NewCritter(HexGrid.TileInDirection(20100, 0), hp: 500));
+        host.Equipped = (proto, item);
+        var rng = new RecordingRng(new SequenceRng(100, 1, 80));
+        var engine = new CombatEngine(host, rng);
+
+        Assert.True(engine.TryBurst(enemy));
+
+        Assert.Contains(host.Transcripts, t => t.StartsWith("crit-fail: ") && t.Contains("flags=0x10000"));
+        Assert.Contains(host.Transcripts, t => t.StartsWith("crit-fail-self:"));
+        // n = min(loadedAmmo 10, weapon.Rounds 9) = 9 rounds spent -> 9 weapon-damage draws (10, 11),
+        // not the 1 a single-shot/pre-F15 path would take.
+        Assert.Equal(9, rng.Draws.Count(d => d == (10, 11)));
+        Assert.Equal(500, enemy.CurrentHp);  // the fumble hits the ATTACKER, not the intended target
+        Assert.Equal(110, dude.CurrentHp);   // 200 − 9×10, the full per-round-spent damage
+    }
+
+    [Fact]
+    public void SingleShotHitSelfFumbleStillRollsExactlyOnce()
+    {
+        // Non-regression B: a single-shot ranged fumble takes the default roundCount=1 path unchanged.
+        // Identical recipe/assertions to HitSelfFumbleStillRollsWeaponDamage, plus the explicit draw-count
+        // check this task adds.
+        var host = new FakeCombatHost
+        {
+            CriticalsEnabled = true,
+            DudeCritFailuresEnabled = true,
+            LoadedAmmoCount = 10,
+            Equipped = MakeGun(critFailType: 1),
+        };
+        MapObject dude = host.SetDude(NewCritter(20100, hp: 30, ap: 10));
+        MapObject enemy = host.AddCritter(NewCritter(HexGrid.TileInDirection(20100, 0), hp: 100));
+        var rng = new RecordingRng(new SequenceRng(100, 1, 80));
+        var engine = new CombatEngine(host, rng);
+
+        Assert.True(engine.TryAttack(enemy));
+
+        Assert.Equal(1, rng.Draws.Count(d => d == (5, 13))); // MakeGun's min 5 .. max 12 inclusive
+        Assert.Equal(18, dude.CurrentHp); // 30 − 12, the FULL weapon-damage roll, exactly one draw
+    }
+
+    [Fact]
+    public void MeleeHitSelfFumbleStillRollsExactlyOnce()
+    {
+        // Non-regression C: an unarmed/melee fumble also takes the default roundCount=1 path, doubly
+        // inert per the reference — attackType != ATTACK_TYPE_RANGED collapses ammoQuantity to 1 at
+        // combat.cc:4229 regardless of anything this task plumbs. Uses CriticalFailureAppliesTheTableEffect's
+        // recipe (unarmed, row 0) but at a severity that lands DAM_HIT_SELF instead of CRIP_RANDOM: row 0
+        // col 4 doesn't carry HIT_SELF in the table, so we exercise this through a melee WEAPON
+        // (criticalFailureType 1, row 1) with 0 rounds/no burst — RollAttack's ordinary single-hit path.
+        var host = new FakeCombatHost { CriticalsEnabled = true, DudeCritFailuresEnabled = true };
+        MapObject dude = host.SetDude(NewCritter(20100, hp: 30, ap: 10));
+        MapObject enemy = host.AddCritter(NewCritter(HexGrid.TileInDirection(20100, 0), hp: 100));
+        var w = new WeaponProtoStats(0, 3, 8, 0, 1, 1, 0, 0, 3, 0, 0, 0, -1, 0, 0, CriticalFailureType: 1);
+        var proto = new ProtoInfo(0x0A, 0, 0x06000000, 0, 0x03, 3, Weapon: w); // ext 0x03 = swing melee anim
+        var item = new MapObject { Id = 10, HexTile = 0, X = 0, Y = 0, Frame = 0, Rotation = 0, Fid = 0x06000000, Flags = 0, Pid = 0x0A, Sid = -1, AmmoQuantity = -1 };
+        host.Equipped = (proto, item);
+        var rng = new RecordingRng(new SequenceRng(100, 1, 80));
+        var engine = new CombatEngine(host, rng);
+
+        Assert.True(engine.TryAttack(enemy));
+
+        Assert.Equal(1, rng.Draws.Count(d => d == (3, 9))); // min 3 .. max 8 inclusive, exactly one draw
+        Assert.Equal(22, dude.CurrentHp); // 30 − 8, the FULL weapon-damage roll
+    }
+
     private static System.Reflection.MethodInfo TryAllyBurstMethod() => typeof(CombatEngine).GetMethod(
         "TryAllyBurst", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!;
 

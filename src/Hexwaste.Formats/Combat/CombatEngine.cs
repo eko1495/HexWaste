@@ -554,7 +554,11 @@ public sealed class CombatEngine
                     // IS the trigger, so this calls the effects-only half directly (see
                     // ApplyCritFailureEffects). Folding it in here — rather than at each of the three call
                     // sites — makes it structurally impossible for a burst to abort without effects.
-                    bool loseTurn = ApplyCritFailureEffects(attacker, attackerIsDude, weaponProto, weaponItem);
+                    // combat.cc:3713 — *roundsSpentPtr = ammoQuantity is assigned BEFORE the inception
+                    // roll, so `n` (rounds spent, not rounds hit — a fumbled burst connects with none)
+                    // is exactly the ammoQuantity a DAM_HIT_SELF/DAM_RANDOM_HIT branch rolls damage for
+                    // (combat.cc:4229/:4259 ternary, ATTACK_TYPE_RANGED always true for a burst).
+                    bool loseTurn = ApplyCritFailureEffects(attacker, attackerIsDude, weaponProto, weaponItem, n);
                     return (accuracy, n, 0, 0, [], loseTurn);
                 }
             }
@@ -1187,8 +1191,11 @@ public sealed class CombatEngine
     /// ROLL_CRITICAL_FAILURE return dispatches straight into attackComputeCriticalFailure at the shared
     /// switch, combat.cc:3933-3934, with no second roll). Do not call this without first confirming the
     /// fumble landed; it does not re-check.</summary>
+    /// <param name="roundCount">Rounds spent this attack (combat.cc:3713 `*roundsSpentPtr`), used by the
+    /// DAM_HIT_SELF/DAM_RANDOM_HIT damage rolls below (combat.cc:4229/:4259 `ammoQuantity`). Defaults to 1
+    /// so single-shot/melee/thrown callers — none of which know a burst's round count — are unchanged.</param>
     private bool ApplyCritFailureEffects(CritterState attacker, bool attackerIsDude,
-        ProtoInfo? weaponProto, MapObject? weaponItem)
+        ProtoInfo? weaponProto, MapObject? weaponItem, int roundCount = 1)
     {
         // combat.cc:4190 — the dude's fumble has no EFFECT before day 6 (the trigger above still drew).
         if (attackerIsDude && !_host.DudeCritFailuresEnabled)
@@ -1223,7 +1230,7 @@ public sealed class CombatEngine
         // simplification). HURT_SELF is a SEPARATE, much milder branch: a flat 1-5, with no damage roll at
         // all. _cf_table never pairs HURT_SELF with HIT_SELF, so the two never stack.
         if ((flags & CriticalTables.DamHitSelf) != 0)
-            CritFailDamage(attacker, attacker, weaponProto, "crit-fail-self");
+            CritFailDamage(attacker, attacker, weaponProto, "crit-fail-self", roundCount);
         else if ((flags & CriticalTables.DamExplode) != 0)
             // F16: the crit-fail explode also resolves through _compute_explosion_on_extras
             // (combat.cc:3976, isFromAttacker=1) — attackSourced: true so the OTHER victims of the
@@ -1251,7 +1258,7 @@ public sealed class CombatEngine
         {
             MapObject? victim = RandomNearbyCritter(self);
             if (victim is not null && _host.GetCritterState(victim) is { } vd)
-                CritFailDamage(attacker, vd, weaponProto, "crit-fail-random-hit");
+                CritFailDamage(attacker, vd, weaponProto, "crit-fail-random-hit", roundCount);
         }
 
         // DAM_DUD / DAM_ON_FIRE are cosmetic on this slice (no jam-state / fire model) — documented.
@@ -1275,14 +1282,22 @@ public sealed class CombatEngine
     // (the one crit-failure fixture, arcaves-crit-fail-day6, fumbles to flags=0x8000, LOSE_TURN
     // only), so this branch has zero golden-fixture blast radius today — proven only by the two
     // mutation-verified unit tests below.
-    // CARRIED DIVERGENCE: for a RANGED fumble the reference rolls attack->ammoQuantity times
-    // (a burst self-hits once per round); we roll once. Changing the roll COUNT changes the RNG draw
-    // count, so it is its own cycle — see docs/BACKLOG.md.
-    private void CritFailDamage(CritterState attacker, CritterState victimState, ProtoInfo? weaponProto, string tag)
+    // F15: for a RANGED fumble the reference rolls attack->ammoQuantity times (combat.cc:4229/:4589) —
+    // a burst self-hits once per round SPENT (combat.cc:3713 assigns *roundsSpentPtr before the
+    // inception roll, so this holds even though the aborted burst connects with nothing).
+    // <paramref name="roundCount"/> defaults to 1 so single-shot/melee callers are unchanged by
+    // construction (melee is doubly inert: the reference's own ternary collapses ammoQuantity to 1 off
+    // ATTACK_TYPE_RANGED). RollBurst passes its rounds-spent count through ApplyCritFailureEffects.
+    private void CritFailDamage(CritterState attacker, CritterState victimState, ProtoInfo? weaponProto,
+        string tag, int roundCount = 1)
     {
-        int dmg = weaponProto?.Weapon is { } w
-            ? CombatMath.RollWeaponDamage(_rng, attacker, victimState, w.MinDamage, w.MaxDamage, 2, false, 0)
-            : CombatMath.RollDamage(_rng, attacker, victimState, 2, false, 0);
+        int dmg = 0;
+        for (int i = 0; i < roundCount; i++)
+        {
+            dmg += weaponProto?.Weapon is { } w
+                ? CombatMath.RollWeaponDamage(_rng, attacker, victimState, w.MinDamage, w.MaxDamage, 2, false, 0)
+                : CombatMath.RollDamage(_rng, attacker, victimState, 2, false, 0);
+        }
         ApplyCritFailDamage(attacker, victimState, dmg, weaponProto, tag);
     }
 
