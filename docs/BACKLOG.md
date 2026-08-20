@@ -135,7 +135,8 @@ what's left is smaller and more precisely scoped than the 2026-07-16 pass below.
     `fight-result hostilesLeft` 16→17 — Vic was oscillating under the OLD flat-distance
     `PruneEscapedHostiles` before this sub-project ever started; removing the mutation fixed
     pre-existing churn as a side effect, it did not introduce new churn. `brawl-watch`: `rounds`
-    7→8, everything else (teamsAtStart, ended, survivors, winTeam, dudeHp) unchanged. Why so small:
+    7→8 in `84af67b`, but **6→8 net versus the merge base** — the 6→7 step came earlier in the
+    branch, in `effabf1` (the `_ai_danger_source` port itself); everything else (teamsAtStart, ended, survivors, winTeam, dudeHp) unchanged. Why so small:
     the entire `tests/golden-combat/` suite is dude-initiated 1v1/1v-few combat, where old
     hand-rolled target selection and the new `_ai_danger_source` converge on the same target almost
     everywhere — only the multi-team, dude-absent `tests/golden-encounter/` fixtures had any real
@@ -537,30 +538,52 @@ refusing the walk), and the correct fix makes the line truthful instead of merel
 `PruneFinishedWalkers` — draining the dictionary there would remove the stale entry the probe exists to
 test, and the proof would silently become vacuous.
 
-**F22 — SHIPPED 2026-08-20 (`83864fe`), the `PruneEscapedHostiles` deletion — a Hexwaste invention
-with no reference counterpart survived because a deferral note described it as merely awaiting a
-port.** *Was carried inside A2's re-record tier as "the piece still deferred."* Hexwaste had a
-`PruneEscapedHostiles` method, called every `Step()`, that **removed** hostiles from `_hostiles`
-once they were judged to have escaped. No such removal exists anywhere in `e97087b`: the reference
-function this was meant to port, `_combatai_want_to_stop` (`combat_ai.cc:3211`), has exactly one
-caller — `combatAttemptEnd()` (`combat.cc:3087`), the manual "player tries to leave combat" gate —
-and it only **queries** whether the player may safely disengage; it never evicts anyone from the
-fight. The `feat/ai-danger-source` plan (docs commits `ee7f7c5`/`ca1dedc`) told the implementer to
-port the danger-source test into this existing mutating method, which is how the duplicate got
-built in the first place (`775fd8d`): a second implementation of `_combatai_want_to_stop`,
-alongside the already-correct, already-tested, already-wired `WantsToStopFighting`/`TryEndCombat`.
-Nobody grepped for an existing port of the reference function before specifying a new home for its
-logic. The duplicate immediately exposed a bootstrap gap — `AddJoiners` adds a critter to
-`_hostiles` without stamping `WhoHitMe`, so a fresh joiner had no danger source, was evicted by the
-mutating prune before its own first turn, and was re-added by `AddJoiners` next round: measured
-live as `Villager@9274` evicted every round with `enemy=null` on `denbus2-fight-flee`. Fix:
-`PruneEscapedHostiles` deleted outright; `WantsToStopFighting` now feeds `CombatShouldEnd` as well
-as `TryEndCombat`, so the one port of `_combatai_want_to_stop` is reused at both the manual and
-automatic exit points and never mutates `_hostiles`. No mutation means no vacancy for `AddJoiners`
-to refill, so the oscillation is now structurally impossible rather than tuned away. **Lesson for
-future backlog entries:** a deferral note that says "needs a port of X" should be treated as a
-prompt to search for an existing port of X before scoping new work, not just a statement that X is
-missing.
+**F22 — SHIPPED 2026-08-20 (`83864fe`), CORRECTED 2026-08-20: `PruneEscapedHostiles` decided
+combat participation by a flat sight-distance radius — an invented *gate*, not an invented
+mechanism.** *Was carried inside A2's re-record tier as "the piece still deferred."* Hexwaste had a
+`PruneEscapedHostiles` method, called every `Step()`, that removed a hostile from `_hostiles` once
+it was more than ~20 hexes away. **Nothing in `e97087b` decides participation by a fixed hex
+radius** — that gate is the defect, and deleting it was right.
+
+**The justification originally recorded for the deletion was false, and is corrected here.** This
+entry (and the `HISTORY` comment in `CombatEngine.cs`) previously claimed the reference "never
+evicts anyone from the fight." It evicts every round. `_combat_sequence()` (`combat.cc:3023`,
+called once per round from `_combat()`'s loop at `:3443`) removes dead critters from the combatant
+list (`:3030-3042`) and moves knocked-out or `CRITTER_MANEUVER_DISENGAGING` critters to the
+non-combatant list (`:3044-3060`); `_combat_add_noncoms()` (`:2899`) re-admits them later via
+`_combatai_want_to_join`. `_combat_should_end()` (`:3339-3376`) then reads the *post*-eviction
+`_list_com`. And `DISENGAGING` is set by `_ai_run_away` (`combat_ai.cc:1216`) precisely when a
+fleeing critter is at or past its packet's `ai->max_dist` (`:1183`) — the reference's own "a hostile
+that escaped leaves the fight" mechanism, which the flat prune was crudely approximating. So
+**evict-and-re-add is the reference's architecture**, and the `Villager@9274` / `Vic@17070`
+evict/rejoin oscillation traced on `denbus2-fight-flee` was evidence that the *gate* was wrong, not
+that mutation was wrong.
+
+The follow-on error compounded it: the deletion's replacement folded `WantsToStopFighting` (the
+port of `_combatai_want_to_stop`) into the *automatic* end check. `_combat_should_end` never calls
+that function — its sole caller is `combatAttemptEnd` (`combat.cc:3087`), the player's manual
+"leave combat" gate — so folding it in added two terms vanilla never applies automatically
+(`ManeuverFleeing`, and the perception term), and, because `WantsToStopFighting` hardcoded the
+danger source as dude+party instead of calling `_ai_danger_source` (`combat_ai.cc:3227`), it also
+made combat able to end *mid-fight* when two hostile teams brawled outside the dude's perception.
+**Corrected shape (this fix):** `CombatShouldEnd` applies `_combat_sequence`'s own eviction
+predicate — dead / KO / `DISENGAGING`, the same one `BuildTurnOrder` already applies to `_order` —
+and `WantsToStopFighting` stays where the reference puts it, `TryEndCombat` alone, now deriving its
+danger source from the ported `DangerSource` per `:3227-3228`. Hexwaste still keeps a KO hostile
+blocking automatic end (P14-M2, a deliberate departure from `:3044-3060`), and still never mutates
+`_hostiles` for termination — it does not need to, because `_order` is where the eviction predicate
+lives.
+
+**The lesson that still holds** (the one the original entry got right): the `feat/ai-danger-source`
+plan (docs commits `ee7f7c5`/`ca1dedc`) told the implementer to port the danger-source test into
+the existing mutating method, producing a *second* implementation of `_combatai_want_to_stop`
+(`775fd8d`) alongside the already-correct, already-tested, already-wired
+`WantsToStopFighting`/`TryEndCombat`. Nobody grepped for an existing port of the reference function
+before specifying a new home for its logic. A deferral note that says "needs a port of X" should be
+treated as a prompt to search for an existing port of X before scoping new work, not just a
+statement that X is missing. **And the second lesson, added here:** the note also asserted a fact
+about the reference ("it never evicts") that nobody re-derived from `e97087b` before acting on it.
+An architectural claim about the reference is a claim to verify, not a premise to build on.
 
 **F23 — SHIPPED 2026-08-20 (`9ae21b7`), `StepTurnOrder`'s round loop free-ran through every
 remaining round once one team was eliminated, silently skipping the automatic end-of-combat
@@ -582,7 +605,10 @@ own turn (flee, KO forfeit, a script-preset maneuver) still runs before any want
 Because the reference increments its round counter and *then* evaluates the end condition
 (`combat.cc:3445-3446`: `_combatNumTurns += 1;` then the `while`), the faithful port also corrected
 `brawl-watch`'s round count from a pre-increment 7 to a post-increment 8 (`84af67b`) — reproducing
-7 was explicitly declined as bending the port to preserve a fixture.
+7 was explicitly declined as bending the port to preserve a fixture. **Correction for future
+archaeology:** the net move versus the merge base (`5eb2bd5`) is **6→8**, not 7→8. The 6→7 step was
+recorded earlier in the branch, by `effabf1` (the `_ai_danger_source` port itself), and only the
+7→8 step belongs to this item.
 
 **F24 — OPEN, not fixed: `BeginScriptAggro` joins a critter to combat without the
 `WithinPerception` gate that `WantToJoin` applies.** *Effort unknown · needs its own investigation
