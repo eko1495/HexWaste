@@ -422,17 +422,30 @@ sounds like: porting it makes disengagement *harder*, not easier — a critter w
 keeps fighting instead of disengaging — so it will move fixtures. Re-record tier, not a docs-only
 follow-up.
 
-**F20 — The other `Pathfinder.FindPath` call sites are unaudited against their reference `a5`
-counterparts.** *Effort S per site (audit) · re-record tier for any that flip.* F18 taught Hexwaste's
-`FindPath` only `a5 = 0` until now; the reference passes `a5 = 1` at other call sites too —
-`_ai_move_away` (`combat_ai.cc:1238-1239`, `_make_path(a1, a1->tile, destination, nullptr, 1)`) is
-the known next case, feeding `_combat_ai`'s tail (see F19) and reachable independently of it. The
-other Hexwaste call sites have never been checked against their reference counterparts, each still
-passing the `a5 = 0` default: `CombatEngine.cs:3022` (enemy approach) and `:3266` (ally move);
-`DudeController.cs:62`, `:83`, `:161` (dude walk/repath); `ViewerGame.cs:5236` (worldmap start-point
-reachability probe). Auditing means finding and citing each site's reference counterpart and its `a5`
-value in `animation.cc`/`combat_ai.cc`, not assuming `0` is correct by default. Changing any site
-found to need `a5 = 1` is re-record tier — it moves movement transcripts, per the F18 precedent.
+**F20 — AUDITED CLEAN 2026-08-20: every `Pathfinder.FindPath` call site already matches its
+reference `a5`; no code change was needed.** *Was Effort S per site · re-record tier for any that
+flipped. None flipped.* F18 established that Hexwaste's `FindPath` modelled only `a5 = 0` and added
+`requireFreeDestination` for `a5 = 1`. This entry asked whether the other sites were wrong by
+default. They are not — each was traced to its reference counterpart and its `a5` read there rather
+than assumed:
+
+| Hexwaste site | Reference counterpart | ref `a5` | verdict |
+|---|---|---|---|
+| `DudeController.cs:62`, `:83`, `:161` (dude walk / repath) | `_anim_move` → `_make_path(obj, obj->tile, tile, sad->rotations, a5)` (`animation.cc:2407`); **both** callers pass `0` (`:2145`, `:2361`) | 0 | already correct |
+| `CombatEngine.cs:2225` (danger-source WHOMEVER fallback) | `combat_ai.cc:1609` | 0 | already correct |
+| `CombatEngine.cs:2286` (danger-source main loop) | `combat_ai.cc:1696` | 0 | already correct |
+| `CombatEngine.cs:3399` (enemy approach) | `_ai_try_attack`'s move-closer, `combat_ai.cc:2854` | 0 | already correct |
+| `CombatEngine.cs:3473` (`TryFlee`) | `_ai_run_away`, `combat_ai.cc:1192` | **1** | ported in F18 |
+| `CombatEngine.cs:3643` (ally move) | `_ai_move_steps_closer`, `combat_ai.cc:2396`/`:2398` | 0 | already correct |
+| `ViewerGame.cs:5267` (worldmap start-point probe) | `worldmap.cc:4088` | 0 | correct on `a5` — but see F25 |
+
+Two things this audit did *not* close, both tracked elsewhere. `_ai_move_away` (`combat_ai.cc:1239`,
+`:1244`, `:1249`, all `a5 = 1`) has **no Hexwaste counterpart at all**, so there is no site to audit —
+it belongs to F19. And the worldmap probe diverges from its counterpart on a different axis than
+`a5`; that is F25.
+
+The useful negative result: `a5 = 0` was the right default everywhere it was used, so F18's fix was
+correctly scoped to the one site that needed `1` rather than being a symptom of a systematic gap.
 
 **F21 — SHIPPED 2026-08-17 (`ad4b79f`, `633a617`, `f64b5d4`), two fixtures deliberately re-recorded.**
 *Was Effort M · re-record tier.* Most consequential finding of the F1/F18 sub-project: a stale
@@ -623,6 +636,15 @@ left as-is (see the Task-3 report's "Concerns" section for the specific interact
 grounded against the reference's own script-aggro join site — record here so it is tracked instead
 of re-discovered, not so it is assumed to be a bug without checking `e97087b` first.
 
+**F25 — The worldmap start-point reachability probe uses movement-blocking where the reference uses
+SHOOT-blocking.** *Effort S · found during the F20 audit.* `ViewerGame.cs:5267`'s
+`Reachable(from, to)` passes `IsBlocked` (`_blockedTiles.Contains`, i.e. anything that blocks
+movement, critters included). Its reference counterpart, `worldmap.cc:4088`, passes
+`_obj_shoot_blocking_at` — the line-of-*fire* predicate, under which a critter standing in the way
+does not necessarily block. Both use `a5 = 0`, so this is orthogonal to F18/F20. Consequence: a
+start point the reference would accept can be rejected here whenever a critter happens to stand on
+the route, making random encounter placement fussier than vanilla. Not yet measured against a
+fixture, so the blast radius is unknown; treat as re-record tier until measured.
 ### Dialog and party
 
 **F2 — `start_gdialog` head mood should come from the critter's REACTION value, not the script's
