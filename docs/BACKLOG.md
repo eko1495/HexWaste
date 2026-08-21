@@ -985,25 +985,30 @@ Result: `ShouldRunDamageProc` (`CombatEngine.cs:1629`) carries no dude-specific 
 re-record tier; the prediction was wrong for the same reason F26's was — see F26's own correction
 above for the general lesson about unverified fixture-movement predictions).
 
-**F30 — An INVULNERABLE critter still suffers critical-failure effects; the reference exempts it
-outright.** *Effort S · found by the F26/F15 whole-branch review (2026-08-20).*
-`attackComputeCriticalFailure` early-returns before resolving any flags when the attacker carries
-`CRITTER_INVULNERABLE` (`combat.cc:4182-4183`):
+**F30 — SHIPPED 2026-08-21 (`2107a89`), 955 tests, combat-golden 17/17, 0 fixtures moved.** *Was
+Effort S · found by the F26/F15 whole-branch review (2026-08-20).* An INVULNERABLE critter suffered
+the full critical-failure result where the reference exempts it outright.
+`attackComputeCriticalFailure` early-returns when the attacker carries `CRITTER_INVULNERABLE`
+(`combat.cc:4182-4184`, flag `0x400` at `obj_types.h:99`) — **before** the dude's day-6 gate
+(`:4186`) and before any `_cf_table` lookup, so such an attacker draws **no severity roll at all**.
+Hexwaste had no invulnerability check anywhere in `CombatEngine`, so an invulnerable critter that
+fumbled could drop or destroy its weapon, hit itself, lose its ammo, be crippled or blinded, and lose
+its turn. Scripted invulnerable NPCs are a normal content device, so this was reachable in ordinary
+play rather than theoretical.
 
-```c
-if (attack->attacker != nullptr && _critter_flag_check(attack->attacker->pid, CRITTER_INVULNERABLE)) {
-    return 0;
-}
-```
+Fixed with one guard at the head of `ApplyCritFailureEffects`, which the burst work (F26) had already
+made the single effects entry point for both the single-shot and burst paths — so one guard covers
+every route. The plumbing needed nothing new: `Proto.CritterFlags` was already parsed and
+`CombatEngine` already read it for `CRITTER_NO_KNOCKBACK`.
 
-Hexwaste has **no invulnerability check anywhere in `CombatEngine`** — a grep for `Invulnerable`
-returns nothing — so `ApplyCritFailureEffects` resolves and applies the full `_cf_table` result for
-such a critter: it can drop or destroy its weapon, hit itself, lose its ammo, be crippled or blinded,
-and lose its turn. Scripted invulnerable NPCs are a normal content device, so this is reachable in
-ordinary play rather than a theoretical case. Narrow but real; the fix is a guard at the head of the
-effects path, mirroring the reference's early return. Note the reference places it **after** the
-`DAM_HIT` clear at `:4180` and before any flag resolution, so it exempts the critter from the effects
-without disturbing the attack's own bookkeeping.
+**The placement is load-bearing and the code comment says so.** The invulnerable exemption must
+precede the day-6 dude gate, because the two differ in kind: the invulnerable case draws *nothing*,
+while the day<6 dude case still draws the trigger and is gated only on its *effect*. A guard placed
+after `CriticalFailure.Resolve` would still consume the severity draw and silently diverge the RNG
+stream while every visible effect looked correct — so the test asserts the **draw count** (2, not 3),
+not merely the absence of effects. That is the same class of mistake that let F11 hide for months.
+
+No fixture moved: a golden would have to contain an invulnerable critter that fumbles, and none does.
 
 **F31 — The reference scales a burst's ammo cost through `_item_w_compute_ammo_cost`; Hexwaste does
 not model it.** *Effort S–M · found by the F26/F15 whole-branch review (2026-08-20).* `_compute_attack`

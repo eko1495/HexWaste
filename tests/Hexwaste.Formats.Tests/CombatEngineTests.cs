@@ -2969,6 +2969,55 @@ public class CombatEngineTests
     }
 
     [Fact]
+    public void InvulnerableAttackerIsExemptFromCriticalFailureEffects()
+    {
+        // F30 (combat.cc:4178-4184 attackComputeCriticalFailure, e97087b): the CRITTER_INVULNERABLE
+        // check (obj_types.h:99, 0x400) sits BEFORE the dude's day-6 gate (:4186) and BEFORE any
+        // _cf_table lookup — so an invulnerable attacker draws NO severity roll at all, not merely
+        // "draws it and then discards the effect" the way the day<6 dude case does. DudeCritFailuresEnabled
+        // is true here specifically so a failure to guard correctly (e.g. guarding after the day-6 check)
+        // would still show through as a lost turn — the day-6 gate must not be the thing hiding this.
+        // SequenceRng: to-hit 100 (miss), upgrade 1 (crit-fail), severity 30 (would be row0 → LOSE_TURN
+        // if drawn). RecordingRng proves that third draw never happens: only 2 draws total.
+        var host = new FakeCombatHost { CriticalsEnabled = true, DudeCritFailuresEnabled = true };
+        (MapObject dudeObj, CritterProtoStats dudeProto) = NewCritter(tile: 20100, hp: 30, ap: 10);
+        MapObject dude = host.SetDude((dudeObj, dudeProto with { CritterFlags = 0x400 })); // CRITTER_INVULNERABLE
+        MapObject enemy = host.AddCritter(NewCritter(tile: HexGrid.TileInDirection(20100, 0), hp: 100));
+        var rng = new RecordingRng(new SequenceRng(100, 1, 30));
+        var engine = new CombatEngine(host, rng);
+
+        Assert.True(engine.TryAttack(enemy));
+
+        Assert.DoesNotContain(host.Transcripts, t => t.StartsWith("crit-fail:"));
+        Assert.Equal(0, dude.CombatResults & CriticalTables.DamCripLimbs); // no crippled limb
+        Assert.Equal(7, engine.DudeAp); // 10 − 3 punch AP only; no lose-turn zeroing
+        // The draw-count proof: to-hit + the crit-fail upgrade roll, and NOTHING past it — no severity
+        // roll was drawn. A guard placed after CriticalFailure.Resolve would still show 3 draws here.
+        Assert.Equal(2, rng.Draws.Count);
+    }
+
+    [Fact]
+    public void NonInvulnerableAttackerStillFumblesNormally_Pin()
+    {
+        // F30 (Test B — a PIN, not a regression test): without this, "always return false from the
+        // invulnerability guard" would trivially pass the primary test above. A critter with
+        // CritterFlags left at 0 (not invulnerable) must still take the full day-6 crit-fail effect,
+        // exactly as CriticalFailureFiresOnAMissAndHonorsTheDudeDay6Gate's day6:true case already
+        // demonstrates — this is expected to pass unchanged both before and after the guard is added.
+        var host = new FakeCombatHost { CriticalsEnabled = true, DudeCritFailuresEnabled = true };
+        host.SetDude(NewCritter(tile: 20100, hp: 30, ap: 10));
+        MapObject enemy = host.AddCritter(NewCritter(tile: HexGrid.TileInDirection(20100, 0), hp: 100));
+        var rng = new RecordingRng(new SequenceRng(100, 1, 30));
+        var engine = new CombatEngine(host, rng);
+
+        Assert.True(engine.TryAttack(enemy));
+
+        Assert.Contains(host.Transcripts, t => t.StartsWith("crit-fail: ") && t.Contains("flags=0x8000"));
+        Assert.Equal(0, engine.DudeAp); // lose-turn zeroed the remaining AP
+        Assert.Equal(3, rng.Draws.Count); // to-hit + upgrade + severity — the severity roll DOES happen
+    }
+
+    [Fact]
     public void HitSelfFumbleStillRollsWeaponDamage()
     {
         // The other half of the self-damage branch (combat.cc:4228-4232 at our pinned e97087b):

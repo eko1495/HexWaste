@@ -73,6 +73,8 @@ public sealed class CombatEngine
     private readonly HashSet<MapObject> _knockedDown = [];
     private const int OBJECT_MULTIHEX = 0x800;
     private const int CRITTER_NO_KNOCKBACK = 0x4000;
+    // ported from fallout2-ce src/obj_types.h:99
+    private const int CRITTER_INVULNERABLE = 0x400;
     private const int StandUpApCost = 3; // _combat_standup (combat.cc:5391)
 
     /// <summary>The knockout-wake event queue + a combat-owned monotonic tick that
@@ -1197,6 +1199,13 @@ public sealed class CombatEngine
     private bool ApplyCritFailureEffects(CritterState attacker, bool attackerIsDude,
         ProtoInfo? weaponProto, MapObject? weaponItem, int roundCount = 1)
     {
+        // ported from fallout2-ce src/combat.cc attackComputeCriticalFailure() :4182-4184: an invulnerable
+        // attacker is exempt outright — checked BEFORE the dude's day-6 gate (:4186) and before any
+        // _cf_table lookup, so it draws no severity roll at all (unlike the day<6 dude case below, which
+        // still draws the trigger and is only gated on its EFFECT). Must stay first for that reason.
+        if ((attacker.Proto.CritterFlags & CRITTER_INVULNERABLE) != 0)
+            return false;
+
         // combat.cc:4190 — the dude's fumble has no EFFECT before day 6 (the trigger above still drew).
         if (attackerIsDude && !_host.DudeCritFailuresEnabled)
             return false;
