@@ -878,6 +878,12 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
         /// critter — proves (or disproves) that a finished walker still blocks a later StartNpcWalk call
         /// because it was never removed from _npcWalkers.</summary>
         public sealed record WalkerRestartProbe(int Hex, int Target1, int Target2) : StartupAction;
+        /// <summary>F32 QA: golden coverage for ShouldRunDamageProc's party pair gate (combat.cc:4849).
+        /// The proc's own output never reaches stdout (RunDamageProc routes through Log, not Transcript —
+        /// see BACKLOG F32), so this reports the GATE's discriminating outcome for both quadrants: forces
+        /// the critter at VictimHex into the party, then probes party-source damage (expect suppressed)
+        /// and enemy-source damage from the critter at EnemyHex (expect it runs).</summary>
+        public sealed record PartyProcProbe(int VictimHex, int EnemyHex) : StartupAction;
         /// <summary>Fidelity probe: lists ground items within the NpcHex critter's perception+5, then runs
         /// the AI weapon switch (as-is — no weapon is stripped first) against the critter at TargetHex,
         /// exercising the ground-pickup fallback (_ai_search_environ → _ai_retrieve_object) when its

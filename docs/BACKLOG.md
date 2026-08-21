@@ -1019,17 +1019,50 @@ is not 1 spends the wrong number of rounds, and the reference's abort-on-failure
 counterpart. Unmeasured — the blast radius depends on which shipped weapons carry a non-unit ammo
 cost, which should be established from the proto data before this is scheduled.
 
-**F32 — No party-on-party fixture exists in the combat-golden corpus; F27's fix is unverified
-end-to-end.** *Effort S (fixture authoring) · test-coverage gap, not a defect · found during F27/F29
-closeout (2026-08-20).* F27 fixed a real bug — four of the six `RunDamageProc` call sites could run a
-party member's `damage_p_proc` when another party member damaged them, which the reference suppresses
-— but none of the 17 fixtures in `tests/golden-combat/` stages a party member attacking another party
-member, so the fix is exercised only by `CombatEngineTests` unit tests, never through a real
-map/script end-to-end. This is why closing F27 moved 0 fixtures rather than a sign the fix did
-nothing. Worth tracking so a future companion-vs-companion friendly-fire scenario (e.g. a
-crit-failure/burst-collateral fixture with two party members in the blast) gets recorded as a golden
-fixture, giving the golden suite a way to catch a regression of this behaviour that it currently
-cannot.
+**F32 — SHIPPED 2026-08-21, one fixture added (no existing fixture moved).** *Was Effort S (fixture
+authoring) · test-coverage gap, not a defect · found during F27/F29 closeout (2026-08-20).* F27 fixed a
+real bug — four of the six `RunDamageProc` call sites could run a party member's `damage_p_proc` when
+another party member damaged them, which the reference suppresses — but none of the 17 fixtures in
+`tests/golden-combat/` staged a party member attacking another party member, so the fix was exercised
+only by `CombatEngineTests` unit tests, never through a real map/script end-to-end.
+
+**The entry's own suggested fix — author a companion-vs-companion friendly-fire fixture — turned out
+not to work, and the reason is structural, not incidental.** Every `RunDamageProc` call site routes its
+returned lines through `_host.Log(...)` (`CombatEngine.cs`, all six sites), and `ViewerGame.Log`
+(`ViewerGame.cs:5840`) only appends to `_messageLog` and queues a floating-text entry — it never writes
+to stdout. Only `ViewerGame.CombatHost.Transcript` does (`ViewerGame.CombatHost.cs:979`,
+`Console.WriteLine`), and the golden scripts capture stdout. So a party-on-party *fixture* would be
+byte-identical whether the proc ran or not: authoring one would have retired this entry while leaving
+the coverage hole open, worse than the acknowledged gap because it would look like coverage.
+
+**This is exactly the shape F21 solved with a headless harness probe pinned as a combat-golden
+scenario** (`--walker-restart-probe`, `scripts/combat-golden.sh:49`) instead of a fixture that could
+never observe the behaviour — the fix here follows that precedent rather than inventing a new shape.
+Any future "behaviour with no golden-visible signal" gap should reach for the same tool: a probe that
+prints a discriminating value, pinned as its own scenario.
+
+**Shipped, the fix:**
+- `CombatEngine.ProbePartyDamageProc(victim, source, damage)` (`CombatEngine.cs`, beside
+  `ShouldRunDamageProc`) drives the exact production gate — `ShouldRunDamageProc` then, if it passes,
+  the real `RunDamageProc` — and returns whether the gate let the proc run, without any of the proc's
+  own output needing to reach stdout.
+- `--party-proc-probe <victimHex> <enemyHex>` (`Program.cs`, `StartupAction.PartyProcProbe` in
+  `ViewerGame.cs`, handler in `ViewerGame.Harness.cs`) forces the critter at `victimHex` into the party
+  (a real `Sid`-bearing critter — a `Sid == -1` victim can never run a proc under any gate, which would
+  make the probe vacuous) and reports **both** discriminating quadrants on one line, since
+  `combat.cc:4849` is a pair gate that suppresses only when *both* sides are party members: party-source
+  damage (`_host.Dude` → victim, expect suppressed) and enemy-source damage (the critter at `enemyHex` →
+  victim, expect it runs). A probe reporting only "no proc ran" would pass happily against a gate
+  stubbed to always-false — the exact regression this exists to catch.
+- Pinned as `party-proc|--map arcaves.map --party-proc-probe 20529 21729`
+  (`scripts/combat-golden.sh`, beside `walker-restart`), recorded as
+  `tests/golden-combat/party-proc.txt` — the only new file; every prior fixture stayed byte-identical.
+- **Proven to discriminate, the same standard F21's pinned scenario met**: with the fix in place the
+  probe prints `partyToPartyRan=0 enemyToPartyRan=1`. Temporarily reverting `ShouldRunDamageProc` to
+  ignore the party pair test (`return true;` unconditionally) and rebuilding flips the output to
+  `partyToPartyRan=1 enemyToPartyRan=1` — the party→party quadrant alone changes, exactly the F27
+  regression this probe exists to catch. Restoring the gate and rebuilding returns the output to
+  `partyToPartyRan=0 enemyToPartyRan=1`.
 
 ### Pointer
 

@@ -47,6 +47,10 @@ SCENARIOS=(
   # F21: pins the walker-restart-probe's discriminating value (started2) so a regression reverting
   # StartNpcWalk's guard back to ContainsKey is caught by an automated diff, not only by hand.
   "walker-restart|--map denbus2.map --walker-restart-probe 14716 14718 14716"
+  # F32: pins ShouldRunDamageProc's party pair gate (combat.cc:4849, F27). The proc's own output never
+  # reaches stdout (RunDamageProc routes through Log, not Transcript), so the probe reports the gate's
+  # own outcome for both quadrants — see the doc comment on StartupAction.PartyProcProbe.
+  "party-proc|--map arcaves.map --party-proc-probe 20529 21729"
 )
 
 echo "Building viewer..."
