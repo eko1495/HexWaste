@@ -1646,6 +1646,19 @@ public sealed class CombatEngine
         return !(targetIsPartyMember && sourceIsPartyMember);
     }
 
+    /// <summary>F32 harness: exercises the exact ShouldRunDamageProc pair gate (:4849) shared by all six
+    /// production RunDamageProc call sites, without any of the proc's own output reaching a
+    /// golden-visible sink (RunDamageProc routes through _host.Log, never _host.Transcript — see
+    /// BACKLOG F32). Returns whether the gate let the proc run, so a golden fixture can pin the gate's
+    /// outcome directly instead of an unobservable script side effect.</summary>
+    public bool ProbePartyDamageProc(MapObject victim, MapObject? source, int damage)
+    {
+        if (!ShouldRunDamageProc(victim, source))
+            return false;
+        _host.RunDamageProc(victim, source, damage);
+        return true;
+    }
+
     /// <summary>Knockback shove (melee/unarmed/explosion, never guns) + persisting
     /// prone from a crit. The shove is damage/10 tiles along the hex line, stopping
     /// before a blocked tile (combat.cc:4633 gate + actions.cc:102 geometry); a pure

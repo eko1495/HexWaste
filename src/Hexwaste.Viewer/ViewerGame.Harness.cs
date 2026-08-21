@@ -899,6 +899,33 @@ public sealed partial class ViewerGame
                         + $" t2={wrTarget2} started2={(wrStarted2 ? 1 : 0)} tile={wrNpc.HexTile}");
                     break;
                 }
+                case StartupAction.PartyProcProbe(var ppVictimHex, var ppEnemyHex):
+                {
+                    // F32: coverage for ShouldRunDamageProc's party pair gate (combat.cc:4849) — the
+                    // proc's own output only ever reaches _host.Log (never Transcript/stdout), so no
+                    // fixture can observe it directly. Report the gate's own discriminating outcome for
+                    // both quadrants instead: party-source (expect suppressed) and enemy-source (expect
+                    // it runs) damage against the same victim.
+                    MapObject? ppVictim = CritterAt(ppVictimHex, aliveOnly: true);
+                    MapObject? ppEnemy = CritterAt(ppEnemyHex, aliveOnly: true);
+                    if (ppVictim is null || ppEnemy is null || _scriptHost is null || _dude is null)
+                    {
+                        Console.Error.WriteLine($"party-proc-probe: missing critter(s) at {ppVictimHex}/{ppEnemyHex}");
+                        break;
+                    }
+                    // A victim with Sid == -1 can never run a proc under any gate — force it into the
+                    // party (mirrors --recruit / --companion, which likewise stage party membership
+                    // directly rather than through the recruit dialog) so the probe is non-vacuous.
+                    if (!_scriptHost.PartyMembers.Contains(ppVictim))
+                        _scriptHost.PartyMembers.Add(ppVictim);
+
+                    bool ppPartyToParty = _combat.ProbePartyDamageProc(ppVictim, _dude.Dude, 1);
+                    bool ppEnemyToParty = _combat.ProbePartyDamageProc(ppVictim, ppEnemy, 1);
+
+                    Console.WriteLine($"party-proc-probe: victim={ppVictimHex} sid={ppVictim.Sid}"
+                        + $" partyToPartyRan={(ppPartyToParty ? 1 : 0)} enemyToPartyRan={(ppEnemyToParty ? 1 : 0)}");
+                    break;
+                }
                 case StartupAction.BlockedProbe(var bpHex):
                 {
                     // P109 QA: the live blocked-set truth around a tile — each neighbor's blocked

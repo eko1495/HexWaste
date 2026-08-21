@@ -1019,17 +1019,40 @@ is not 1 spends the wrong number of rounds, and the reference's abort-on-failure
 counterpart. Unmeasured — the blast radius depends on which shipped weapons carry a non-unit ammo
 cost, which should be established from the proto data before this is scheduled.
 
-**F32 — No party-on-party fixture exists in the combat-golden corpus; F27's fix is unverified
-end-to-end.** *Effort S (fixture authoring) · test-coverage gap, not a defect · found during F27/F29
-closeout (2026-08-20).* F27 fixed a real bug — four of the six `RunDamageProc` call sites could run a
-party member's `damage_p_proc` when another party member damaged them, which the reference suppresses
-— but none of the 17 fixtures in `tests/golden-combat/` stages a party member attacking another party
-member, so the fix is exercised only by `CombatEngineTests` unit tests, never through a real
-map/script end-to-end. This is why closing F27 moved 0 fixtures rather than a sign the fix did
-nothing. Worth tracking so a future companion-vs-companion friendly-fire scenario (e.g. a
-crit-failure/burst-collateral fixture with two party members in the blast) gets recorded as a golden
-fixture, giving the golden suite a way to catch a regression of this behaviour that it currently
-cannot.
+**F32 — SHIPPED 2026-08-21 (`ff30069`), one new golden fixture, zero modified.** *Was Effort S ·
+test-coverage gap, not a defect · found during F27/F29 closeout (2026-08-20).* F27 made all six
+`RunDamageProc` sites honour `_damage_object`'s party **pair** gate (`combat.cc:4849`), but nothing in
+the golden suite could catch a regression of it.
+
+**The entry's own suggestion — author a companion-vs-companion fixture — would not have worked, and
+that is the useful part to record.** Damage-proc output goes through `_host.Log(...)`, and
+`ViewerGame.Log` appends to `_messageLog` and queues a floating-text entry; it **never writes to
+stdout**. Only `Transcript` does (`Console.WriteLine`), and the golden scripts capture stdout. None of
+the six production `RunDamageProc` call sites emits a `Transcript` line. So a party-on-party *fixture*
+would have been byte-identical whether the proc ran or not — it would have looked like coverage,
+provided none, and retired this entry while leaving the hole open.
+
+Closed instead with the shape F21 established for the same problem (behaviour with no golden-visible
+signal): a headless harness probe printing a **discriminating value**, pinned as a combat-golden
+scenario. `--party-proc-probe` reports both halves of the pair gate on one line, because reporting
+only the suppression would pass against a gate stubbed to always-false:
+
+```
+party-proc-probe: victim=20529 sid=67108868 partyToPartyRan=0 enemyToPartyRan=1
+```
+
+`partyToPartyRan=0` is F27's fix; `enemyToPartyRan=1` is the positive case the pair gate requires
+(`:4849` suppresses only when *both* sides are party members). The victim carries a real critter `sid`
+— a `Sid == -1` victim can never run a proc under any gate and would have made the probe vacuous.
+
+**Proven to discriminate, not merely present:** reverting `ShouldRunDamageProc`'s pair test flips the
+line to `partyToPartyRan=1 enemyToPartyRan=1`; restoring returns it. That is the same standard F21's
+pinned scenario met — a probe never shown to fail is not a regression net.
+
+Deliberately not done: adding `Transcript` output to the six production call sites. That would emit new
+lines wherever procs currently run, re-recording many existing fixtures, and would bake diagnostic
+output into the engine's transcript to solve what is a coverage problem. The probe reaches the gate
+through a small documented `ProbePartyDamageProc` seam instead.
 
 ### Pointer
 

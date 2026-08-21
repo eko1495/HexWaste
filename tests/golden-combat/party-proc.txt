@@ -1,0 +1,3 @@
+dude sheet: None (gender 0), SPECIAL 5/5/5/5/5/5/5, tags []
+animating 2 multi-frame scenery/misc object(s)
+party-proc-probe: victim=20529 sid=67108868 partyToPartyRan=0 enemyToPartyRan=1
