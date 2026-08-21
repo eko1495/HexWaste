@@ -636,16 +636,22 @@ left as-is (see the Task-3 report's "Concerns" section for the specific interact
 grounded against the reference's own script-aggro join site — record here so it is tracked instead
 of re-discovered, not so it is assumed to be a bug without checking `e97087b` first.
 
-**F25 — The worldmap start-point reachability probe uses movement-blocking where the reference uses
-SHOOT-blocking.** *Effort S · found during the F20 audit.* `ViewerGame.cs:5267`'s
-`Reachable(from, to)` passes `IsBlocked` (`_blockedTiles.Contains`, i.e. anything that blocks
-movement, critters included). Its reference counterpart, `worldmap.cc:4088`, passes
-`_obj_shoot_blocking_at` — the line-of-*fire* predicate, under which a critter standing in the way
-does not necessarily block. Both use `a5 = 0`, so this is orthogonal to F18/F20. Consequence: a
-start point the reference would accept can be rejected here whenever a critter happens to stand on
-the route, making random encounter placement fussier than vanilla. Not yet measured against a
-fixture, so the blast radius is unknown; treat as re-record tier until measured.
-### Dialog and party
+**F25 — BLOCKED behind F33 (2026-08-21).** *Was Effort S.* The worldmap start-point reachability
+probe (`ViewerGame.cs`, its `Reachable(from, to)` local) passes `IsBlocked`
+(`_blockedTiles.Contains`, movement semantics) where the reference passes `_obj_shoot_blocking_at`
+(`worldmap.cc:4088`). Both use `a5 = 0`, so this is orthogonal to F18/F20.
+
+**Note the divergence runs in BOTH directions**, which this entry originally understated as "a critter
+on the route wrongly rejects a start point". Comparing the two reference predicates: `_obj_blocking_at`
+(`object.cc:2401`) blocks on `!HIDDEN && !NO_BLOCK` and **counts dead critters**, while
+`_obj_shoot_blocking_at` (`:2451`) explicitly **excludes dead critters** (an SFALL corpse fix) and uses
+a looser flag test. So switching would both *stop* corpses rejecting start points and *start* letting
+some flagged objects reject them.
+
+Blocked because F33 establishes that Hexwaste's `ShootBlockerAt` does not currently agree with
+`_obj_shoot_blocking_at`, and that the naive correction breaks ordinary ranged combat. Adopting an
+unresolved predicate here would propagate that uncertainty into random encounter placement. Resolve
+F33 first.
 
 **F2 — `start_gdialog` head mood should come from the critter's REACTION value, not the script's
 argument.** *Effort S–M.* For a head-ful dialog **both** `e97087b` and the fork derive the fidget
@@ -1053,6 +1059,61 @@ Deliberately not done: adding `Transcript` output to the six production call sit
 lines wherever procs currently run, re-recording many existing fixtures, and would bake diagnostic
 output into the engine's transcript to solve what is a coverage problem. The probe reaches the gate
 through a small documented `ProbePartyDamageProc` seam instead.
+
+**F33 — `ShootBlockerAt`'s flag test is the De Morgan inverse of `_obj_shoot_blocking_at`'s — but the
+naive fix breaks ordinary ranged combat, so the predicate is NOT the whole story.** *Effort M ·
+investigation before implementation · measured 2026-08-21, change attempted and reverted.*
+
+`_obj_shoot_blocking_at` (`object.cc:2451`) gates on:
+
+```c
+(flags & OBJECT_HIDDEN) == 0
+    && ((flags & OBJECT_NO_BLOCK) == 0 || (flags & OBJECT_SHOOT_THRU) == 0)
+```
+
+By De Morgan that is "blocks **unless both** flags are set" — and both together is exactly
+`OBJECT_OPEN_DOOR` (`obj_types.h:89` = `SHOOT_THRU | LIGHT_THRU | NO_BLOCK`), which is the case the
+disjunction exists to let shots through. Hexwaste's `ShootBlockerAt`
+(`ViewerGame.CombatHost.cs:~213`) writes the same test with `&&`:
+`(Flags & noBlock) == 0 && (Flags & shootThru) == 0` — "blocks **only when neither** flag is set", so
+anything carrying either flag alone lets shots pass.
+
+**The two readings disagree widely.** A survey of all 155 shipped maps (temporary `ProcAnalyze`
+instrumentation, reverted) over 209,413 solid-type objects (critter/scenery/wall):
+
+| flags | count | reference | Hexwaste |
+|---|---|---|---|
+| neither | 91,117 | blocks | blocks |
+| `NO_BLOCK` only | 5,368 | blocks | **passes** |
+| `SHOOT_THRU` only | 95,463 | blocks | **passes** |
+| both (open door) | 17,465 | passes | passes |
+
+**48% of solid objects are classified differently** — so unlike F29's `!= dude` term, this is not
+inert.
+
+**But the naive fix is wrong, and that is the important half of this entry.** Swapping `&&` for `||`
+was tried and measured: `dotnet test` stayed 955/0, but `denbus2-burst-collateral` lost its *entire*
+scenario — the burst never fires, no collateral, no combat opening, target undamaged (`hp=47` vs
+`hp=35`). An ordinary 10mm SMG burst at 8 tiles across a normal map became impossible. If
+`SHOOT_THRU`-only objects truly blocked shots, ranged combat would be frequently impossible in
+vanilla, which it plainly is not.
+
+So one of these is true, and the next person should establish which **before** touching the operator:
+
+1. The predicate is right but the **object set is wrong** — Hexwaste applies it over
+   `_solidObjects[_elevation]`, while vanilla's line-of-fire trace may consult a narrower set, or
+   exclude objects earlier (`_obj_shoot_blocking_at` takes an `excludeObj`, and the callers differ).
+2. The expression means something other than the plain De Morgan reading — worth checking fo2ce issue
+   history or disassembly notes for `_obj_shoot_blocking_at` before assuming the `&&` was a slip.
+
+The change was **reverted**; `main` keeps the `&&`. Reach if it is ever corrected: ~11 consumers —
+to-hit line-of-fire penalties, missed-shot overshoot, explosion line-of-sight, `DangerSource`
+reachability, enemy/ally approach, and rendering — so treat as re-record tier with a wide blast
+radius, and expect to re-record combat *and* encounter fixtures.
+
+**F25 is blocked behind this.** F25 asks the worldmap start-point probe to use shoot-blocking instead
+of movement-blocking (`worldmap.cc:4088` passes `_obj_shoot_blocking_at`); adopting a predicate whose
+correctness is unresolved would propagate the same uncertainty into encounter placement.
 
 ### Pointer
 
