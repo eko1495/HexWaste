@@ -227,6 +227,13 @@ public sealed class CombatEngine
         return null;
     }
 
+    /// <summary>The reference gates ammo spending on the weapon's ammo capacity, never on its
+    /// attack animation — a Cattle Prod or Power Fist drains Small Energy Cells exactly like a
+    /// gun drains its magazine.
+    /// ported from fallout2-ce src/combat.cc _compute_attack() (:3899-3902) and
+    /// _combat_anim_finished() (:5347-5350), both gated on ammoGetCapacity(weapon) > 0.</summary>
+    private static bool UsesCharges(ProtoInfo? weaponProto) => (weaponProto?.Weapon?.AmmoCapacity ?? 0) > 0;
+
     // ====================================================================
     //  Attacks
     // ====================================================================
@@ -378,7 +385,7 @@ public sealed class CombatEngine
             accidental = ComputeAccidentalMiss(dude, target, target.HexTile, weaponProto.Weapon.MaxRange1,
                 weaponProto, _host.LoadedAmmo(weaponProto, weaponItem!), DiffDmgMod(dude));
 
-        if (isGun)
+        if (UsesCharges(weaponProto))
             weaponItem!.AmmoQuantity = _host.WeaponAmmo(weaponProto!, weaponItem) - 1;
         _pendingAttack = new PendingAttack(dude, target, chance, hit, damage, critFlags, CanKnockback: !isGun,
             KnockbackPerk: weaponProto?.Weapon is { WeaponPerk: WeaponProtoStats.PerkKnockback }, // P74-M2
@@ -3771,7 +3778,7 @@ public sealed class CombatEngine
                 AiHitLocation(ally, attacker, defender, weaponProto, weaponItem, distance, crittersInPath), DiffDmgMod(ally)); // P75-M4 + P84
             if (!hit && TriggerCritFailure(attacker, attackerIsDude: false, weaponProto, weaponItem, delta))
                 _actingAllyAp = 0; // P41: a fumble can cost the ally its turn
-            if (isGun && weaponItem is not null)
+            if (UsesCharges(weaponProto) && weaponItem is not null)
                 weaponItem.AmmoQuantity = _host.WeaponAmmo(weaponProto!, weaponItem) - 1;
             _pendingAttack = new PendingAttack(ally, target, chance, hit, damage, critFlags, CanKnockback: !isGun,
                 KnockbackPerk: weaponProto?.Weapon is { WeaponPerk: WeaponProtoStats.PerkKnockback }, // P74-M2
@@ -3908,7 +3915,7 @@ public sealed class CombatEngine
             AiHitLocation(enemy, attacker, defender, weaponProto, weaponItem, distance, crittersInPath), DiffDmgMod(enemy)); // P75-M4 + P84
         if (!hit && TriggerCritFailure(attacker, attackerIsDude: false, weaponProto, weaponItem, delta))
             _actingEnemyAp = 0; // P41: a fumble can cost the enemy the rest of its turn
-        if (isGun && weaponItem is not null)
+        if (UsesCharges(weaponProto) && weaponItem is not null)
             weaponItem.AmmoQuantity = _host.WeaponAmmo(weaponProto!, weaponItem) - 1;
         _pendingAttack = new PendingAttack(enemy, defenderObj, chance, hit, damage, critFlags, CanKnockback: !isGun,
             KnockbackPerk: weaponProto?.Weapon is { WeaponPerk: WeaponProtoStats.PerkKnockback }, // P74-M2

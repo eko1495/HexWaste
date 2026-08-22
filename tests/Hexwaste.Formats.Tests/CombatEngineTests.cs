@@ -2581,6 +2581,17 @@ public class CombatEngineTests
     private static System.Reflection.MethodInfo TryAllyBurstMethod() => typeof(CombatEngine).GetMethod(
         "TryAllyBurst", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!;
 
+    private static System.Reflection.MethodInfo TryAllyActionMethod() => typeof(CombatEngine).GetMethod(
+        "TryAllyAction", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!;
+
+    /// <summary>Seed the private `_hostiles` set directly (bypassing BeginCombat/BeginScriptAggro) so a
+    /// reflection-driven private-method test can give an ally a target without also letting the enemy
+    /// or the dude spend a turn against the SAME shared FakeCombatHost.Equipped item first.</summary>
+    private static void SeedHostile(CombatEngine engine, MapObject hostile) =>
+        ((HashSet<MapObject>)typeof(CombatEngine)
+            .GetField("_hostiles", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!
+            .GetValue(engine)!).Add(hostile);
+
     private static System.Reflection.MethodInfo TryEnemyBurstMethod() => typeof(CombatEngine).GetMethod(
         "TryEnemyBurst", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!;
 
@@ -2821,9 +2832,9 @@ public class CombatEngineTests
 
     /// <summary>A melee weapon proto+item with the given extended flags (0x001 one-handed,
     /// 0x201 two-handed; low nibble 1 = a melee swing, not a gun).</summary>
-    private static (ProtoInfo Proto, MapObject Item) MakeMeleeWeapon(int ext, int minDmg = 1, int maxDmg = 6, int ap = 3, int dmgType = 0)
+    private static (ProtoInfo Proto, MapObject Item) MakeMeleeWeapon(int ext, int minDmg = 1, int maxDmg = 6, int ap = 3, int dmgType = 0, int ammoCapacity = 0)
     {
-        var w = new WeaponProtoStats(1, minDmg, maxDmg, dmgType, 1, 0, 0, 1, ap, 0, 0, 0, -1, 0, 0);
+        var w = new WeaponProtoStats(1, minDmg, maxDmg, dmgType, 1, 0, 0, 1, ap, 0, 0, 0, -1, ammoCapacity, 0);
         var proto = new ProtoInfo(8, 0, 0x01000000, 0, ext, 3, Weapon: w);
         var item = new MapObject { Id = 8, HexTile = 0, X = 0, Y = 0, Frame = 0, Rotation = 0, Fid = 0, Flags = 0, Pid = 8, Sid = -1 };
         return (proto, item);
@@ -2836,6 +2847,100 @@ public class CombatEngineTests
         var proto = new ProtoInfo(8, 0, 0x06000000, 0, 0x06, 3, Weapon: w);
         var item = new MapObject { Id = 8, HexTile = 0, X = 0, Y = 0, Frame = 0, Rotation = 0, Fid = 0x06000000, Flags = 0, Pid = 8, Sid = -1, AmmoQuantity = -1 };
         return (proto, item);
+    }
+
+    // F34: the reference spends one charge per attack for ANY weapon with an ammo capacity
+    // (combat.cc:3899-3902 sets ammoQuantity = 1 for the non-ranged branch; combat.cc:5347-5350
+    // deducts it), not only for guns. The five non-gun capacity weapons in the game are the
+    // Ripper, Cattle Prod, Power Fist, Super Cattle Prod and Mega Power Fist.
+    [Fact]
+    public void MeleeWeaponWithAmmoCapacitySpendsOneChargePerAttack()
+    {
+        (ProtoInfo proto, MapObject item) = MakeMeleeWeapon(0x01, ammoCapacity: 20);
+        item.AmmoQuantity = 20;
+        var host = new FakeCombatHost { Equipped = (proto, item), LoadedAmmoCount = 20 };
+        host.SetDude(NewCritter(20100, hp: 30, ap: 10, skill: 100));
+        MapObject enemy = host.AddCritter(NewCritter(HexGrid.TileInDirection(20100, 0), hp: 100));
+
+        Assert.True(new CombatEngine(host, new MinRng()).TryAttack(enemy));
+
+        Assert.Equal(19, item.AmmoQuantity);
+    }
+
+    [Fact]
+    public void MeleeWeaponWithoutAmmoCapacitySpendsNothing()
+    {
+        (ProtoInfo proto, MapObject item) = MakeMeleeWeapon(0x01);   // capacity 0 — a knife
+        item.AmmoQuantity = 0;
+        var host = new FakeCombatHost { Equipped = (proto, item) };
+        host.SetDude(NewCritter(20100, hp: 30, ap: 10, skill: 100));
+        MapObject enemy = host.AddCritter(NewCritter(HexGrid.TileInDirection(20100, 0), hp: 100));
+
+        Assert.True(new CombatEngine(host, new MinRng()).TryAttack(enemy));
+
+        Assert.Equal(0, item.AmmoQuantity);   // must NOT go to -1
+    }
+
+    [Fact]
+    public void GunChargeSpendingIsUnchanged()
+    {
+        (ProtoInfo proto, MapObject item) = MakeGun();
+        var host = new FakeCombatHost { Equipped = (proto, item), LoadedAmmoCount = 12 };
+        host.SetDude(NewCritter(20100, hp: 30, ap: 10, skill: 100));
+        MapObject enemy = host.AddCritter(NewCritter(HexGrid.TileInDirection(20100, 0), hp: 100));
+
+        Assert.True(new CombatEngine(host, new MinRng()).TryAttack(enemy));
+
+        Assert.Equal(11, item.AmmoQuantity);   // MakeGun's capacity is 12, item starts at -1 = full
+    }
+
+    [Fact]
+    public void NpcMeleeWeaponWithAmmoCapacitySpendsOneChargePerAttack()
+    {
+        // F34 NPC-side coverage (spec proof 5): drive an NPC turn (BeginScriptAggro + Step, the
+        // same seam EnemyWithABurstWeaponAndAlwaysModeFiresABurst uses) so the attack resolves
+        // through EnemyAttack (the second of the two NPC-side decrement sites), not TryAttack.
+        (ProtoInfo proto, MapObject item) = MakeMeleeWeapon(0x01, ammoCapacity: 20);
+        item.AmmoQuantity = 20;
+        var host = new FakeCombatHost { CriticalsEnabled = false, LoadedAmmoCount = 20 };
+        MapObject dude = host.SetDude(NewCritter(20100, hp: 30, ap: 10));
+        MapObject enemy = host.AddCritter(NewCritter(HexGrid.TileInDirection(20100, 0), hp: 30, ap: 10, skill: 100));
+        host.Equipped = (proto, item);
+        host.AiPackets[enemy] = new AiPacket(13, "Thug", MinToHit: 0, MinHp: 0, 0, "", "");
+        var engine = new CombatEngine(host, new MinRng());
+
+        engine.BeginScriptAggro(enemy, dude);
+        engine.Step();
+
+        Assert.Contains(host.Transcripts, t => t.StartsWith("enemy-attack"));
+        Assert.Equal(19, item.AmmoQuantity);
+    }
+
+    [Fact]
+    public void AllyMeleeWeaponWithAmmoCapacitySpendsOneChargePerAttack()
+    {
+        // F34 NPC-side coverage (spec proof 5), ally half: TryAllyAction's non-burst attack branch
+        // is the OTHER of the two NPC-side decrement sites. Driven directly via reflection (like
+        // AllyBurstCritFailureAppliesEffectsAndLosesTheTurn above) with _hostiles seeded directly —
+        // routing this through BeginCombat/BeginScriptAggro would let the enemy or the dude spend
+        // the SAME shared FakeCombatHost.Equipped item before we get to measure the ally's own
+        // decrement (the fake has no per-critter wield map).
+        (ProtoInfo proto, MapObject item) = MakeMeleeWeapon(0x01, ammoCapacity: 20);
+        item.AmmoQuantity = 20;
+        var host = new FakeCombatHost { CriticalsEnabled = false, LoadedAmmoCount = 20 };
+        host.SetDude(NewCritter(20100, hp: 30, ap: 10));
+        MapObject ally = host.AddAlly(NewCritter(HexGrid.TileInDirection(20100, 2), hp: 30, ap: 10, skill: 100), CompanionAi.Default);
+        MapObject enemy = host.AddCritter(NewCritter(HexGrid.TileInDirection(ally.HexTile, 0), hp: 100));
+        host.Equipped = (proto, item);
+        var engine = new CombatEngine(host, new MinRng());
+        SeedHostile(engine, enemy);
+        SetActingAllyAp(engine, 10);
+
+        object? result = TryAllyActionMethod().Invoke(engine, [ally]);
+
+        Assert.True((bool)result!);
+        Assert.Contains(host.Transcripts, t => t.StartsWith("ally-attack"));
+        Assert.Equal(19, item.AmmoQuantity);
     }
 
     private static int AttackChance(FakeCombatHost host)
