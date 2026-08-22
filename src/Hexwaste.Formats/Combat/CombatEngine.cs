@@ -230,8 +230,8 @@ public sealed class CombatEngine
     /// <summary>The reference gates ammo spending on the weapon's ammo capacity, never on its
     /// attack animation — a Cattle Prod or Power Fist drains Small Energy Cells exactly like a
     /// gun drains its magazine.
-    /// ported from fallout2-ce src/combat.cc _compute_attack() (:3899-3902) and
-    /// _combat_anim_finished() (:5347-5350), both gated on ammoGetCapacity(weapon) > 0.</summary>
+    /// ported from fallout2-ce src/combat.cc attackCompute() (:3900-3902) and
+    /// _combat_anim_finished() (:5348-5350), both gated on ammoGetCapacity(weapon) > 0.</summary>
     private static bool UsesCharges(ProtoInfo? weaponProto) => (weaponProto?.Weapon?.AmmoCapacity ?? 0) > 0;
 
     // ====================================================================

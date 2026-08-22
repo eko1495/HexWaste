@@ -2850,7 +2850,7 @@ public class CombatEngineTests
     }
 
     // F34: the reference spends one charge per attack for ANY weapon with an ammo capacity
-    // (combat.cc:3899-3902 sets ammoQuantity = 1 for the non-ranged branch; combat.cc:5347-5350
+    // (combat.cc:3900-3902 sets ammoQuantity = 1 for the non-ranged branch; combat.cc:5348-5350
     // deducts it), not only for guns. The five non-gun capacity weapons in the game are the
     // Ripper, Cattle Prod, Power Fist, Super Cattle Prod and Mega Power Fist.
     [Fact]

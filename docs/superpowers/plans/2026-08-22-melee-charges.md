@@ -52,7 +52,7 @@ Add to `CombatEngineTests.cs`. The cattle prod is the real case: `ext 0x01` (SWI
 
 ```csharp
     // F34: the reference spends one charge per attack for ANY weapon with an ammo capacity
-    // (combat.cc:3900-3902 sets ammoQuantity = 1 for the non-ranged branch; combat.cc:5347-5350
+    // (combat.cc:3900-3902 sets ammoQuantity = 1 for the non-ranged branch; combat.cc:5348-5350
     // deducts it), not only for guns. The five non-gun capacity weapons in the game are the
     // Ripper, Cattle Prod, Power Fist, Super Cattle Prod and Mega Power Fist.
     [Fact]
@@ -115,8 +115,8 @@ Expected: `MeleeWeaponWithAmmoCapacitySpendsOneChargePerAttack` FAILS (`Assert.E
     /// <summary>The reference gates ammo spending on the weapon's ammo capacity, never on its
     /// attack animation — a Cattle Prod or Power Fist drains Small Energy Cells exactly like a
     /// gun drains its magazine.
-    /// ported from fallout2-ce src/combat.cc _compute_attack() (:3900-3902) and
-    /// _combat_anim_finished() (:5347-5350), both gated on ammoGetCapacity(weapon) > 0.</summary>
+    /// ported from fallout2-ce src/combat.cc attackCompute() (:3900-3902) and
+    /// _combat_anim_finished() (:5348-5350), both gated on ammoGetCapacity(weapon) > 0.</summary>
     private static bool UsesCharges(ProtoInfo? weaponProto) => (weaponProto?.Weapon?.AmmoCapacity ?? 0) > 0;
 ```
 

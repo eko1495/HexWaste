@@ -11,7 +11,7 @@ counts, and this is the real gap underneath it.
 
 ### The reference spends on capacity, never on weapon class
 
-`_compute_attack`, after the ranged branch (`combat.cc:3897-3903`):
+`attackCompute` (`combat.cc:3819`), after the ranged branch (`:3897-3903`):
 
 ```c
 if (attackType == ATTACK_TYPE_RANGED) {
@@ -97,7 +97,7 @@ census also settles F31's two hardcoded PIDs (399 / 407): both ship, both are in
 ### 1. Spending is gated on capacity, not class
 
 Introduce one predicate used by all three sites — `(weaponProto?.Weapon?.AmmoCapacity ?? 0) > 0` —
-and replace `isGun` at `:382`, `:3775` and `:3912`, citing `combat.cc:3900-3902` and `:5347-5350`.
+and replace `isGun` at `:382`, `:3775` and `:3912`, citing `combat.cc:3900-3902` and `:5348-5350`.
 `isGun` stays in use at those sites for everything else it decides (range, knockback, anim,
 transcript), so this is a narrowing of one condition, not a removal of the flag.
 
