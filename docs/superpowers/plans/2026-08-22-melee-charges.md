@@ -142,8 +142,12 @@ git commit -m "fix(combat): spend a charge per attack for any weapon with ammo c
 ### Task 2: The dude's empty-weapon refusal is gated on capacity
 
 **Files:**
-- Modify: `src/Hexwaste.Formats/Combat/CombatEngine.cs` (the `if (isGun)` block at `:318-333`; the stale comment at `:2295`)
+- Modify: `src/Hexwaste.Formats/Combat/CombatEngine.cs` (the dude's `if (isGun)` ammo block in `TryAttack`; the ally's `if (isGun && _host.WeaponAmmo(...) <= 0)` in `TryAllyAction`; the stale comment in `CheckBadShot`)
 - Test: `tests/Hexwaste.Formats.Tests/CombatEngineTests.cs`
+
+**Line numbers shifted when Task 1 landed. Locate each site by its code, not by the numbers below, and verify before citing.** As of Task 1 the three sites were roughly `:325` (dude), `:3725` (ally) and `:2300` (enemy — already correct, comment only).
+
+**Why the ally site is in scope:** Task 1's review found it. The enemy path already refuses correctly on capacity (`CheckBadShot`), so after Task 1 an enemy with a spent Cattle Prod reports `NoAmmo` while the dude and an ally keep swinging and drive `AmmoQuantity` to −1, −2, … That was unreachable before Task 1 (melee never decremented) and is reachable now. All three paths must agree.
 
 **Interfaces:**
 - Consumes: `UsesCharges` from Task 1.
@@ -179,9 +183,22 @@ dotnet test tests/Hexwaste.Formats.Tests --filter "FullyQualifiedName~DrainedMel
 
 Expected: FAIL — `Assert.False() Failure` (the attack goes through today), and with Task 1 in place `item.AmmoQuantity` will have gone to `-1`, which is the same bug seen from the other side.
 
-- [ ] **Step 3: Move the gate**
+- [ ] **Step 3: Move both gates**
 
-Change the block's condition from `if (isGun)` to `if (UsesCharges(weaponProto))`, keeping its body — the reload attempts, the "Out of ammo." log and `OnWeaponOutOfAmmo` — as it is. **The line-of-fire trace that follows inside the same block must stay `isGun`-gated**: the reference gates it on `RANGED || THROW || weaponGetRange(hitMode) > 1` (`combat.cc:5685-5687`), a different condition. If the trace is inside the same `if (isGun)` braces, split the block so the ammo half takes the new condition and the trace half keeps `isGun`, and make sure `crittersInPath` is still assigned on every path.
+Change the dude block's condition from `if (isGun)` to `if (UsesCharges(weaponProto))`, keeping its body — the reload attempts, the "Out of ammo." log and `OnWeaponOutOfAmmo` — as it is. **The line-of-fire trace that follows inside the same block must stay `isGun`-gated**: the reference gates it on `RANGED || THROW || weaponGetRange(hitMode) > 1` (`combat.cc:5685-5687`), a different condition. If the trace is inside the same `if (isGun)` braces, split the block so the ammo half takes the new condition and the trace half keeps `isGun`, and make sure `crittersInPath` is still assigned on every path.
+
+Then do the same for the ally site in `TryAllyAction` — `if (isGun && _host.WeaponAmmo(...) <= 0)` becomes the capacity test. Read that block first: it reloads or switches weapons rather than logging "Out of ammo.", and whatever it does must keep working for guns unchanged. Add the second test:
+
+```csharp
+    [Fact]
+    public void AllyWithDrainedMeleeWeaponDoesNotDriveAmmoNegative()
+    {
+        // Same rule on the ally path: _combat_check_bad_shot is attacker-agnostic
+        // (combat.cc:5679), and the enemy path already gates on capacity (CheckBadShot).
+    }
+```
+
+Model its body on the ally test Task 1 added (it reaches `TryAllyAction` through an existing reflection seam — reuse that seam, do not build a new one). The assertion is that the ally's `AmmoQuantity` never goes below 0.
 
 Add the citation:
 
