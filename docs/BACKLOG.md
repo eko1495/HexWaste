@@ -623,18 +623,33 @@ archaeology:** the net move versus the merge base (`5eb2bd5`) is **6→8**, not 
 recorded earlier in the branch, by `effabf1` (the `_ai_danger_source` port itself), and only the
 7→8 step belongs to this item.
 
-**F24 — OPEN, not fixed: `BeginScriptAggro` joins a critter to combat without the
-`WithinPerception` gate that `WantToJoin` applies.** *Effort unknown · needs its own investigation
-before scoping.* `WantToJoin` (`CombatEngine.cs:2284-2299`) requires
-`WithinPerception(c, dude)` before a critter joins an in-progress fight; `BeginScriptAggro`
-(`CombatEngine.cs:2432`) — the script-driven aggro entry point — has no equivalent gate. This
-surfaced during the `feat/ai-danger-source` work via a test where a blind enemy at Perception 5
-(the blind malus of −5 zeroing effective perception exactly) behaved differently than expected
-under the new `WithinPerception`-based prune; the test was adjusted to Perception 8 to sidestep
-the zero-perception edge case, and the underlying `BeginScriptAggro`/`WantToJoin` asymmetry was
-left as-is (see the Task-3 report's "Concerns" section for the specific interaction). Not yet
-grounded against the reference's own script-aggro join site — record here so it is tracked instead
-of re-discovered, not so it is assumed to be a bug without checking `e97087b` first.
+**F24 — RESOLVED 2026-08-22 as NOT A DEFECT. `BeginScriptAggro` is faithful; no code change.** *Was
+"Effort unknown · needs its own investigation before scoping".* The entry recorded that
+`BeginScriptAggro` joins a critter to combat without the `WithinPerception` gate `WantToJoin` applies,
+and explicitly said to check `e97087b` before assuming that was a bug. Checked — it is not.
+
+The reference has **two distinct entry paths**, and only one of them is perception-gated:
+
+- **Script-designated combatants are seeded directly.** A script's attack external calls
+  `scriptsRequestCombat` (`scripts.cc:1100`), which queues a `CombatStartData`; when serviced
+  (`scripts.cc:900-912`) it calls `_combat(&gScriptsCSD)`. Inside `_combat`, the CSD's attacker and
+  defender are handed straight to `_combat_sequence_init(attacker, defender)` (`combat.cc:3405-3415`),
+  which places them in `_combat_list` and stamps their `whoHitMe`. **There is no perception check on
+  that path at all.**
+- **Bystanders are promoted through the gate.** `_combatai_want_to_join` — which carries the
+  perception clause — is called only from `_combat_add_noncoms` (`combat.cc:2905`) and the
+  end-of-combat check (`:3104`), i.e. for critters the script never named.
+
+So a script saying "this critter attacks the dude" is not vetoed by whether the critter can see him,
+which is exactly the semantics a scripted ambush needs. Hexwaste's `BeginScriptAggro` matches: its own
+doc comment already cites `scriptsRequestCombat` as the counterpart, and its lack of a
+`WithinPerception` gate mirrors `_combat_sequence_init`. `WantToJoin`'s gate correspondingly mirrors
+`_combatai_want_to_join`. **The asymmetry the entry noticed is the reference's own asymmetry.**
+
+On the observation that raised it: the blind-Perception-5 interaction seen during `feat/ai-danger-source`
+was in the *prune* path (`WantsToStopFighting`), not `BeginScriptAggro`, and the blind malus of −5
+zeroing effective perception exactly is a knife-edge fixture artefact. Adjusting that test to
+Perception 8 was appropriate and is unaffected by this resolution.
 
 **F25 — BLOCKED behind F33 (2026-08-21).** *Was Effort S.* The worldmap start-point reachability
 probe (`ViewerGame.cs`, its `Reachable(from, to)` local) passes `IsBlocked`
