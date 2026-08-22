@@ -1031,14 +1031,37 @@ not merely the absence of effects. That is the same class of mistake that let F1
 
 No fixture moved: a golden would have to contain an invulnerable critter that fumbles, and none does.
 
-**F31 — The reference scales a burst's ammo cost through `_item_w_compute_ammo_cost`; Hexwaste does
-not model it.** *Effort S–M · found by the F26/F15 whole-branch review (2026-08-20).* `_compute_attack`
-routes `attack->ammoQuantity` through `_item_w_compute_ammo_cost(attack->weapon, &(attack->ammoQuantity))`
-(`combat.cc:3905`) and aborts the whole attack on `-1`. Hexwaste's burst spends `min(loadedAmmo,
-weapon.Rounds)` directly with no cost-scaling step. Consequence: any weapon whose ammo cost per shot
-is not 1 spends the wrong number of rounds, and the reference's abort-on-failure path has no
-counterpart. Unmeasured — the blast radius depends on which shipped weapons carry a non-unit ammo
-cost, which should be established from the proto data before this is scheduled.
+**F31 — REFRAMED and BLOCKED 2026-08-22 behind F34. The entry was wrong on three counts.** *Was
+"Effort S-M · burst ammo-cost scaling".* Grounding `_item_w_compute_ammo_cost` (`item.cc:1947-1965`)
+showed the function is nothing like what this entry described:
+
+```c
+int _item_w_compute_ammo_cost(Object* obj, int* inout_a2)
+{
+    if (inout_a2 == nullptr) return -1;
+    if (obj == nullptr) return 0;
+    pid = obj->pid;
+    if (pid == PROTO_ID_SUPER_CATTLE_PROD || pid == PROTO_ID_MEGA_POWER_FIST) {
+        *inout_a2 *= 2;
+    }
+    return 0;
+}
+```
+
+1. **It is not "scaling", and not proto-driven.** It doubles the cost for exactly **two hardcoded
+   PIDs** — 399 Super Cattle Prod and 407 Mega Power Fist (`proto_types.h:177-178`). Both protos ship
+   (`proto\ITEMS\00000399.pro`, `00000407.pro`), so the case is real, just narrow.
+2. **It is not burst-related.** Its call site (`combat.cc:3905`) runs after *both* branches — the
+   ranged one that sets `ammoQuantity` from the spray, and the melee one at `:3900-3902` that sets it
+   to 1 when `ammoGetCapacity(weapon) > 0`. Those two weapons are melee, so this only ever doubles the
+   melee path.
+3. **The "aborts the attack on `-1`" half is unreachable** from that call site: `-1` is returned only
+   when the out-pointer is null, and `_compute_attack` passes `&(attack->ammoQuantity)`.
+
+**Blocked because the layer beneath it is missing — see F34.** Hexwaste consumes ammo only under
+`if (isGun)` (`CombatEngine.cs:381-382`), so a melee weapon with ammo capacity drains nothing at all.
+There is no per-attack charge for the two special PIDs to double. Fix F34 first; F31 then becomes a
+two-PID special case on top of it, and only then is it worth doing.
 
 **F32 — SHIPPED 2026-08-21 (`ff30069`), one new golden fixture, zero modified.** *Was Effort S ·
 test-coverage gap, not a defect · found during F27/F29 closeout (2026-08-20).* F27 made all six
@@ -1129,6 +1152,23 @@ radius, and expect to re-record combat *and* encounter fixtures.
 **F25 is blocked behind this.** F25 asks the worldmap start-point probe to use shoot-blocking instead
 of movement-blocking (`worldmap.cc:4088` passes `_obj_shoot_blocking_at`); adopting a predicate whose
 correctness is unresolved would propagate the same uncertainty into encounter placement.
+
+**F34 — Melee/unarmed weapons with ammo capacity consume no charges; the reference spends one per
+attack.** *Effort S-M · re-record tier if any fixture wields one · found grounding F31 (2026-08-22).*
+`_compute_attack`'s non-ranged branch sets `attack->ammoQuantity = 1` whenever
+`ammoGetCapacity(attack->weapon) > 0` (`combat.cc:3899-3903`), and that quantity is then spent like any
+other. Hexwaste decrements ammo only inside `if (isGun)` (`CombatEngine.cs:381-382`), where `isGun`
+comes from `WeaponProtoStats.IsGun(ExtendedFlags)` — so an energy melee weapon never drains.
+
+Consequence: cattle prods, power fists and anything else that swings while drawing Small Energy Cells
+have effectively **infinite charges** in Hexwaste. They are ordinary obtainable weapons, so this is
+reachable in normal play rather than theoretical.
+
+Closing it means spending one charge per attack for any weapon with ammo capacity regardless of
+`isGun`, matching `:3900-3902`. Expect it to move a fixture only if one wields such a weapon — none of
+the current 18 combat fixtures obviously does, so it may well land byte-identical, but measure rather
+than assume. **F31 sits on top of this**: once charges are spent, the two hardcoded PIDs
+(399 / 407) double the cost per `item.cc:1960-1962`.
 
 ### Pointer
 
