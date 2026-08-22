@@ -227,6 +227,13 @@ public sealed class CombatEngine
         return null;
     }
 
+    /// <summary>The reference gates ammo spending on the weapon's ammo capacity, never on its
+    /// attack animation — a Cattle Prod or Power Fist drains Small Energy Cells exactly like a
+    /// gun drains its magazine.
+    /// ported from fallout2-ce src/combat.cc attackCompute() (:3900-3902) and
+    /// _combat_anim_finished() (:5348-5350), both gated on ammoGetCapacity(weapon) > 0.</summary>
+    private static bool UsesCharges(ProtoInfo? weaponProto) => (weaponProto?.Weapon?.AmmoCapacity ?? 0) > 0;
+
     // ====================================================================
     //  Attacks
     // ====================================================================
@@ -315,9 +322,13 @@ public sealed class CombatEngine
         }
 
         int crittersInPath = 0;
-        if (isGun)
+        // ported from fallout2-ce src/combat.cc _combat_check_bad_shot() (:5679-5683): the empty-weapon
+        // refusal is gated on ammoGetCapacity(weapon) > 0, NOT on weapon class — the same gate
+        // CheckBadShot already uses on the NPC side. Hexwaste's dude-side auto-reload here is a
+        // pre-existing deviation from _combat_attack_this (:5738-5747) and is left as-is.
+        if (UsesCharges(weaponProto))
         {
-            // _combat_check_bad_shot gates: empty mag, then line of fire.
+            // _combat_check_bad_shot's empty-mag gate; line-of-fire is the separate isGun block below.
             if (_host.WeaponAmmo(weaponProto!, weaponItem!) <= 0)
             {
                 if (_phase == CombatPhase.PlayerTurn
@@ -333,7 +344,10 @@ public sealed class CombatEngine
                 _host.OnWeaponOutOfAmmo(weaponProto!);
                 return false;
             }
+        }
 
+        if (isGun)
+        {
             (MapObject? blocker, crittersInPath) = LineOfFire.Trace(
                 dude.HexTile, target.HexTile, tile => _host.ShootBlockerAt(tile, dude, target));
             if (blocker is not null)
@@ -378,7 +392,7 @@ public sealed class CombatEngine
             accidental = ComputeAccidentalMiss(dude, target, target.HexTile, weaponProto.Weapon.MaxRange1,
                 weaponProto, _host.LoadedAmmo(weaponProto, weaponItem!), DiffDmgMod(dude));
 
-        if (isGun)
+        if (UsesCharges(weaponProto))
             weaponItem!.AmmoQuantity = _host.WeaponAmmo(weaponProto!, weaponItem) - 1;
         _pendingAttack = new PendingAttack(dude, target, chance, hit, damage, critFlags, CanKnockback: !isGun,
             KnockbackPerk: weaponProto?.Weapon is { WeaponPerk: WeaponProtoStats.PerkKnockback }, // P74-M2
@@ -2290,10 +2304,11 @@ public sealed class CombatEngine
         if (HexGrid.Distance(attacker.HexTile, defender.HexTile) > range)
             return ShotStatus.OutOfRange;
 
-        // ported from fallout2-ce src/combat.cc _combat_check_bad_shot (:5678-5680): gated on
+        // ported from fallout2-ce src/combat.cc _combat_check_bad_shot (:5679-5681): gated on
         // `ammoGetCapacity(weapon) > 0`, NOT on isGun — any weapon with an ammo slot draws this
-        // check. Matches the reference exactly; Hexwaste has no non-gun ammo-capacity weapon in
-        // practice, so this is a fidelity fix with no observed behavior change.
+        // check. Matches the reference exactly; five non-gun ammo-capacity weapons ship in
+        // Fallout 2 — Ripper (116), Cattle Prod (160), Power Fist (235), Super Cattle Prod (399)
+        // and Mega Power Fist (407), all drawing Small Energy Cell — so this is a real fidelity fix.
         if ((weaponProto?.Weapon?.AmmoCapacity ?? 0) > 0 && _host.WeaponAmmo(weaponProto!, weaponItem!) <= 0)
             return ShotStatus.NoAmmo;
 
@@ -3394,8 +3409,11 @@ public sealed class CombatEngine
 
         // _ai_try_attack shape: reload-if-empty, approach if blocked/far, else
         // stand and shoot; switch to a carried backup (best_weapon) when dry, fists otherwise.
+        // ported from fallout2-ce src/combat.cc _combat_check_bad_shot() (:5679-5683): the empty-weapon
+        // refusal is gated on ammoGetCapacity(weapon) > 0, NOT on weapon class (enemyGun is kept below
+        // for the range/attack-anim decisions that ARE gun-specific).
         bool drySwitched = false; // did the branch below already run AiSwitchWeapon this turn?
-        if (enemyGun && _host.WeaponAmmo(enemyWeapon!, enemyWeaponItem!) <= 0)
+        if (UsesCharges(enemyWeapon) && _host.WeaponAmmo(enemyWeapon!, enemyWeaponItem!) <= 0)
         {
             if (_actingEnemyAp >= RangedMath.ReloadApCost
                 && _host.TryReload(enemy, enemyWeapon!, enemyWeaponItem!))
@@ -3715,7 +3733,11 @@ public sealed class CombatEngine
         bool isGun = weaponProto?.Weapon is { } w && w.IsGun(weaponProto.ExtendedFlags);
         int distance = HexGrid.Distance(ally.HexTile, target.HexTile);
 
-        if (isGun && _host.WeaponAmmo(weaponProto!, weaponItem!) <= 0)
+        // ported from fallout2-ce src/combat.cc _combat_check_bad_shot() (:5679-5683): the empty-weapon
+        // refusal is gated on ammoGetCapacity(weapon) > 0, NOT on weapon class — the same gate
+        // CheckBadShot already uses on the NPC side. Hexwaste's ally-side auto-reload here is a
+        // pre-existing deviation from _combat_attack_this (:5738-5747) and is left as-is.
+        if (UsesCharges(weaponProto) && _host.WeaponAmmo(weaponProto!, weaponItem!) <= 0)
         {
             if (_actingAllyAp >= RangedMath.ReloadApCost
                 && _host.TryReload(ally, weaponProto!, weaponItem!))
@@ -3771,7 +3793,7 @@ public sealed class CombatEngine
                 AiHitLocation(ally, attacker, defender, weaponProto, weaponItem, distance, crittersInPath), DiffDmgMod(ally)); // P75-M4 + P84
             if (!hit && TriggerCritFailure(attacker, attackerIsDude: false, weaponProto, weaponItem, delta))
                 _actingAllyAp = 0; // P41: a fumble can cost the ally its turn
-            if (isGun && weaponItem is not null)
+            if (UsesCharges(weaponProto) && weaponItem is not null)
                 weaponItem.AmmoQuantity = _host.WeaponAmmo(weaponProto!, weaponItem) - 1;
             _pendingAttack = new PendingAttack(ally, target, chance, hit, damage, critFlags, CanKnockback: !isGun,
                 KnockbackPerk: weaponProto?.Weapon is { WeaponPerk: WeaponProtoStats.PerkKnockback }, // P74-M2
@@ -3908,7 +3930,7 @@ public sealed class CombatEngine
             AiHitLocation(enemy, attacker, defender, weaponProto, weaponItem, distance, crittersInPath), DiffDmgMod(enemy)); // P75-M4 + P84
         if (!hit && TriggerCritFailure(attacker, attackerIsDude: false, weaponProto, weaponItem, delta))
             _actingEnemyAp = 0; // P41: a fumble can cost the enemy the rest of its turn
-        if (isGun && weaponItem is not null)
+        if (UsesCharges(weaponProto) && weaponItem is not null)
             weaponItem.AmmoQuantity = _host.WeaponAmmo(weaponProto!, weaponItem) - 1;
         _pendingAttack = new PendingAttack(enemy, defenderObj, chance, hit, damage, critFlags, CanKnockback: !isGun,
             KnockbackPerk: weaponProto?.Weapon is { WeaponPerk: WeaponProtoStats.PerkKnockback }, // P74-M2

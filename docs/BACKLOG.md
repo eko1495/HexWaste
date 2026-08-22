@@ -1031,7 +1031,7 @@ not merely the absence of effects. That is the same class of mistake that let F1
 
 No fixture moved: a golden would have to contain an invulnerable critter that fumbles, and none does.
 
-**F31 — REFRAMED and BLOCKED 2026-08-22 behind F34. The entry was wrong on three counts.** *Was
+**F31 — REFRAMED 2026-08-22; UNBLOCKED 2026-08-22 by F34. The entry was wrong on three counts.** *Was
 "Effort S-M · burst ammo-cost scaling".* Grounding `_item_w_compute_ammo_cost` (`item.cc:1947-1965`)
 showed the function is nothing like what this entry described:
 
@@ -1056,12 +1056,14 @@ int _item_w_compute_ammo_cost(Object* obj, int* inout_a2)
    to 1 when `ammoGetCapacity(weapon) > 0`. Those two weapons are melee, so this only ever doubles the
    melee path.
 3. **The "aborts the attack on `-1`" half is unreachable** from that call site: `-1` is returned only
-   when the out-pointer is null, and `_compute_attack` passes `&(attack->ammoQuantity)`.
+   when the out-pointer is null, and `attackCompute` passes `&(attack->ammoQuantity)`.
 
-**Blocked because the layer beneath it is missing — see F34.** Hexwaste consumes ammo only under
-`if (isGun)` (`CombatEngine.cs:381-382`), so a melee weapon with ammo capacity drains nothing at all.
-There is no per-attack charge for the two special PIDs to double. Fix F34 first; F31 then becomes a
-two-PID special case on top of it, and only then is it worth doing.
+**Unblocked 2026-08-22 — F34 shipped (`30a9371`, `b0063e5`, `a2bbc56`, `2b8d7ba`).** Charges are now
+spent for any weapon with ammo capacity, so there is a per-attack charge for the two special PIDs to
+double, and this is actionable. F34's census confirms both hardcoded PIDs — 399 Super Cattle Prod and
+407 Mega Power Fist — ship (`proto\ITEMS\00000399.pro`, `00000407.pro`) and are among the five non-gun
+ammo-capacity weapons in the game. F31 is now a two-PID special case on top of F34's general
+charge-spend: double `attack->ammoQuantity` for those two PIDs per `item.cc:1947-1965`.
 
 **F32 — SHIPPED 2026-08-21 (`ff30069`), one new golden fixture, zero modified.** *Was Effort S ·
 test-coverage gap, not a defect · found during F27/F29 closeout (2026-08-20).* F27 made all six
@@ -1153,22 +1155,136 @@ radius, and expect to re-record combat *and* encounter fixtures.
 of movement-blocking (`worldmap.cc:4088` passes `_obj_shoot_blocking_at`); adopting a predicate whose
 correctness is unresolved would propagate the same uncertainty into encounter placement.
 
-**F34 — Melee/unarmed weapons with ammo capacity consume no charges; the reference spends one per
-attack.** *Effort S-M · re-record tier if any fixture wields one · found grounding F31 (2026-08-22).*
-`_compute_attack`'s non-ranged branch sets `attack->ammoQuantity = 1` whenever
-`ammoGetCapacity(attack->weapon) > 0` (`combat.cc:3899-3903`), and that quantity is then spent like any
-other. Hexwaste decrements ammo only inside `if (isGun)` (`CombatEngine.cs:381-382`), where `isGun`
-comes from `WeaponProtoStats.IsGun(ExtendedFlags)` — so an energy melee weapon never drains.
+**F34 — SHIPPED 2026-08-22 (`30a9371`, `b0063e5`, `a2bbc56`, `2b8d7ba`), combat-golden 18/18,
+quest-golden 5/5, encounter-golden 188/188, `dotnet test` 963 passed / 91 skipped (pre-existing
+`FALLOUT2_DIR` gate) — combat-golden 18/18, quest-golden 5/5, encounter-golden 188/188,
+and `dotnet test` 963/91, byte-identical, nothing re-recorded (`census`, `endgame` and `opening` were
+not run — they are combat-free).** *Was Effort S-M ·
+re-record tier if any fixture wields one · found grounding F31 (2026-08-22).* Melee/unarmed weapons
+with ammo capacity consumed no charges; the reference spends one per attack. `attackCompute`'s
+non-ranged branch (`combat.cc:3819`, capacity test `:3900`) sets `attack->ammoQuantity = 1` whenever
+`ammoGetCapacity(attack->weapon) > 0`, and the refusal (`_combat_check_bad_shot`, `combat.cc:5679-5683`)
+gates on the same capacity test, attacker-agnostic. Hexwaste gated all of it on `isGun` instead.
 
-Consequence: cattle prods, power fists and anything else that swings while drawing Small Energy Cells
-have effectively **infinite charges** in Hexwaste. They are ordinary obtainable weapons, so this is
-reachable in normal play rather than theoretical.
+**The gap was four sites, not one — the entry's original "Effort S-M" framing undersold it.** Three
+spend sites (`30a9371`: dude, ally, enemy attack paths) plus the refusal, which itself turned out to
+have three attacker-side call sites (dude, ally, enemy) of which only the target-selection helper,
+`CheckBadShot`, was already capacity-gated correctly. `a2bbc56` fixed the dude and ally refusal paths;
+`2b8d7ba` found and fixed the enemy path's structural twin during review, after the controller
+initially assumed `CheckBadShot` already covered it (it doesn't — `CheckBadShot` gates target
+selection only and explicitly tolerates `ShotStatus.NoAmmo` there). `b0063e5` corrected a citation
+error introduced by this very entry: the reference function is `attackCompute` (`combat.cc:3819`), not
+`_compute_attack`, which does not exist at pin `e97087b`; the capacity test is `:3900`, not `:3899`.
 
-Closing it means spending one charge per attack for any weapon with ammo capacity regardless of
-`isGun`, matching `:3900-3902`. Expect it to move a fixture only if one wields such a weapon — none of
-the current 18 combat fixtures obviously does, so it may well land byte-identical, but measure rather
-than assume. **F31 sits on top of this**: once charges are spent, the two hardcoded PIDs
-(399 / 407) double the cost per `item.cc:1960-1962`.
+**Full proto census — five non-guns with ammo capacity, all obtainable:**
+
+| PID | Name | Anim | Capacity |
+|-----|------|------|----------|
+| 116 | Ripper | SWING | 30 |
+| 160 | Cattle Prod | SWING | 20 |
+| 235 | Power Fist | PUNCH | 25 |
+| 399 | Super Cattle Prod | SWING | 20 |
+| 407 | Mega Power Fist | PUNCH | 25 |
+
+All five draw Small Energy Cell (ammo PID 38) and were reachable in normal play with infinite charges
+before this fix.
+
+**Both halves shipped:** spending is now gated on `UsesCharges` (`(weaponProto?.Weapon?.AmmoCapacity
+?? 0) > 0`, `CombatEngine.cs:235`) at all three spend sites, and the drained-weapon refusal is gated
+on the same predicate on the dude, ally and enemy attack paths. **Measured fixture outcome
+(combat-golden 18/18, quest-golden 5/5, encounter-golden 188/188, `dotnet test` 963/91,
+byte-identical):** none of the 18 combat, 5 quest or 188 encounter fixtures wields one of the
+five weapons, so nothing moved — `git status` stayed clean. **F31 sits on top of this**: once charges
+are spent, the two hardcoded PIDs (399 / 407) double the cost per `item.cc:1960-1962`.
+
+**F35 — Hexwaste auto-reloads the dude's empty weapon inside the attack path; vanilla refuses the
+attack instead.** *Effort S-M · re-record tier (moves any fixture where a gun runs dry mid-fight) ·
+found filing F34 (2026-08-22).* `_combat_attack_this` prints "Out of ammo.", plays the out-of-ammo sfx
+and returns without reloading (`combat.cc:5738-5747`) when `_combat_check_bad_shot` reports
+`COMBAT_BAD_SHOT_NO_AMMO` for the dude. Only the AI reloads mid-attack (`combat_ai.cc:2732-2740`, the
+`_ai_try_attack` loop). Hexwaste's `TryAttack` does the opposite for the dude: on the same
+capacity-gated empty-weapon check it attempts `_host.TryReload(...)` and consumes AP for it before
+ever refusing (`CombatEngine.cs:329-346`, the block Task 2 of F34 touched to move it off `isGun` and
+onto `UsesCharges`).
+
+This predates the CombatEngine extraction (`53c1df4`) — it is not a regression introduced by F34's
+work, only exposed by reading the same block closely. F34 deliberately left it in place and extended
+it to cover the five newly-gated non-gun weapons rather than fix it, because fixing it here would move
+fixtures for a reason unrelated to charge-spending (see F34's spec, "the auto-reload deviation itself"
+section). Closing it means the dude behaves like vanilla — printing "Out of ammo." and losing nothing
+but the turn's attempt — for any capacity weapon it fires empty, guns included, so **any existing or
+future fixture that runs a gun dry mid-combat would move**: re-record tier.
+
+**F36 — `attackComputeDamage` applies the loaded ammo's DR modifier, damage multiplier and divisor
+unconditionally; Hexwaste applies them only for guns.** *Effort S-M · re-record tier (damage-affecting)
+· found filing F34 (2026-08-22), F34's natural successor alongside F31.* The reference reads
+`weaponGetAmmoDamageResistanceModifier`, `weaponGetAmmoDamageMultiplier` and
+`weaponGetAmmoDamageDivisor` from `attack->weapon` with no attack-type gate (`combat.cc:4579-4587`).
+Hexwaste only reads the loaded ammo's mods inside `if (isGun)` (`CombatEngine.cs:1123-1137`); the
+`else` (melee/unarmed) branch calls `CombatMath.RollWeaponDamage`/`RollDamage` with none of them.
+
+All five of F34's non-gun ammo-capacity weapons (Ripper, Cattle Prod, Power Fist, Super Cattle Prod,
+Mega Power Fist) load Small Energy Cells, so with F34 shipped they now genuinely spend and can run dry
+— but their damage is still computed as if unloaded, because the melee branch never consults the
+ammo's DR modifier/multiplier/divisor at all. This is a different claim from "charges are spent": it
+is damage-affecting rather than resource-affecting, and carries its own fixture risk separate from
+F34's byte-identical outcome. Closing it means threading `LoadedAmmo`'s DR modifier, multiplier and
+divisor into the non-gun branch the same way the gun branch already does, matching `:4579-4587`.
+
+**F37 — `AiSwitchWeapon` can settle on a drained non-gun capacity weapon that then fires anyway,
+because Hexwaste never re-checks after the switch; the reference does.** *Effort S · found in
+Task 2 review of F34 (2026-08-22), untestable through `FakeCombatHost` as it stands.*
+`AiSwitchWeapon`'s candidate loop (`CombatEngine.cs:3206-3225`) rejecting a candidate for empty ammo
+only `if (attackType == WeaponClass.AttackRanged && _host.WeaponAmmo(proto, item) <= 0 && ...)`
+(`:3223`) is **not itself a divergence** — the reference does the same: `_ai_search_inven_weap`
+(`combat_ai.cc:2035-2039`) wraps its own `ammoGetQuantity`/`aiHaveAmmo` test in
+`if (weaponGetAttackTypeForHitMode(weapon, HIT_MODE_RIGHT_WEAPON_PRIMARY) == ATTACK_TYPE_RANGED)`.
+Widening `:3223` to cover melee candidates, as this entry previously prescribed, would *introduce* a
+deviation rather than remove one.
+
+**The real divergence is downstream, in what happens after the switch.** `_ai_try_attack`
+(`combat_ai.cc:2725-2731`) re-runs `_combat_check_bad_shot` inside a 10-attempt loop — so a
+just-switched-to drained melee weapon that `_ai_search_inven_weap` let through unscreened is still
+caught on the very next pass through the loop, before it can fire. Hexwaste's switch call sites check
+capacity once before the switch and never again. `TryReloadSwitchedGun` (`CombatEngine.cs:3309-3323`),
+which every switch call site runs immediately afterward, returns `false` and does nothing when
+`!isGun` (`:3311`) — its contract only covers guns, so a switched-to drained non-gun weapon is neither
+reloaded nor cleared to fists, and there is no equivalent of the reference's retry loop to catch it.
+The caller then proceeds to fire it: the ally path's spend site (`:3796-3797`, `if
+(UsesCharges(weaponProto) && weaponItem is not null) weaponItem.AmmoQuantity = _host.WeaponAmmo(...)
+- 1;`) decrements an already-zero magazine, and the enemy path's structural twin has the same shape.
+
+**Currently untestable through `FakeCombatHost` for this exact combination.** The fixture that would
+prove it needs an ally or enemy carrying two drained non-gun capacity weapons — the currently-equipped
+one plus a `CritterInventoryWeapons` backup — so `AiSwitchWeapon` lands on the second while it is still
+empty. `CritterInventoryWeapons` defaults to an empty list on `FakeCombatHost` and existing tests that
+populate it (e.g. the dry-gun-switches-to-dry-gun tests around line 1340/1377) only ever construct
+*gun* backups; no existing scenario exercises two non-gun capacity weapons through the switch-then-fire
+path, so proving this needs new test-double coverage before it can be closed. Closing it: give
+`TryReloadSwitchedGun` (or a sibling) a non-gun path that clears to fists when a switched-to capacity
+weapon is drained, matching what the reference's post-switch retry loop achieves — not by widening the
+pre-switch screen at `:3223`, which already matches vanilla.
+
+**F38 — the five non-gun capacity weapons now drain (F34), but nothing on screen tells the player
+why an attack got refused; both readout sites are gun-gated instead of capacity-gated.** *Effort S ·
+viewer-only, no golden coverage · found in Task 2 review of F34 (2026-08-22).* Two sites:
+
+- `src/Hexwaste.Viewer/ViewerGame.Hud.cs:146` draws the baked ammo-bar counter only `if
+  (weaponProto?.Weapon is { } w && w.IsGun(weaponProto.ExtendedFlags) && ...)`. The reference gates
+  the same bar on capacity, not weapon class: `interface.cc:1357-1362` reads `if (p->isWeapon != 0) {
+  int maximum = ammoGetCapacity(p->item); if (maximum > 0) { ... } }`, with a separate MISC-charges
+  `else` branch alongside it. A Cattle Prod or Power Fist has `ammoGetCapacity(item) > 0` and would
+  draw the bar in the reference; Hexwaste's `IsGun` gate skips it.
+- `src/Hexwaste.Viewer/ViewerGame.cs:5962` (the Awareness examine readout) prints "x/y shots" only
+  `if w.IsGun(...)`. The reference's equivalent string pick (`proto_instance.cc:318`) gates on
+  `ammoGetCaliber(item2) != 0` instead of weapon class — and all five F34 weapons are caliber 3
+  (Small Energy Cell), so vanilla's Awareness readout does print shot counts for a Cattle Prod.
+
+Net effect: the five weapons now genuinely drain (F34) and can now genuinely refuse to attack once
+empty (existing capacity-gated refusal), but the player has no in-game indication of remaining charges
+or why the weapon stopped firing — both display sites silently treat them as unlimited. This is
+user-visible and viewer-side only, so it has no golden coverage; closing it means re-gating both sites
+on capacity/caliber the way the reference does, not on `IsGun`.
 
 ### Pointer
 
