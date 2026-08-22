@@ -1265,26 +1265,68 @@ path, so proving this needs new test-double coverage before it can be closed. Cl
 weapon is drained, matching what the reference's post-switch retry loop achieves — not by widening the
 pre-switch screen at `:3223`, which already matches vanilla.
 
-**F38 — the five non-gun capacity weapons now drain (F34), but nothing on screen tells the player
-why an attack got refused; both readout sites are gun-gated instead of capacity-gated.** *Effort S ·
-viewer-only, no golden coverage · found in Task 2 review of F34 (2026-08-22).* Two sites:
+**F38 — SHIPPED 2026-08-22 (`5b0bc06`, `9d4382b`), combat-golden 18/18, quest-golden 5/5,
+encounter-golden 188/188 (including `awareness-perk`, the fixture that exercises the examine gate),
+endgame-golden and opening-golden pass, byte-identical, nothing re-recorded, `git status` clean.**
+*Was Effort S · viewer-only, no golden coverage · found in Task 2 review of F34 (2026-08-22).*
+**Grounding this before touching code corrected two of its three claims** — filed straight from a
+review finding without checking the reference first, the same failure as F37 the day before. Both
+gates are now re-based on the reference condition instead of `IsGun`:
 
-- `src/Hexwaste.Viewer/ViewerGame.Hud.cs:146` draws the baked ammo-bar counter only `if
-  (weaponProto?.Weapon is { } w && w.IsGun(weaponProto.ExtendedFlags) && ...)`. The reference gates
-  the same bar on capacity, not weapon class: `interface.cc:1357-1362` reads `if (p->isWeapon != 0) {
-  int maximum = ammoGetCapacity(p->item); if (maximum > 0) { ... } }`, with a separate MISC-charges
-  `else` branch alongside it. A Cattle Prod or Power Fist has `ammoGetCapacity(item) > 0` and would
-  draw the bar in the reference; Hexwaste's `IsGun` gate skips it.
-- `src/Hexwaste.Viewer/ViewerGame.cs:5962` (the Awareness examine readout) prints "x/y shots" only
-  `if w.IsGun(...)`. The reference's equivalent string pick (`proto_instance.cc:318`) gates on
-  `ammoGetCaliber(item2) != 0` instead of weapon class — and all five F34 weapons are caliber 3
-  (Small Energy Cell), so vanilla's Awareness readout does print shot counts for a Cattle Prod.
+- `ViewerGame.Hud.cs:146` (HUD ammo-bar counter) now gates on `AmmoCapacity > 0`
+  (`ShowsAmmoReadout`, `ViewerGame.CombatHost.cs`), citing `interface.cc:1357-1359`:
+  `if (p->isWeapon != 0) { int maximum = ammoGetCapacity(p->item); if (maximum > 0) { ... } }`.
+- `ViewerGame.cs:5962` (the Awareness examine readout) now gates on `Caliber != 0`
+  (`ShowsExamineShots`), citing `proto_instance.cc` `_obj_examine_func` (`:316-323`, the caliber test
+  at `:319`) and `item.cc:1395-1412` (`ammoGetCaliber`).
 
-Net effect: the five weapons now genuinely drain (F34) and can now genuinely refuse to attack once
-empty (existing capacity-gated refusal), but the player has no in-game indication of remaining charges
-or why the weapon stopped firing — both display sites silently treat them as unlimited. This is
-user-visible and viewer-side only, so it has no golden coverage; closing it means re-gating both sites
-on capacity/caliber the way the reference does, not on `IsGun`.
+**The original entry's third claim — that the HUD site is a "counter" needing only re-gating — was
+also wrong**, and is not what this fix touches: vanilla's HUD site is a 70px dithered gauge, not
+digits (filed separately, see the digits-vs-gauge entry below). What survived grounding is that the
+two gates genuinely differ (capacity vs. caliber) rather than both being capacity, which the fix
+preserves: `WeaponProtoStats.Caliber != 0` is a faithful stand-in for `ammoGetCaliber(weapon) != 0`,
+audited across **all 110 weapon protos** — the proto's own caliber field equals the caliber of the
+proto resolved through `AmmoTypePid` for every one, and is 0 when that pid is −1, with zero
+mismatches (stronger than the spec's "checked across the weapon set").
+
+**Probe evidence** (`--awareness-probe <hex>:<pid>`, extended in this work to force-arm an NPC with an
+arbitrary weapon pid, exercising the real `ShowsAmmoReadout`/`ShowsExamineShots` predicates):
+
+| Case | pid | capacity | caliber | hudGate | examineGate | examineShotsPrinted |
+|---|---|---|---|---|---|---|
+| Cattle Prod (capacity melee) | 160 | 20 | 3 | 1 | 1 | 1 |
+| 10mm SMG (normal gun) | 9 | 30 | 8 | 1 | 1 | 1 |
+| **Solar Scorcher (caliber-0 gun)** | **390** | **6** | **0** | **1** | **0** | **0** |
+| capacity-less melee weapon | 5 | 0 | 0 | 0 | 0 | 0 |
+
+The Solar Scorcher case is load-bearing: `hudGate=1` with `examineGate=0`/`examineShotsPrinted=0`
+proves the two gates stayed genuinely distinct rather than collapsing into one condition — a
+collapsed "just use capacity for both" fix would have wrongly set `examineGate=1` here.
+
+Two follow-ons filed below rather than fixed in passing: the digits-vs-gauge HUD shape, and the
+MISC-charges branch.
+
+**F39 — Hexwaste's HUD ammo readout is `NUMBERS.FRM` digits; vanilla paints a dithered gauge, not
+numbers.** *Effort S-M · changes the HUD for every gun, needs its own decision + visual verification
+· found grounding F38 (2026-08-22).* `interfaceUpdateAmmoBar` (`interface.cc:1985-2007`) draws a
+70px vertical column, one pixel wide, at `x = 463 + gInterfaceBarContentOffset` from `y = 26`
+downward: colour 14 for the empty span, then alternating 196/14 for the filled span with the ratio
+forced even (`if ((ratio & 1) != 0) ratio -= 1;`). There is no numeric ammo readout anywhere in the
+vanilla interface bar. Hexwaste's digits (`ViewerGame.Hud.cs`) date from the original HUD work
+(`1a7d27a`, P11-M1/M2) and carry no citation — they were never grounded against this code. Closing it
+means replacing the digit draw with the dithered-column paint, which is a visible change to every
+weapon's HUD (not just the five F34 weapons), so it needs its own decision before starting and a
+visual before/after check, not just a fixture pass — no golden covers the HUD bar's pixels.
+
+**F40 — `_intface_update_ammo_lights`'s `else` branch shows the same gauge for a non-weapon MISC
+item held in hand; Hexwaste's HUD ammo slot is weapon-only.** *Effort M · needs more than a gate ·
+found grounding F38 (2026-08-22).* The reference's `else` (`interface.cc:1363-1370`, sibling to the
+weapon branch F38 fixed) reads `miscItemGetMaxCharges`/`miscItemGetCharges` off the held MISC item and
+draws the identical bar. Hexwaste already parses `MiscCharges` (`ProtoDatabase.cs:46`, stamped on
+instances per P116), so the data exists, but the HUD slot's draw path only ever looks at the equipped
+weapon — there is no branch for "a chargeable MISC item is in the active hand." Closing it needs a
+second data path into the HUD slot, not a condition change on the existing one, and depends on F39's
+outcome if the gauge shape changes underneath it.
 
 ### Pointer
 
