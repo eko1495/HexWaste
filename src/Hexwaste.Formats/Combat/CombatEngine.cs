@@ -322,7 +322,11 @@ public sealed class CombatEngine
         }
 
         int crittersInPath = 0;
-        if (isGun)
+        // ported from fallout2-ce src/combat.cc _combat_check_bad_shot() (:5678-5683): the empty-weapon
+        // refusal is gated on ammoGetCapacity(weapon) > 0, NOT on weapon class — the same gate
+        // CheckBadShot already uses on the NPC side. Hexwaste's dude-side auto-reload here is a
+        // pre-existing deviation from _combat_attack_this (:5738-5747) and is left as-is.
+        if (UsesCharges(weaponProto))
         {
             // _combat_check_bad_shot gates: empty mag, then line of fire.
             if (_host.WeaponAmmo(weaponProto!, weaponItem!) <= 0)
@@ -340,7 +344,10 @@ public sealed class CombatEngine
                 _host.OnWeaponOutOfAmmo(weaponProto!);
                 return false;
             }
+        }
 
+        if (isGun)
+        {
             (MapObject? blocker, crittersInPath) = LineOfFire.Trace(
                 dude.HexTile, target.HexTile, tile => _host.ShootBlockerAt(tile, dude, target));
             if (blocker is not null)
@@ -2299,8 +2306,9 @@ public sealed class CombatEngine
 
         // ported from fallout2-ce src/combat.cc _combat_check_bad_shot (:5678-5680): gated on
         // `ammoGetCapacity(weapon) > 0`, NOT on isGun — any weapon with an ammo slot draws this
-        // check. Matches the reference exactly; Hexwaste has no non-gun ammo-capacity weapon in
-        // practice, so this is a fidelity fix with no observed behavior change.
+        // check. Matches the reference exactly; five non-gun ammo-capacity weapons ship in
+        // Fallout 2 — Ripper (116), Cattle Prod (160), Power Fist (235), Super Cattle Prod (399)
+        // and Mega Power Fist (407), all drawing Small Energy Cell — so this is a real fidelity fix.
         if ((weaponProto?.Weapon?.AmmoCapacity ?? 0) > 0 && _host.WeaponAmmo(weaponProto!, weaponItem!) <= 0)
             return ShotStatus.NoAmmo;
 
@@ -3722,7 +3730,11 @@ public sealed class CombatEngine
         bool isGun = weaponProto?.Weapon is { } w && w.IsGun(weaponProto.ExtendedFlags);
         int distance = HexGrid.Distance(ally.HexTile, target.HexTile);
 
-        if (isGun && _host.WeaponAmmo(weaponProto!, weaponItem!) <= 0)
+        // ported from fallout2-ce src/combat.cc _combat_check_bad_shot() (:5678-5683): the empty-weapon
+        // refusal is gated on ammoGetCapacity(weapon) > 0, NOT on weapon class — the same gate
+        // CheckBadShot already uses on the NPC side. Hexwaste's dude-side auto-reload here is a
+        // pre-existing deviation from _combat_attack_this (:5738-5747) and is left as-is.
+        if (UsesCharges(weaponProto) && _host.WeaponAmmo(weaponProto!, weaponItem!) <= 0)
         {
             if (_actingAllyAp >= RangedMath.ReloadApCost
                 && _host.TryReload(ally, weaponProto!, weaponItem!))

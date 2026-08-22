@@ -2881,6 +2881,23 @@ public class CombatEngineTests
         Assert.Equal(0, item.AmmoQuantity);   // must NOT go to -1
     }
 
+    // F34: a drained weapon cannot attack — _combat_check_bad_shot returns COMBAT_BAD_SHOT_NO_AMMO
+    // on `ammoGetCapacity(weapon) > 0 && ammoGetQuantity(weapon) == 0` (combat.cc:5678-5683),
+    // with no weapon-class condition. Without this, spending charges would merely relocate the
+    // infinite weapon rather than remove it.
+    [Fact]
+    public void DrainedMeleeWeaponCannotAttack()
+    {
+        (ProtoInfo proto, MapObject item) = MakeMeleeWeapon(0x01, ammoCapacity: 20);
+        item.AmmoQuantity = 0;
+        var host = new FakeCombatHost { Equipped = (proto, item) }; // FakeCombatHost.TryReload always returns false
+        host.SetDude(NewCritter(20100, hp: 30, ap: 10, skill: 100));
+        MapObject enemy = host.AddCritter(NewCritter(HexGrid.TileInDirection(20100, 0), hp: 100));
+
+        Assert.False(new CombatEngine(host, new MinRng()).TryAttack(enemy));
+        Assert.Equal(0, item.AmmoQuantity);       // and no charge was spent on the refusal
+    }
+
     [Fact]
     public void GunChargeSpendingIsUnchanged()
     {
@@ -2941,6 +2958,31 @@ public class CombatEngineTests
         Assert.True((bool)result!);
         Assert.Contains(host.Transcripts, t => t.StartsWith("ally-attack"));
         Assert.Equal(19, item.AmmoQuantity);
+    }
+
+    [Fact]
+    public void AllyWithDrainedMeleeWeaponDoesNotDriveAmmoNegative()
+    {
+        // Same rule on the ally path: _combat_check_bad_shot is attacker-agnostic
+        // (combat.cc:5679), and the enemy path already gates on capacity (CheckBadShot).
+        // ported from fallout2-ce src/combat.cc _combat_check_bad_shot() (:5678-5683): the empty-weapon
+        // refusal is gated on ammoGetCapacity(weapon) > 0, NOT on weapon class — the same gate
+        // CheckBadShot already uses on the NPC side. Hexwaste's dude-side auto-reload here is a
+        // pre-existing deviation from _combat_attack_this (:5738-5747) and is left as-is.
+        (ProtoInfo proto, MapObject item) = MakeMeleeWeapon(0x01, ammoCapacity: 20);
+        item.AmmoQuantity = 0;
+        var host = new FakeCombatHost { CriticalsEnabled = false }; // FakeCombatHost.TryReload always returns false
+        host.SetDude(NewCritter(20100, hp: 30, ap: 10));
+        MapObject ally = host.AddAlly(NewCritter(HexGrid.TileInDirection(20100, 2), hp: 30, ap: 10, skill: 100), CompanionAi.Default);
+        MapObject enemy = host.AddCritter(NewCritter(HexGrid.TileInDirection(ally.HexTile, 0), hp: 100));
+        host.Equipped = (proto, item);
+        var engine = new CombatEngine(host, new MinRng());
+        SeedHostile(engine, enemy);
+        SetActingAllyAp(engine, 10);
+
+        TryAllyActionMethod().Invoke(engine, [ally]);
+
+        Assert.Equal(0, item.AmmoQuantity);   // must NOT go negative
     }
 
     private static int AttackChance(FakeCombatHost host)
