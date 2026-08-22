@@ -142,8 +142,8 @@ public sealed partial class ViewerGame
             {
             }
         }
-        // Ammo count for guns, over the baked ammo bar (NUMBERS.FRM, white band).
-        if (weaponProto?.Weapon is { } w && w.IsGun(weaponProto.ExtendedFlags) && weaponItem is not null && bar.Numbers is { } numAmmo)
+        // Ammo/charge count over the baked ammo bar (NUMBERS.FRM, white band).
+        if (weaponProto is not null && ShowsAmmoReadout(weaponProto) && weaponItem is not null && bar.Numbers is { } numAmmo)
             DrawCounter(numAmmo, WeaponAmmo(weaponProto, weaponItem), band: 0, xRight: o.X + 458, yTop: o.Y + 76);
         // The active attack-mode label, bright, at the weapon-button top-left. For a
         // burst-capable gun it reflects the LIVE _weaponMode (P15 M1 — the slot/N cycle);

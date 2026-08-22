@@ -661,7 +661,10 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
     {
         public sealed record UseHex(int Hex, bool Lockpick) : StartupAction;
         public sealed record ExamineCritter(int Hex) : StartupAction;
-        public sealed record AwarenessProbe(int Hex) : StartupAction; // P69: the Awareness examine gate
+        // P69: the Awareness examine gate. F38: optional WeaponPid force-arms the target critter
+        // (and never a golden-mapped one — no vanilla map hands an NPC the five capacity weapons)
+        // with a specific proto so both readout gates can be probed without a fixture.
+        public sealed record AwarenessProbe(int Hex, int? WeaponPid = null) : StartupAction;
         public sealed record Attack(int Hex) : StartupAction;
         public sealed record Burst(int Hex) : StartupAction;
         /// <summary>Burst at TargetHex from an explicit dude tile FromHex (phase-20 M4) —
@@ -5959,7 +5962,7 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
             Log($"HP: {state.CurrentHp}/{state.MaxHp}, AC: {state.ArmorClass}");
             if (EquippedWeapon(obj) is { Proto: { } wproto, Item: { } witem })
             {
-                string shots = wproto.Weapon is { } w && w.IsGun(wproto.ExtendedFlags)
+                string shots = ShowsExamineShots(wproto) && wproto.Weapon is { } w
                     ? $" ({WeaponAmmo(wproto, witem)}/{w.AmmoCapacity} shots)" : "";
                 Log($"Wielding the {ObjectName(witem)}{shots}.");
             }

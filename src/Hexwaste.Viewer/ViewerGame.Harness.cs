@@ -72,7 +72,7 @@ public sealed partial class ViewerGame
                         + $" killType={state.Proto.KillType} bodyType={state.Proto.BodyType} damageType={state.Proto.DamageType}");
                     break;
                 }
-                case StartupAction.AwarenessProbe(var awHex):
+                case StartupAction.AwarenessProbe(var awHex, var awWeaponPid):
                 {
                     // P69: drive the PLAYER examine path (Examine, not the diagnostic dump) + report state-only
                     // whether the Awareness HP/weapon lines appeared (booleans + the perk rank — never the
@@ -82,6 +82,22 @@ public sealed partial class ViewerGame
                         Console.Error.WriteLine($"awareness-probe: no critter at {awHex}");
                         break;
                     }
+                    if (awWeaponPid is { } awPid)
+                    {
+                        // F38: force-arm the target with a specific weapon proto (mirrors AiWeaponProbe's
+                        // direct-state-injection pattern, P43) — no golden map hands an NPC one of the five
+                        // capacity weapons or the Solar Scorcher, so this is the only way to reach the case.
+                        if (RebuildObject(awPid, 1) is { } awWeapon)
+                        {
+                            awWeapon.Flags |= MapObject.FlagInRightHand;
+                            awCritter.Inventory.RemoveAll(o => o.IsInHand);
+                            awCritter.Inventory.Add(awWeapon);
+                        }
+                        else
+                        {
+                            Console.Error.WriteLine($"awareness-probe: unknown weapon pid 0x{awPid:X}");
+                        }
+                    }
                     int awBefore = _messageLog.Count;
                     Examine(awCritter);
                     var awAdded = _messageLog.Skip(awBefore).ToList();
@@ -89,6 +105,18 @@ public sealed partial class ViewerGame
                     int awWpn = awAdded.Any(l => l.StartsWith("Wielding")) ? 1 : 0;
                     Console.WriteLine($"awareness-probe: hex={awHex} awareness={DudePerkRank(Formats.Perks.PerkId.Awareness)}"
                         + $" hpLine={awHp} weaponLine={awWpn}");
+                    if (awWeaponPid is { } awPid2)
+                    {
+                        // F38 evidence line: the actual gate calls (ShowsAmmoReadout / ShowsExamineShots —
+                        // the same methods ViewerGame.Hud.cs and Examine() call, not a re-statement of the
+                        // condition) against the forced weapon's real proto data, plus whether the examine
+                        // text that just printed actually contains a shots readout. Never the item name.
+                        (ProtoInfo? awProto, MapObject? awItem) = EquippedWeapon(awCritter);
+                        bool awShotsPrinted = awAdded.Any(l => l.StartsWith("Wielding") && l.Contains("shots)"));
+                        Console.WriteLine($"awareness-probe: pid=0x{awPid2:X} capacity={awProto?.Weapon?.AmmoCapacity ?? -1}"
+                            + $" caliber={awProto?.Weapon?.Caliber ?? -1} hudGate={(ShowsAmmoReadout(awProto) ? 1 : 0)}"
+                            + $" examineGate={(ShowsExamineShots(awProto) ? 1 : 0)} examineShotsPrinted={(awShotsPrinted ? 1 : 0)}");
+                    }
                     break;
                 }
                 case StartupAction.EncounterWalk(var x0, var y0, var x1, var y1, var steps):
