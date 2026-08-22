@@ -16,7 +16,7 @@ The HUD bar and the examine text do **not** use the same condition in the refere
 
 - `_intface_update_ammo_lights` (`interface.cc:1346-1375`) gates on **capacity**:
   `if (p->isWeapon != 0) { int maximum = ammoGetCapacity(p->item); if (maximum > 0) { … } }`.
-- The Awareness examine line (`proto_instance.cc:318-322`) gates on **caliber**:
+- The Awareness examine line (`proto_instance.cc` `_obj_examine_func` (`:316-323`, the caliber test at `:319`)) gates on **caliber**:
   `if (ammoGetCaliber(item2) != 0)` picks message 547 (`"and is wielding a %s with %d/%d shots of
   %s."`) and otherwise message 546 (`"and is wielding a %s."`).
 
@@ -70,7 +70,7 @@ in this spec.
 1. `ViewerGame.Hud.cs:146` — gate on `AmmoCapacity > 0` instead of `IsGun`, citing
    `interface.cc:1357-1359`.
 2. `ViewerGame.cs:5962` — gate on `Caliber != 0` instead of `IsGun`, citing
-   `proto_instance.cc:318-322` and `item.cc:1395-1412`, with the note above on why the proto's own
+   `proto_instance.cc` `_obj_examine_func` (`:316-323`, the caliber test at `:319`) and `item.cc:1395-1412`, with the note above on why the proto's own
    caliber field is used.
 
 ### Out — each to be filed as its own backlog entry

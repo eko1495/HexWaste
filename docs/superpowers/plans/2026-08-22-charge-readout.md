@@ -11,7 +11,7 @@
 ## Global Constraints
 
 - Spec: `docs/superpowers/specs/2026-08-22-charge-readout-design.md`. Read it — it corrects two of F38's three claims.
-- **The two gates are different and must stay different.** HUD = `AmmoCapacity > 0` (`interface.cc:1357-1359`); examine = `Caliber != 0` (`proto_instance.cc:318-322`). Collapsing them into one condition is a defect, not a simplification: the Solar Scorcher (capacity 6, caliber 0) shows the HUD bar and no examine shots.
+- **The two gates are different and must stay different.** HUD = `AmmoCapacity > 0` (`interface.cc:1357-1359`); examine = `Caliber != 0` (`proto_instance.cc` `_obj_examine_func` (`:316-323`, the caliber test at `:319`)). Collapsing them into one condition is a defect, not a simplification: the Solar Scorcher (capacity 6, caliber 0) shows the HUD bar and no examine shots.
 - **Verify every line number and function name as things stand now.** This project shipped a wrong reference function name once and a mis-diagnosed backlog entry once, both this week.
 - Ported lines carry `// ported from fallout2-ce src/<file> <fn>()`.
 - Reference is `reference/fallout2-ce` at `alexbatalov e97087b`. Read it; do not guess.
@@ -46,10 +46,10 @@ Replace `w.IsGun(weaponProto.ExtendedFlags)` with a capacity test in the ammo-co
 
 - [ ] **Step 3: The examine gate**
 
-Replace the `IsGun` test with a caliber test, citing `proto_instance.cc:318-322`. Include the reason the proto's own caliber field is used rather than an ammo-proto lookup:
+Replace the `IsGun` test with a caliber test, citing `proto_instance.cc` `_obj_examine_func` (`:316-323`, the caliber test at `:319`). Include the reason the proto's own caliber field is used rather than an ammo-proto lookup:
 
 ```csharp
-                // ported from fallout2-ce src/proto_instance.cc (:318-322): message 547 ("…with %d/%d
+                // ported from fallout2-ce src/proto_instance.cc _obj_examine_func() (:316-323): message 547 ("…with %d/%d
                 // shots of %s") is picked on ammoGetCaliber(item2) != 0, NOT on weapon class.
                 // ammoGetCaliber (item.cc:1395-1412) resolves the AMMO proto via the weapon's
                 // ammoTypePid and returns 0 when that pid is -1; the weapon proto's own caliber field
