@@ -95,7 +95,13 @@ public sealed partial class ViewerGame
                         }
                         else
                         {
+                            // Force-arm failed: stop here rather than falling through to Examine()/the
+                            // evidence line below, which would report capacity/caliber read off the
+                            // critter's ORIGINAL weapon next to the requested (never-applied) pid — a
+                            // plausible-looking but wrong row. Matches the UseHex/ExamineCritter
+                            // not-found convention above: log to stderr and break.
                             Console.Error.WriteLine($"awareness-probe: unknown weapon pid 0x{awPid:X}");
+                            break;
                         }
                     }
                     int awBefore = _messageLog.Count;

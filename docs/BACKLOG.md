@@ -1265,7 +1265,7 @@ path, so proving this needs new test-double coverage before it can be closed. Cl
 weapon is drained, matching what the reference's post-switch retry loop achieves — not by widening the
 pre-switch screen at `:3223`, which already matches vanilla.
 
-**F38 — SHIPPED 2026-08-22 (`5b0bc06`, `9d4382b`), combat-golden 18/18, quest-golden 5/5,
+**F38 — SHIPPED 2026-08-22 (`5b0bc06`, `1744765`), combat-golden 18/18, quest-golden 5/5,
 encounter-golden 188/188 (including `awareness-perk`, the fixture that exercises the examine gate),
 endgame-golden and opening-golden pass, byte-identical, nothing re-recorded, `git status` clean.**
 *Was Effort S · viewer-only, no golden coverage · found in Task 2 review of F34 (2026-08-22).*
@@ -1290,7 +1290,12 @@ proto resolved through `AmmoTypePid` for every one, and is 0 when that pid is �
 mismatches (stronger than the spec's "checked across the weapon set").
 
 **Probe evidence** (`--awareness-probe <hex>:<pid>`, extended in this work to force-arm an NPC with an
-arbitrary weapon pid, exercising the real `ShowsAmmoReadout`/`ShowsExamineShots` predicates):
+arbitrary weapon pid, exercising the real `ShowsAmmoReadout`/`ShowsExamineShots` predicates). The
+`hudGate` column evaluates the shared `ShowsAmmoReadout` predicate against the *NPC's* forced weapon —
+the same predicate the HUD draw site calls, so it is not a restatement — but it is not the HUD draw
+itself: `ViewerGame.Hud.cs:146` only ever draws the *dude's* equipped weapon, and additionally requires
+`weaponItem is not null && bar.Numbers is {}` before it paints anything. Read the table as "the gate
+would pass," not as "the HUD would render":
 
 | Case | pid | capacity | caliber | hudGate | examineGate | examineShotsPrinted |
 |---|---|---|---|---|---|---|
@@ -1303,12 +1308,21 @@ The Solar Scorcher case is load-bearing: `hudGate=1` with `examineGate=0`/`exami
 proves the two gates stayed genuinely distinct rather than collapsing into one condition — a
 collapsed "just use capacity for both" fix would have wrongly set `examineGate=1` here.
 
+**User-visible subtraction:** re-basing the examine gate on caliber rather than capacity does not
+just add rows — it *removes* the shots line from six caliber-0 guns that the old capacity-based gate
+had been showing it for: PIDs 161, 162, 261, 390 (Solar Scorcher, tabulated above), 427, and 498. This
+is correct — vanilla's `_obj_examine_func` picks message 546 (no shots line) for these, not 526 — but
+it is a visible change to six items, not just an addition for the five F34 weapons.
+
 Two follow-ons filed below rather than fixed in passing: the digits-vs-gauge HUD shape, and the
-MISC-charges branch.
+MISC-charges branch. A third gap — two further readout sites that also hide these weapons' charges,
+absent for every weapon rather than a regression — is recorded as an addendum to F40 below.
 
 **F39 — Hexwaste's HUD ammo readout is `NUMBERS.FRM` digits; vanilla paints a dithered gauge, not
 numbers.** *Effort S-M · changes the HUD for every gun, needs its own decision + visual verification
-· found grounding F38 (2026-08-22).* `interfaceUpdateAmmoBar` (`interface.cc:1985-2007`) draws a
+· found grounding F38 (2026-08-22).* The paint loops at `interface.cc:1985-2007` (inside
+`interfaceUpdateAmmoBar`, which itself runs `:1985-2016`, the extra lines being the
+`windowRefreshRect` tail) draw a
 70px vertical column, one pixel wide, at `x = 463 + gInterfaceBarContentOffset` from `y = 26`
 downward: colour 14 for the empty span, then alternating 196/14 for the filled span with the ratio
 forced even (`if ((ratio & 1) != 0) ratio -= 1;`). There is no numeric ammo readout anywhere in the
@@ -1327,6 +1341,24 @@ instances per P116), so the data exists, but the HUD slot's draw path only ever 
 weapon — there is no branch for "a chargeable MISC item is in the active hand." Closing it needs a
 second data path into the HUD slot, not a condition change on the existing one, and depends on F39's
 outcome if the gauge shape changes underneath it.
+
+**F40 addendum — two further readouts also hide these weapons' charges; Hexwaste implements neither.**
+*Found in F38 pre-merge review (2026-08-23).* Not a five-weapon regression — both are absent for
+*every* weapon, so this does not reopen F38 — but they are additional sites a player would expect
+charges to show:
+- `inventory.cc:3127-3153` — `inventoryRenderSummary`'s `"Ammo: %d/%d %s"` line, gated purely on
+  `ammoGetCapacity(item) > 0` (no caliber check, unlike the examine branch F38 fixed). Hexwaste's
+  inventory window (`ViewerGame.Panels.cs`, `DrawInventoryWindow` / `DrawItemList`) renders name,
+  count, and price and has no summary panel at all — there is nowhere for this line to go yet.
+- `proto_instance.cc:487-505` — `_obj_examine_func`'s `ITEM`/`ITEM_TYPE_WEAPON` branch, message 526
+  (`"%d/%d %s"`), gated on `ammoGetCaliber(target) != 0`. Reachable when examining an item from
+  inventory (`inventory.cc:3687`, `_obj_examine_func(_stack[0], item, ...)`) or from the barter screen
+  (`inventory.cc:3962`, the `GAME_MOUSE_ACTION_MENU_ITEM_LOOK` case). Hexwaste's `Examine`
+  (`ViewerGame.cs:5939`) has a critter branch only — there is no item-examine path at all, in or out
+  of combat.
+
+Closing either needs new UI surface (an inventory summary panel; an item-examine entry point), not a
+gate change, so both are scoped as their own future work rather than folded into F38/F40.
 
 ### Pointer
 
