@@ -2963,12 +2963,8 @@ public class CombatEngineTests
     [Fact]
     public void AllyWithDrainedMeleeWeaponDoesNotDriveAmmoNegative()
     {
-        // Same rule on the ally path: _combat_check_bad_shot is attacker-agnostic
-        // (combat.cc:5679), and the enemy path already gates on capacity (CheckBadShot).
-        // ported from fallout2-ce src/combat.cc _combat_check_bad_shot() (:5678-5683): the empty-weapon
-        // refusal is gated on ammoGetCapacity(weapon) > 0, NOT on weapon class — the same gate
-        // CheckBadShot already uses on the NPC side. Hexwaste's dude-side auto-reload here is a
-        // pre-existing deviation from _combat_attack_this (:5738-5747) and is left as-is.
+        // Same rule on the ally path: _combat_check_bad_shot (combat.cc:5678-5683) is
+        // attacker-agnostic — see the citation on the production guard in TryAllyAction.
         (ProtoInfo proto, MapObject item) = MakeMeleeWeapon(0x01, ammoCapacity: 20);
         item.AmmoQuantity = 0;
         var host = new FakeCombatHost { CriticalsEnabled = false }; // FakeCombatHost.TryReload always returns false
@@ -2981,6 +2977,33 @@ public class CombatEngineTests
         SetActingAllyAp(engine, 10);
 
         TryAllyActionMethod().Invoke(engine, [ally]);
+
+        Assert.Equal(0, item.AmmoQuantity);   // must NOT go negative
+        // The ally must still act (fall back to fists), not silently do nothing.
+        Assert.Contains(host.Transcripts, t => t.StartsWith("ally-attack"));
+    }
+
+    [Fact]
+    public void EnemyWithDrainedMeleeWeaponDoesNotDriveAmmoNegative()
+    {
+        // Same rule on the enemy path (TryEnemyAction → EnemyAttack): the structural twin of the
+        // ally gate above, and the one this batch fixes — pre-fix it stayed `enemyGun`-gated (false
+        // for melee), so a drained non-gun weapon was never refused and drove AmmoQuantity negative.
+        // ported from fallout2-ce src/combat.cc _combat_check_bad_shot() (:5678-5683): the
+        // empty-weapon refusal is gated on ammoGetCapacity(weapon) > 0, NOT on weapon class.
+        // Driven via BeginScriptAggro + Step, the same seam NpcMeleeWeaponWithAmmoCapacitySpendsOneChargePerAttack
+        // uses, so the attack resolves through EnemyAttack without reflection.
+        (ProtoInfo proto, MapObject item) = MakeMeleeWeapon(0x01, ammoCapacity: 20);
+        item.AmmoQuantity = 0;
+        var host = new FakeCombatHost { CriticalsEnabled = false }; // FakeCombatHost.TryReload always returns false
+        MapObject dude = host.SetDude(NewCritter(20100, hp: 30, ap: 10));
+        MapObject enemy = host.AddCritter(NewCritter(HexGrid.TileInDirection(20100, 0), hp: 30, ap: 10, skill: 100));
+        host.Equipped = (proto, item);
+        host.AiPackets[enemy] = new AiPacket(13, "Thug", MinToHit: 0, MinHp: 0, 0, "", "");
+        var engine = new CombatEngine(host, new MinRng());
+
+        engine.BeginScriptAggro(enemy, dude);
+        engine.Step();
 
         Assert.Equal(0, item.AmmoQuantity);   // must NOT go negative
     }

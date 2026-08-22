@@ -328,7 +328,7 @@ public sealed class CombatEngine
         // pre-existing deviation from _combat_attack_this (:5738-5747) and is left as-is.
         if (UsesCharges(weaponProto))
         {
-            // _combat_check_bad_shot gates: empty mag, then line of fire.
+            // _combat_check_bad_shot's empty-mag gate; line-of-fire is the separate isGun block below.
             if (_host.WeaponAmmo(weaponProto!, weaponItem!) <= 0)
             {
                 if (_phase == CombatPhase.PlayerTurn
@@ -3409,8 +3409,11 @@ public sealed class CombatEngine
 
         // _ai_try_attack shape: reload-if-empty, approach if blocked/far, else
         // stand and shoot; switch to a carried backup (best_weapon) when dry, fists otherwise.
+        // ported from fallout2-ce src/combat.cc _combat_check_bad_shot() (:5678-5683): the empty-weapon
+        // refusal is gated on ammoGetCapacity(weapon) > 0, NOT on weapon class (enemyGun is kept below
+        // for the range/attack-anim decisions that ARE gun-specific).
         bool drySwitched = false; // did the branch below already run AiSwitchWeapon this turn?
-        if (enemyGun && _host.WeaponAmmo(enemyWeapon!, enemyWeaponItem!) <= 0)
+        if (UsesCharges(enemyWeapon) && _host.WeaponAmmo(enemyWeapon!, enemyWeaponItem!) <= 0)
         {
             if (_actingEnemyAp >= RangedMath.ReloadApCost
                 && _host.TryReload(enemy, enemyWeapon!, enemyWeaponItem!))
@@ -3732,7 +3735,7 @@ public sealed class CombatEngine
 
         // ported from fallout2-ce src/combat.cc _combat_check_bad_shot() (:5678-5683): the empty-weapon
         // refusal is gated on ammoGetCapacity(weapon) > 0, NOT on weapon class — the same gate
-        // CheckBadShot already uses on the NPC side. Hexwaste's dude-side auto-reload here is a
+        // CheckBadShot already uses on the NPC side. Hexwaste's ally-side auto-reload here is a
         // pre-existing deviation from _combat_attack_this (:5738-5747) and is left as-is.
         if (UsesCharges(weaponProto) && _host.WeaponAmmo(weaponProto!, weaponItem!) <= 0)
         {
