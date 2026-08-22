@@ -2882,7 +2882,7 @@ public class CombatEngineTests
     }
 
     // F34: a drained weapon cannot attack — _combat_check_bad_shot returns COMBAT_BAD_SHOT_NO_AMMO
-    // on `ammoGetCapacity(weapon) > 0 && ammoGetQuantity(weapon) == 0` (combat.cc:5678-5683),
+    // on `ammoGetCapacity(weapon) > 0 && ammoGetQuantity(weapon) == 0` (combat.cc:5679-5683),
     // with no weapon-class condition. Without this, spending charges would merely relocate the
     // infinite weapon rather than remove it.
     [Fact]
@@ -2963,7 +2963,7 @@ public class CombatEngineTests
     [Fact]
     public void AllyWithDrainedMeleeWeaponDoesNotDriveAmmoNegative()
     {
-        // Same rule on the ally path: _combat_check_bad_shot (combat.cc:5678-5683) is
+        // Same rule on the ally path: _combat_check_bad_shot (combat.cc:5679-5683) is
         // attacker-agnostic — see the citation on the production guard in TryAllyAction.
         (ProtoInfo proto, MapObject item) = MakeMeleeWeapon(0x01, ammoCapacity: 20);
         item.AmmoQuantity = 0;
@@ -2989,7 +2989,7 @@ public class CombatEngineTests
         // Same rule on the enemy path (TryEnemyAction → EnemyAttack): the structural twin of the
         // ally gate above, and the one this batch fixes — pre-fix it stayed `enemyGun`-gated (false
         // for melee), so a drained non-gun weapon was never refused and drove AmmoQuantity negative.
-        // ported from fallout2-ce src/combat.cc _combat_check_bad_shot() (:5678-5683): the
+        // ported from fallout2-ce src/combat.cc _combat_check_bad_shot() (:5679-5683): the
         // empty-weapon refusal is gated on ammoGetCapacity(weapon) > 0, NOT on weapon class.
         // Driven via BeginScriptAggro + Step, the same seam NpcMeleeWeaponWithAmmoCapacitySpendsOneChargePerAttack
         // uses, so the attack resolves through EnemyAttack without reflection.

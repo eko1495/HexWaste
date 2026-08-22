@@ -43,7 +43,7 @@ with no reference to the attack animation or weapon class anywhere in it.
 
 ### The refusal is capacity-gated too
 
-`_combat_check_bad_shot` (`combat.cc:5678-5683`):
+`_combat_check_bad_shot` (`combat.cc:5679-5683`):
 
 ```c
 if (ammoGetCapacity(weapon) > 0) {
@@ -104,7 +104,7 @@ transcript), so this is a narrowing of one condition, not a removal of the flag.
 ### 2. The dude's empty-weapon refusal is gated on capacity
 
 The block at `:318-333` moves from `if (isGun)` to the capacity predicate, citing
-`combat.cc:5678-5683`. The line-of-fire trace that follows it inside the same block **stays
+`combat.cc:5679-5683`. The line-of-fire trace that follows it inside the same block **stays
 `isGun`-gated** — the reference gates that on `RANGED || THROW || range > 1` (`:5685-5687`), which is
 a different condition, and `CheckBadShot` already models it correctly on the NPC side. Do not
 conflate the two while moving the brace.

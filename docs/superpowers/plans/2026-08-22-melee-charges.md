@@ -156,7 +156,7 @@ git commit -m "fix(combat): spend a charge per attack for any weapon with ammo c
 
 ```csharp
     // F34: a drained weapon cannot attack — _combat_check_bad_shot returns COMBAT_BAD_SHOT_NO_AMMO
-    // on `ammoGetCapacity(weapon) > 0 && ammoGetQuantity(weapon) == 0` (combat.cc:5678-5683),
+    // on `ammoGetCapacity(weapon) > 0 && ammoGetQuantity(weapon) == 0` (combat.cc:5679-5683),
     // with no weapon-class condition. Without this, spending charges would merely relocate the
     // infinite weapon rather than remove it.
     [Fact]
@@ -203,7 +203,7 @@ Model its body on the ally test Task 1 added (it reaches `TryAllyAction` through
 Add the citation:
 
 ```csharp
-        // ported from fallout2-ce src/combat.cc _combat_check_bad_shot() (:5678-5683): the empty-weapon
+        // ported from fallout2-ce src/combat.cc _combat_check_bad_shot() (:5679-5683): the empty-weapon
         // refusal is gated on ammoGetCapacity(weapon) > 0, NOT on weapon class — the same gate
         // CheckBadShot already uses on the NPC side. Hexwaste's dude-side auto-reload here is a
         // pre-existing deviation from _combat_attack_this (:5738-5747) and is left as-is.
