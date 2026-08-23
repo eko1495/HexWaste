@@ -102,6 +102,107 @@ public class CombatMathTests
         Assert.Equal(21, CombatMath.RollWeaponDamage(rng, attacker, target, 20, 20, difficultyDamageModifier: 125));
     }
 
+    // F36: the melee/unarmed path now reads the loaded ammo's DR modifier, damage multiplier, damage
+    // divisor (RollDamage/RollWeaponDamage) and AC modifier (ToHitChance) — the same four ungated reads
+    // the gun path already makes (combat.cc:4579-4587 damage, :4429-4434 to-hit). Shipped data can't
+    // exercise this (the only five non-gun weapons with a real ammoTypePid all load Small Energy Cell,
+    // whose modifiers are all neutral — see docs/superpowers/specs/2026-08-23-melee-ammo-mods-design.md),
+    // so every value below is synthetic.
+
+    [Fact]
+    public void AmmoDamageMultiplierScalesMeleeWeaponDamage()
+    {
+        // Fixed 20-20 range removes the roll from the arithmetic: raw = 20 + 0 (meleeDmg) = 20.
+        // damage = raw * critMult(2) * ammoMult, guarded-divide by ammoDivisor(1) = no-op, /2, no DT/DR.
+        var rng = new CountingCombatRng(1);
+        CritterState attacker = NewState(meleeDmg: 0);
+        CritterState target = NewState();
+
+        Assert.Equal(20, CombatMath.RollWeaponDamage(rng, attacker, target, 20, 20)); // baseline: mult=1
+        Assert.Equal(60, CombatMath.RollWeaponDamage(rng, attacker, target, 20, 20, ammoDamageMultiplier: 3));
+        // Exactly one rng.Next draw per helper call — the hard constraint (F36 spec): the multiplier
+        // must be pure arithmetic after the draw, never a second draw.
+        Assert.Equal(2, rng.CallCount);
+    }
+
+    [Fact]
+    public void AmmoDamageDivisorReducesMeleeWeaponDamageAndGuardsZero()
+    {
+        var rng = new CountingCombatRng(1);
+        CritterState attacker = NewState(meleeDmg: 0);
+        CritterState target = NewState();
+
+        // damage = 20*2*1 = 40; 40/4 = 10; /2 = 5.
+        Assert.Equal(5, CombatMath.RollWeaponDamage(rng, attacker, target, 20, 20, ammoDamageDivisor: 4));
+        // combat.cc:4593 `if (damageDivisor != 0) damage /= damageDivisor;` — a 0 divisor must not divide
+        // (and must not throw): damage = 20*2*3 = 120, divide SKIPPED, /2 = 60.
+        Assert.Equal(60, CombatMath.RollWeaponDamage(rng, attacker, target, 20, 20, ammoDamageMultiplier: 3, ammoDamageDivisor: 0));
+        Assert.Equal(2, rng.CallCount);
+    }
+
+    [Fact]
+    public void AmmoDrModifierShiftsMeleeDamageAndClampsAtBothEnds()
+    {
+        // raw = 100 (fixed) * critMult(2) = 200, /1, /2 = 100 before DT/DR. dt=0 throughout.
+        var rng = new CountingCombatRng(1);
+        CritterState attacker = NewState(meleeDmg: 0);
+
+        // No ammo DR mod: dr=10 stands as-is -> 100*(100-10)/100 = 90.
+        Assert.Equal(90, CombatMath.RollWeaponDamage(rng, attacker, NewState(dr: 10), 100, 100));
+        // dr=90 + ammoDrModifier=50 -> 140, clamped to 100 -> 100*(100-100)/100 = 0.
+        Assert.Equal(0, CombatMath.RollWeaponDamage(rng, attacker, NewState(dr: 90), 100, 100, ammoDrModifier: 50));
+        // dr=10 + ammoDrModifier=-30 -> -20, clamped to 0 -> 100*(100-0)/100 = 100 (no reduction at all).
+        Assert.Equal(100, CombatMath.RollWeaponDamage(rng, attacker, NewState(dr: 10), 100, 100, ammoDrModifier: -30));
+        Assert.Equal(3, rng.CallCount);
+    }
+
+    [Fact]
+    public void AmmoAcModifierShiftsMeleeToHitWithFloorClamp()
+    {
+        // baseline: 50 - max(5+0+0, 0) = 45.
+        Assert.Equal(45, CombatMath.ToHitChance(50, NewState(ac: 5), 0));
+        // ammoAcModifier -10 -> max(5-10, 0) = 0 -> toHit = 50 (the >= 0 clamp, combat.cc:4430).
+        Assert.Equal(50, CombatMath.ToHitChance(50, NewState(ac: 5), 0, ammoAcModifier: -10));
+        // ammoAcModifier +20 -> max(5+20, 0) = 25 -> toHit = 25.
+        Assert.Equal(25, CombatMath.ToHitChance(50, NewState(ac: 5), 0, ammoAcModifier: 20));
+    }
+
+    [Fact]
+    public void NeutralAmmoValuesLeaveMeleePathUnchanged()
+    {
+        // The guarantee every existing call site rests on: the neutral defaults (0 DR mod, ×1, ÷1, +0 AC)
+        // are byte-identical to explicitly passing them, and to omitting them entirely.
+        var rngA = new CountingCombatRng(1);
+        var rngB = new CountingCombatRng(1);
+        CritterState attacker = NewState(meleeDmg: 2);
+        CritterState target = NewState(dt: 1, dr: 20);
+
+        Assert.Equal(
+            CombatMath.RollWeaponDamage(rngA, attacker, target, 3, 8),
+            CombatMath.RollWeaponDamage(rngB, attacker, target, 3, 8, ammoDrModifier: 0, ammoDamageMultiplier: 1, ammoDamageDivisor: 1));
+
+        var rngC = new CountingCombatRng(1);
+        var rngD = new CountingCombatRng(1);
+        Assert.Equal(
+            CombatMath.RollDamage(rngC, attacker, target),
+            CombatMath.RollDamage(rngD, attacker, target, ammoDrModifier: 0, ammoDamageMultiplier: 1, ammoDamageDivisor: 1));
+
+        Assert.Equal(
+            CombatMath.ToHitChance(50, target, 3),
+            CombatMath.ToHitChance(50, target, 3, ammoAcModifier: 0));
+    }
+
+    private sealed class CountingCombatRng(int value) : ICombatRng
+    {
+        public int CallCount { get; private set; }
+
+        public int Next(int minInclusive, int maxExclusive)
+        {
+            CallCount++;
+            return Math.Clamp(value, minInclusive, maxExclusive - 1);
+        }
+    }
+
     [Fact]
     public void SeededRollsAreDeterministic()
     {
