@@ -1075,23 +1075,35 @@ sites (dude/ally/enemy, each `... - AmmoCost(weaponProto, 1)`) and the burst sit
 burst-capable). Four hermetic tests in `CombatEngineTests.cs`, mutation-verified pre-change
 (`Expected 18, Actual 19` on both PIDs); the Cattle Prod (160) and a gun case are inertness guards.
 
-**Ported deliberately, not fixed: the odd-charge-count drift — and vanilla and Hexwaste diverge on how
-far it runs, pre-existing and untouched by this item.** The reference's refusal tests
-`ammoGetQuantity(weapon) == 0` (`_combat_check_bad_shot`, `combat.cc:5679-5683`) and the deduction
-clamps only at the *top* (`ammoSetQuantity`, `item.cc:1421-1426`) — there is no floor. So in vanilla, for
-these two weapons starting from an **odd** charge count, spending 2 from 1 lands on −1; `−1 != 0`, so the
-refusal never fires and the weapon keeps attacking, drifting −1, −3, −5… Hexwaste's refusal on the dude
-attack path (`CombatEngine.cs:342`, `_host.WeaponAmmo(weaponProto, weaponItem) <= 0`) tests `<= 0`
-instead of `== 0` — an F34-inherited difference this item did not introduce or touch — so the same
-odd-count case reaches −1, the refusal fires on the very next attack, and the drift halts after one
-negative step rather than continuing. The doubling itself (`AmmoCost`) is ported faithfully either way;
-only the surrounding refusal's stopping point differs. What matters for reaching this case at all is the
-*current* charge count's parity, not the capacity, so it is reachable only from an odd starting
-`AmmoQuantity` that was never reloaded (`weaponReload` fills to capacity or by the cell's quantity,
-`item.cc:1566-1588`) — most plausibly a map-placed instance.
-**No floor was added, and the refusal was not extended to "fewer charges than the cost"; neither exists
-in the reference.** Whether any shipped map places PID 399 or 407 with an odd `AmmoQuantity` was not
-surveyed for this item.
+**Corrected 2026-08-23 — the odd-charge-count drift is NOT ported as-is; it is clamped at zero, and the
+original write-up understated why.** The reference's refusal tests `ammoGetQuantity(weapon) == 0`
+(`_combat_check_bad_shot`, `combat.cc:5680`) and the deduction clamps only at the *top*
+(`ammoSetQuantity`, `item.cc:1423`) — there is no floor. So in vanilla, for these two weapons starting
+from an **odd** charge count, spending 2 from 1 lands on −1; `−1 != 0`, so the refusal never fires and
+the weapon keeps attacking, drifting −1, −3, −5…
+
+Two things the earlier version of this passage got wrong. First, it called the Mega Power Fist's
+capacity even, so this case was "reachable only from an odd starting count that is never reloaded" —
+false: F34's own census gives the Mega Power Fist a capacity of **25**, which is odd, so the very first
+attack from a full weapon lands on an odd count and this is reachable in ordinary play, not just from
+some hand-placed map oddity. Second, it claimed Hexwaste "halts the drift after one negative step" —
+also false. `AmmoQuantity == -1` is this codebase's sentinel for "unhydrated item, refill to capacity"
+(`WeaponAmmo`, `ViewerGame.CombatHost.cs:183-188`), so the write that would have produced −1 never gets
+read back as −1: the next attack's `WeaponAmmo` call sees the sentinel first and rewrites the weapon to
+full, silently reintroducing the infinite-ammo bug F34 removed. The `<= 0` refusal never sees the −1 at
+all.
+
+The reload path also refutes "never reloaded" as a precondition even where it was true: `weaponReload`
+tops a partial ammo box up to an arbitrary count, not just to capacity, so an odd count can arise from
+ordinary reloading, not only from a map-placed instance.
+
+**Given that, Hexwaste clamps the three single-shot spend sites at 0 instead of letting them go negative
+— a deliberate deviation from the reference, forced by the sentinel collision, not an oversight.**
+Reproducing vanilla's drift would not reproduce vanilla's behaviour here; it would produce a refill to
+full, which is further from vanilla than clamping is. The doubling itself (`AmmoCost`) is still ported
+faithfully; only the floor is new, and only because −1 cannot be represented as an ordinary negative
+count in this engine. The root sentinel collision is filed separately (see F41 below) since closing it
+is a repo-wide convention change, not a one-item fix.
 
 **F32 — SHIPPED 2026-08-21 (`ff30069`), one new golden fixture, zero modified.** *Was Effort S ·
 test-coverage gap, not a defect · found during F27/F29 closeout (2026-08-20).* F27 made all six
@@ -1385,6 +1397,22 @@ charges to show:
 
 Closing either needs new UI surface (an inventory summary panel; an item-examine entry point), not a
 gate change, so both are scoped as their own future work rather than folded into F38/F40.
+
+**F41 — `AmmoQuantity == -1` is overloaded as an "unhydrated item, refill to capacity" sentinel across
+the codebase, which makes any genuinely negative ammo count unrepresentable.** *Effort M · repo-wide
+convention change · found closing F31 (2026-08-23).* Six sites treat `-1` this way: `WeaponAmmo`
+(`ViewerGame.CombatHost.cs:185` and `:276`), `Map/InventoryWeight.cs:44`, `Map/ItemCost.cs:19` and
+`:27`, and `SaveState.cs:170`. F31's two special-cost PIDs exposed the collision directly: vanilla's
+floorless ammo subtraction drifts to `-1` from an odd charge count (`item.cc:1423`'s clamp is top-only),
+but in Hexwaste that write is read back as the refill sentinel by the very next `WeaponAmmo` call, so
+the weapon silently tops back up to full instead of running dry — reintroducing the infinite-charge bug
+F34 removed. F31 worked around this locally by clamping the three single-shot spend sites at 0, which
+is correct for that call site but does not close the underlying ambiguity: any other current or future
+code path that legitimately drives `AmmoQuantity` negative will collide with the same sentinel the same
+way. Closing it means giving "unhydrated" its own representation distinct from any legal quantity — for
+example, hydrating proto-default ammo counts once at load time instead of lazily on first read, so `-1`
+never needs to mean anything special afterward. That touches every site listed above and is a
+repo-wide convention change, not a one-item fix, hence its own entry rather than folding into F31.
 
 ### Pointer
 

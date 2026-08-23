@@ -2943,17 +2943,24 @@ public class CombatEngineTests
         Assert.Equal(19, item.AmmoQuantity);
     }
 
-    [Fact]
-    public void AGunStillSpendsOne()
+    // F31-follow-up: the doubled cost spent from 1 charge would drift to -1 under vanilla's floorless
+    // subtraction — but -1 is this codebase's "unhydrated item, refill to capacity" sentinel
+    // (ViewerGame.CombatHost.cs WeaponAmmo), so reproducing the drift would silently refill the
+    // weapon on the next attack instead of draining it. Must clamp at 0 instead.
+    [Theory]
+    [InlineData(399)]   // Super Cattle Prod
+    [InlineData(407)]   // Mega Power Fist
+    public void TheTwoSpecialPidsClampAtZeroInsteadOfDriftingNegative(int pid)
     {
-        (ProtoInfo proto, MapObject item) = MakeGun();
-        var host = new FakeCombatHost { Equipped = (proto, item), LoadedAmmoCount = 12 };
+        (ProtoInfo proto, MapObject item) = MakeMeleeWeapon(0x01, ammoCapacity: 20, pid: pid);
+        item.AmmoQuantity = 1;
+        var host = new FakeCombatHost { Equipped = (proto, item), LoadedAmmoCount = 1 };
         host.SetDude(NewCritter(20100, hp: 30, ap: 10, skill: 100));
         MapObject enemy = host.AddCritter(NewCritter(HexGrid.TileInDirection(20100, 0), hp: 100));
 
         Assert.True(new CombatEngine(host, new MinRng()).TryAttack(enemy));
 
-        Assert.Equal(11, item.AmmoQuantity);
+        Assert.Equal(0, item.AmmoQuantity);   // must NOT go to -1 (the refill sentinel)
     }
 
     [Fact]

@@ -403,7 +403,10 @@ public sealed class CombatEngine
                 weaponProto, _host.LoadedAmmo(weaponProto, weaponItem!), DiffDmgMod(dude));
 
         if (UsesCharges(weaponProto))
-            weaponItem!.AmmoQuantity = _host.WeaponAmmo(weaponProto!, weaponItem) - AmmoCost(weaponProto, 1);
+            // F31-follow-up: clamped at 0, not left to drift negative like vanilla. -1 is this codebase's
+            // "unhydrated item" sentinel (ViewerGame.CombatHost.cs WeaponAmmo) — reproducing vanilla's drift
+            // would refill the weapon to full on the next attack, which is further from vanilla than clamping.
+            weaponItem!.AmmoQuantity = Math.Max(0, _host.WeaponAmmo(weaponProto!, weaponItem) - AmmoCost(weaponProto, 1));
         _pendingAttack = new PendingAttack(dude, target, chance, hit, damage, critFlags, CanKnockback: !isGun,
             KnockbackPerk: weaponProto?.Weapon is { WeaponPerk: WeaponProtoStats.PerkKnockback }, // P74-M2
             DamageType: weaponProto?.Weapon?.DamageType ?? 0, // P26 gore context
@@ -3804,7 +3807,8 @@ public sealed class CombatEngine
             if (!hit && TriggerCritFailure(attacker, attackerIsDude: false, weaponProto, weaponItem, delta))
                 _actingAllyAp = 0; // P41: a fumble can cost the ally its turn
             if (UsesCharges(weaponProto) && weaponItem is not null)
-                weaponItem.AmmoQuantity = _host.WeaponAmmo(weaponProto!, weaponItem) - AmmoCost(weaponProto, 1);
+                // F31-follow-up: clamped at 0 — see the dude-attack site above for why.
+                weaponItem.AmmoQuantity = Math.Max(0, _host.WeaponAmmo(weaponProto!, weaponItem) - AmmoCost(weaponProto, 1));
             _pendingAttack = new PendingAttack(ally, target, chance, hit, damage, critFlags, CanKnockback: !isGun,
                 KnockbackPerk: weaponProto?.Weapon is { WeaponPerk: WeaponProtoStats.PerkKnockback }, // P74-M2
                 DamageType: weaponProto?.Weapon?.DamageType ?? 0,
@@ -3941,7 +3945,8 @@ public sealed class CombatEngine
         if (!hit && TriggerCritFailure(attacker, attackerIsDude: false, weaponProto, weaponItem, delta))
             _actingEnemyAp = 0; // P41: a fumble can cost the enemy the rest of its turn
         if (UsesCharges(weaponProto) && weaponItem is not null)
-            weaponItem.AmmoQuantity = _host.WeaponAmmo(weaponProto!, weaponItem) - AmmoCost(weaponProto, 1);
+            // F31-follow-up: clamped at 0 — see the dude-attack site above for why.
+            weaponItem.AmmoQuantity = Math.Max(0, _host.WeaponAmmo(weaponProto!, weaponItem) - AmmoCost(weaponProto, 1));
         _pendingAttack = new PendingAttack(enemy, defenderObj, chance, hit, damage, critFlags, CanKnockback: !isGun,
             KnockbackPerk: weaponProto?.Weapon is { WeaponPerk: WeaponProtoStats.PerkKnockback }, // P74-M2
             DamageType: weaponProto?.Weapon?.DamageType ?? 0,
