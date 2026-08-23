@@ -1065,9 +1065,10 @@ double, and this is actionable. F34's census confirms both hardcoded PIDs — 39
 ammo-capacity weapons in the game. F31 is now a two-PID special case on top of F34's general
 charge-spend: double `attack->ammoQuantity` for those two PIDs per `item.cc:1947-1965`.
 
-**SHIPPED 2026-08-23 (`69de7ea`), combat-golden 18/18, quest-golden 39/39, encounter-golden 188/188 (all
-ALL PASS), `dotnet test` 967 passed / 91 skipped (pre-existing `FALLOUT2_DIR` gate), `git status` clean,
-nothing re-recorded — measured at `69de7ea`, not merely inferred from "nothing wields either PID."**
+**SHIPPED 2026-08-23 (`69de7ea`, `dabd5c7`), combat-golden 18/18, quest-golden 39/39, encounter-golden
+188/188 (all ALL PASS), `dotnet test` 968 passed / 91 skipped (pre-existing `FALLOUT2_DIR` gate),
+`git status` clean, nothing re-recorded — re-measured at `dabd5c7` after the clamp landed, not carried
+over from the earlier run at `69de7ea` and not inferred from "nothing wields either PID."**
 `AmmoCost(weaponProto, quantity)` (`CombatEngine.cs`, beside `UsesCharges`) doubles `quantity` for PIDs
 399 and 407 and is unchanged otherwise; wired at all four charge-spend sites — the three single-shot
 sites (dude/ally/enemy, each `... - AmmoCost(weaponProto, 1)`) and the burst site
