@@ -150,8 +150,14 @@ for (int i = 0; i < args.Length; i++)
             actions.Add(new ViewerGame.StartupAction.UseHex(int.Parse(args[++i]), Lockpick: true));
             break;
         case "--awareness-probe" when i + 1 < args.Length: // P69: probe the Awareness examine gate (state-only)
-            actions.Add(new ViewerGame.StartupAction.AwarenessProbe(int.Parse(args[++i])));
+        {
+            // hex[:weaponPid] — F38: an optional trailing weapon proto forces the target critter
+            // into that weapon before examining, so the capacity/caliber gates can be probed.
+            string[] awpParts = args[++i].Split(':');
+            actions.Add(new ViewerGame.StartupAction.AwarenessProbe(int.Parse(awpParts[0]),
+                awpParts.Length > 1 ? int.Parse(awpParts[1]) : null));
             break;
+        }
         case "--examine-critter" when i + 1 < args.Length:
             actions.Add(new ViewerGame.StartupAction.ExamineCritter(int.Parse(args[++i])));
             break;

@@ -187,6 +187,25 @@ public sealed partial class ViewerGame
         return item.AmmoQuantity;
     }
 
+    // ported from fallout2-ce src/interface.cc _intface_update_ammo_lights() (:1357-1359): the
+    // readout is gated on ammoGetCapacity(item) > 0, NOT on weapon class, so the five non-gun
+    // capacity weapons (Ripper, Cattle Prod, Power Fist, Super/Mega variants) show their charges.
+    // NOTE: vanilla draws a 70px dithered gauge here (interfaceUpdateAmmoBar, :1985-2007) rather
+    // than digits; that display-shape divergence predates this change and is tracked separately.
+    // Shared with --awareness-probe (F38) so the probe exercises the real gate, not a re-statement of it.
+    private static bool ShowsAmmoReadout(ProtoInfo? weaponProto) => weaponProto?.Weapon is { } w && w.AmmoCapacity > 0;
+
+    // ported from fallout2-ce src/proto_instance.cc _obj_examine_func() (:316-323, the caliber
+    // test at :319): message 547 ("…with %d/%d shots of %s") is picked on
+    // ammoGetCaliber(item2) != 0, NOT on weapon class.
+    // ammoGetCaliber (item.cc:1395-1412) resolves the AMMO proto via the weapon's
+    // ammoTypePid and returns 0 when that pid is -1; the weapon proto's own caliber field
+    // equals that ammo's caliber for every weapon with a real ammoTypePid, and is 0 when
+    // it is -1, so the field is a faithful stand-in. A reload cannot break the
+    // equivalence — weaponAttemptReload only accepts matching-caliber ammo.
+    // Shared with --awareness-probe (F38) so the probe exercises the real gate, not a re-statement of it.
+    private static bool ShowsExamineShots(ProtoInfo? weaponProto) => weaponProto?.Weapon is { } w && w.Caliber != 0;
+
     public AmmoProtoStats? LoadedAmmo(ProtoInfo weaponProto, MapObject item)
     {
         int pid = item.AmmoTypePid != -1 ? item.AmmoTypePid : weaponProto.Weapon?.AmmoTypePid ?? -1;
