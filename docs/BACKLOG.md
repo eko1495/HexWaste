@@ -1065,7 +1065,9 @@ double, and this is actionable. F34's census confirms both hardcoded PIDs — 39
 ammo-capacity weapons in the game. F31 is now a two-PID special case on top of F34's general
 charge-spend: double `attack->ammoQuantity` for those two PIDs per `item.cc:1947-1965`.
 
-**SHIPPED 2026-08-23, combat/quest/encounter goldens byte-identical (nothing wields either PID).**
+**SHIPPED 2026-08-23 (`69de7ea`), combat-golden 18/18, quest-golden 39/39, encounter-golden 188/188 (all
+ALL PASS), `dotnet test` 967 passed / 91 skipped (pre-existing `FALLOUT2_DIR` gate), `git status` clean,
+nothing re-recorded — measured at `69de7ea`, not merely inferred from "nothing wields either PID."**
 `AmmoCost(weaponProto, quantity)` (`CombatEngine.cs`, beside `UsesCharges`) doubles `quantity` for PIDs
 399 and 407 and is unchanged otherwise; wired at all four charge-spend sites — the three single-shot
 sites (dude/ally/enemy, each `... - AmmoCost(weaponProto, 1)`) and the burst site
@@ -1073,14 +1075,20 @@ sites (dude/ally/enemy, each `... - AmmoCost(weaponProto, 1)`) and the burst sit
 burst-capable). Four hermetic tests in `CombatEngineTests.cs`, mutation-verified pre-change
 (`Expected 18, Actual 19` on both PIDs); the Cattle Prod (160) and a gun case are inertness guards.
 
-**Ported deliberately, not fixed: the odd-charge-count drift.** The reference's refusal tests
+**Ported deliberately, not fixed: the odd-charge-count drift — and vanilla and Hexwaste diverge on how
+far it runs, pre-existing and untouched by this item.** The reference's refusal tests
 `ammoGetQuantity(weapon) == 0` (`_combat_check_bad_shot`, `combat.cc:5679-5683`) and the deduction
-clamps only at the *top* (`ammoSetQuantity`, `item.cc:1421-1426`) — there is no floor. So for these two
-weapons starting from an **odd** charge count, spending 2 from 1 lands on −1; `−1 != 0`, so the refusal
-never fires and the weapon keeps attacking, drifting −1, −3, −5… What matters is the *current* charge
-count's parity, not the capacity, so this is reachable only from an odd starting `AmmoQuantity` that was
-never reloaded (`weaponReload` fills to capacity or by the cell's quantity, `item.cc:1566-1588`) — most
-plausibly a map-placed instance.
+clamps only at the *top* (`ammoSetQuantity`, `item.cc:1421-1426`) — there is no floor. So in vanilla, for
+these two weapons starting from an **odd** charge count, spending 2 from 1 lands on −1; `−1 != 0`, so the
+refusal never fires and the weapon keeps attacking, drifting −1, −3, −5… Hexwaste's refusal on the dude
+attack path (`CombatEngine.cs:342`, `_host.WeaponAmmo(weaponProto, weaponItem) <= 0`) tests `<= 0`
+instead of `== 0` — an F34-inherited difference this item did not introduce or touch — so the same
+odd-count case reaches −1, the refusal fires on the very next attack, and the drift halts after one
+negative step rather than continuing. The doubling itself (`AmmoCost`) is ported faithfully either way;
+only the surrounding refusal's stopping point differs. What matters for reaching this case at all is the
+*current* charge count's parity, not the capacity, so it is reachable only from an odd starting
+`AmmoQuantity` that was never reloaded (`weaponReload` fills to capacity or by the cell's quantity,
+`item.cc:1566-1588`) — most plausibly a map-placed instance.
 **No floor was added, and the refusal was not extended to "fewer charges than the cost"; neither exists
 in the reference.** Whether any shipped map places PID 399 or 407 with an odd `AmmoQuantity` was not
 surveyed for this item.
@@ -1176,7 +1184,7 @@ of movement-blocking (`worldmap.cc:4088` passes `_obj_shoot_blocking_at`); adopt
 correctness is unresolved would propagate the same uncertainty into encounter placement.
 
 **F34 — SHIPPED 2026-08-22 (`30a9371`, `b0063e5`, `a2bbc56`, `2b8d7ba`), combat-golden 18/18,
-quest-golden 5/5, encounter-golden 188/188, `dotnet test` 963 passed / 91 skipped (pre-existing
+quest-golden 39/39, encounter-golden 188/188, `dotnet test` 963 passed / 91 skipped (pre-existing
 `FALLOUT2_DIR` gate), byte-identical, nothing re-recorded (`census`, `endgame` and `opening` were
 not run — they are combat-free).** *Was Effort S-M ·
 re-record tier if any fixture wields one · found grounding F31 (2026-08-22).* Melee/unarmed weapons
@@ -1210,11 +1218,10 @@ before this fix.
 
 **Both halves shipped:** spending is now gated on `UsesCharges` (`(weaponProto?.Weapon?.AmmoCapacity
 ?? 0) > 0`, `CombatEngine.cs:235`) at all three spend sites, and the drained-weapon refusal is gated
-on the same predicate on the dude, ally and enemy attack paths. **Measured fixture outcome
-(combat-golden 18/18, quest-golden 5/5, encounter-golden 188/188, `dotnet test` 963/91,
-byte-identical):** none of the 18 combat, 5 quest or 188 encounter fixtures wields one of the
-five weapons, so nothing moved — `git status` stayed clean. **F31 sits on top of this**: once charges
-are spent, the two hardcoded PIDs (399 / 407) double the cost per `item.cc:1960-1962`.
+on the same predicate on the dude, ally and enemy attack paths. None of the 18 combat, 39 quest or 188
+encounter fixtures wields one of the five weapons, so nothing moved — `git status` stayed clean. **F31
+sits on top of this**: once charges are spent, the two hardcoded PIDs (399 / 407) double the cost per
+`item.cc:1960-1962`.
 
 **F35 — Hexwaste auto-reloads the dude's empty weapon inside the attack path; vanilla refuses the
 attack instead.** *Effort S-M · re-record tier (moves any fixture where a gun runs dry mid-fight) ·
@@ -1284,7 +1291,7 @@ path, so proving this needs new test-double coverage before it can be closed. Cl
 weapon is drained, matching what the reference's post-switch retry loop achieves — not by widening the
 pre-switch screen at `:3223`, which already matches vanilla.
 
-**F38 — SHIPPED 2026-08-22 (`5b0bc06`, `1744765`), combat-golden 18/18, quest-golden 5/5,
+**F38 — SHIPPED 2026-08-22 (`5b0bc06`, `1744765`), combat-golden 18/18, quest-golden 39/39,
 encounter-golden 188/188 (including `awareness-perk`, the fixture that exercises the examine gate),
 endgame-golden and opening-golden pass, byte-identical, nothing re-recorded, `git status` clean.**
 *Was Effort S · viewer-only, no golden coverage · found in Task 2 review of F34 (2026-08-22).*
