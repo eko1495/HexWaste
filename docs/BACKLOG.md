@@ -1254,21 +1254,41 @@ section). Closing it means the dude behaves like vanilla — printing "Out of am
 but the turn's attempt — for any capacity weapon it fires empty, guns included, so **any existing or
 future fixture that runs a gun dry mid-combat would move**: re-record tier.
 
-**F36 — `attackComputeDamage` applies the loaded ammo's DR modifier, damage multiplier and divisor
-unconditionally; Hexwaste applies them only for guns.** *Effort S-M · re-record tier (damage-affecting)
-· found filing F34 (2026-08-22), F34's natural successor alongside F31.* The reference reads
-`weaponGetAmmoDamageResistanceModifier`, `weaponGetAmmoDamageMultiplier` and
-`weaponGetAmmoDamageDivisor` from `attack->weapon` with no attack-type gate (`combat.cc:4579-4587`).
-Hexwaste only reads the loaded ammo's mods inside `if (isGun)` (`CombatEngine.cs:1123-1137`); the
-`else` (melee/unarmed) branch calls `CombatMath.RollWeaponDamage`/`RollDamage` with none of them.
+**F36 — SHIPPED 2026-08-23 (`0c28cb4`, `2fc46df`), combat-golden 18/18, quest-golden 39/39,
+encounter-golden 188/188, all byte-identical, `git status` clean, nothing re-recorded.** *Was Effort
+S-M · re-record tier (damage-affecting) · found filing F34 (2026-08-22), F34's natural successor
+alongside F31.* **Grounding this before touching code corrected its own framing**, the same pattern as
+F37/F38: the reference reads `weaponGetAmmoDamageResistanceModifier`, `weaponGetAmmoDamageMultiplier`
+and `weaponGetAmmoDamageDivisor` from `attack->weapon` with no attack-type gate (`combat.cc:4579-4587`,
+plus the AC modifier read in `attackDetermineToHit`, `combat.cc:4429-4434`); Hexwaste read the loaded
+ammo's mods only on the gun path, and the melee/unarmed branch called `CombatMath.RollWeaponDamage`/
+`RollDamage`/`ToHitChance` with none of them. **A proto census, not just a code diff, showed the entry's
+"damage-affecting" and "re-record tier" claims were wrong**: exactly five non-gun weapons carry a real
+`ammoTypePid` at all (the F34 five — Ripper 116, Cattle Prod 160, Power Fist 235, Super Cattle Prod
+399, Mega Power Fist 407), and all five load Small Energy Cell (38), whose modifiers are every one the
+neutral value (AC 0, DR 0, multiplier 1, divisor 1). So on shipped data "computed as if unloaded" is
+numerically identical to "computed as loaded" — this was always a structural fidelity gap with
+**provably zero behavioural effect on shipped data**, not the damage-moving change the entry advertised;
+the census is why the fixtures were expected byte-identical and why they landed that way. The value is
+structural: 17 ammo protos genuinely carry non-neutral modifiers (proving the mechanism is real for
+guns), and a future non-gun weapon or a corrected proto would otherwise silently diverge.
 
-All five of F34's non-gun ammo-capacity weapons (Ripper, Cattle Prod, Power Fist, Super Cattle Prod,
-Mega Power Fist) load Small Energy Cells, so with F34 shipped they now genuinely spend and can run dry
-— but their damage is still computed as if unloaded, because the melee branch never consults the
-ammo's DR modifier/multiplier/divisor at all. This is a different claim from "charges are spent": it
-is damage-affecting rather than resource-affecting, and carries its own fixture risk separate from
-F34's byte-identical outcome. Closing it means threading `LoadedAmmo`'s DR modifier, multiplier and
-divisor into the non-gun branch the same way the gun branch already does, matching `:4579-4587`.
+Closed by threading the loaded ammo's DR modifier, damage multiplier, damage divisor and AC modifier
+into the melee/unarmed path (`CombatEngine.cs` `RollAttack`'s `else` branch, both the damage call and
+the `else` branch of the to-hit computation) exactly as the gun branch already does, and giving
+`CombatMath.RollDamage`/`RollWeaponDamage`/`ToHitChance` the three neutral-defaulted parameters so
+every existing call site is unchanged by construction. Applied in the reference's order
+(`combat.cc:4586-4600`): multiply by `critMultiplier * ammoDamageMultiplier`, divide by the divisor only
+when non-zero (`combat.cc:4596-4598`, the `if (damageDivisor != 0)` guard — ported without the ranged
+path's `Math.Max(_, 1)` clamp workaround, see F43 below), then `/ 2`, then the difficulty modifier, then
+DT, then DR with the ammo modifier added in before the existing `[0, 100]` clamp
+(`CombatMath.cs:90-93`). `2fc46df` pins the multiply-before-halve order with a mutation-verified test
+(odd raw damage × an odd multiplier: `Expected: 31, Actual: 30` under the wrong order) and fixes three
+citation slips introduced by `0c28cb4` (`combat.cc:4593`→`4596`, `:4554`→`4553`, `:4602`→`4603`, some
+appearing in more than one file) caught by the citation-verification pass. Both melee damage helpers
+still take exactly one `rng.Next` draw before
+any arithmetic, so the RNG stream is unchanged — the reason the golden suites came back byte-identical
+rather than needing a re-record.
 
 **F37 — `AiSwitchWeapon` can settle on a drained non-gun capacity weapon that then fires anyway,
 because Hexwaste never re-checks after the switch; the reference does.** *Effort S · found in
@@ -1414,6 +1434,47 @@ way. Closing it means giving "unhydrated" its own representation distinct from a
 example, hydrating proto-default ammo counts once at load time instead of lazily on first read, so `-1`
 never needs to mean anything special afterward. That touches every site listed above and is a
 repo-wide convention change, not a one-item fix, hence its own entry rather than folding into F31.
+
+**F42 — The melee damage-resistance reduction is computed in a different algebraic form from the
+reference, and from Hexwaste's own gun path — pre-existing, and F36 makes it newly load-bearing.**
+*Effort M · re-record tier (damage-affecting) · found reviewing F36 (2026-08-23).*
+`CombatMath.RollDamage`/`RollWeaponDamage`'s shared `ReduceByArmor` computes the post-DT damage as
+`afterThreshold * (100 - dr) / 100` (`CombatMath.cs:93`). The reference computes it as
+`damage -= damage * damageResistance / 100` (`combat.cc:4608-4610`), and Hexwaste's own ranged path
+already matches that form — `damage - damage * resistance / 100` (`CombatMath.cs:174`, in `RangedMath.
+RollDamage`). These are algebraically equal over the reals but **not equal under integer truncation**:
+7 damage against 33% DR gives 5 by the reference's form and 4 by the melee path's form (`7 - 7*33/100 =
+7 - 2 = 5` vs `7*(100-33)/100 = 7*67/100 = 4`). This is a pre-existing divergence — it predates F36 and
+this batch touched neither `ReduceByArmor`'s DR term nor its counterpart in `RangedMath`, only added the
+ammo DR modifier as an addend into the existing (wrong-form) clamp at `CombatMath.cs:93` — and it
+affects every melee and unarmed attack in the game, not just the five F34/F36 ammo-capacity weapons.
+Closing it means rewriting `ReduceByArmor`'s final line to the reference's subtract-form, which will
+generally shift melee damage by ±1 across the fixture set: **re-record tier, needs its own measurement**
+separate from F36's (byte-identical, provably inert) result. **F36 makes this newly load-bearing**: a
+future non-neutral ammo DR modifier on a melee weapon would now be wrong for two independent reasons —
+the wrong reduction form on top of whatever else — rather than the DR-modifier wiring being clean once
+this lands underneath it.
+
+**F43 — The gun path clamps the ammo damage multiplier to a minimum of 1; the reference does not, and
+neither does the new melee path.** *Effort S · inert on shipped data (unverified whether any ammo proto
+would trigger it) · found reviewing F36 (2026-08-23).* `RangedMath.RollDamage` computes
+`raw * critMultiplier * Math.Max(ammoDamageMultiplier, 1)` and divides by
+`Math.Max(ammoDamageDivisor, 1)` (`CombatMath.cs:149-150`). The reference multiplies by
+`damageMultiplier` unconditionally and only guards the divisor, with `if (damageDivisor != 0)`
+(`combat.cc:4594-4598`) — no analogous guard exists on the multiplier side at all
+(`combat.cc:4586-4587`). The two divisor forms are equivalent (`Math.Max(x, 1)` as a no-op divide-by-1
+substitute for "skip the divide" is the same result as skipping it outright when `x` would otherwise be
+0), but the multiplier clamp is not: ammo with a multiplier of 0 would deal 0 damage in the reference
+and on F36's new melee path (which took no such clamp — `CombatEngine.cs`'s melee branch and
+`CombatMath.RollDamage`/`RollWeaponDamage` pass `ammoDamageMultiplier` through unclamped), and full
+(unmultiplied) damage on Hexwaste's gun path. **Whether any shipped ammo proto actually carries a
+multiplier of 0 was not checked for this entry** — F36's spec census covered the five non-gun ammo-
+capacity weapons' loaded ammo (all Small Energy Cell, multiplier 1) but not the full ammo-proto table
+for a 0 multiplier specifically, so "no shipped ammo triggers this" is stated here as unverified, not
+confirmed. If none does, this is inert today; if one does, the gun path silently disagrees with both the
+reference and Hexwaste's own melee path for that ammo. Closing it means dropping the `Math.Max(_, 1)` on
+the multiplier at `CombatMath.cs:149`, matching the divisor's guarded (not clamped) form already used
+there and the unclamped form F36 landed on the melee side.
 
 ### Pointer
 

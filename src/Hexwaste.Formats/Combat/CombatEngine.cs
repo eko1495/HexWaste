@@ -1145,9 +1145,18 @@ public sealed class CombatEngine
             }
             else
             {
+                // F36: the melee/unarmed path reads the same four loaded-ammo modifiers as the gun
+                // branch above (combat.cc has no attack-type gate on these reads) — inert on shipped
+                // data (only five non-gun weapons carry a real ammoTypePid, and all five load Small
+                // Energy Cell, whose modifiers are neutral), real for a weapon/ammo that isn't.
+                AmmoProtoStats? meleeAmmo = weaponProto is null || weaponItem is null
+                    ? null
+                    : _host.LoadedAmmo(weaponProto, weaponItem);
                 damage = weaponProto?.Weapon is { } weapon
-                    ? CombatMath.RollWeaponDamage(_rng, attacker, defender, weapon.MinDamage, weapon.MaxDamage, critMultiplier, bypass, extraDr, penetrate, difficultyDamageModifier)
-                    : CombatMath.RollDamage(_rng, attacker, defender, critMultiplier, bypass, extraDr, penetrate: false, difficultyDamageModifier);
+                    ? CombatMath.RollWeaponDamage(_rng, attacker, defender, weapon.MinDamage, weapon.MaxDamage, critMultiplier, bypass, extraDr, penetrate, difficultyDamageModifier,
+                        meleeAmmo?.DrModifier ?? 0, meleeAmmo?.DamageMultiplier ?? 1, meleeAmmo?.DamageDivisor ?? 1)
+                    : CombatMath.RollDamage(_rng, attacker, defender, critMultiplier, bypass, extraDr, penetrate: false, difficultyDamageModifier,
+                        meleeAmmo?.DrModifier ?? 0, meleeAmmo?.DamageMultiplier ?? 1, meleeAmmo?.DamageDivisor ?? 1);
             }
 
             // P29-M4 flat post-armor damage perks (combat.cc:4618-4630), dude-only, inert at rank 0.
@@ -1483,7 +1492,12 @@ public sealed class CombatEngine
         else
         {
             int skill = weaponProto is null ? attacker.UnarmedSkill : attacker.MeleeWeaponsSkill;
-            toHit = CombatMath.ToHitChance(skill, defender, apDodge);
+            // F36 (combat.cc:4429-4434): the ammo AC modifier is ungated too — inert for shipped melee
+            // weapons (see the RollAttack ammo comment) but wired for a modded/future one.
+            AmmoProtoStats? meleeAmmo = weaponProto is null || weaponItem is null
+                ? null
+                : _host.LoadedAmmo(weaponProto, weaponItem);
+            toHit = CombatMath.ToHitChance(skill, defender, apDodge, meleeAmmo?.AcModifier ?? 0);
         }
 
         // P29-M1: One Hander (dude, any wielded weapon) — a two-handed weapon costs −40 to hit,

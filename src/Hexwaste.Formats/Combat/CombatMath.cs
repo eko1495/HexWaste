@@ -18,42 +18,59 @@ public static class CombatMath
         ToHitChance(attackSkill, target, 0);
 
     /// <summary><paramref name="extraAc"/> (P77) is the defender's remaining-AP dodge bonus, folded into
-    /// the AC before the clamp (stat.cc:239 adds it into STAT_ARMOR_CLASS); 0 = no change.</summary>
-    public static int ToHitChance(int attackSkill, CritterState target, int extraAc) =>
-        Math.Clamp(attackSkill - (target.ArmorClass + extraAc), 0, 95);
+    /// the AC before the clamp (stat.cc:239 adds it into STAT_ARMOR_CLASS); 0 = no change.
+    /// <paramref name="ammoAcModifier"/> (F36, combat.cc:4429-4434) is the melee weapon's loaded ammo's
+    /// armor-class modifier, added alongside and clamped with the same `&gt;= 0` floor the ranged path
+    /// already applies (RangedMath.ToHitChance below); 0 = no change.</summary>
+    public static int ToHitChance(int attackSkill, CritterState target, int extraAc, int ammoAcModifier = 0) =>
+        Math.Clamp(attackSkill - Math.Max(target.ArmorClass + extraAc + ammoAcModifier, 0), 0, 95);
 
     public static bool RollHit(ICombatRng rng, int chance) => rng.Next(1, 101) <= chance;
 
     /// <summary>Unarmed: damage = rand(1, 2 + meleeDmg), ×critMult/2 (default 2 =
     /// identity; the crit multiplier slots where the engine's hardcoded 2 lives),
     /// then DT/DR. BYPASS cuts DT/DR to 20% (combat.cc:4530). <paramref name="extraDr"/>
-    /// (P29-M1 Finesse) is added to the defender's DR on the non-bypass path.</summary>
+    /// (P29-M1 Finesse) is added to the defender's DR on the non-bypass path.
+    /// <paramref name="ammoDrModifier"/>/<paramref name="ammoDamageMultiplier"/>/
+    /// <paramref name="ammoDamageDivisor"/> (F36, combat.cc:4579-4587) are the loaded ammo's damage
+    /// modifiers — the same four reads the gun path already makes, now ungated for a melee weapon that
+    /// happens to carry an ammo slot (e.g. the Cattle Prod). Neutral defaults (0/1/1) = no change.</summary>
     public static int RollDamage(ICombatRng rng, CritterState attacker, CritterState target,
         int critMultiplier = 2, bool bypassArmor = false, int extraDr = 0, bool penetrate = false,
-        int difficultyDamageModifier = 100)
+        int difficultyDamageModifier = 100, int ammoDrModifier = 0, int ammoDamageMultiplier = 1,
+        int ammoDamageDivisor = 1)
     {
         int raw = rng.Next(1, attacker.MeleeDamage + 3); // inclusive 1 .. 2+meleeDmg
-        return ReduceByArmor(raw * critMultiplier / 2, target, bypassArmor, extraDr, penetrate, difficultyDamageModifier);
+        int damage = raw * critMultiplier * ammoDamageMultiplier; // combat.cc:4586 damageMultiplier
+        if (ammoDamageDivisor != 0) // combat.cc:4596 `if (damageDivisor != 0) damage /= damageDivisor;`
+            damage /= ammoDamageDivisor;
+        damage /= 2;
+        return ReduceByArmor(damage, target, bypassArmor, extraDr, penetrate, difficultyDamageModifier, ammoDrModifier);
     }
 
     /// <summary>Melee weapon: rand(min, max) + the attacker's melee-damage
-    /// bonus (item.cc:1244), ×critMult/2, then DT/DR.</summary>
+    /// bonus (item.cc:1244), ×critMult/2, then DT/DR. See <see cref="RollDamage"/> for the ammo params.</summary>
     public static int RollWeaponDamage(ICombatRng rng, CritterState attacker, CritterState target,
         int minDamage, int maxDamage, int critMultiplier = 2, bool bypassArmor = false, int extraDr = 0,
-        bool penetrate = false, int difficultyDamageModifier = 100)
+        bool penetrate = false, int difficultyDamageModifier = 100, int ammoDrModifier = 0,
+        int ammoDamageMultiplier = 1, int ammoDamageDivisor = 1)
     {
         int raw = rng.Next(minDamage, Math.Max(minDamage, maxDamage) + 1) + attacker.MeleeDamage;
-        return ReduceByArmor(raw * critMultiplier / 2, target, bypassArmor, extraDr, penetrate, difficultyDamageModifier);
+        int damage = raw * critMultiplier * ammoDamageMultiplier;
+        if (ammoDamageDivisor != 0)
+            damage /= ammoDamageDivisor;
+        damage /= 2;
+        return ReduceByArmor(damage, target, bypassArmor, extraDr, penetrate, difficultyDamageModifier, ammoDrModifier);
     }
 
     private static int ReduceByArmor(int raw, CritterState target, bool bypassArmor = false, int extraDr = 0,
-        bool penetrate = false, int difficultyDamageModifier = 100)
+        bool penetrate = false, int difficultyDamageModifier = 100, int ammoDrModifier = 0)
     {
         // P84: the Easy/Hard combat-difficulty damage modifier (75/100/125) scales damage dealt by
         // attackers NOT on the dude's team — applied AFTER the ×crit/2 wrapper and BEFORE the DT
         // subtraction, exactly as the engine. 100 (Normal / a dude or ally attacker) = identity, so the
         // combat goldens stay byte-identical. ported from fallout2-ce src/combat.cc attackComputeDamage()
-        // (the team gate combat.cc:4554, the `damage *= combatDifficultyDamageModifier; damage /= 100` at :4602).
+        // (the team gate combat.cc:4553, the `damage *= combatDifficultyDamageModifier; damage /= 100` at :4603).
         raw = raw * difficultyDamageModifier / 100;
         int dt = target.DamageThreshold;
         int dr = target.DamageResistance;
@@ -71,7 +88,9 @@ public static class CombatMath
         if (penetrate)
             dt = 20 * dt / 100;
         int afterThreshold = Math.Max(raw - dt, 0);
-        return afterThreshold * (100 - Math.Clamp(dr, 0, 100)) / 100;
+        // combat.cc:4579-4583 — the ammo DR modifier is added AFTER the bypass/Finesse/Penetrate
+        // adjustments above, unconditionally, then clamped [0, 100] alongside them.
+        return afterThreshold * (100 - Math.Clamp(dr + ammoDrModifier, 0, 100)) / 100;
     }
 }
 
@@ -131,7 +150,7 @@ public static class RangedMath
         damage /= Math.Max(ammoDamageDivisor, 1);
         damage /= 2;
         // P84: the Easy/Hard combat-difficulty damage modifier (75/125 for a non-dude-team attacker),
-        // applied after the ÷2 wrapper and before DT (combat.cc:4602). 100 (Normal/dude/ally) = identity
+        // applied after the ÷2 wrapper and before DT (combat.cc:4603). 100 (Normal/dude/ally) = identity
         // → byte-identical. ported from fallout2-ce src/combat.cc attackComputeDamage().
         damage = damage * difficultyDamageModifier / 100;
 
