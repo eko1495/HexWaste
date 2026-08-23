@@ -2832,11 +2832,11 @@ public class CombatEngineTests
 
     /// <summary>A melee weapon proto+item with the given extended flags (0x001 one-handed,
     /// 0x201 two-handed; low nibble 1 = a melee swing, not a gun).</summary>
-    private static (ProtoInfo Proto, MapObject Item) MakeMeleeWeapon(int ext, int minDmg = 1, int maxDmg = 6, int ap = 3, int dmgType = 0, int ammoCapacity = 0)
+    private static (ProtoInfo Proto, MapObject Item) MakeMeleeWeapon(int ext, int minDmg = 1, int maxDmg = 6, int ap = 3, int dmgType = 0, int ammoCapacity = 0, int pid = 8)
     {
         var w = new WeaponProtoStats(1, minDmg, maxDmg, dmgType, 1, 0, 0, 1, ap, 0, 0, 0, -1, ammoCapacity, 0);
-        var proto = new ProtoInfo(8, 0, 0x01000000, 0, ext, 3, Weapon: w);
-        var item = new MapObject { Id = 8, HexTile = 0, X = 0, Y = 0, Frame = 0, Rotation = 0, Fid = 0, Flags = 0, Pid = 8, Sid = -1 };
+        var proto = new ProtoInfo(pid, 0, 0x01000000, 0, ext, 3, Weapon: w);
+        var item = new MapObject { Id = 8, HexTile = 0, X = 0, Y = 0, Frame = 0, Rotation = 0, Fid = 0, Flags = 0, Pid = pid, Sid = -1 };
         return (proto, item);
     }
 
@@ -2909,6 +2909,58 @@ public class CombatEngineTests
         Assert.True(new CombatEngine(host, new MinRng()).TryAttack(enemy));
 
         Assert.Equal(11, item.AmmoQuantity);   // MakeGun's capacity is 12, item starts at -1 = full
+    }
+
+    // F31: _item_w_compute_ammo_cost (item.cc:1947-1965) doubles the ammo cost for exactly two
+    // hardcoded PIDs — 399 Super Cattle Prod and 407 Mega Power Fist (proto_types.h:177-178).
+    [Theory]
+    [InlineData(399)]   // Super Cattle Prod
+    [InlineData(407)]   // Mega Power Fist
+    public void TheTwoSpecialPidsSpendTwoChargesPerAttack(int pid)
+    {
+        (ProtoInfo proto, MapObject item) = MakeMeleeWeapon(0x01, ammoCapacity: 20, pid: pid);
+        item.AmmoQuantity = 20;
+        var host = new FakeCombatHost { Equipped = (proto, item), LoadedAmmoCount = 20 };
+        host.SetDude(NewCritter(20100, hp: 30, ap: 10, skill: 100));
+        MapObject enemy = host.AddCritter(NewCritter(HexGrid.TileInDirection(20100, 0), hp: 100));
+
+        Assert.True(new CombatEngine(host, new MinRng()).TryAttack(enemy));
+
+        Assert.Equal(18, item.AmmoQuantity);
+    }
+
+    [Fact]
+    public void AnOrdinaryCapacityWeaponStillSpendsOne()   // Cattle Prod, PID 160 — near-identical
+    {                                                       // name/behaviour to the special pair.
+        (ProtoInfo proto, MapObject item) = MakeMeleeWeapon(0x01, ammoCapacity: 20, pid: 160);
+        item.AmmoQuantity = 20;
+        var host = new FakeCombatHost { Equipped = (proto, item), LoadedAmmoCount = 20 };
+        host.SetDude(NewCritter(20100, hp: 30, ap: 10, skill: 100));
+        MapObject enemy = host.AddCritter(NewCritter(HexGrid.TileInDirection(20100, 0), hp: 100));
+
+        Assert.True(new CombatEngine(host, new MinRng()).TryAttack(enemy));
+
+        Assert.Equal(19, item.AmmoQuantity);
+    }
+
+    // F31-follow-up: the doubled cost spent from 1 charge would drift to -1 under vanilla's floorless
+    // subtraction — but -1 is this codebase's "unhydrated item, refill to capacity" sentinel
+    // (ViewerGame.CombatHost.cs WeaponAmmo), so reproducing the drift would silently refill the
+    // weapon on the next attack instead of draining it. Must clamp at 0 instead.
+    [Theory]
+    [InlineData(399)]   // Super Cattle Prod
+    [InlineData(407)]   // Mega Power Fist
+    public void TheTwoSpecialPidsClampAtZeroInsteadOfDriftingNegative(int pid)
+    {
+        (ProtoInfo proto, MapObject item) = MakeMeleeWeapon(0x01, ammoCapacity: 20, pid: pid);
+        item.AmmoQuantity = 1;
+        var host = new FakeCombatHost { Equipped = (proto, item), LoadedAmmoCount = 1 };
+        host.SetDude(NewCritter(20100, hp: 30, ap: 10, skill: 100));
+        MapObject enemy = host.AddCritter(NewCritter(HexGrid.TileInDirection(20100, 0), hp: 100));
+
+        Assert.True(new CombatEngine(host, new MinRng()).TryAttack(enemy));
+
+        Assert.Equal(0, item.AmmoQuantity);   // must NOT go to -1 (the refill sentinel)
     }
 
     [Fact]

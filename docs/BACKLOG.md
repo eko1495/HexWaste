@@ -1065,6 +1065,47 @@ double, and this is actionable. F34's census confirms both hardcoded PIDs — 39
 ammo-capacity weapons in the game. F31 is now a two-PID special case on top of F34's general
 charge-spend: double `attack->ammoQuantity` for those two PIDs per `item.cc:1947-1965`.
 
+**SHIPPED 2026-08-23 (`69de7ea`, `dabd5c7`), combat-golden 18/18, quest-golden 39/39, encounter-golden
+188/188 (all ALL PASS), `dotnet test` 968 passed / 91 skipped (pre-existing `FALLOUT2_DIR` gate),
+`git status` clean, nothing re-recorded — re-measured at `dabd5c7` after the clamp landed, not carried
+over from the earlier run at `69de7ea` and not inferred from "nothing wields either PID."**
+`AmmoCost(weaponProto, quantity)` (`CombatEngine.cs`, beside `UsesCharges`) doubles `quantity` for PIDs
+399 and 407 and is unchanged otherwise; wired at all four charge-spend sites — the three single-shot
+sites (dude/ally/enemy, each `... - AmmoCost(weaponProto, 1)`) and the burst site
+(`Math.Max(0, b.AmmoBefore - AmmoCost(b.WeaponProto, b.RoundsFired))`, inert here since neither PID is
+burst-capable). Four hermetic tests in `CombatEngineTests.cs`, mutation-verified pre-change
+(`Expected 18, Actual 19` on both PIDs); the Cattle Prod (160) and a gun case are inertness guards.
+
+**Corrected 2026-08-23 — the odd-charge-count drift is NOT ported as-is; it is clamped at zero, and the
+original write-up understated why.** The reference's refusal tests `ammoGetQuantity(weapon) == 0`
+(`_combat_check_bad_shot`, `combat.cc:5680`) and the deduction clamps only at the *top*
+(`ammoSetQuantity`, `item.cc:1423`) — there is no floor. So in vanilla, for these two weapons starting
+from an **odd** charge count, spending 2 from 1 lands on −1; `−1 != 0`, so the refusal never fires and
+the weapon keeps attacking, drifting −1, −3, −5…
+
+Two things the earlier version of this passage got wrong. First, it called the Mega Power Fist's
+capacity even, so this case was "reachable only from an odd starting count that is never reloaded" —
+false: F34's own census gives the Mega Power Fist a capacity of **25**, which is odd, so the very first
+attack from a full weapon lands on an odd count and this is reachable in ordinary play, not just from
+some hand-placed map oddity. Second, it claimed Hexwaste "halts the drift after one negative step" —
+also false. `AmmoQuantity == -1` is this codebase's sentinel for "unhydrated item, refill to capacity"
+(`WeaponAmmo`, `ViewerGame.CombatHost.cs:183-188`), so the write that would have produced −1 never gets
+read back as −1: the next attack's `WeaponAmmo` call sees the sentinel first and rewrites the weapon to
+full, silently reintroducing the infinite-ammo bug F34 removed. The `<= 0` refusal never sees the −1 at
+all.
+
+The reload path also refutes "never reloaded" as a precondition even where it was true: `weaponReload`
+tops a partial ammo box up to an arbitrary count, not just to capacity, so an odd count can arise from
+ordinary reloading, not only from a map-placed instance.
+
+**Given that, Hexwaste clamps the three single-shot spend sites at 0 instead of letting them go negative
+— a deliberate deviation from the reference, forced by the sentinel collision, not an oversight.**
+Reproducing vanilla's drift would not reproduce vanilla's behaviour here; it would produce a refill to
+full, which is further from vanilla than clamping is. The doubling itself (`AmmoCost`) is still ported
+faithfully; only the floor is new, and only because −1 cannot be represented as an ordinary negative
+count in this engine. The root sentinel collision is filed separately (see F41 below) since closing it
+is a repo-wide convention change, not a one-item fix.
+
 **F32 — SHIPPED 2026-08-21 (`ff30069`), one new golden fixture, zero modified.** *Was Effort S ·
 test-coverage gap, not a defect · found during F27/F29 closeout (2026-08-20).* F27 made all six
 `RunDamageProc` sites honour `_damage_object`'s party **pair** gate (`combat.cc:4849`), but nothing in
@@ -1156,9 +1197,8 @@ of movement-blocking (`worldmap.cc:4088` passes `_obj_shoot_blocking_at`); adopt
 correctness is unresolved would propagate the same uncertainty into encounter placement.
 
 **F34 — SHIPPED 2026-08-22 (`30a9371`, `b0063e5`, `a2bbc56`, `2b8d7ba`), combat-golden 18/18,
-quest-golden 5/5, encounter-golden 188/188, `dotnet test` 963 passed / 91 skipped (pre-existing
-`FALLOUT2_DIR` gate) — combat-golden 18/18, quest-golden 5/5, encounter-golden 188/188,
-and `dotnet test` 963/91, byte-identical, nothing re-recorded (`census`, `endgame` and `opening` were
+quest-golden 39/39, encounter-golden 188/188, `dotnet test` 963 passed / 91 skipped (pre-existing
+`FALLOUT2_DIR` gate), byte-identical, nothing re-recorded (`census`, `endgame` and `opening` were
 not run — they are combat-free).** *Was Effort S-M ·
 re-record tier if any fixture wields one · found grounding F31 (2026-08-22).* Melee/unarmed weapons
 with ammo capacity consumed no charges; the reference spends one per attack. `attackCompute`'s
@@ -1191,11 +1231,10 @@ before this fix.
 
 **Both halves shipped:** spending is now gated on `UsesCharges` (`(weaponProto?.Weapon?.AmmoCapacity
 ?? 0) > 0`, `CombatEngine.cs:235`) at all three spend sites, and the drained-weapon refusal is gated
-on the same predicate on the dude, ally and enemy attack paths. **Measured fixture outcome
-(combat-golden 18/18, quest-golden 5/5, encounter-golden 188/188, `dotnet test` 963/91,
-byte-identical):** none of the 18 combat, 5 quest or 188 encounter fixtures wields one of the
-five weapons, so nothing moved — `git status` stayed clean. **F31 sits on top of this**: once charges
-are spent, the two hardcoded PIDs (399 / 407) double the cost per `item.cc:1960-1962`.
+on the same predicate on the dude, ally and enemy attack paths. None of the 18 combat, 39 quest or 188
+encounter fixtures wields one of the five weapons, so nothing moved — `git status` stayed clean. **F31
+sits on top of this**: once charges are spent, the two hardcoded PIDs (399 / 407) double the cost per
+`item.cc:1960-1962`.
 
 **F35 — Hexwaste auto-reloads the dude's empty weapon inside the attack path; vanilla refuses the
 attack instead.** *Effort S-M · re-record tier (moves any fixture where a gun runs dry mid-fight) ·
@@ -1265,7 +1304,7 @@ path, so proving this needs new test-double coverage before it can be closed. Cl
 weapon is drained, matching what the reference's post-switch retry loop achieves — not by widening the
 pre-switch screen at `:3223`, which already matches vanilla.
 
-**F38 — SHIPPED 2026-08-22 (`5b0bc06`, `1744765`), combat-golden 18/18, quest-golden 5/5,
+**F38 — SHIPPED 2026-08-22 (`5b0bc06`, `1744765`), combat-golden 18/18, quest-golden 39/39,
 encounter-golden 188/188 (including `awareness-perk`, the fixture that exercises the examine gate),
 endgame-golden and opening-golden pass, byte-identical, nothing re-recorded, `git status` clean.**
 *Was Effort S · viewer-only, no golden coverage · found in Task 2 review of F34 (2026-08-22).*
@@ -1359,6 +1398,22 @@ charges to show:
 
 Closing either needs new UI surface (an inventory summary panel; an item-examine entry point), not a
 gate change, so both are scoped as their own future work rather than folded into F38/F40.
+
+**F41 — `AmmoQuantity == -1` is overloaded as an "unhydrated item, refill to capacity" sentinel across
+the codebase, which makes any genuinely negative ammo count unrepresentable.** *Effort M · repo-wide
+convention change · found closing F31 (2026-08-23).* Six sites treat `-1` this way: `WeaponAmmo`
+(`ViewerGame.CombatHost.cs:185` and `:276`), `Map/InventoryWeight.cs:44`, `Map/ItemCost.cs:19` and
+`:27`, and `SaveState.cs:170`. F31's two special-cost PIDs exposed the collision directly: vanilla's
+floorless ammo subtraction drifts to `-1` from an odd charge count (`item.cc:1423`'s clamp is top-only),
+but in Hexwaste that write is read back as the refill sentinel by the very next `WeaponAmmo` call, so
+the weapon silently tops back up to full instead of running dry — reintroducing the infinite-charge bug
+F34 removed. F31 worked around this locally by clamping the three single-shot spend sites at 0, which
+is correct for that call site but does not close the underlying ambiguity: any other current or future
+code path that legitimately drives `AmmoQuantity` negative will collide with the same sentinel the same
+way. Closing it means giving "unhydrated" its own representation distinct from any legal quantity — for
+example, hydrating proto-default ammo counts once at load time instead of lazily on first read, so `-1`
+never needs to mean anything special afterward. That touches every site listed above and is a
+repo-wide convention change, not a one-item fix, hence its own entry rather than folding into F31.
 
 ### Pointer
 
