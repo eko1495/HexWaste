@@ -42,7 +42,7 @@ public static class CombatMath
     {
         int raw = rng.Next(1, attacker.MeleeDamage + 3); // inclusive 1 .. 2+meleeDmg
         int damage = raw * critMultiplier * ammoDamageMultiplier; // combat.cc:4586 damageMultiplier
-        if (ammoDamageDivisor != 0) // combat.cc:4593 `if (damageDivisor != 0) damage /= damageDivisor;`
+        if (ammoDamageDivisor != 0) // combat.cc:4596 `if (damageDivisor != 0) damage /= damageDivisor;`
             damage /= ammoDamageDivisor;
         damage /= 2;
         return ReduceByArmor(damage, target, bypassArmor, extraDr, penetrate, difficultyDamageModifier, ammoDrModifier);
@@ -70,7 +70,7 @@ public static class CombatMath
         // attackers NOT on the dude's team — applied AFTER the ×crit/2 wrapper and BEFORE the DT
         // subtraction, exactly as the engine. 100 (Normal / a dude or ally attacker) = identity, so the
         // combat goldens stay byte-identical. ported from fallout2-ce src/combat.cc attackComputeDamage()
-        // (the team gate combat.cc:4554, the `damage *= combatDifficultyDamageModifier; damage /= 100` at :4602).
+        // (the team gate combat.cc:4553, the `damage *= combatDifficultyDamageModifier; damage /= 100` at :4603).
         raw = raw * difficultyDamageModifier / 100;
         int dt = target.DamageThreshold;
         int dr = target.DamageResistance;
@@ -150,7 +150,7 @@ public static class RangedMath
         damage /= Math.Max(ammoDamageDivisor, 1);
         damage /= 2;
         // P84: the Easy/Hard combat-difficulty damage modifier (75/125 for a non-dude-team attacker),
-        // applied after the ÷2 wrapper and before DT (combat.cc:4602). 100 (Normal/dude/ally) = identity
+        // applied after the ÷2 wrapper and before DT (combat.cc:4603). 100 (Normal/dude/ally) = identity
         // → byte-identical. ported from fallout2-ce src/combat.cc attackComputeDamage().
         damage = damage * difficultyDamageModifier / 100;
 

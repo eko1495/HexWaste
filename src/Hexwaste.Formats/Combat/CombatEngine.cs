@@ -1147,8 +1147,8 @@ public sealed class CombatEngine
             {
                 // F36: the melee/unarmed path reads the same four loaded-ammo modifiers as the gun
                 // branch above (combat.cc has no attack-type gate on these reads) — inert on shipped
-                // data (only the Cattle Prod/Power Fist family carries a real ammoTypePid, and all five
-                // load Small Energy Cell, whose modifiers are neutral), real for a weapon/ammo that isn't.
+                // data (only five non-gun weapons carry a real ammoTypePid, and all five load Small
+                // Energy Cell, whose modifiers are neutral), real for a weapon/ammo that isn't.
                 AmmoProtoStats? meleeAmmo = weaponProto is null || weaponItem is null
                     ? null
                     : _host.LoadedAmmo(weaponProto, weaponItem);

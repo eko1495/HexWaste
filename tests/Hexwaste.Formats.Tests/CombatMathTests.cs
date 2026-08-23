@@ -83,7 +83,7 @@ public class CombatMathTests
     [Fact]
     public void DifficultyDamageModifierScalesAfterHalvingBeforeThreshold()
     {
-        // P84: Easy 75% / Normal 100% / Hard 125% on the post-÷2 damage, before DT — combat.cc:4602.
+        // P84: Easy 75% / Normal 100% / Hard 125% on the post-÷2 damage, before DT — combat.cc:4603.
         var rng = new SystemCombatRng(1);
         CritterState target = NewState(dt: 4, dr: 0);
 
@@ -126,6 +126,23 @@ public class CombatMathTests
     }
 
     [Fact]
+    public void AmmoDamageMultiplierAppliesBeforeTheHalvingNotAfter()
+    {
+        // Every other multiplier case here uses a raw*critMultiplier product that's even, so
+        // floor(r/2)*m == floor(r*m/2) in all of them — they can't tell "multiply then halve" apart
+        // from "halve then multiply". critMultiplier: 1 removes the default ×2 that would otherwise
+        // force the product even again; raw = 21 (odd) * ammoDamageMultiplier 3 is the discriminator:
+        //   correct (multiply first): floor(21*1*3 / 1) / 2 = floor(63/2) = 31
+        //   wrong   (halve first):    floor(21*1 / 1) / 2 * 3 = floor(21/2) * 3 = 10*3 = 30
+        var rng = new CountingCombatRng(1);
+        CritterState attacker = NewState(meleeDmg: 0);
+        CritterState target = NewState();
+
+        Assert.Equal(31, CombatMath.RollWeaponDamage(rng, attacker, target, 21, 21, critMultiplier: 1, ammoDamageMultiplier: 3));
+        Assert.Equal(1, rng.CallCount);
+    }
+
+    [Fact]
     public void AmmoDamageDivisorReducesMeleeWeaponDamageAndGuardsZero()
     {
         var rng = new CountingCombatRng(1);
@@ -134,7 +151,7 @@ public class CombatMathTests
 
         // damage = 20*2*1 = 40; 40/4 = 10; /2 = 5.
         Assert.Equal(5, CombatMath.RollWeaponDamage(rng, attacker, target, 20, 20, ammoDamageDivisor: 4));
-        // combat.cc:4593 `if (damageDivisor != 0) damage /= damageDivisor;` — a 0 divisor must not divide
+        // combat.cc:4596 `if (damageDivisor != 0) damage /= damageDivisor;` — a 0 divisor must not divide
         // (and must not throw): damage = 20*2*3 = 120, divide SKIPPED, /2 = 60.
         Assert.Equal(60, CombatMath.RollWeaponDamage(rng, attacker, target, 20, 20, ammoDamageMultiplier: 3, ammoDamageDivisor: 0));
         Assert.Equal(2, rng.CallCount);
