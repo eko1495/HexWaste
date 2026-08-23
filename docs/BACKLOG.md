@@ -1065,6 +1065,26 @@ double, and this is actionable. F34's census confirms both hardcoded PIDs — 39
 ammo-capacity weapons in the game. F31 is now a two-PID special case on top of F34's general
 charge-spend: double `attack->ammoQuantity` for those two PIDs per `item.cc:1947-1965`.
 
+**SHIPPED 2026-08-23, combat/quest/encounter goldens byte-identical (nothing wields either PID).**
+`AmmoCost(weaponProto, quantity)` (`CombatEngine.cs`, beside `UsesCharges`) doubles `quantity` for PIDs
+399 and 407 and is unchanged otherwise; wired at all four charge-spend sites — the three single-shot
+sites (dude/ally/enemy, each `... - AmmoCost(weaponProto, 1)`) and the burst site
+(`Math.Max(0, b.AmmoBefore - AmmoCost(b.WeaponProto, b.RoundsFired))`, inert here since neither PID is
+burst-capable). Four hermetic tests in `CombatEngineTests.cs`, mutation-verified pre-change
+(`Expected 18, Actual 19` on both PIDs); the Cattle Prod (160) and a gun case are inertness guards.
+
+**Ported deliberately, not fixed: the odd-charge-count drift.** The reference's refusal tests
+`ammoGetQuantity(weapon) == 0` (`_combat_check_bad_shot`, `combat.cc:5679-5683`) and the deduction
+clamps only at the *top* (`ammoSetQuantity`, `item.cc:1421-1426`) — there is no floor. So for these two
+weapons starting from an **odd** charge count, spending 2 from 1 lands on −1; `−1 != 0`, so the refusal
+never fires and the weapon keeps attacking, drifting −1, −3, −5… What matters is the *current* charge
+count's parity, not the capacity, so this is reachable only from an odd starting `AmmoQuantity` that was
+never reloaded (`weaponReload` fills to capacity or by the cell's quantity, `item.cc:1566-1588`) — most
+plausibly a map-placed instance.
+**No floor was added, and the refusal was not extended to "fewer charges than the cost"; neither exists
+in the reference.** Whether any shipped map places PID 399 or 407 with an odd `AmmoQuantity` was not
+surveyed for this item.
+
 **F32 — SHIPPED 2026-08-21 (`ff30069`), one new golden fixture, zero modified.** *Was Effort S ·
 test-coverage gap, not a defect · found during F27/F29 closeout (2026-08-20).* F27 made all six
 `RunDamageProc` sites honour `_damage_object`'s party **pair** gate (`combat.cc:4849`), but nothing in
@@ -1157,8 +1177,7 @@ correctness is unresolved would propagate the same uncertainty into encounter pl
 
 **F34 — SHIPPED 2026-08-22 (`30a9371`, `b0063e5`, `a2bbc56`, `2b8d7ba`), combat-golden 18/18,
 quest-golden 5/5, encounter-golden 188/188, `dotnet test` 963 passed / 91 skipped (pre-existing
-`FALLOUT2_DIR` gate) — combat-golden 18/18, quest-golden 5/5, encounter-golden 188/188,
-and `dotnet test` 963/91, byte-identical, nothing re-recorded (`census`, `endgame` and `opening` were
+`FALLOUT2_DIR` gate), byte-identical, nothing re-recorded (`census`, `endgame` and `opening` were
 not run — they are combat-free).** *Was Effort S-M ·
 re-record tier if any fixture wields one · found grounding F31 (2026-08-22).* Melee/unarmed weapons
 with ammo capacity consumed no charges; the reference spends one per attack. `attackCompute`'s

@@ -234,6 +234,16 @@ public sealed class CombatEngine
     /// _combat_anim_finished() (:5348-5350), both gated on ammoGetCapacity(weapon) > 0.</summary>
     private static bool UsesCharges(ProtoInfo? weaponProto) => (weaponProto?.Weapon?.AmmoCapacity ?? 0) > 0;
 
+    // proto_types.h:177-178
+    private const int PidSuperCattleProd = 399, PidMegaPowerFist = 407;
+
+    /// <summary>The two hardcoded PIDs whose attacks cost double ammo. The reference applies this
+    /// AFTER both the ranged and non-ranged branches (attackCompute, combat.cc:3905), so it would
+    /// double a burst too — inert here, since neither PID is burst-capable (SWING / PUNCH).
+    /// ported from fallout2-ce src/item.cc _item_w_compute_ammo_cost() (:1947-1965)</summary>
+    private static int AmmoCost(ProtoInfo? weaponProto, int quantity) =>
+        weaponProto?.Pid is PidSuperCattleProd or PidMegaPowerFist ? quantity * 2 : quantity;
+
     // ====================================================================
     //  Attacks
     // ====================================================================
@@ -393,7 +403,7 @@ public sealed class CombatEngine
                 weaponProto, _host.LoadedAmmo(weaponProto, weaponItem!), DiffDmgMod(dude));
 
         if (UsesCharges(weaponProto))
-            weaponItem!.AmmoQuantity = _host.WeaponAmmo(weaponProto!, weaponItem) - 1;
+            weaponItem!.AmmoQuantity = _host.WeaponAmmo(weaponProto!, weaponItem) - AmmoCost(weaponProto, 1);
         _pendingAttack = new PendingAttack(dude, target, chance, hit, damage, critFlags, CanKnockback: !isGun,
             KnockbackPerk: weaponProto?.Weapon is { WeaponPerk: WeaponProtoStats.PerkKnockback }, // P74-M2
             DamageType: weaponProto?.Weapon?.DamageType ?? 0, // P26 gore context
@@ -964,7 +974,7 @@ public sealed class CombatEngine
         string attackerName = _host.ObjectName(b.Attacker);
 
         // Single-batch magazine decrement (the bullets left the barrel regardless of hits).
-        b.WeaponItem.AmmoQuantity = Math.Max(0, b.AmmoBefore - b.RoundsFired);
+        b.WeaponItem.AmmoQuantity = Math.Max(0, b.AmmoBefore - AmmoCost(b.WeaponProto, b.RoundsFired));
 
         if (b.RoundsHit == 0 || b.TotalDamage <= 0)
         {
@@ -3794,7 +3804,7 @@ public sealed class CombatEngine
             if (!hit && TriggerCritFailure(attacker, attackerIsDude: false, weaponProto, weaponItem, delta))
                 _actingAllyAp = 0; // P41: a fumble can cost the ally its turn
             if (UsesCharges(weaponProto) && weaponItem is not null)
-                weaponItem.AmmoQuantity = _host.WeaponAmmo(weaponProto!, weaponItem) - 1;
+                weaponItem.AmmoQuantity = _host.WeaponAmmo(weaponProto!, weaponItem) - AmmoCost(weaponProto, 1);
             _pendingAttack = new PendingAttack(ally, target, chance, hit, damage, critFlags, CanKnockback: !isGun,
                 KnockbackPerk: weaponProto?.Weapon is { WeaponPerk: WeaponProtoStats.PerkKnockback }, // P74-M2
                 DamageType: weaponProto?.Weapon?.DamageType ?? 0,
@@ -3931,7 +3941,7 @@ public sealed class CombatEngine
         if (!hit && TriggerCritFailure(attacker, attackerIsDude: false, weaponProto, weaponItem, delta))
             _actingEnemyAp = 0; // P41: a fumble can cost the enemy the rest of its turn
         if (UsesCharges(weaponProto) && weaponItem is not null)
-            weaponItem.AmmoQuantity = _host.WeaponAmmo(weaponProto!, weaponItem) - 1;
+            weaponItem.AmmoQuantity = _host.WeaponAmmo(weaponProto!, weaponItem) - AmmoCost(weaponProto, 1);
         _pendingAttack = new PendingAttack(enemy, defenderObj, chance, hit, damage, critFlags, CanKnockback: !isGun,
             KnockbackPerk: weaponProto?.Weapon is { WeaponPerk: WeaponProtoStats.PerkKnockback }, // P74-M2
             DamageType: weaponProto?.Weapon?.DamageType ?? 0,
