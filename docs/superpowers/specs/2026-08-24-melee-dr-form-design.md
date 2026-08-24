@@ -41,14 +41,23 @@ Their difference is therefore `ceil(d·r/100) − floor(d·r/100)`, which is:
 So this fix can only ever **increase** melee damage, and only ever **by exactly 1**. Corollaries worth
 stating because they bound the blast radius:
 
-- `r == 0` (an unarmored target) → `d·r = 0` → **no change**. Only attacks against a DR-bearing
-  defender can move.
+- `r == 0` → `d·r = 0` → **no change**. But note carefully: **`r` is the *clamped effective*
+  resistance, not the defender's DR stat.** `ReduceByArmor` folds Finesse's `extraDr` (+30, dude
+  attacker, non-bypass) and F36's `ammoDrModifier` into `r` before the clamp, so a Finesse dude
+  hitting a DR-0 defender has `r = 30` and **can** legitimately move. Applying this corollary to the
+  raw defender stat would flag a correct delta as a stop condition.
 - `d == 0` → no change.
 - The worked example from the entry: `d = 7`, `r = 33` → ours `floor(469/100) = 4`, reference
   `7 − floor(231/100) = 5`.
 
-**This is the prediction the fixture review is checked against.** Any damage value that *decreases*,
-any change larger than 1, or any change on an attack against a zero-DR target means the
+**This is the prediction the fixture review is checked against**, with one further precision: the
+invariant is **per damage computation, not per printed number.** `CritFailDamage`
+(`CombatEngine.cs:1340-1347`) loops `roundCount` times through these same melee helpers — including
+for a gun, since F15 passes a burst's rounds-spent count — so one self-damage figure can legitimately
+move by up to `+N`. Likewise a moved damage value cascades into hp lines, deaths and XP.
+
+So the rule is: **every individual post-armor damage computation moves 0 or +1**, re-derived
+arithmetically. A damage computation that *decreases*, or moves by more than 1, means the
 implementation is wrong — a stop condition, not a re-record.
 
 ## Scope
