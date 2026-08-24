@@ -60,7 +60,10 @@ public class CombatMathTests
             Assert.InRange(CombatMath.RollDamage(rng, attacker, NewState(dt: 2)), 0, 4);
             // 50% resistance halves (integer division)
             Assert.InRange(CombatMath.RollDamage(rng, attacker, NewState(dr: 50)), 0, 3);
-            Assert.Equal(0, CombatMath.RollDamage(rng, attacker, NewState(dr: 100)));
+            // F42: dr:100 clamps to CritterState's 90 cap. For raw 1..6, the subtract-form
+            // (d - floor(d*90/100)) is 1 for every d in that range, not 0 — the previous
+            // (100-dr)-form floor(d*10/100) was 0 for all of them. Exactly +1, per the F42 rule.
+            Assert.Equal(1, CombatMath.RollDamage(rng, attacker, NewState(dr: 100)));
             Assert.Equal(0, CombatMath.RollDamage(rng, attacker, NewState(dt: 6)));
         }
     }
@@ -207,6 +210,78 @@ public class CombatMathTests
         Assert.Equal(
             CombatMath.ToHitChance(50, target, 3),
             CombatMath.ToHitChance(50, target, 3, ammoAcModifier: 0));
+    }
+
+    // F42: the reference reduces post-threshold damage as `damage -= damage * dr / 100`
+    // (combat.cc:4606-4610), not `damage * (100 - dr) / 100`. The forms differ under integer
+    // truncation by exactly 1 whenever damage*dr is not a multiple of 100.
+
+    [Fact]
+    public void MeleeDamageResistanceUsesTheSubtractForm()
+    {
+        // afterThreshold = 7 (min=max=7, critMult 2, /2, dt=0), dr=33.
+        //   wrong (100-dr form):  floor(7*(100-33)/100) = floor(469/100) = 4
+        //   correct (subtract):   7 - floor(7*33/100) = 7 - floor(231/100) = 5
+        var rng = new CountingCombatRng(7);
+        CritterState attacker = NewState(meleeDmg: 0);
+        CritterState target = NewState(dr: 33);
+
+        Assert.Equal(5, CombatMath.RollWeaponDamage(rng, attacker, target, 7, 7));
+    }
+
+    [Fact]
+    public void ADamageTimesResistanceMultipleOf100IsUnchanged()
+    {
+        // afterThreshold = 10 (min=max=10, critMult 2, /2), dr=50: 10*50=500, a multiple of 100 -> both
+        // forms agree: 10 - floor(500/100) = 5; floor(10*(100-50)/100) = 5.
+        var rng = new CountingCombatRng(10);
+        CritterState attacker = NewState(meleeDmg: 0);
+        CritterState target = NewState(dr: 50);
+
+        Assert.Equal(5, CombatMath.RollWeaponDamage(rng, attacker, target, 10, 10));
+    }
+
+    [Fact]
+    public void ZeroResistanceIsUntouched()
+    {
+        // dr=0 -> d*dr=0, always a multiple of 100 -> no change from either form.
+        var rng = new CountingCombatRng(7);
+        CritterState attacker = NewState(meleeDmg: 0);
+        CritterState target = NewState();
+
+        Assert.Equal(7, CombatMath.RollWeaponDamage(rng, attacker, target, 7, 7));
+    }
+
+    [Fact]
+    public void MeleeAndRangedAgreeOnTheSameDamageAndResistance()
+    {
+        // Same d=7, dr=33 through both helpers must now produce the same number — the invariant
+        // the bug violated (ranged already used the reference's subtract-form).
+        var meleeRng = new CountingCombatRng(7);
+        var rangedRng = new CountingCombatRng(7);
+        CritterState attacker = NewState(meleeDmg: 0);
+        CritterState target = NewState(dr: 33);
+
+        int melee = CombatMath.RollWeaponDamage(meleeRng, attacker, target, 7, 7);
+        int ranged = RangedMath.RollDamage(rangedRng, 7, 7, target, 0, 1, 1);
+
+        Assert.Equal(ranged, melee);
+        Assert.Equal(5, melee);
+    }
+
+    [Fact]
+    public void TheAmmoDrModifierStillApplies()
+    {
+        // afterThreshold = 7, base dr=10 (7 - floor(70/100) = 7, no reduction), then a +23 ammo DR
+        // modifier raises clamped dr to 33 (7 - floor(231/100) = 5) — the modifier still lands in the
+        // expected (damage-reducing) direction through the new form.
+        var rngNoMod = new CountingCombatRng(7);
+        var rngWithMod = new CountingCombatRng(7);
+        CritterState attacker = NewState(meleeDmg: 0);
+        CritterState target = NewState(dr: 10);
+
+        Assert.Equal(7, CombatMath.RollWeaponDamage(rngNoMod, attacker, target, 7, 7));
+        Assert.Equal(5, CombatMath.RollWeaponDamage(rngWithMod, attacker, target, 7, 7, ammoDrModifier: 23));
     }
 
     private sealed class CountingCombatRng(int value) : ICombatRng
