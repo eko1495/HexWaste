@@ -189,8 +189,8 @@ public sealed partial class ViewerGame
         for (int i = 0; i < free; i++)
             _spriteBatch.Draw(_panelPixel, new Rectangle(o.X + 316 + (ap + i) * 9, o.Y + 13, 6, 6), new Color(132, 252, 132));
 
-        // --- M3: the green message monitor (the left screen; bar-local 24,26 ~160x55,
-        // display_monitor.cc). Reuse font1.aaf (the engine's interface font) tinted
+        // --- M3: the green message monitor (the left screen; bar-local MonitorLayout.X/Y
+        // ~Width x Height, display_monitor.cc). Reuse font1.aaf (the engine's interface font) tinted
         // green; wrap to the screen width, newest at the bottom, clipped to fit. The
         // bottom-left fallback log only shows when the bar is hidden (DrawTextOverlay).
         if (_fontRenderer is not null && _messageLog.Count > 0)
@@ -423,7 +423,10 @@ public sealed partial class ViewerGame
         Point o = bar.Origin(GraphicsDevice.Viewport.Bounds);
         // P52-M5: the message monitor's two invisible scroll buttons (display_monitor.cc:382/391 —
         // the top half scrolls toward older history, the bottom half toward the newest).
-        var monitor = new Rectangle(o.X + 24, o.Y + 26, 162, 56);
+        // F6 follow-up: source from MonitorLayout (display_monitor.cc:31-34) so the
+        // clickable region matches the drawn rect — DISPLAY_MONITOR_HALF_HEIGHT (:36) is
+        // just HEIGHT/2, which monitor.Height/2 below already reproduces.
+        var monitor = new Rectangle(o.X + MonitorLayout.X, o.Y + MonitorLayout.Y, MonitorLayout.Width, MonitorLayout.Height);
         if (monitor.Contains(mouseX, mouseY))
         {
             _monitorScroll = Math.Max(0, _monitorScroll + (mouseY < monitor.Y + monitor.Height / 2 ? 1 : -1));

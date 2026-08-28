@@ -741,7 +741,12 @@ hand-tuned one. **No golden fixture and no automated test covers HUD pixels, and
 taken as part of this work** — the visual result (knob glyph, wrap boundary, rect placement) is
 unverified beyond the 5 hermetic arithmetic tests on the budget itself. The continuation-line wrap
 budget — the reference re-widens the available width after the first line, this port does not — is a
-real residual and is filed as its own entry below rather than left as a remark here.
+real residual and is filed as its own entry below rather than left as a remark here. The reference's
+`DISPLAY_MONITOR_LINE_LENGTH` (80) per-line character cap (`display_monitor.cc:267-274`) was
+**deliberately not ported**: it is a fixed `char[80]` buffer bound, not a display rule, and at this
+font size the 167px pixel budget is always the binding constraint first, so the cap can never fire on
+text the width test already accepted. That reasoning previously lived only in this branch's plan
+document (now frozen with an as-of note); recorded here so it survives.
 
 **F7 — SHIPPED 2026-08-29 (`4c63caf`).** *Was Effort S.* The automap now has a wall-colour-priority
 guard, implemented in `DrawAutomap` (`ViewerGame.Panels.cs:1040`) via a per-tile
@@ -1592,7 +1597,15 @@ scenery. The reference's in-game automap branch (`automap.cc` `AUTOMAP_IN_GAME`)
 to a wall, the dude, a scanner-visible critter, and one special PID — everything else falls through
 to `_colorTable[0]` (black) and is never drawn. Closing it means narrowing `AutomapColor`'s switch to
 that same set, which will change what appears on the automap for any map with items/misc objects on
-seen tiles.
+seen tiles. **Two more special-case rules the reference's `AUTOMAP_IN_GAME` branch applies before its
+own type test are also missing** (`automap.cc:534-540`): an object carrying `PROTO_ID_0x2000031` gets
+`_colorTable[32328]` unconditionally, ahead of the wall-type check, so a non-wall object with that PID
+would still get the wall-adjacent colour; and scenery carrying `PROTO_ID_0x2000158` is excluded from
+the scenery colour (`objectType == OBJ_TYPE_SCENERY && pid != PROTO_ID_0x2000158`) and falls through
+to `_colorTable[0]` (skipped) instead. `AutomapColor` (`ViewerGame.Panels.cs:980`) is purely
+type-based and has no PID rules at all, so both objects currently render by their raw type rather than
+their special case. F45 as shipped covers the item/critter/misc half of this divergence; these two
+special PIDs are the other half and remain open.
 
 **F46 — Fidget selection is unported, which is what makes F5's sway dormant.** *Effort M · found
 shipping F5 (2026-08-29).* `_gdSetupFidget` (`reference/fallout2-ce/src/game_dialog.cc`) is a
@@ -1613,7 +1626,19 @@ whole string, so the call site (`ViewerGame.Hud.cs:213-214`,
 and it applies to every wrapped line, not just the first. Bounded: the difference is exactly one
 character's width (the knob glyph), so at most one extra wrap point per message, in the worst case.
 Closing it means a `WrapText` overload taking a distinct first-line width, then re-measuring
-continuation lines against the full budget.
+continuation lines against the full budget. **A second, pre-existing divergence in the same
+comparison, not introduced by this branch:** `WrapText` breaks only when `MeasureWidth(candidate) >
+maxWidth` (`AafFontRenderer.cs:70`), i.e. a candidate whose width exactly equals the budget is
+accepted onto the current line; the reference's own accumulation loop requires strictly `<`
+(`display_monitor.cc:262`, `while (fontGetStringWidth(str) < DISPLAY_MONITOR_WIDTH - _max_disp -
+knobWidth)`), so an exact-width string stops the reference's loop but not `WrapText`'s. At most a
+one-pixel effect at one wrap boundary per message. The fork-fix ledger's PR #675 hunk 17 row
+(`docs/research-notes/fork-fix-ledger-2026-08.md`) verdicts this comparison `not-a-gap`, reasoning that
+`WrapText` is "already the fork's post-fix semantics, with no `<` to flip" — true against the fork's
+*fixed* `<=`, but that is not the standard: `e97087b`'s own (unfixed) loop uses strict `<`, and
+`WrapText`'s `>` accepts the exact-width case `e97087b` would reject, so the row's own evidence shows a
+real, if tiny, divergence from the authoritative tree it was checked against. Corrected there rather
+than left overstated; recorded here since F47 already owns the wrap-budget follow-ups.
 
 **F48 — `anim(obj, 1010, frame)` stores an out-of-range frame the reference refuses.** *Effort S ·
 found shipping F9 (2026-08-28), harmless today.* The reference's `objectSetFrame` rejects a frame at
@@ -1622,7 +1647,17 @@ or beyond the FRM's frame count and leaves the object's stored frame unchanged. 
 clamping it at draw time (`ViewerGame.Rendering.cs:275`). Harmless with today's single reader — the
 renderer always clamps before indexing — but `MapObject.Frame` can now hold a value vanilla would
 never have let it hold, a trap for any future second reader (a save-state dump, a debug overlay, a
-different renderer) that reads `Frame` without doing its own clamp.
+different renderer) that reads `Frame` without doing its own clamp. **`Frame` is also not persisted
+across save/load, unlike `Rotation` — the other half of the same `anim` opcode's new mutability.**
+`CaptureMapDelta` snapshots a moved object's tile, elevation and `Rotation` into
+`SaveState.MovedObject` (`ViewerGame.SaveLoad.cs:86-89`; the record itself,
+`src/Hexwaste.Formats/SaveState.cs:187`, has no `Frame` field), and `ApplyDeltaBeforeScripts` restores
+only those three onto the live object (`ViewerGame.SaveLoad.cs:149-150`). Before F9, `Frame` was
+init-only, so its absence from the save format was not a gap — nothing could change it. Now a script
+calling `anim(obj, 1010, N)` to park scenery on a specific frame has that state silently reverted by a
+save/load round-trip or a map revisit, while vanilla's `objectSetFrame` write is durable. The two
+halves of one opcode (F9) now behave asymmetrically: `Rotation` survives a round-trip, `Frame` does
+not.
 
 **Minor findings, raised in review and judged Minor — not fixed, recorded so they are not
 rediscovered:**
