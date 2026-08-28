@@ -13,8 +13,8 @@ them separable work items rather than a single feature: any one can be dropped w
 the others.
 
 They are also the items most likely to be lost. Each has sat in the backlog long enough to acquire
-a stale description — three of the six descriptions were wrong when re-derived for this spec (§2,
-§4, §5). A batch that closes them also corrects the record.
+a stale description — three of the six descriptions were wrong when re-derived for this spec (§2, §3,
+§4). A batch that closes them also corrects the record.
 
 ## Non-goals
 
@@ -22,7 +22,7 @@ a stale description — three of the six descriptions were wrong when re-derived
   is explicitly out of scope even though F43 touches the same file; it has its own entry and needs
   its own measurement pass.
 - **No golden re-records.** Five of the six cannot move a fixture by construction (they touch
-  rendering, the HUD, and a script external no fixture drives). F43 can in principle — see §6 for
+  rendering, the HUD, and a script external no fixture drives). F43 can in principle — see §5 for
   the gate that decides.
 - **No new subsystems.** F7 does not introduce a framebuffer; F9 does not introduce an animation
   registry.
