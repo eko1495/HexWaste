@@ -6175,43 +6175,83 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
             animType = reaction; // the fidget family (1/4/7)
         }
 
-        Texture2D? head = HeadTexture(headId, animType, requestedFrame, out bool finishedOnce);
+        Texture2D? head = HeadTexture(headId, animType, requestedFrame, out bool finishedOnce, out int drawnFrame);
         if (_headTransitionAnim is not null && finishedOnce)
         {
             // The transition ran its frames — resume the (new) family's fidget.
             _headTransitionAnim = null;
             _headFrame = 0;
-            head ??= HeadTexture(headId, reaction, 0, out _);
+            head ??= HeadTexture(headId, reaction, 0, out _, out drawnFrame);
         }
         // A missing good/bad family degrades to the neutral art rather than a blank frame.
-        head ??= animType != 4 ? HeadTexture(headId, 4, requestedFrame, out _) : null;
+        head ??= animType != 4 ? HeadTexture(headId, 4, requestedFrame, out _, out drawnFrame) : null;
         if (head is null)
             return; // head art missing -> graceful text-only dialog
 
-        // The engine's head display area is window-local (126,14), ~388px wide; the heads sit centred in
-        // the 640 frame. Centre this head's own width within that area and draw it at natural size.
-        int x = frameX + 126 + (388 - head.Width) / 2;
-        int y = frameY + 14;
+        // The engine's head display area is window-local (126,14), 388x200.
+        // ported from fallout2-ce src/game_dialog.cc gameDialogRenderTalkingHead() (:4590):
+        //   destOffset = destWidth * (200 - height) + a3 + (388 - width) / 2
+        // so the head is BOTTOM-anchored in the 200px area (F4) and shifted by the
+        // accumulated per-frame X offset (F5, `_totalHotx`, :4585).
+        //
+        // `a3` also carries artGetRotationOffsets(...).x, and the reference's
+        // `if (destOffset + width * v8 > 0)` guard carries its Y. Both are 0 on all 186
+        // shipped art\heads\*.FRM (established when PR #675 hunk 20 was rejected), so
+        // neither term is ported — they would be identity.
+        int hotX = HeadAccumulatedHotX(headId, animType, drawnFrame);
+        int x = frameX + 126 + (388 - head.Width) / 2 + hotX;
+        int y = frameY + 14 + (200 - head.Height);
         _spriteBatch.Draw(head, new Vector2(x, y), Color.White);
     }
 
     /// <summary>A head FRM frame, or null when the art is absent. <paramref name="finishedOnce"/>
     /// reports whether <paramref name="frame"/> ran past the anim's last frame (transition-complete
-    /// detection); looping anims still render frame % count.</summary>
-    private Texture2D? HeadTexture(int headId, int animType, int frame, out bool finishedOnce)
+    /// detection); looping anims still render frame % count. <paramref name="resolvedFrame"/> reports
+    /// the frame index actually resolved (post clamp/modulo), so callers can sum offsets over the
+    /// frame really drawn rather than duplicating this clamp themselves.</summary>
+    private Texture2D? HeadTexture(int headId, int animType, int frame, out bool finishedOnce, out int resolvedFrame)
     {
         finishedOnce = false;
+        resolvedFrame = 0;
         int fid = Formats.Fid.Build(Formats.ObjectType.Head, headId, animType, weaponCode: 1);
         try
         {
             int frames = _frmCache.FrameCount(fid);
             finishedOnce = frames > 0 && frame >= frames;
-            return _frmCache.GetTexture(fid, frames > 0 ? Math.Min(frame, frames - 1) % frames : 0);
+            resolvedFrame = frames > 0 ? Math.Min(frame, frames - 1) % frames : 0;
+            return _frmCache.GetTexture(fid, resolvedFrame);
         }
         catch (Exception ex) when (ex is FileNotFoundException or InvalidDataException or NotSupportedException)
         {
             finishedOnce = true; // a missing transition must not wedge the head
             return null;
+        }
+    }
+
+    /// <summary>`_totalHotx` (game_dialog.cc:4557,4585): reset at frame 0, then one frame's
+    /// artGetFrameOffsets X added per step — so at frame N it equals the sum over frames 0..N.
+    /// Computed as that prefix sum rather than accumulated in a field, because DrawTalkingHead
+    /// runs once per RENDER frame while the reference runs once per ANIMATION frame, and a field
+    /// would over-accumulate at high frame rates.
+    /// DIVERGENCE: lip-sync playback visits frames non-sequentially (LipData.FrameForPhoneme),
+    /// where the reference would sum the frames it actually showed. Inert on shipped data — all
+    /// 5 heads with a nonzero X offset (HRLD2BF3, HRLD2GF2, HRLD2NF3, TNDI2GF2, TNDI2NF3) are
+    /// fidget anims, which do play sequentially.</summary>
+    private int HeadAccumulatedHotX(int headId, int animType, int drawnFrame)
+    {
+        int fid = Formats.Fid.Build(Formats.ObjectType.Head, headId, animType, weaponCode: 1);
+        try
+        {
+            Formats.Frm.FrmFile frm = _frmCache.GetFrm(fid);
+            int total = 0;
+            for (int i = 0; i <= drawnFrame; i++)
+                total += frm.GetFrame(i, 0).OffsetX;
+            return total;
+        }
+        catch (Exception ex) when (ex is FileNotFoundException or InvalidDataException or NotSupportedException
+            or ArgumentOutOfRangeException or IndexOutOfRangeException)
+        {
+            return 0; // a head whose offsets can't be read simply doesn't sway
         }
     }
 
