@@ -61,7 +61,7 @@ KCDunton 17500 + 17699, KCArdin 22885** (KCTorr 24291 matches the existing torr-
 guess). It's a SCRIPTED load_map transition: **KCTorr Node020** does `load_map(14=klagraz,
 param=13)`; the param becomes GVAR_LOAD_MAP_INDEX = **gvar 27**, which klagraz map_enter checks
 (`global(27)==13`) to set up the confrontation. **load_map (0x80E4) is ALREADY IMPLEMENTED**
-(ScriptHost.cs:1726 sets gvar 27 + fires LoadMapRequested → viewer _pendingTransition,
+(ScriptHost.cs:1760 sets gvar 27 + fires LoadMapRequested → viewer _pendingTransition,
 ViewerGame.cs:1233). So the phase is SMALL (S-M, mostly verification): (W1) reach Node020's
 dialogue path; (W2) apply the dialogue-deferred _pendingTransition after --talk-seq (the likely
 gap — talk-seq closes dialog without applying it, cf. the --pump-ms loop Harness.cs:594); (W3)

@@ -19,7 +19,7 @@ The grazing-fields event was assumed to be a *worldmap special encounter*. It is
   the param, and `klagraz` map_enter gates its setup on `global(27) == 13`. So the param IS the
   "you arrived here to guard" signal the map reads.
 - `load_map` (0x80E4) is **already implemented** in Hexwaste: `ScriptHost.LoadMap`
-  (ScriptHost.cs:1726) sets gvar 27 = param and fires `LoadMapRequested`; the viewer
+  (ScriptHost.cs:1760) sets gvar 27 = param and fires `LoadMapRequested`; the viewer
   (ViewerGame.cs:1233) turns that into `_pendingTransition = MapDestination(mapIndex,-1,-1,-1)`,
   applied by the existing transition machinery (ViewerGame.cs:2799, Harness.cs:594).
 

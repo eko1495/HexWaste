@@ -1,5 +1,10 @@
 # Re-record tier, sub-project 4: the `max_dist` flee gate and the engine's maneuver flags (F1) — design spec (2026-08-15)
 
+> **As-of note:** the `ScriptHost.cs:1805`/`:2113`/`:2282` citations below described the tree as
+> of this spec's own writing (2026-08-15) and have since drifted (the `feat/tier-f-small-batch`
+> branch's `ScriptHost.cs` edits shifted everything past line ~1616 by +33); they are deliberately
+> not maintained past that date. For current locations, see `docs/BACKLOG.md`.
+
 Close **F1** from `docs/BACKLOG.md`: `_ai_run_away`'s `max_dist` predicate and the
 `CRITTER_MANEUVER_DISENGAGING` semantics that terminate a flight. This is the first item in this tier
 that is **expected to move a committed fixture**, and the first genuine deliberate re-record since

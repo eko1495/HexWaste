@@ -1,5 +1,9 @@
 # Tier F small-batch: six independent fidelity fixes — design
 
+> **As-of note:** line citations in this document describe the tree as of `df36ac5`, the commit
+> this branch started from, and are deliberately not maintained past it. For current locations,
+> see `docs/BACKLOG.md`.
+
 **Date:** 2026-08-28
 **Scope:** F4, F5, F6, F7, F9, F43 from `docs/BACKLOG.md`.
 **Predecessor:** the F42 closeout (`docs/superpowers/specs/2026-08-28-f42-closeout-design.md`),

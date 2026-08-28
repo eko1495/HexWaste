@@ -1,5 +1,10 @@
 # Sub-project: closing out F42 — the fixture re-record (2026-08-28)
 
+> **As-of note:** line citations in this spec describe the tree as of `df36ac5`, the commit this
+> spec's own work merged at (and the commit `feat/tier-f-small-batch` later started from), and
+> are deliberately not maintained past it — that branch's `CombatMath.cs`/`CombatMathTests.cs`
+> edits shifted lines past ~153/~111 respectively. For current locations, see `docs/BACKLOG.md`.
+
 F42's *fix* shipped in `f0b4fcd`: `CombatMath.ReduceByArmor` now reduces post-threshold damage in
 the reference's subtract-form, with five point tests. What did not ship is Task 2 of
 `docs/superpowers/plans/2026-08-24-melee-dr-form.md` — the **golden-fixture measurement and

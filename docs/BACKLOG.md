@@ -376,7 +376,7 @@ filter that drops disengaging critters (`:2085`), `WantsToStopFighting`'s
 DISENGAGING|FLEEING short-circuit (`:2213-2217`, the real predicate behind `TryEndCombat`), the
 enemy and ally flee-continuation checks (`:2840`, `:3147`), and the script-side setters
 `CritterSetFleeState` (`ScriptHost.cs:1834`), the script-attack ENGAGING mark (`:2146`), and
-`TerminateCombat`'s DISENGAGING mark (`:2313`). The gap was narrower: the **engine's own AI never
+`TerminateCombat`'s DISENGAGING mark (`:2315`). The gap was narrower: the **engine's own AI never
 set the flags on an engine-initiated flight** — the only engine write to `Maneuver` before this fix
 was the `= 0` reset once a critter joined combat (`CombatEngine.cs:2016`) — so a critter that fled
 because it got hurt or ran low on HP could never be marked FLEEING, and could never reach

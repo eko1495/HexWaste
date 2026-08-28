@@ -1,5 +1,9 @@
 # Tier F Small-Batch Implementation Plan
 
+> **As-of note:** line citations in this plan describe the tree as of `df36ac5`, the commit this
+> branch started from, and are deliberately not maintained past it. For current locations, see
+> `docs/BACKLOG.md`.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Close six independent, one-site fidelity gaps (F4, F5, F6, F7, F9, F43) against `reference/fallout2-ce` at `alexbatalov e97087b`.

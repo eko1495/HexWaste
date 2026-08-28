@@ -13,7 +13,7 @@ Manual sweeping was slow for two reasons, both now solved by existing machinery:
    `giq_option` IQ-filtering removes options at runtime, shifting the numbering. So you can't
    replay a static `opt2,opt0` chain blindly.
    **Solution:** the live dialogue already exposes each option's **target procedure index** —
-   `DialogSession.OptionProcedures` (ScriptHost.cs:1309; the comment notes the dynamic census
+   `DialogSession.OptionProcedures` (ScriptHost.cs:1342; the comment notes the dynamic census
    already DFS's these). And `QuestPathScan` builds the option/call graph by **procedure index**
    (`OptionEdge.FromProc/ToProc`), with `FindPath` computing the route. So we match live options
    to the static route **by target proc index**, not ordinal — drift-proof.

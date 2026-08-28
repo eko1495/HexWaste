@@ -1,5 +1,10 @@
 # `max_dist` flee gate and engine maneuver flags (F1) Implementation Plan
 
+> **As-of note:** the `ScriptHost.cs:1805`/`:2113`/`:2282` citations below described the tree as
+> of this plan's own writing (2026-08-15) and have since drifted (the `feat/tier-f-small-batch`
+> branch's `ScriptHost.cs` edits shifted everything past line ~1616 by +33); they are deliberately
+> not maintained past that date. For current locations, see `docs/BACKLOG.md`.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Port `_ai_run_away`'s `max_dist` predicate and its `FLEEING` / `DISENGAGING` maneuver
