@@ -765,6 +765,13 @@ with `DISPLAY_MONITOR_WIDTH` = `167 + gInterfaceBarContentOffset` (`:33`; the of
 
 **The knob** is `'\x95'`, prefixed to the **first** line of each message only; the continuation arm sets `knob = '\0'; knobWidth = 0;` (`:266-272`), so continuation lines get the full budget.
 
+**The 80-character line cap, deliberately omitted.** The same loop copies at most
+`DISPLAY_MONITOR_LINE_LENGTH - 1` (79) characters per line, or `- 2` (78) on the knob line
+(`display_monitor.cc:267-274`) — a fixed-size `char[80]` buffer bound, not a display rule. The
+pixel budget is always the binding constraint at this font size, so the cap can never fire for
+text the width test already accepted. It is **not ported**; record that in the commit message so a
+future reader knows it was considered rather than missed.
+
 **The font question, already resolved — do not re-investigate.** `DISPLAY_MONITOR_FONT` is 101 (`:38`), and `interfaceFontLoad` builds its path as `snprintf(path, sizeof(path), "font%d.aaf", font_index)` over an index of `id - 100` (`font_manager.cc:117-122`). Font 101 is therefore `font1.aaf`, which `ViewerGame` already loads (`ViewerGame.cs:1487`). No new asset, no new loader.
 
 **The geometry decision, made here so the implementer does not have to.** The reference rect is `X=23, Y=24, W=167, H=60` (`display_monitor.cc:31-34`); Hexwaste uses `24, 26, 162x56` (`ViewerGame.Hud.cs:198`). **Adopt all four.** The width and height are load-bearing — they *are* the budget and `_max_disp` — and leaving X and Y at hand-tuned values while adopting the reference's width would produce a rect that matches neither. This is a visible 1–2 px shift of the monitor text and must be called out in the commit message as a deliberate, unverified-by-screenshot change if no screenshot is taken.
@@ -947,6 +954,10 @@ already loaded. No new asset.
 Also adopts the reference rect 23,24 167x60 in place of the hand-tuned
 24,26 162x56 — the width and height are the budget itself, so a partial
 adoption would match neither. A visible 1-2px shift of the monitor text.
+
+The 80-char line cap in the same loop is a char[80] buffer bound, not a
+display rule, and can never bind before the pixel budget at this font
+size. Considered and not ported.
 
 Follow-up, not done here: the reference re-widens the budget for
 continuation lines within a message; WrapText takes one width, so the
