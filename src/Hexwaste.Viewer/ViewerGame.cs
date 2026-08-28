@@ -6175,16 +6175,25 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
             animType = reaction; // the fidget family (1/4/7)
         }
 
+        int drawnAnim = animType;
         Texture2D? head = HeadTexture(headId, animType, requestedFrame, out bool finishedOnce, out int drawnFrame);
         if (_headTransitionAnim is not null && finishedOnce)
         {
             // The transition ran its frames — resume the (new) family's fidget.
             _headTransitionAnim = null;
             _headFrame = 0;
-            head ??= HeadTexture(headId, reaction, 0, out _, out drawnFrame);
+            if (head is null)
+            {
+                drawnAnim = reaction;
+                head = HeadTexture(headId, reaction, 0, out _, out drawnFrame);
+            }
         }
         // A missing good/bad family degrades to the neutral art rather than a blank frame.
-        head ??= animType != 4 ? HeadTexture(headId, 4, requestedFrame, out _, out drawnFrame) : null;
+        if (head is null && animType != 4)
+        {
+            drawnAnim = 4;
+            head = HeadTexture(headId, 4, requestedFrame, out _, out drawnFrame);
+        }
         if (head is null)
             return; // head art missing -> graceful text-only dialog
 
@@ -6198,7 +6207,7 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
         // `if (destOffset + width * v8 > 0)` guard carries its Y. Both are 0 on all 186
         // shipped art\heads\*.FRM (established when PR #675 hunk 20 was rejected), so
         // neither term is ported — they would be identity.
-        int hotX = HeadAccumulatedHotX(headId, animType, drawnFrame);
+        int hotX = HeadAccumulatedHotX(headId, drawnAnim, drawnFrame);
         int x = frameX + 126 + (388 - head.Width) / 2 + hotX;
         int y = frameY + 14 + (200 - head.Height);
         _spriteBatch.Draw(head, new Vector2(x, y), Color.White);
@@ -6206,9 +6215,12 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
 
     /// <summary>A head FRM frame, or null when the art is absent. <paramref name="finishedOnce"/>
     /// reports whether <paramref name="frame"/> ran past the anim's last frame (transition-complete
-    /// detection); looping anims still render frame % count. <paramref name="resolvedFrame"/> reports
-    /// the frame index actually resolved (post clamp/modulo), so callers can sum offsets over the
-    /// frame really drawn rather than duplicating this clamp themselves.</summary>
+    /// detection); looping anims CLAMP on their last frame rather than wrapping — the expression is
+    /// `Math.Min(frame, frames - 1) % frames`, whose left operand can never exceed `frames - 1`, so the
+    /// modulo is dead and a looping anim simply freezes on its final frame once `frame` runs past it.
+    /// <paramref name="resolvedFrame"/> reports the frame index actually resolved (post clamp), so
+    /// callers can sum offsets over the frame really drawn rather than duplicating this clamp
+    /// themselves.</summary>
     private Texture2D? HeadTexture(int headId, int animType, int frame, out bool finishedOnce, out int resolvedFrame)
     {
         finishedOnce = false;
@@ -6236,23 +6248,23 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
     /// DIVERGENCE: lip-sync playback visits frames non-sequentially (LipData.FrameForPhoneme),
     /// where the reference would sum the frames it actually showed. Inert on shipped data — all
     /// 5 heads with a nonzero X offset (HRLD2BF3, HRLD2GF2, HRLD2NF3, TNDI2GF2, TNDI2NF3) are
-    /// fidget anims, which do play sequentially.</summary>
+    /// fidget anims, which do play sequentially.
+    /// GAP: also dormant on shipped data for an unrelated reason — <paramref name="animType"/>'s FID is
+    /// always built with weaponCode (fidget number) 1, because fidget selection
+    /// (game_dialog.cc _gdSetupFidget picking 1/2/3 at random) is not ported. All 5 nonzero-offset
+    /// heads above are fidget 2 or 3, never fidget 1, so this term sums to 0 today regardless of the
+    /// caller's <paramref name="animType"/>/<paramref name="drawnFrame"/>. The arithmetic here is
+    /// correct and future-proof; porting fidget selection is out of scope for this task.</summary>
     private int HeadAccumulatedHotX(int headId, int animType, int drawnFrame)
     {
         int fid = Formats.Fid.Build(Formats.ObjectType.Head, headId, animType, weaponCode: 1);
-        try
-        {
-            Formats.Frm.FrmFile frm = _frmCache.GetFrm(fid);
-            int total = 0;
-            for (int i = 0; i <= drawnFrame; i++)
-                total += frm.GetFrame(i, 0).OffsetX;
-            return total;
-        }
-        catch (Exception ex) when (ex is FileNotFoundException or InvalidDataException or NotSupportedException
-            or ArgumentOutOfRangeException or IndexOutOfRangeException)
-        {
+        if (!_frmCache.TryGetFrm(fid, out Formats.Frm.FrmFile? frm))
             return 0; // a head whose offsets can't be read simply doesn't sway
-        }
+
+        int total = 0;
+        for (int i = 0; i <= drawnFrame; i++)
+            total += frm.GetFrame(i, 0).OffsetX;
+        return total;
     }
 
     private void DrawConversationPanel(string name, string reply, IReadOnlyList<string> options,
