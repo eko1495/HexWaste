@@ -284,6 +284,32 @@ public class CombatMathTests
         Assert.Equal(5, CombatMath.RollWeaponDamage(rngWithMod, attacker, target, 7, 7, ammoDrModifier: 23));
     }
 
+    // F42 closeout: the derivation proved over the whole reachable domain rather than at the five
+    // points above. `r` is driven through ammoDrModifier with dr:0 — CritterState caps the DR STAT
+    // at 90, so the stat cannot express 91..100, while Math.Clamp(dr + ammoDrModifier, 0, 100)
+    // (CombatMath.cs:93) reaches the full range. The multiply-form is written out here as the
+    // reference expression; it is gone from the source and must not be reintroduced there.
+    [Fact]
+    public void TheSubtractFormBeatsTheMultiplyFormByOneIffDamageTimesResistanceIsNotAMultipleOf100()
+    {
+        CritterState attacker = NewState(meleeDmg: 0);
+        CritterState target = NewState(dr: 0);
+
+        for (int d = 0; d <= 999; d++)
+        {
+            // raw = Clamp(d, d, d) + meleeDmg 0 = d; damage = d*2/1/2 = d; dt 0 -> afterThreshold = d.
+            var rng = new CountingCombatRng(d);
+            for (int r = 0; r <= 100; r++)
+            {
+                int actual = CombatMath.RollWeaponDamage(rng, attacker, target, d, d, ammoDrModifier: r);
+                int multiplyForm = d * (100 - r) / 100;
+                int expected = d * r % 100 != 0 ? multiplyForm + 1 : multiplyForm;
+                if (actual != expected)
+                    Assert.Fail($"d={d} r={r}: expected {expected} (multiply-form {multiplyForm}), got {actual}");
+            }
+        }
+    }
+
     private sealed class CountingCombatRng(int value) : ICombatRng
     {
         public int CallCount { get; private set; }
