@@ -105,6 +105,22 @@ public class CombatMathTests
         Assert.Equal(21, CombatMath.RollWeaponDamage(rng, attacker, target, 20, 20, difficultyDamageModifier: 125));
     }
 
+    [Fact]
+    public void RangedAmmoWithAZeroDamageMultiplierDealsNoDamage()
+    {
+        // combat.cc:4586-4587 multiplies by damageMultiplier unconditionally — only the
+        // DIVISOR is guarded (:4594-4598). A clamp to a minimum of 1 would make zero-
+        // multiplier ammo deal full damage on the gun path while the melee path
+        // (CombatMath.cs:44, :59, both unclamped) and the reference both deal none.
+        CritterState target = NewState(dr: 0);
+        var rng = new CountingCombatRng(10);
+
+        int damage = RangedMath.RollDamage(rng, 10, 10, target, ammoDrModifier: 0,
+            ammoDamageMultiplier: 0, ammoDamageDivisor: 1);
+
+        Assert.Equal(0, damage);
+    }
+
     // F36: the melee/unarmed path now reads the loaded ammo's DR modifier, damage multiplier, damage
     // divisor (RollDamage/RollWeaponDamage) and AC modifier (ToHitChance) — the same four ungated reads
     // the gun path already makes (combat.cc:4579-4587 damage, :4429-4434 to-hit). Shipped data can't

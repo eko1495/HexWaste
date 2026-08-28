@@ -153,7 +153,11 @@ public static class RangedMath
         // BEFORE the multiplier (so the ÷2 wrapper nets +2/rank in the final). 0 = no perk → unchanged.
         int raw = rng.Next(minDamage, Math.Max(minDamage, maxDamage) + 1) + rangedDamageBonus;
         // critMultiplier replaces the engine's hardcoded ×2 (default 2 = identity).
-        int damage = raw * critMultiplier * Math.Max(ammoDamageMultiplier, 1);
+        // F43: the reference multiplies by damageMultiplier UNCONDITIONALLY
+        // (combat.cc:4586-4587) and guards only the divisor below (:4594-4598). A
+        // Math.Max(_, 1) here would make zero-multiplier ammo deal full damage on the gun
+        // path while the reference and our own melee path (CombatMath.cs:44, :59) deal none.
+        int damage = raw * critMultiplier * ammoDamageMultiplier;
         damage /= Math.Max(ammoDamageDivisor, 1);
         damage /= 2;
         // P84: the Easy/Hard combat-difficulty damage modifier (75/125 for a non-dude-team attacker),
