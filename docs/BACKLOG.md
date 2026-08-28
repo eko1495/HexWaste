@@ -375,8 +375,8 @@ of their consumers, and the script-side setters already existed and were correct
 filter that drops disengaging critters (`:2085`), `WantsToStopFighting`'s
 DISENGAGING|FLEEING short-circuit (`:2213-2217`, the real predicate behind `TryEndCombat`), the
 enemy and ally flee-continuation checks (`:2840`, `:3147`), and the script-side setters
-`CritterSetFleeState` (`ScriptHost.cs:1805`), the script-attack ENGAGING mark (`:2113`), and
-`TerminateCombat`'s DISENGAGING mark (`:2282`). The gap was narrower: the **engine's own AI never
+`CritterSetFleeState` (`ScriptHost.cs:1834`), the script-attack ENGAGING mark (`:2146`), and
+`TerminateCombat`'s DISENGAGING mark (`:2313`). The gap was narrower: the **engine's own AI never
 set the flags on an engine-initiated flight** — the only engine write to `Maneuver` before this fix
 was the `= 0` reset once a critter joined combat (`CombatEngine.cs:2016`) — so a critter that fled
 because it got hurt or ran low on HP could never be marked FLEEING, and could never reach
@@ -696,34 +696,75 @@ is still wanted, since `_objPMAttemptPlacement` also refuses an occupied tile.
 
 ### Rendering / UI fidelity
 
-**F4 — Talking heads are top-anchored instead of bottom-anchored; 14 of 186 heads sit up to 7 px
-high.** *Effort S.* The engine bottom-anchors the head inside the 388x200 display buffer —
-`destWidth * (200 - height)` — while we pin `y = frameY + 14` (`ViewerGame.cs:6143`). A probe over
-all 186 `art\heads\*.FRM` in `master.dat` found 14 with frames shorter than 200 px (e.g. `BOSSSNF1`
-at 194/193), so those heads sit high and **shift between frames** as the frame height changes. Note
-this is *not* PR #675 hunk 20, whose disputed `rotationOffsetY` term is provably 0 on all 186 heads;
-this is our own anchoring choice.
+**F4 — SHIPPED 2026-08-29 (`6c7bc25`).** *Was Effort S.* Talking heads are now bottom-anchored inside
+the 388x200 display buffer, matching the engine's `destWidth * (200 - height)`:
+`y = frameY + 14 + (200 - head.Height)` (`ViewerGame.cs:6212`, inside `DrawTalkingHead`,
+`ViewerGame.cs:6157`). One expression change. The reference's `a3` term also carries
+`artGetRotationOffsets(...)`'s X and Y out-params, feeding both the horizontal position and a
+`destOffset + width * v8 > 0` guard on the vertical one; **neither was ported**, deliberately — the
+186-head probe (`art\heads\*.FRM` in `master.dat`, established rejecting PR #675 hunk 20) found both
+offsets identically zero on every shipped head, so porting them would be dead code with no observable
+effect. 14 of 186 heads have frames shorter than 200 px (e.g. `BOSSSNF1` at 194/193); those no longer
+shift between frames now that the anchor is bottom-relative.
 
-**F5 — `_totalHotx` is unapplied: Harold's and Tandi's fidgets lack their horizontal sway.**
-*Effort S.* The accumulated per-frame X offset is not applied in `DrawTalkingHead`
-(`ViewerGame.cs:6106`). The same 186-head probe found 5 heads that use it, all X-only: `HRLD2BF3`,
-`HRLD2GF2`, `HRLD2NF3`, `TNDI2GF2`, `TNDI2NF3`, offsets within ±5 px. Small, self-contained, and
-pairs naturally with F4.
+**F5 — SHIPPED 2026-08-29 (`6c7bc25`, fix `87c9c7f`) — implemented correctly, but DORMANT on shipped
+data; this is the most consequential finding of the batch.** *Was Effort S.* The accumulated
+per-frame X offset (`_totalHotx`, `game_dialog.cc:4557,4585`) is now summed and applied —
+`HeadAccumulatedHotX` (`ViewerGame.cs:6258`) computes it as a prefix sum over frames 0..N rather than
+accumulating in a field, because `DrawTalkingHead` runs once per render frame while the reference
+runs once per animation frame, and a field would over-accumulate at high frame rates; the fix `87c9c7f`
+threads the *resolved* frame (post frame-count clamp) through so the sum matches what
+`HeadTexture` (`ViewerGame.cs:6224`) actually drew. **The term is provably 0 on shipped data today for
+an unrelated reason**: both `HeadTexture` and `HeadAccumulatedHotX` build the head FID with
+`weaponCode: 1` (`ViewerGame.cs:6231`, `:6260`) — that nibble is the *fidget number*, and the
+reference chooses it in `_gdSetupFidget` (`reference/fallout2-ce/src/game_dialog.cc`), a count-gated
+weighted roll that folds in `_dialogue_seconds_since_last_input`; Hexwaste never ports fidget
+selection, so the nibble is hardcoded to fidget 1. The 186-head probe's 5 heads carrying a nonzero
+frame X offset — `HRLD2BF3`, `HRLD2GF2`, `HRLD2NF3`, `TNDI2GF2`, `TNDI2NF3` — are all fidgets 2 and 3,
+never fidget 1, so `HeadAccumulatedHotX` sums to 0 for every FID this code path can currently build,
+regardless of the arithmetic being right. **Do not read this as sway being observable in-app** — it
+is not, until fidget selection is ported (see the new entry below). The arithmetic itself is correct
+and future-proof.
 
-**F6 — Monitor messages render no `'\x95'` bullet knob and wrap to the wrong width.** *Effort S.*
-Vanilla prefixes the bullet knob `'\x95'` to the first line of every monitor message and wraps to
-`167 - _max_disp - knobWidth` (`display_monitor.cc:262`); our HUD wraps to a flat `mw = 162` with no
-knob (`ViewerGame.Hud.cs:194-202`). Cosmetic but visible on every message line. (The *wrap-boundary*
-half of PR #675 hunk 17 is already correct here — `AafFontRenderer.WrapText` breaks on
-`> maxWidth`, the post-fix semantics — so only the knob and the budget are outstanding.)
+**F6 — SHIPPED 2026-08-29 (`4777d8e`, fix `9315661`).** *Was Effort S.* Monitor messages now prefix
+the `'\x95'` bullet knob to each message's first line and wrap against the engine's own budget
+(`MonitorLayout`, `src/Hexwaste.Formats/Text/MonitorLayout.cs`; call site `ViewerGame.Hud.cs:198-217`).
+The open font question is resolved: `DISPLAY_MONITOR_FONT` is 101, which routes through
+`interfaceFontLoad`'s `"font%d.aaf"` naming over `id - 100` — i.e. `font1.aaf`, the interface font
+Hexwaste already loads at startup (`ViewerGame.cs:1487-1488`); no new asset is needed. `_max_disp`'s
+unit mismatch — the wrap budget subtracts a LINE COUNT from a PIXEL width
+(`display_monitor.cc:262`) — is faithful and intentional, reproduced verbatim
+(`MonitorLayout.WrapBudget`, `src/Hexwaste.Formats/Text/MonitorLayout.cs:23-30`) rather than "fixed":
+the shipped engine really does this, so the PoC does too. The reference's own rect
+(`DISPLAY_MONITOR_X/Y/WIDTH/HEIGHT`, `display_monitor.cc:31-34`) was adopted in place of the old
+hand-tuned one. **No golden fixture and no automated test covers HUD pixels, and no screenshot was
+taken as part of this work** — the visual result (knob glyph, wrap boundary, rect placement) is
+unverified beyond the 5 hermetic arithmetic tests on the budget itself. The continuation-line wrap
+budget — the reference re-widens the available width after the first line, this port does not — is a
+real residual and is filed as its own entry below rather than left as a remark here.
 
-**F7 — The automap has no wall-colour-priority guard: any later object mark can hide a wall.**
-*Effort S.* `automap.cc:572-580` at `e97087b` refuses to repaint a bright-green **wall** pixel with a
-dark-green object colour — `if (*pixel != COLOR_GREEN || objectColor != COLOR_DARK_GREEN)`.
-`DrawAutomap` (`ViewerGame.Panels.cs:1015`, `Plot(obj.HexTile, col, 2)`) overpaints every plotted
-object unconditionally, in `_flatObjects`-then-`_solidObjects` order, so the priority model is absent
-entirely rather than merely incomplete. (PR #675 hunk 5 extends that guard to the mark's second
-pixel — irrelevant until the guard exists.)
+**F7 — SHIPPED 2026-08-29 (`4c63caf`).** *Was Effort S.* The automap now has a wall-colour-priority
+guard, implemented in `DrawAutomap` (`ViewerGame.Panels.cs:1040`) via a per-tile
+`Dictionary<int, AutomapMark>` and `AutomapPaint.Overpaints` (`src/Hexwaste.Formats/Map/AutomapPaint.cs`):
+before plotting an object's mark, it checks whether the tile already carries a mark that the new one
+is not allowed to overpaint, ported from `automap.cc:572-580`'s
+`if (*pixel != COLOR_GREEN || objectColor != COLOR_DARK_GREEN)`. **The original entry had two errors,
+corrected here rather than merely marked shipped:**
+- The guard is **narrower than "any later object mark can hide a wall"** — it refuses only a
+  **scenery** mark overpainting a **wall** mark (`AutomapMark.Wall`/`AutomapMark.Scenery`/`AutomapMark.Other`
+  and `Overpaints`'s truth table). The dude marker and the motion-scanner critter marks are drawn in
+  their own separate passes, after and independent of this dictionary, and still overpaint anything —
+  matching the reference, where those are separate draw calls outside the wall/object priority rule.
+- The fix belongs to **`DrawAutomap`** (`ViewerGame.Panels.cs:1040`), the full-window automap that
+  implements the reference's `AUTOMAP_IN_GAME` semantics — not the Pip-Boy mini-map's `Plot` call the
+  entry originally cited (`ViewerGame.Panels.cs:1015` was the wrong-path citation and no longer
+  applies to this fix; the mini-map's own `Plot` at that line has no such guard and was never in
+  scope).
+
+The dictionary-of-painted-tiles substitution for the reference's direct pixel-buffer read was
+**proven exact, not approximate**: the tile→pixel projection (`ax = 449 - 2*(tile % 200)`,
+`ay = 2*(tile / 200) + 8`) is injective and the 2px marks tile the grid with no gap and no overlap, so
+tracking "what mark is on this tile" is equivalent to reading the actual pixel the reference inspects.
 
 **F8 — Outlined objects are uncapped; vanilla caps at 100 per frame.** *Effort S · low priority.*
 `_obj_render_pre_roof` / `_obj_render_post_roof` fill a fixed `Object* _outlinedObjects[100]` with an
@@ -735,12 +776,21 @@ rejected the fork's commit for.
 
 ### Script VM
 
-**F9 — The `Anim` external silently drops script anim values 1000 and 1010.** *Effort S.*
-`e97087b`'s `opAnim` pops a plain `int` and handles 1000 (set rotation) and 1010 (set frame)
-explicitly; `ScriptHost.cs:1610` forwards `anim` straight to `AnimRequested` with no 1000/1010
-branch, so scripts using them get no effect at all. Unrelated to the fork commit that surfaced it
-(`d9c24e1cc`, which is the fork repairing its own enum refactor). Cheap to close, and a script
-calling `anim(obj, 1000, rot)` to face a critter is a plausible vanilla content pattern.
+**F9 — SHIPPED 2026-08-28 (`4bdc176`).** *Was Effort S.* `e97087b`'s `opAnim` pops a plain `int` and
+handles 1000 (set rotation) and 1010 (set frame) explicitly (`interpreter_extra.cc opAnim` :3420-3428);
+`ScriptHost.Anim` (`ScriptHost.cs:1638`) now dispatches both through the new
+`ApplyDirectAnim` (`ScriptHost.cs:103`) before falling through to `AnimRequested`. **The change was
+purely additive**: `AnimRequested`'s own callback already gated `anim < 40`
+(`ViewerGame.cs:1235`, `if (anim is >= 0 and < 40 …)`), so a script calling `anim(obj, 1000, rot)` was
+never crashing or misbehaving before this fix — 1000/1010 simply fell through that gate and did
+nothing, a silent no-op rather than a bogus animation request reaching the renderer.
+`MapObject.Frame` (`Map/MapFile.cs:50`) became settable (not init-only) to let `anim(obj, 1010,
+frame)` mutate it directly, mirroring `objectSetFrame`. **One deliberate divergence, recorded in
+`ApplyDirectAnim`'s own comment**: the reference guards only the upper bound
+(`frame < ROTATION_COUNT`, and `objectSetRotation` likewise only rejects `direction >= ROTATION_COUNT`),
+so vanilla will happily store a *negative* rotation; the port adds a lower bound
+(`frame is >= 0 and < 6`) because Hexwaste feeds `Rotation` into `Fid.Build` and into per-rotation
+array indexing, where a negative value throws rather than rendering garbage.
 
 ### Crit-failure self-damage and `damage_p_proc` reach
 
@@ -1472,7 +1522,7 @@ defenders behind two of the probed hits were dumped directly and are genuinely u
 
 Because no fixture value moved, there is no fixture-based traced example — only the **hermetic** one:
 `d = 7`, `r = 33` gives `4` under the old multiply-form and `5` under the reference's subtract-form
-(`CombatMathTests.cs:220`, `MeleeDamageResistanceUsesTheSubtractForm`). Provenance: found by a reviewer
+(`CombatMathTests.cs:236`, `MeleeDamageResistanceUsesTheSubtractForm`). Provenance: found by a reviewer
 reading the melee and ranged paths side by side during F36 (2026-08-23) — not by a failing fixture,
 because both forms were self-consistently wrong in the baseline when the goldens were recorded.
 
@@ -1484,37 +1534,38 @@ one at `r = 0`. `d` ranged 1..16 and was varied, so the melee damage path itself
 by the suites; the resistance term specifically never is. That is why re-running the suites at any
 point since the bug was introduced could not have caught it, and why re-running them now cannot
 confirm the fix beyond "did not regress the `r = 0` case." **This is established for the melee path
-only** — `RangedMath.RollDamage`'s equivalent block (`CombatMath.cs:164-181`) was not instrumented by
+only** — `RangedMath.RollDamage`'s equivalent block (`CombatMath.cs:168-186`) was not instrumented by
 this measurement, so this entry makes no claim about whether the suites exercise nonzero DR on the
 ranged path. Closing it means adding at least one fixture (combat or encounter) where a melee/unarmed
 attacker faces a defender with nonzero effective DR, so the term F42 just fixed has golden coverage
 going forward.
 
-**F43 — The gun path clamps the ammo damage multiplier to a minimum of 1; the reference does not, and
-neither does the new melee path.** *Effort S · inert on shipped data (unverified whether any ammo proto
-would trigger it) · found reviewing F36 (2026-08-23).* `RangedMath.RollDamage` computes
-`raw * critMultiplier * Math.Max(ammoDamageMultiplier, 1)` and divides by
-`Math.Max(ammoDamageDivisor, 1)` (`CombatMath.cs:156-157`). The reference multiplies by
-`damageMultiplier` unconditionally and only guards the divisor, with `if (damageDivisor != 0)`
-(`combat.cc:4594-4598`) — no analogous guard exists on the multiplier side at all
-(`combat.cc:4586-4587`). The two divisor forms are equivalent (`Math.Max(x, 1)` as a no-op divide-by-1
-substitute for "skip the divide" is the same result as skipping it outright when `x` would otherwise be
-0), but the multiplier clamp is not: ammo with a multiplier of 0 would deal 0 damage in the reference
-and on F36's new melee path (which took no such clamp — `CombatEngine.cs`'s melee branch and
-`CombatMath.RollDamage`/`RollWeaponDamage` pass `ammoDamageMultiplier` through unclamped), and full
-(unmultiplied) damage on Hexwaste's gun path. **Whether any shipped ammo proto actually carries a
-multiplier of 0 was not checked for this entry** — F36's spec census covered the five non-gun ammo-
-capacity weapons' loaded ammo (all Small Energy Cell, multiplier 1) but not the full ammo-proto table
-for a 0 multiplier specifically, so "no shipped ammo triggers this" is stated here as unverified, not
-confirmed. If none does, this is inert today; if one does, the gun path silently disagrees with both the
-reference and Hexwaste's own melee path for that ammo. Closing it means dropping the `Math.Max(_, 1)` on
-the multiplier at `CombatMath.cs:156`, matching the divisor's guarded (not clamped) form already used
-there and the unclamped form F36 landed on the melee side.
+**F43 — SHIPPED 2026-08-29 (`bfad700`); combat 18/18, encounter 188/188, quest 39/39, endgame 5/5,
+opening 13/13, census-sweep 16/16 — 279 fixtures, ALL PASS, byte-identical, 0 re-recorded.** *Was
+Effort S · found reviewing F36 (2026-08-23).* `RangedMath.RollDamage` used to compute
+`raw * critMultiplier * Math.Max(ammoDamageMultiplier, 1)`; the `Math.Max(_, 1)` clamp is gone
+(`CombatMath.cs:160`, `int damage = raw * critMultiplier * ammoDamageMultiplier;`), matching the
+reference's unconditional multiply (`combat.cc:4586-4587`) and Hexwaste's own melee path
+(`CombatMath.cs:44`, `:59`), which never clamped it. The divisor guard is unchanged and stays correct
+as a guard, not a clamp (`damage /= Math.Max(ammoDamageDivisor, 1);`, `CombatMath.cs:161`), mirroring
+the reference's `if (damageDivisor != 0)` (`combat.cc:4594-4598`).
+
+**The entry's "unverified whether any shipped ammo proto carries a multiplier of 0" is now measured,
+replacing the earlier unverified claim.** `AmmoProtoCensusTests.NoShippedAmmoProtoHasADamageMultiplierOfZero`
+(`tests/Hexwaste.Formats.Tests/AmmoProtoCensusTests.cs`) walks `items.lst` via `ProtoDatabase` on real
+game data and found **25 ammo protos, zero with a damage multiplier of 0, zero with a divisor of
+0** (`AMMO CENSUS: 25 ammo protos; multiplier==0: 0; divisor==0: 0`). The fix was therefore inert on
+shipped data, as predicted, and this test is the standing guard against a future ammo addition (or a
+`.pro` edit) reintroducing a live multiplier-0 case: it fails loudly (`Assert.True(zeroMultiplier.Count
+== 0, …)`) rather than silently reverting to the old full-damage behaviour. All six golden suites —
+combat, encounter, quest, endgame, opening, census-sweep, 279 fixtures total — passed with zero
+fixtures differing and nothing re-recorded, consistent with the census result: the change can only
+matter for ammo that does not exist on shipped data.
 
 **F44 — `ReduceByArmor` and `RangedMath.RollDamage`'s DT/DR block now perform identical arithmetic in
 identical shape and should be unified.** *Effort S-M · refactor, own risk · found closing F42
 (2026-08-28), deliberately held out of it.* `ReduceByArmor` (`CombatMath.cs:66-100`) and the DT/DR/
-resistance tail of `RangedMath.RollDamage` (`CombatMath.cs:164-181`, whole method `:147-182`) both now
+resistance tail of `RangedMath.RollDamage` (`CombatMath.cs:168-186`, whole method `:147-186`) both now
 read `dt`/`dr` off the target, apply the same bypass-armor 20% cut, the same Finesse `extraDr` addend,
 the same Penetrate 20% DT cut, and the same clamp-then-subtract-form resistance reduction — the
 divergence F42 closed was exactly this last step disagreeing between the two copies. They are two
@@ -1526,6 +1577,71 @@ work with its own risk (a shared helper needs a signature covering both callers'
 modifier step — without silently changing either call site's behavior) and needs its own
 measurement pass the way F42 got one. Filed as its own entry rather than left as a remark inside F42's
 now-shipped writeup, because that is exactly how F13 was lost for a release cycle.
+
+### Tier F small-batch follow-ups (2026-08-29)
+
+Found while shipping F4/F5/F6/F7/F9/F43 (`feat/tier-f-small-batch`) but deliberately not folded into
+those entries' writeups — see F13's history for what happens to a finding left as a remark inside a
+shipped entry instead of filed on its own.
+
+**F45 — `AutomapColor` assigns a colour to object classes the reference's `AUTOMAP_IN_GAME` branch
+never draws.** *Effort S · found reviewing F7 (2026-08-29), pre-existing, not introduced by F7.*
+`AutomapColor` (`ViewerGame.Panels.cs:980`) draws items (`ObjectType.Item`), non-scanner critters
+(`ObjectType.Critter`), and misc objects (`ObjectType.Misc`) unconditionally, alongside walls and
+scenery. The reference's in-game automap branch (`automap.cc` `AUTOMAP_IN_GAME`) assigns a colour only
+to a wall, the dude, a scanner-visible critter, and one special PID — everything else falls through
+to `_colorTable[0]` (black) and is never drawn. Closing it means narrowing `AutomapColor`'s switch to
+that same set, which will change what appears on the automap for any map with items/misc objects on
+seen tiles.
+
+**F46 — Fidget selection is unported, which is what makes F5's sway dormant.** *Effort M · found
+shipping F5 (2026-08-29).* `_gdSetupFidget` (`reference/fallout2-ce/src/game_dialog.cc`) is a
+count-gated weighted roll — folding in `_dialogue_seconds_since_last_input` — that picks which of a
+head's 1/2/3 fidget variants plays. Hexwaste hardcodes the fidget nibble to 1 everywhere a head FID is
+built (`HeadTexture` `ViewerGame.cs:6231`, `HeadAccumulatedHotX` `ViewerGame.cs:6260`, both
+`weaponCode: 1`). Porting the roll so the fidget nibble stops being a constant is what would make F5's
+already-correct sway arithmetic observable: all 5 heads with a nonzero frame X offset
+(`HRLD2BF3`, `HRLD2GF2`, `HRLD2NF3`, `TNDI2GF2`, `TNDI2NF3`) are fidgets 2/3, never fidget 1.
+
+**F47 — The monitor's continuation-line wrap budget is narrower than vanilla for every line after the
+first.** *Effort S · found shipping F6 (2026-08-29).* The reference re-widens the available width
+after a message's first line — the knob's width is subtracted from the budget only for the line that
+actually carries the knob glyph (`display_monitor.cc:266-272`, the `knobWidth = 0` arm on later
+lines). `AafFontRenderer.WrapText` (`src/Hexwaste.Viewer/AafFontRenderer.cs`) takes one width for the
+whole string, so the call site (`ViewerGame.Hud.cs:213-214`,
+`MonitorLayout.WrapBudget(_fontRenderer.LineHeight, knobWidth)`) passes the knob-reduced budget once
+and it applies to every wrapped line, not just the first. Bounded: the difference is exactly one
+character's width (the knob glyph), so at most one extra wrap point per message, in the worst case.
+Closing it means a `WrapText` overload taking a distinct first-line width, then re-measuring
+continuation lines against the full budget.
+
+**F48 — `anim(obj, 1010, frame)` stores an out-of-range frame the reference refuses.** *Effort S ·
+found shipping F9 (2026-08-28), harmless today.* The reference's `objectSetFrame` rejects a frame at
+or beyond the FRM's frame count and leaves the object's stored frame unchanged. `ApplyDirectAnim`
+(`ScriptHost.cs:103`) stores any value into `obj.Frame` unconditionally and relies on the renderer
+clamping it at draw time (`ViewerGame.Rendering.cs:275`). Harmless with today's single reader — the
+renderer always clamps before indexing — but `MapObject.Frame` can now hold a value vanilla would
+never have let it hold, a trap for any future second reader (a save-state dump, a debug overlay, a
+different renderer) that reads `Frame` without doing its own clamp.
+
+**Minor findings, raised in review and judged Minor — not fixed, recorded so they are not
+rediscovered:**
+- `AmmoProtoCensusTests`'s loop bound of 1000 (`AmmoProtoCensusTests.cs`, `for (int index = 1; index
+  <= 1000; index++)`) has no comment tying it to the real `items.lst` size (531 lines, measured via
+  `wc -l`); a future items list past 1000 entries would truncate the census silently instead of
+  failing loudly.
+- `DrawAutomap` (`ViewerGame.Panels.cs:1040`) allocates a new `Dictionary<int, AutomapMark>` every
+  frame while the automap window is open, rather than reusing one across frames.
+- The hermetic test named `TheDudeMarkOverpaintsAWall` actually exercises the `AutomapMark.Other`
+  rule (an unclassified object mark over a wall), not the dude — the real dude marker is drawn in its
+  own separate pass and never goes through `AutomapPaint.Overpaints` at all.
+- `HeadAccumulatedHotX` (`ViewerGame.cs:6258`) re-derives the head FID with its own hardcoded
+  `weaponCode: 1` instead of receiving the FID `HeadTexture` (`ViewerGame.cs:6224`) already resolved
+  for the same frame — when F46 ports fidget selection, changing the nibble in only one of the two
+  call sites would silently desynchronise the sway from the drawn head.
+- `HeadTexture` (`ViewerGame.cs:6224`) still throws and catches an exception per render frame for
+  genuinely missing head art — the per-frame exception cost that was deliberately removed from its
+  sibling helper (`HeadAccumulatedHotX`'s `TryGetFrm` path) was not also removed here.
 
 ### Pointer
 
