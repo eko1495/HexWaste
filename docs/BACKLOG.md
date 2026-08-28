@@ -1445,7 +1445,12 @@ are algebraically equal over the reals and diverge under integer truncation by e
 subtract-form always the larger) **iff `d*r % 100 != 0`**, where `r` is the clamped *effective*
 resistance — `Math.Clamp(dr + ammoDrModifier, 0, 100)` (`CombatMath.cs:93`), so Finesse's +30 and F36's
 ammo DR modifier fold in before the rule applies, not the defender's raw DR stat. `f0b4fcd` is the
-fix plus five hermetic point tests; `57d9fe7` is the exhaustive-domain test
+fix plus five hermetic point tests, and it also **changed one pre-existing assertion** —
+`DamageRespectsThresholdAndResistance`'s `dr: 100` case went `Assert.Equal(0, …)` → `Assert.Equal(1,
+…)`. That is the branch's one concrete non-hermetic behaviour statement: `dr: 100` clamps to
+`CritterState`'s DR cap of 90 (`CritterState.cs:47`), and at `r = 90` every unarmed hit with
+`d ∈ 1..10` now deals 1 rather than 0 — a critter that could not be hurt at all can now be killed.
+`57d9fe7` is the exhaustive-domain test
 (`TheSubtractFormBeatsTheMultiplyFormByOneIffDamageTimesResistanceIsNotAMultipleOf100`,
 `CombatMathTests.cs`) proving the `+1` rule over the entire reachable domain, `d ∈ [0,999] × r ∈
 [0,100]`, and mutation-verified: reverting `CombatMath.cs:100` to the old multiply-form fails it first
@@ -1489,7 +1494,7 @@ going forward.
 neither does the new melee path.** *Effort S · inert on shipped data (unverified whether any ammo proto
 would trigger it) · found reviewing F36 (2026-08-23).* `RangedMath.RollDamage` computes
 `raw * critMultiplier * Math.Max(ammoDamageMultiplier, 1)` and divides by
-`Math.Max(ammoDamageDivisor, 1)` (`CombatMath.cs:149-150`). The reference multiplies by
+`Math.Max(ammoDamageDivisor, 1)` (`CombatMath.cs:156-157`). The reference multiplies by
 `damageMultiplier` unconditionally and only guards the divisor, with `if (damageDivisor != 0)`
 (`combat.cc:4594-4598`) — no analogous guard exists on the multiplier side at all
 (`combat.cc:4586-4587`). The two divisor forms are equivalent (`Math.Max(x, 1)` as a no-op divide-by-1
@@ -1503,13 +1508,13 @@ capacity weapons' loaded ammo (all Small Energy Cell, multiplier 1) but not the 
 for a 0 multiplier specifically, so "no shipped ammo triggers this" is stated here as unverified, not
 confirmed. If none does, this is inert today; if one does, the gun path silently disagrees with both the
 reference and Hexwaste's own melee path for that ammo. Closing it means dropping the `Math.Max(_, 1)` on
-the multiplier at `CombatMath.cs:149`, matching the divisor's guarded (not clamped) form already used
+the multiplier at `CombatMath.cs:156`, matching the divisor's guarded (not clamped) form already used
 there and the unclamped form F36 landed on the melee side.
 
 **F44 — `ReduceByArmor` and `RangedMath.RollDamage`'s DT/DR block now perform identical arithmetic in
 identical shape and should be unified.** *Effort S-M · refactor, own risk · found closing F42
 (2026-08-28), deliberately held out of it.* `ReduceByArmor` (`CombatMath.cs:66-100`) and the DT/DR/
-resistance tail of `RangedMath.RollDamage` (`CombatMath.cs:163-180`, whole method `:146-181`) both now
+resistance tail of `RangedMath.RollDamage` (`CombatMath.cs:164-181`, whole method `:147-182`) both now
 read `dt`/`dr` off the target, apply the same bypass-armor 20% cut, the same Finesse `extraDr` addend,
 the same Penetrate 20% DT cut, and the same clamp-then-subtract-form resistance reduction — the
 divergence F42 closed was exactly this last step disagreeing between the two copies. They are two

@@ -12,7 +12,9 @@ This spec covers only that closeout. The arithmetic, its derivation and its acce
 
 - `HEAD` is `ea956b9` on `feat/melee-dr-form`; `f0b4fcd` carries the fix, `ea956b9` the corrected
   acceptance rule.
-- The working tree holds **one uncommitted line**: a debug probe at `CombatMath.cs:99`,
+- The working tree holds **one uncommitted line**: a debug probe at `CombatMath.cs:99` (that line
+  number describes the probe-instrumented tree; the probe was removed in Task 3 and the subtract-form
+  `return` now sits at `:100`),
   `Console.Error.WriteLine($"F42PROBE d={afterThreshold} r={resistance} moved=…")`. The previous
   session added it and stopped there. It is the seed of this spec's measurement, not stray debris —
   but it must not reach a commit.
@@ -124,6 +126,11 @@ recorded.
 
 ## What carries the proof into the commit
 
+> **Superseded by measurement (2026-08-28).** Zero fixtures moved, so there is no re-record commit
+> and no fixture value to trace. `docs/BACKLOG.md`'s F42 entry carries the real outcome and cites the
+> *hermetic* worked example instead. The clauses below describe the outcome this spec predicted, not
+> the one that occurred; they are kept as the record of that prediction.
+
 The commit body states the count of re-recorded fixtures and gives **at least one traced example**:
 which attack, the defender's effective `r`, the value of `d`, and the arithmetic for both forms
 showing why +1 is right. The probe supplies `d` and `r` directly; this is the reason it reports them
@@ -146,12 +153,16 @@ remark inside a shipped spec — F13 was lost for a release cycle that way.
 ## Out of scope
 
 - The unification itself (filed, not done).
-- **F43** — the gun path's `Math.Max(ammoDamageMultiplier, 1)` clamp (`CombatMath.cs:149`).
+- **F43** — the gun path's `Math.Max(ammoDamageMultiplier, 1)` clamp (`CombatMath.cs:156`).
 - **Fork-fix harvest round 2.** `community/main` advanced 88 commits (`19a2ad84 → c35e1f69`) while
   `alexbatalov/fallout2-ce` stayed at `e97087b`. Six candidates warrant ledger rows — PRs #692,
   #707, #690, #687, #710, #694 — and the ledger currently ends at #675. Its own session.
 
 ## Definition of done
+
+> **Superseded in part.** The two fixture-dependent clauses below — "every re-recorded fixture's
+> delta conforming to the `+1` rule" and "the traced example in the commit body" — were vacated by
+> the measurement: zero fixtures moved. Everything else was met.
 
 The exhaustive test green; the cross-tabulation built and its one-directional rule satisfied for
 every fixture; probe and redirections provably gone from the tree; the affected fixtures re-recorded

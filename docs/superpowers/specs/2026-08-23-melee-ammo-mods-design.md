@@ -51,7 +51,7 @@ which shipped as an inert fidelity fix.
    DR before the existing `Math.Clamp(dr, 0, 100)`, which already matches the reference's clamp.
 2. **To-hit.** The melee to-hit expression (`CombatMath.cs:23`) subtracts `target.ArmorClass + extraAc`;
    it gains the ammo AC modifier with the reference's own clamp shape — `Math.Max(ac + ammoAc, 0)`,
-   the same form the ranged path already uses (`CombatMath.cs:114`).
+   the same form the ranged path already uses (`CombatMath.cs:140`).
 3. The `CombatEngine` melee branch passes `_host.LoadedAmmo(...)`'s values, the way the gun branch
    does immediately above it.
 

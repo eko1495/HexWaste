@@ -106,7 +106,7 @@ by exactly 1, on attacks against DR-bearing defenders. Downstream consequences o
 dying a round earlier, a changed hp line, a knockdown that now triggers) are legitimate and expected;
 a *damage* value that moves by anything other than +1 is not.
 
-Every one of the four suites may move — combat and encounter certainly, since both contain melee
+Every one of the six suites may move — combat and encounter certainly, since both contain melee
 fights; the quest suite only if a scripted fight's outcome shifts.
 
 Measure first, enumerate every failing fixture, confirm each delta fits the rule, and only then
