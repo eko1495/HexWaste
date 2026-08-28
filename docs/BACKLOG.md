@@ -1439,7 +1439,7 @@ repo-wide convention change, not a one-item fix, hence its own entry rather than
 opening-golden 13/13, quest-golden 39/39, census-sweep 16/16, encounter-golden 188/188 — 279 fixtures,
 ALL PASS, byte-identical, 0 re-recorded.** *Was Effort M · re-record tier (damage-affecting) · found
 reviewing F36 (2026-08-23).* `ReduceByArmor`'s post-DT reduction now matches the reference's
-subtract-form, `afterThreshold - afterThreshold * resistance / 100` (`CombatMath.cs:99`, ported from
+subtract-form, `afterThreshold - afterThreshold * resistance / 100` (`CombatMath.cs:100`, ported from
 `combat.cc:4606-4610`), replacing the old `afterThreshold * (100 - resistance) / 100`. The two forms
 are algebraically equal over the reals and diverge under integer truncation by exactly `+1` (the
 subtract-form always the larger) **iff `d*r % 100 != 0`**, where `r` is the clamped *effective*
@@ -1448,7 +1448,7 @@ ammo DR modifier fold in before the rule applies, not the defender's raw DR stat
 fix plus five hermetic point tests; `57d9fe7` is the exhaustive-domain test
 (`TheSubtractFormBeatsTheMultiplyFormByOneIffDamageTimesResistanceIsNotAMultipleOf100`,
 `CombatMathTests.cs`) proving the `+1` rule over the entire reachable domain, `d ∈ [0,999] × r ∈
-[0,100]`, and mutation-verified: reverting `CombatMath.cs:99` to the old multiply-form fails it first
+[0,100]`, and mutation-verified: reverting `CombatMath.cs:100` to the old multiply-form fails it first
 at `d=1 r=1: expected 1 (multiply-form 0), got 0`.
 
 **The closeout spec predicted the fix would move golden fixtures and planned a re-record; measurement

@@ -112,7 +112,7 @@ recorded.
 1. Leg 1's test, confirmed passing — and **mutation-verified**, which it genuinely is: against the
    pre-fix multiply-form `RollWeaponDamage` returns `multiplyForm(d, r)` itself, so the difference is
    uniformly 0 and the `iff d*r % 100 != 0 → difference is 1` half fails on every non-multiple case.
-   Verify it by reverting `CombatMath.cs:99` locally, not by assuming.
+   Verify it by reverting `CombatMath.cs:100` locally, not by assuming.
 2. Extend the probe; add the six `run()` redirections. All uncommitted.
 3. Full `check` across the six suites; build the cross-tabulation.
 4. Evaluate the rule. Any `differs && moved == 0` → **stop and report**, record nothing.
