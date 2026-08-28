@@ -93,9 +93,10 @@ public static class CombatMath
         int resistance = Math.Clamp(dr + ammoDrModifier, 0, 100);
         // F42: subtract-form, matching the reference (ported from fallout2-ce src/combat.cc
         // attackComputeDamage() combat.cc:4606-4610: `damage -= damage * damageResistance / 100`) and
-        // RangedMath.RollDamage's equivalent block below. The previous `afterThreshold * (100 - dr) /
-        // 100` form is algebraically equal over the reals but differs under integer truncation whenever
-        // afterThreshold * resistance isn't a multiple of 100 — always by exactly 1, always undercounting.
+        // RangedMath.RollDamage's equivalent block below. The previous `afterThreshold * (100 -
+        // resistance) / 100` form is algebraically equal over the reals but differs under integer
+        // truncation whenever afterThreshold * resistance isn't a multiple of 100 — always by exactly
+        // 1, always undercounting.
         return afterThreshold - afterThreshold * resistance / 100;
     }
 }

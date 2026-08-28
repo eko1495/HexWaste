@@ -74,7 +74,11 @@ fixture. That is what makes it safe to leave running during a full `check` pass.
 ### Per-fixture attribution
 
 The probe's value depends on knowing *which fixture* each line came from, and the scripts capture
-only stdout per scenario (`out=$(timeout 90 env …)`), letting stderr fall through undivided.
+only stdout per scenario (`out=$(timeout 90 env …)`); stderr is discarded outright today — every
+`run()` already redirects it with `2>/dev/null` (`combat-golden.sh:62`, `encounter-golden.sh:637`,
+`quest-golden.sh:352`, `endgame-golden.sh:33`, `opening-golden.sh:56` and `:61`,
+`census-sweep.sh:43`) — which is exactly why the probe's stderr output needs its own redirection
+edit to survive.
 
 Rather than reimplement six scripts' invocation logic in a throwaway runner — each has its own
 argument shape, and a reimplementation that drifts would silently measure something other than what
@@ -108,7 +112,7 @@ recorded.
 1. Leg 1's test, confirmed passing — and **mutation-verified**, which it genuinely is: against the
    pre-fix multiply-form `RollWeaponDamage` returns `multiplyForm(d, r)` itself, so the difference is
    uniformly 0 and the `iff d*r % 100 != 0 → difference is 1` half fails on every non-multiple case.
-   Verify it by reverting `CombatMath.cs:100` locally, not by assuming.
+   Verify it by reverting `CombatMath.cs:99` locally, not by assuming.
 2. Extend the probe; add the six `run()` redirections. All uncommitted.
 3. Full `check` across the six suites; build the cross-tabulation.
 4. Evaluate the rule. Any `differs && moved == 0` → **stop and report**, record nothing.

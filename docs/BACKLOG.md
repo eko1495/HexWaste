@@ -1448,7 +1448,7 @@ ammo DR modifier fold in before the rule applies, not the defender's raw DR stat
 fix plus five hermetic point tests; `57d9fe7` is the exhaustive-domain test
 (`TheSubtractFormBeatsTheMultiplyFormByOneIffDamageTimesResistanceIsNotAMultipleOf100`,
 `CombatMathTests.cs`) proving the `+1` rule over the entire reachable domain, `d ∈ [0,999] × r ∈
-[0,100]`, and mutation-verified: reverting `CombatMath.cs:100` to the old multiply-form fails it first
+[0,100]`, and mutation-verified: reverting `CombatMath.cs:99` to the old multiply-form fails it first
 at `d=1 r=1: expected 1 (multiply-form 0), got 0`.
 
 **The closeout spec predicted the fix would move golden fixtures and planned a re-record; measurement
@@ -1456,7 +1456,8 @@ refuted that prediction.** A throwaway stderr probe on `ReduceByArmor`'s changed
 all six golden suites (combat, endgame, opening, quest, census, encounter — 279 fixtures total),
 recorded **123** melee post-armor damage computations. **Zero moved. Every one of the 123 had
 `r = 0`** — a single-bucket distribution, even though `d` itself varied (1..16), so the melee damage
-path is exercised throughout the fixture set — its damage-resistance term specifically is not. **The
+path is exercised by the combat and encounter suites (the other four — quest, endgame, opening and
+census — never reach it) — its damage-resistance term specifically is not. **The
 count of fixtures re-recorded is 0**; there is no re-record commit, and `differs.txt` from the
 measurement pass was empty. The derivation above is unaffected by this — Task 1 proved it exhaustively
 and independent of any fixture — the fixture set simply never satisfies the rule's `r ≠ 0`

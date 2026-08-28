@@ -11,7 +11,7 @@
 ## Global Constraints
 
 - Spec: `docs/superpowers/specs/2026-08-24-melee-dr-form-design.md`. Read the derivation — it is what the fixture review is checked against.
-- **The fix can only ever increase melee damage, and only ever by exactly 1**, on attacks against a DR-bearing defender. A value that decreases, changes by more than 1, or changes against a zero-DR target means the implementation is wrong.
+- **The fix can only ever increase melee damage, and only ever by exactly 1**, on attacks against a defender whose clamped effective resistance (`Math.Clamp(dr + ammoDrModifier, 0, 100)`) is non-zero. A value that decreases, changes by more than 1, or changes when that clamped effective resistance is zero means the implementation is wrong — but a defender with a zero DR *stat* can still move if Finesse or a non-neutral ammo DR modifier raises the effective resistance above zero. (Corrected after `ea956b9`, which fixed the same overstatement in the spec; the two documents previously disagreed.)
 - **Verify every line number and reference function name as things stand now.** This project shipped five wrong citations in the last week, every one from trusting a remembered number.
 - Ported lines carry `// ported from fallout2-ce src/<file> <fn>()`.
 - Reference is `reference/fallout2-ce` at `alexbatalov e97087b`.
@@ -99,7 +99,7 @@ Wait for the controller's golden-suite result and re-record before writing the f
 
 - [ ] **Step 1: F42 → shipped**, in the format its neighbours use, with the commit SHAs, the measured suite results, the count of re-recorded fixtures, and at least one traced example (which attack, which damage value, the defender's DR, and the arithmetic showing +1).
 
-- [ ] **Step 2: Record the derivation** — the two forms differ by exactly `ceil(d·r/100) − floor(d·r/100)`, i.e. +1 iff `d·r` is not a multiple of 100, and 0 otherwise; the fix can only increase damage, never decrease it; zero-DR attacks cannot move.
+- [ ] **Step 2: Record the derivation** — the two forms differ by exactly `ceil(d·r/100) − floor(d·r/100)`, i.e. +1 iff `d·r` is not a multiple of 100, and 0 otherwise; the fix can only increase damage, never decrease it; attacks where the clamped effective resistance is zero cannot move — but that is `r == 0`, not a zero DR *stat*, since Finesse and a non-neutral ammo DR modifier fold into `r` before the clamp and can make it non-zero against a zero-DR defender. (Corrected after `ea956b9`.)
 
 - [ ] **Step 3: Record the provenance.** This was found by a reviewer reading the melee and ranged paths side by side during F36 — not by any fixture failing, because both forms were self-consistently wrong in the baseline. That is the useful lesson: a golden suite cannot catch an error that was present when it was recorded.
 
