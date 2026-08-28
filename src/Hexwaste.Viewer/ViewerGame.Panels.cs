@@ -1063,6 +1063,10 @@ public sealed partial class ViewerGame
             _spriteBatch.Draw(_panelPixel, new Rectangle(o.X + ax, o.Y + ay, size, size), c);
         }
 
+        // F7: the engine refuses to repaint a wall pixel with the scenery colour
+        // (automap.cc:573). Our projection is a bijection from tile to pixel
+        // (ax = 449 − 2·col, step 2), so tracking the mark per tile IS reading the pixel.
+        var painted = new Dictionary<int, AutomapMark>();
         foreach (MapObject obj in _flatObjects[_elevation].Concat(_solidObjects[_elevation]))
         {
             if (!_seenTiles.Contains(obj.HexTile) || AutomapColor(obj) is not { } col) // OBJECT_SEEN fog (P71)
@@ -1070,6 +1074,16 @@ public sealed partial class ViewerGame
             // P82: LOW detail shows only walls (the engine's AUTOMAP_WITH_HIGH_DETAILS gate); HIGH = all.
             if (!_automapHighDetail && Fid.Type(obj.Fid) is not ObjectType.Wall)
                 continue;
+            AutomapMark mark = Fid.Type(obj.Fid) switch
+            {
+                ObjectType.Wall => AutomapMark.Wall,
+                ObjectType.Scenery => AutomapMark.Scenery,
+                _ => AutomapMark.Other,
+            };
+            if (painted.TryGetValue(obj.HexTile, out AutomapMark existing)
+                && !AutomapPaint.Overpaints(existing, mark))
+                continue;
+            painted[obj.HexTile] = mark;
             Plot(obj.HexTile, col, 2);
         }
         // P116 (review H): the Motion Sensor scanner view — every LIVING critter plotted red
