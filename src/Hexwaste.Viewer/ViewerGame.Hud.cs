@@ -197,19 +197,24 @@ public sealed partial class ViewerGame
         {
             // F6: the engine's own rect and wrap budget (display_monitor.cc:31-34, :262),
             // and the '\x95' bullet knob on each message's first line (:244, :266-272).
-            int mx = Formats.Text.MonitorLayout.X, my = Formats.Text.MonitorLayout.Y;
-            int mh = Formats.Text.MonitorLayout.Height;
-            int knobWidth = _fontRenderer.MeasureWidth(Formats.Text.MonitorLayout.Knob.ToString());
-            int maxLines = Math.Max(1, Formats.Text.MonitorLayout.MaxDisplayLines(_fontRenderer.LineHeight));
+            int mx = MonitorLayout.X, my = MonitorLayout.Y;
+            int knobWidth = _fontRenderer.MeasureWidth(MonitorLayout.Knob.ToString());
+            int maxLines = Math.Max(1, MonitorLayout.MaxDisplayLines(_fontRenderer.LineHeight));
             var lines = new List<string>();
             foreach (string msg in _messageLog)
             {
-                // The knob is prefixed to the message text, so it occupies real width on the
-                // first line; the budget for that line is reduced by exactly that width, and
-                // continuation lines get the full budget (:270 zeroes knobWidth).
+                // Wrap the PLAIN message against the knob-reduced budget (:262), then
+                // prepend the knob as a display prefix to the first resulting line only
+                // (:244, :266-272). The knob is deliberately NOT part of the measured
+                // string — folding it into the text here would count its width twice
+                // (once via the reduced budget, once via WrapText's own MeasureWidth),
+                // which is the bug this replaced.
                 List<string> wrapped = _fontRenderer.WrapText(
-                    Formats.Text.MonitorLayout.Knob + msg,
-                    Formats.Text.MonitorLayout.WrapBudget(_fontRenderer.LineHeight, knobWidth));
+                    msg,
+                    MonitorLayout.WrapBudget(_fontRenderer.LineHeight, knobWidth));
+                if (wrapped.Count == 0)
+                    wrapped.Add(string.Empty);
+                wrapped[0] = MonitorLayout.Knob + wrapped[0];
                 lines.AddRange(wrapped);
             }
             // P52-M5: show a scroll-back window (clicking the monitor halves moves _monitorScroll).
