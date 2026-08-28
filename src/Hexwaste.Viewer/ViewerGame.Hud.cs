@@ -195,11 +195,23 @@ public sealed partial class ViewerGame
         // bottom-left fallback log only shows when the bar is hidden (DrawTextOverlay).
         if (_fontRenderer is not null && _messageLog.Count > 0)
         {
-            const int mx = 24, my = 26, mw = 162, mh = 56;
-            int maxLines = Math.Max(1, mh / _fontRenderer.LineHeight);
+            // F6: the engine's own rect and wrap budget (display_monitor.cc:31-34, :262),
+            // and the '\x95' bullet knob on each message's first line (:244, :266-272).
+            int mx = Formats.Text.MonitorLayout.X, my = Formats.Text.MonitorLayout.Y;
+            int mh = Formats.Text.MonitorLayout.Height;
+            int knobWidth = _fontRenderer.MeasureWidth(Formats.Text.MonitorLayout.Knob.ToString());
+            int maxLines = Math.Max(1, Formats.Text.MonitorLayout.MaxDisplayLines(_fontRenderer.LineHeight));
             var lines = new List<string>();
             foreach (string msg in _messageLog)
-                lines.AddRange(_fontRenderer.WrapText(msg, mw));
+            {
+                // The knob is prefixed to the message text, so it occupies real width on the
+                // first line; the budget for that line is reduced by exactly that width, and
+                // continuation lines get the full budget (:270 zeroes knobWidth).
+                List<string> wrapped = _fontRenderer.WrapText(
+                    Formats.Text.MonitorLayout.Knob + msg,
+                    Formats.Text.MonitorLayout.WrapBudget(_fontRenderer.LineHeight, knobWidth));
+                lines.AddRange(wrapped);
+            }
             // P52-M5: show a scroll-back window (clicking the monitor halves moves _monitorScroll).
             (int start, int end, _monitorScroll) = Formats.MonitorScrollback.Window(lines.Count, maxLines, _monitorScroll);
             int ty = o.Y + my;
