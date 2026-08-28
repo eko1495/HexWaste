@@ -1435,25 +1435,54 @@ example, hydrating proto-default ammo counts once at load time instead of lazily
 never needs to mean anything special afterward. That touches every site listed above and is a
 repo-wide convention change, not a one-item fix, hence its own entry rather than folding into F31.
 
-**F42 — The melee damage-resistance reduction is computed in a different algebraic form from the
-reference, and from Hexwaste's own gun path — pre-existing, and F36 makes it newly load-bearing.**
-*Effort M · re-record tier (damage-affecting) · found reviewing F36 (2026-08-23).*
-`CombatMath.RollDamage`/`RollWeaponDamage`'s shared `ReduceByArmor` computes the post-DT damage as
-`afterThreshold * (100 - dr) / 100` (`CombatMath.cs:93`). The reference computes it as
-`damage -= damage * damageResistance / 100` (`combat.cc:4608-4610`), and Hexwaste's own ranged path
-already matches that form — `damage - damage * resistance / 100` (`CombatMath.cs:174`, in `RangedMath.
-RollDamage`). These are algebraically equal over the reals but **not equal under integer truncation**:
-7 damage against 33% DR gives 5 by the reference's form and 4 by the melee path's form (`7 - 7*33/100 =
-7 - 2 = 5` vs `7*(100-33)/100 = 7*67/100 = 4`). This is a pre-existing divergence — it predates F36 and
-this batch touched neither `ReduceByArmor`'s DR term nor its counterpart in `RangedMath`, only added the
-ammo DR modifier as an addend into the existing (wrong-form) clamp at `CombatMath.cs:93` — and it
-affects every melee and unarmed attack in the game, not just the five F34/F36 ammo-capacity weapons.
-Closing it means rewriting `ReduceByArmor`'s final line to the reference's subtract-form, which will
-generally shift melee damage by ±1 across the fixture set: **re-record tier, needs its own measurement**
-separate from F36's (byte-identical, provably inert) result. **F36 makes this newly load-bearing**: a
-future non-neutral ammo DR modifier on a melee weapon would now be wrong for two independent reasons —
-the wrong reduction form on top of whatever else — rather than the DR-modifier wiring being clean once
-this lands underneath it.
+**F42 — SHIPPED 2026-08-28 (`f0b4fcd`, `57d9fe7`); combat-golden 18/18, endgame-golden 5/5,
+opening-golden 13/13, quest-golden 39/39, census-sweep 16/16, encounter-golden 188/188 — 279 fixtures,
+ALL PASS, byte-identical, 0 re-recorded.** *Was Effort M · re-record tier (damage-affecting) · found
+reviewing F36 (2026-08-23).* `ReduceByArmor`'s post-DT reduction now matches the reference's
+subtract-form, `afterThreshold - afterThreshold * resistance / 100` (`CombatMath.cs:99`, ported from
+`combat.cc:4606-4610`), replacing the old `afterThreshold * (100 - resistance) / 100`. The two forms
+are algebraically equal over the reals and diverge under integer truncation by exactly `+1` (the
+subtract-form always the larger) **iff `d*r % 100 != 0`**, where `r` is the clamped *effective*
+resistance — `Math.Clamp(dr + ammoDrModifier, 0, 100)` (`CombatMath.cs:93`), so Finesse's +30 and F36's
+ammo DR modifier fold in before the rule applies, not the defender's raw DR stat. `f0b4fcd` is the
+fix plus five hermetic point tests; `57d9fe7` is the exhaustive-domain test
+(`TheSubtractFormBeatsTheMultiplyFormByOneIffDamageTimesResistanceIsNotAMultipleOf100`,
+`CombatMathTests.cs`) proving the `+1` rule over the entire reachable domain, `d ∈ [0,999] × r ∈
+[0,100]`, and mutation-verified: reverting `CombatMath.cs:100` to the old multiply-form fails it first
+at `d=1 r=1: expected 1 (multiply-form 0), got 0`.
+
+**The closeout spec predicted the fix would move golden fixtures and planned a re-record; measurement
+refuted that prediction.** A throwaway stderr probe on `ReduceByArmor`'s changed expression, run across
+all six golden suites (combat, endgame, opening, quest, census, encounter — 279 fixtures total),
+recorded **123** melee post-armor damage computations. **Zero moved. Every one of the 123 had
+`r = 0`** — a single-bucket distribution, even though `d` itself varied (1..16), so the melee damage
+path is exercised throughout the fixture set — its damage-resistance term specifically is not. **The
+count of fixtures re-recorded is 0**; there is no re-record commit, and `differs.txt` from the
+measurement pass was empty. The derivation above is unaffected by this — Task 1 proved it exhaustively
+and independent of any fixture — the fixture set simply never satisfies the rule's `r ≠ 0`
+precondition. Confirmed as a real property of the fixtures, not an instrumentation artifact: the
+defenders behind two of the probed hits were dumped directly and are genuinely unarmored (arcaves hex
+20529 Radscorpion `dt=0 dr=0`; denbus2 hex 11670 Healthy Slave `dt=0 dr=0`).
+
+Because no fixture value moved, there is no fixture-based traced example — only the **hermetic** one:
+`d = 7`, `r = 33` gives `4` under the old multiply-form and `5` under the reference's subtract-form
+(`CombatMathTests.cs:220`, `MeleeDamageResistanceUsesTheSubtractForm`). Provenance: found by a reviewer
+reading the melee and ranged paths side by side during F36 (2026-08-23) — not by a failing fixture,
+because both forms were self-consistently wrong in the baseline when the goldens were recorded.
+
+**F42a — The golden suites exercise the melee damage-resistance term zero times, which is the
+mechanical reason F42's bug survived into the baseline.** *Effort — measurement, not yet scoped ·
+found closing F42 (2026-08-28).* F42's measurement pass instrumented `ReduceByArmor` and counted 123
+melee post-armor damage computations across all 279 fixtures in the six golden suites — every single
+one at `r = 0`. `d` ranged 1..16 and was varied, so the melee damage path itself is genuinely driven
+by the suites; the resistance term specifically never is. That is why re-running the suites at any
+point since the bug was introduced could not have caught it, and why re-running them now cannot
+confirm the fix beyond "did not regress the `r = 0` case." **This is established for the melee path
+only** — `RangedMath.RollDamage`'s equivalent block (`CombatMath.cs:164-181`) was not instrumented by
+this measurement, so this entry makes no claim about whether the suites exercise nonzero DR on the
+ranged path. Closing it means adding at least one fixture (combat or encounter) where a melee/unarmed
+attacker faces a defender with nonzero effective DR, so the term F42 just fixed has golden coverage
+going forward.
 
 **F43 — The gun path clamps the ammo damage multiplier to a minimum of 1; the reference does not, and
 neither does the new melee path.** *Effort S · inert on shipped data (unverified whether any ammo proto
@@ -1475,6 +1504,22 @@ confirmed. If none does, this is inert today; if one does, the gun path silently
 reference and Hexwaste's own melee path for that ammo. Closing it means dropping the `Math.Max(_, 1)` on
 the multiplier at `CombatMath.cs:149`, matching the divisor's guarded (not clamped) form already used
 there and the unclamped form F36 landed on the melee side.
+
+**F44 — `ReduceByArmor` and `RangedMath.RollDamage`'s DT/DR block now perform identical arithmetic in
+identical shape and should be unified.** *Effort S-M · refactor, own risk · found closing F42
+(2026-08-28), deliberately held out of it.* `ReduceByArmor` (`CombatMath.cs:66-100`) and the DT/DR/
+resistance tail of `RangedMath.RollDamage` (`CombatMath.cs:163-180`, whole method `:146-181`) both now
+read `dt`/`dr` off the target, apply the same bypass-armor 20% cut, the same Finesse `extraDr` addend,
+the same Penetrate 20% DT cut, and the same clamp-then-subtract-form resistance reduction — the
+divergence F42 closed was exactly this last step disagreeing between the two copies. They are two
+independent implementations of the same sequence rather than one shared helper. F42 deliberately did
+not merge them: the fix touched only `ReduceByArmor`'s final line, so any fixture delta stayed
+attributable to that one expression rather than to a refactor's own reshuffling. Merging them is real
+work with its own risk (a shared helper needs a signature covering both callers' existing parameters —
+`bypassArmor`, `extraDr`, `penetrate`, `ammoDrModifier`, plus `RollDamage`'s own pre-DT difficulty-
+modifier step — without silently changing either call site's behavior) and needs its own
+measurement pass the way F42 got one. Filed as its own entry rather than left as a remark inside F42's
+now-shipped writeup, because that is exactly how F13 was lost for a release cycle.
 
 ### Pointer
 
