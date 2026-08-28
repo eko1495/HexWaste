@@ -97,6 +97,34 @@ public sealed class ScriptHost(GameFileSystem vfs, ScriptList scripts, Hexwaste.
         return c.IsDead ? Dead : Prone; // inactive: dead → DEAD, knocked-out/lose-turn alive → PRONE
     }
 
+    /// <summary>F9: opAnim's two direct-manipulation anim values, which bypass the animation
+    /// system entirely. Returns true when <paramref name="anim"/> was handled here.
+    /// ported from fallout2-ce src/interpreter_extra.cc opAnim() (:3420-3428)</summary>
+    public static bool ApplyDirectAnim(MapObject obj, int anim, int frame)
+    {
+        if (anim == 1000)
+        {
+            // The reference guards only `frame < ROTATION_COUNT` (6), and objectSetRotation
+            // likewise rejects only `direction >= ROTATION_COUNT` — so vanilla will store a
+            // NEGATIVE rotation. DIVERGENCE, deliberate: Hexwaste feeds Rotation into
+            // Fid.Build and into per-rotation array indexing, where a negative throws rather
+            // than rendering garbage, so the lower bound is enforced here.
+            if (frame is >= 0 and < 6)
+                obj.Rotation = frame;
+            return true;
+        }
+
+        if (anim == 1010)
+        {
+            // Unguarded in the reference; the renderer clamps to the FRM's frame count
+            // (ViewerGame.Rendering.cs:275), which is where objectSetFrame's own bound lives.
+            obj.Frame = frame;
+            return true;
+        }
+
+        return false;
+    }
+
     /// <summary>Resolves object names for the VM (set by the host application).</summary>
     public Func<MapObject, string>? NameResolver { get; set; }
 
@@ -1609,8 +1637,13 @@ public sealed class ScriptHost(GameFileSystem vfs, ScriptList scripts, Hexwaste.
 
         public void Anim(int objectHandle, int anim, int frame)
         {
-            if (_host.ObjectOf(objectHandle) is { } obj)
-                _host.AnimRequested?.Invoke(obj, anim);
+            if (_host.ObjectOf(objectHandle) is not { } obj)
+                return;
+            // F9: 1000/1010 manipulate the object directly and never reach the animation
+            // system (interpreter_extra.cc opAnim :3420-3428).
+            if (ApplyDirectAnim(obj, anim, frame))
+                return;
+            _host.AnimRequested?.Invoke(obj, anim);
         }
 
         // P56-M1: critter_inven_obj — the handle of the worn/in-hand item or the inventory count.

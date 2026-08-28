@@ -44,7 +44,10 @@ public sealed class MapObject
     public required int X { get; init; }
     public required int Y { get; init; }
 
-    public required int Frame { get; init; }
+    /// <summary>Settable (not init-only): the engine mutates an object's frame in place for
+    /// the script-side `anim(obj, 1010, frame)` external (interpreter_extra.cc opAnim →
+    /// objectSetFrame). The renderer reads it at ViewerGame.Rendering.cs:275.</summary>
+    public required int Frame { get; set; }
     public required int Rotation { get; set; }
     public required int Fid { get; set; }
     public required int Flags { get; set; }
