@@ -91,8 +91,15 @@ public interface ICombatHost
     bool TryReload(MapObject holder, ProtoInfo weaponProto, MapObject item); // :2363
 
     // --- Spatial queries (the engine decides; the viewer owns the data) --
-    /// <summary>_obj_shoot_blocking_at subset for a line-of-fire trace. :2350</summary>
-    MapObject? ShootBlockerAt(int tile, MapObject shooter, MapObject target);
+    /// <summary>The COARSE query behind a line-of-fire trace: ported from
+    /// _obj_shoot_blocking_at (object.cc:2440), deliberately under-filtered. :2350 Every one of the
+    /// 11 current callers runs the returned object through a <see cref="ShotFilter"/> to re-add the
+    /// terms this method itself does not apply; a new call site that skips that wrapping is a silent
+    /// behaviour change, not a shortcut. <paramref name="excludeObj"/> is the reference's excludeObj —
+    /// the first argument of _make_straight_path_func (animation.cc:1951), which each caller supplies:
+    /// the attacker at combat.cc:3584/:3641 and combat_ai.cc:2585, the DEFENDER at combat.cc:3956,
+    /// sourceObj at combat.cc:5906. It is a caller's choice, not a property of this predicate.</summary>
+    MapObject? ShootBlockerAt(int tile, MapObject? excludeObj);
     /// <summary>True if a tile blocks movement (Pathfinder predicate). _blockedTiles.Contains.</summary>
     bool IsBlocked(int tile);
 

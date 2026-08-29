@@ -1014,6 +1014,72 @@ public sealed partial class ViewerGame
                         + $" partyToPartyRan={(ppPartyToParty ? 1 : 0)} enemyToPartyRan={(ppEnemyToParty ? 1 : 0)}");
                     break;
                 }
+                case StartupAction.ShotBlockers(var sbShooter, var sbTarget):
+                {
+                    // F33: the coarse question the reference's _obj_shoot_blocking_at answers, and
+                    // the five different verdicts its callers reach from the same object.
+                    const int hidden = 0x01, noBlock = 0x10, multiHex = 0x800;
+                    const uint shootThru = 0x80000000;
+                    Console.WriteLine($"shot-blockers: from={sbShooter} to={sbTarget} elev={_elevation}");
+                    int seen = 0;
+                    Formats.Combat.LineOfFire.Trace(sbShooter, sbTarget, tile =>
+                    {
+                        foreach (MapObject o in _solidObjects[_elevation].Where(o => o.HexTile == tile))
+                        {
+                            uint f = (uint)o.Flags;
+                            bool isHidden = (f & hidden) != 0;
+                            bool nb = (f & noBlock) != 0;
+                            bool st = (f & shootThru) != 0;
+                            bool mh = (f & multiHex) != 0;
+                            ObjectType t = Fid.Type(o.Fid);
+                            bool typeOk = t is ObjectType.Wall or ObjectType.Scenery
+                                || (t is ObjectType.Critter && !o.IsDead);
+                            // The reference predicate: !HIDDEN && (NO_BLOCK==0 || SHOOT_THRU==0) && type
+                            bool refCoarse = !isHidden && (!nb || !st) && typeOk;
+                            // Ours today: !HIDDEN && NO_BLOCK==0 && SHOOT_THRU==0 && type
+                            bool ours = !isHidden && !nb && !st && typeOk;
+                            bool notCritter = t is not ObjectType.Critter;
+                            // p3584 = combat.cc:3584 (_check_ranged_miss): only breaks the walk when
+                            // SHOOT_THRU==0 AND the object is not a critter (a live critter there only
+                            // ever runs the probabilistic accuracy check a few lines down and then
+                            // advances curr = critter->tile — it never deterministically ends the loop).
+                            bool p3584 = refCoarse && !st && notCritter;
+                            // p3641 = combat.cc:3641 (_shoot_along_path): breaks the walk only when the
+                            // object is NOT a critter (`if (FID_TYPE(critter->fid) != OBJ_TYPE_CRITTER)
+                            // break;`); a critter there is processed as a hit candidate and the walk
+                            // continues, so this must NOT be `refCoarse` alone.
+                            bool p3641 = refCoarse && notCritter;
+                            // p3956 = combat.cc:3956 (accidental-target check): the only gate here is
+                            // `accidentalTarget != nullptr && SHOOT_THRU==0` — no FID_TYPE check at all,
+                            // so critters and non-critters are treated alike.
+                            bool p3956 = refCoarse && !st;
+                            // p5906 = combat.cc:5906 (_combat_is_shot_blocked): blocks only when the
+                            // object is not a critter AND not the target object
+                            // (`FID_TYPE(obstacle->fid) != OBJ_TYPE_CRITTER && obstacle != targetObj`).
+                            // The probe only has the target's HEX (sbTarget), not its object identity,
+                            // so the target-exclusion below is expressed as a TILE comparison
+                            // (o.HexTile != sbTarget) — a proxy, not the real object-identity check;
+                            // two distinct objects sharing the target's tile would be conflated.
+                            bool p5906 = refCoarse && notCritter && o.HexTile != sbTarget;
+                            Console.WriteLine(
+                                $"  tile={tile} pid={o.Pid} type={t} flags=0x{f:X8}"
+                                + $" hidden={(isHidden ? 1 : 0)} noBlock={(nb ? 1 : 0)}"
+                                + $" shootThru={(st ? 1 : 0)} multiHex={(mh ? 1 : 0)}"
+                                + $" refCoarse={(refCoarse ? 1 : 0)} ours={(ours ? 1 : 0)}"
+                                + $" p3584={(p3584 ? 1 : 0)}"
+                                + $" p3641={(p3641 ? 1 : 0)}"
+                                + $" p3956={(p3956 ? 1 : 0)}"
+                                + $" p5906={(p5906 ? 1 : 0)}");
+                            seen++;
+                        }
+                        return null; // never block: we want the whole line, not the first hit
+                    },
+                    // Inert: the callback above always returns null, so no filter term can ever
+                    // fire. The probe's whole point is the per-policy verdict columns it prints.
+                    Formats.Combat.ShotFilter.FriendlyFire);
+                    Console.WriteLine($"shot-blockers: {seen} object(s) on the line");
+                    break;
+                }
                 case StartupAction.BlockedProbe(var bpHex):
                 {
                     // P109 QA: the live blocked-set truth around a tile — each neighbor's blocked

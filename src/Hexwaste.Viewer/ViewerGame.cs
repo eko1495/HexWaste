@@ -881,6 +881,9 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
         /// critter — proves (or disproves) that a finished walker still blocks a later StartNpcWalk call
         /// because it was never removed from _npcWalkers.</summary>
         public sealed record WalkerRestartProbe(int Hex, int Target1, int Target2) : StartupAction;
+        /// <summary>F33: dump every solid object on the line between two hexes, with the flags
+        /// and the verdict each reference caller policy would reach.</summary>
+        public sealed record ShotBlockers(int ShooterHex, int TargetHex) : StartupAction;
         /// <summary>F46/F5: the head's fidget variants and the X sway each one carries.</summary>
         public sealed record FidgetProbe(int HeadId, int Rolls) : StartupAction;
         /// <summary>F32 QA: golden coverage for ShouldRunDamageProc's party pair gate (combat.cc:4849).
@@ -3755,8 +3758,18 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
         if (target.IsHidden || (target.Flags & 0x10) != 0
             || (Fid.Type(target.Fid) is ObjectType.Critter && target.IsDead))
             return false;
+        // NOT a shoot caller: this is _make_straight_path(flag 16) over the MOVEMENT-blocking
+        // predicate (SightBlockerAt), so no SHOOT_THRU/NO_BLOCK term applies — and passing that
+        // a6 == 16 through as `stride` is also what opts this trace OUT of the walker's own
+        // SHOOT_THRU guard (animation.cc:1956, armed only for a6 == 32). The filter only
+        // reproduces the split LineOfFire.Trace used to hard-code — a critter is counted rather
+        // than a hard blocker (the `critters == 0` test below is what makes it opaque here), and
+        // the target itself is never its own obstruction (SightBlockerAt already drops it too).
         (MapObject? blocker, int critters) = Formats.Combat.LineOfFire.Trace(
-            source.HexTile, target.HexTile, t => SightBlockerAt(t, source, target));
+            source.HexTile, target.HexTile, t => SightBlockerAt(t, source, target),
+            new Formats.Combat.ShotFilter(
+                ExcludesShootThru: false, ExcludesCritters: true, ExcludesTarget: true),
+            target, Formats.Combat.LineOfFire.SightTraceStride);
         return blocker is null && critters == 0;
     }
 

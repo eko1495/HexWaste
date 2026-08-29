@@ -548,6 +548,9 @@ for (int i = 0; i < args.Length; i++)
             actions.Add(new ViewerGame.StartupAction.PartyProcProbe(int.Parse(args[i + 1]), int.Parse(args[i + 2])));
             i += 2;
             break;
+        case "--shot-blockers" when i + 2 < args.Length: // F33: what is actually on the line
+            actions.Add(new ViewerGame.StartupAction.ShotBlockers(int.Parse(args[++i]), int.Parse(args[++i])));
+            break;
         case "--combat-over" when i + 1 < args.Length:
             // P100: run the map-script combat_p_proc "combat over" hook with a KO'er team (proves the seam).
             actions.Add(new ViewerGame.StartupAction.CombatOverProbe(int.Parse(args[++i])));

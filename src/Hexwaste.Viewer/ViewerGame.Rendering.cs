@@ -366,8 +366,15 @@ public sealed partial class ViewerGame
     private Formats.Combat.OutlineType CombatOutlineType(MapObject critter)
     {
         MapObject dude = _dude!.Dude;
+        // ported from fallout2-ce src/combat.cc _combat_update_critter_outline_for_los (:2684):
+        // `_combat_is_shot_blocked(gDude, gDude->tile, critter->tile, critter, nullptr)`. This is a
+        // _combat_is_shot_blocked caller, so it takes that function's own filter
+        // (ShotFilter.ShotBlocked, combat.cc:5908). Per-call-site: sourceObj = gDude = the
+        // excludeObj handed to ShootBlockerAt; targetObj = the critter being outlined, so the
+        // critter itself never blocks its own outline.
         bool clearLos = Formats.Combat.LineOfFire.Trace(dude.HexTile, critter.HexTile,
-            t => ShootBlockerAt(t, dude, critter)).Blocker is null;
+            t => ShootBlockerAt(t, dude),
+            Formats.Combat.ShotFilter.ShotBlocked, critter).Blocker is null;
         int dist = Formats.Hex.HexGrid.Distance(dude.HexTile, critter.HexTile);
         int pe = GetCritterState(dude)?.Stat(1) ?? 0; // STAT_PERCEPTION (SPECIAL index 1)
         bool glass = TranslucencyOf(critter) == Formats.Proto.TransType.Glass;
