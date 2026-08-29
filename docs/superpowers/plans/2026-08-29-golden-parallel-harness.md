@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Cut the golden suites from ~40 minutes to ~2-4 minutes by invoking the built binary instead of `dotnet run` and running fixtures through a job pool, without weakening any assertion or touching any fixture.
+**Goal:** Cut the golden suites from a measured 23.6 minutes to a small number of minutes by invoking the built binary instead of `dotnet run` and running fixtures through a job pool, without weakening any assertion or touching any fixture.
 
 **Architecture:** One shared `scripts/golden-lib.sh` owns the build step, a job pool, per-job scratch directories, ordered output and the verdict. Six suite scripts shrink to declarations — their runners, their `SCENARIOS`, and the wording of their own verdict. The unit of work is a *(fixture, pass)* pair, so the determinism double-run costs a core rather than wall time.
 
@@ -22,6 +22,25 @@
 - Conventional commits; commit at the end of every task.
 
 ---
+
+## The measured baseline
+
+Captured end to end from unmodified `scripts/` at `b8ec9a8`, and stored at
+`.superpowers/sdd/golden-baseline.log`:
+
+| suite | wall | fixtures |
+|---|---|---|
+| encounter | **960.0 s** | 188 |
+| quest | 221.3 s | 39 |
+| combat | 112.7 s | 18 |
+| opening | 59.0 s | 13 |
+| endgame | 36.7 s | 5 |
+| census | 25.8 s | 16 |
+| **total** | **1415.5 s = 23.6 min** | 279 |
+
+`encounter` is 68% of the total on its own. Task 7 is therefore the task that decides whether this
+project succeeded; the five suites before it exist to make the library trustworthy by the time it
+gets there.
 
 ## The per-suite variation matrix
 
@@ -417,7 +436,7 @@ export DISPLAY=:0 FALLOUT2_DIR="$(pwd)/game-data"
 grep '^WALL combat' .superpowers/sdd/golden-baseline.log
 ```
 
-The baseline for this suite was measured at **112.3 s** on 16 cores. Expect single-digit seconds. Report both numbers.
+The baseline for this suite was measured at **112.7 s** on 16 cores. Expect single-digit seconds. Report both numbers.
 
 - [ ] **Step 4: Commit**
 
@@ -802,7 +821,7 @@ git commit -m "docs: record the golden-harness speedup with measured numbers"
 |---|---|
 | 1 | Baseline exists, 279 `ok` lines, six `WALL` figures, captured from unmodified `scripts/` |
 | 2 | endgame byte-identical; not slower; `record` reproduces its fixtures exactly; a timed-out job fails loudly |
-| 3 | combat byte-identical; wall time vs the measured 112.3 s |
+| 3 | combat byte-identical; wall time vs the measured 112.7 s |
 | 4 | census byte-identical; single-pass confirmed; no `LOAD-FAIL` in the baseline |
 | 5 | opening byte-identical; every scenario kind maps to a registered runner |
 | 6 | quest byte-identical |

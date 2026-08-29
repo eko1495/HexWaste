@@ -1,8 +1,8 @@
 # Parallel golden-test harness — design
 
 **Date:** 2026-08-29
-**Problem:** the golden suites take roughly 40 minutes, and the hermetic suite that takes 7 seconds
-is not the reason.
+**Problem:** the golden suites take **23.6 minutes** (measured end to end), and the hermetic suite
+that takes 7 seconds is not the reason.
 
 ## Where the time actually goes
 
@@ -17,6 +17,22 @@ Measured on this machine (16 cores) rather than assumed:
 | → pure `dotnet run` overhead | **1.16 s per invocation** |
 | 8 real combat fixtures run concurrently | **1.68 s** total, all 8 byte-identical |
 
+Full baseline, all six suites, captured end to end:
+
+| suite | wall |
+|---|---|
+| encounter | **960.0 s** — 68% of the total |
+| quest | 221.3 s |
+| combat | 112.7 s |
+| opening | 59.0 s |
+| endgame | 36.7 s |
+| census | 25.8 s |
+| **total** | **1415.5 s = 23.6 min** |
+
+An earlier estimate of "~40 minutes" came from a run interleaved with progress polling; 23.6 min is
+the clean measurement. **`encounter` alone is more than two thirds of it**, so that suite is where
+the win is won or lost.
+
 The suites run 279 fixtures, each twice — **558 invocations**. Three independent costs stack up:
 
 1. **`dotnet run` instead of the built binary.** 1.16 s × 558 ≈ **11 minutes** of pure process
@@ -29,7 +45,7 @@ The suites run 279 fixtures, each twice — **558 invocations**. Three independe
 
 ## Goal
 
-Cut the golden suites from ~40 minutes to ~2-4 minutes **without weakening a single assertion and
+Cut the golden suites from 23.6 minutes to a small number of minutes **without weakening a single assertion and
 without touching a single fixture**.
 
 ## Explicit non-goal: do not drop the double run
