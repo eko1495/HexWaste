@@ -69,7 +69,7 @@ public sealed partial class ViewerGame
         _camera.SetCenter(destination.Tile);
         _camera.PanX = 0;
         _camera.PanY = 0;
-        _baseTitle = $"Hexwaste viewer — {_map.Header.Name} (elevation {_elevation})";
+        _baseTitle = $"Hexwaste viewer — {_map.Header.Name} (elevation {_elevation})";  // ascii-ok: OS window title, not font-rendered
         Window.Title = _baseTitle;
     }
 

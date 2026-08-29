@@ -2164,7 +2164,7 @@ public sealed class IntVm
             throw new InvalidDataException($"Expected an int on the stack, got tag 0x{value.Tag:X4}.");
         if (value.IsObjectHandle && value.Raw != 0 && _reportedHandleStores.Add((varKind, value.Raw)))
             Console.Error.WriteLine($"stale-handle: a script stored live object handle {value.Raw} in a"
-                + $" persistent {varKind} — handles do not survive map reload/save, this WILL dangle");
+                + $" persistent {varKind} — handles do not survive map reload/save, this WILL dangle");  // ascii-ok: stderr diagnostic, not font-rendered
         return value.Raw;
     }
 

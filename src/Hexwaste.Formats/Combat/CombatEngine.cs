@@ -324,7 +324,7 @@ public sealed class CombatEngine
         (ProtoInfo? weaponProto, MapObject? weaponItem) = _host.EquippedWeapon(dude);
         if (WeaponBlockedByCrippledArms(dude, weaponProto) is { } crippleReason)
         {
-            _host.Log($"You can't attack — {crippleReason}.");
+            _host.Log($"You can't attack - {crippleReason}.");
             return false;
         }
         bool isGun = weaponProto?.Weapon is { } wstats && wstats.IsGun(weaponProto.ExtendedFlags);
@@ -489,7 +489,7 @@ public sealed class CombatEngine
         (ProtoInfo? weaponProto, MapObject? weaponItem) = _host.EquippedWeapon(dude);
         if (WeaponBlockedByCrippledArms(dude, weaponProto) is { } crippleReason)
         {
-            _host.Log($"You can't fire — {crippleReason}.");
+            _host.Log($"You can't fire - {crippleReason}.");
             return false;
         }
         if (!IsBurstWeapon(weaponProto) || weaponItem is null)
@@ -912,7 +912,7 @@ public sealed class CombatEngine
         (ProtoInfo? weaponProto, MapObject? weaponItem) = _host.EquippedWeapon(dude);
         if (WeaponBlockedByCrippledArms(dude, weaponProto) is { } crippleReason)
         {
-            _host.Log($"You can't throw — {crippleReason}.");
+            _host.Log($"You can't throw - {crippleReason}.");
             return false;
         }
         if (weaponProto?.Weapon is null || weaponItem is null
@@ -2282,7 +2282,7 @@ public sealed class CombatEngine
         // The dude opened combat → round-1 order is dude (attacker) first, target (defender) second
         // (_combat_sequence_init). The dude's slot is index 0, so the turn stays his — he attacks now.
         BuildTurnOrder(firstRound: true, _host.Dude, target);
-        _host.Log($"Combat begins — round 1, your turn (AP {_dudeAp}).");
+        _host.Log($"Combat begins - round 1, your turn (AP {_dudeAp}).");
     }
 
     /// <summary>Start a multi-team brawl (phase-16 M3, X-FIGHTING-Y): every supplied
@@ -3134,7 +3134,7 @@ public sealed class CombatEngine
                         _dudeAp = afterStand; // the dude stands at the cost of 3 AP
                 }
                 _phase = CombatPhase.PlayerTurn;
-                _host.Log($"Round {_round} — your turn (AP {_dudeAp}).");
+                _host.Log($"Round {_round} - your turn (AP {_dudeAp}).");
                 return;
             }
 

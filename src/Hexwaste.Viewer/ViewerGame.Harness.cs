@@ -2615,8 +2615,8 @@ public sealed partial class ViewerGame
             MapObject? target = PickObject(examinePoint.X, examinePoint.Y);
             string text = target is null ? "nothing"
                 : _scriptHost?.GetScriptedDescription(target, _map, _dude?.Dude) is { } scripted
-                    ? $"{ObjectName(target)} — [script] {string.Join(" / ", scripted)}"
-                    : $"{ObjectName(target)} — {ObjectDescription(target)}";
+                    ? $"{ObjectName(target)} — [script] {string.Join(" / ", scripted)}"  // ascii-ok: harness stdout, not font-rendered
+                    : $"{ObjectName(target)} — {ObjectDescription(target)}";  // ascii-ok: harness stdout, not font-rendered
             Console.WriteLine($"examine@{examinePoint.X},{examinePoint.Y}: {text}");
             if (target is not null)
                 Examine(target);

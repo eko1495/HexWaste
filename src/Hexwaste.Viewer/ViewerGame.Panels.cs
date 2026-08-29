@@ -377,7 +377,7 @@ public sealed partial class ViewerGame
         int lx = x + 14, ly = y + 10;
         void Line(string text, Color c) { _fontRenderer.Draw(_spriteBatch, text, new Vector2(lx, ly), c); ly += lh; }
         string name = _dudeGcd is { Name.Length: > 0 } g && g.Name != "None" ? g.Name : "Wanderer";
-        Line($"{name}  —  Level {_dudeLevel}", gold);
+        Line($"{name}  -  Level {_dudeLevel}", gold);
         int nextXp = Formats.Combat.Progression.XpForLevel(_dudeLevel + 1);
         Line($"XP {_dudeXp}" + (nextXp > 0 ? $" / {nextXp}" : " (max)"), gray);
         Formats.Combat.CritterState? cs = _dude is not null ? GetCritterState(_dude.Dude) : null;
@@ -404,7 +404,7 @@ public sealed partial class ViewerGame
             .Select(i => _dudePerkRanks[i] > 1 ? $"{PerkName(i)} ({_dudePerkRanks[i]})" : PerkName(i)).ToList();
         Line($"Perks: {(takenPerks.Count > 0 ? string.Join(", ", takenPerks) : "none")}", gray);
         if (AvailablePerkPicks() > 0)
-            Line($"{AvailablePerkPicks()} perk(s) available — press G", green);
+            Line($"{AvailablePerkPicks()} perk(s) available - press G", green);
         ly += 6;
         // Karma / reputation (P31 B-M3): the karma number + generic-reputation title + any earned
         // karma titles + non-Neutral slice-town standings. Display-only (never transcript-diffed).
@@ -421,7 +421,7 @@ public sealed partial class ViewerGame
         }
         ly += 6;
         if (_unspentSkillPoints > 0)
-            Line($"{_unspentSkillPoints} skill points — raise →", green);
+            Line($"{_unspentSkillPoints} skill points - raise ->", green);
         _fontRenderer.Draw(_spriteBatch, "C / K / G perk / Esc close", new Vector2(lx, y + h - lh - 8), gray);
 
         // ---- right column: the 18 skills ----
@@ -1098,9 +1098,9 @@ public sealed partial class ViewerGame
             Plot(_dude.Dude.HexTile, new Color(255, 255, 255), 3); // the dude marker
 
         var labelGreen = new Color(0, 252, 0);
-        _fontRenderer.Draw(_spriteBatch, $"AUTOMAP — {_currentMapName} (elev {_elevation}, {(_automapHighDetail ? "hi" : "lo")} detail{(_automapScanner ? ", scanner" : "")})",
+        _fontRenderer.Draw(_spriteBatch, $"AUTOMAP - {_currentMapName} (elev {_elevation}, {(_automapHighDetail ? "hi" : "lo")} detail{(_automapScanner ? ", scanner" : "")})",
             new Vector2(o.X + 20, o.Y + 12), labelGreen);
-        _fontRenderer.Draw(_spriteBatch, "SCANNER / CANCEL / hi-lo switch — or Esc/A close, H/L detail, PgUp/Dn elev",
+        _fontRenderer.Draw(_spriteBatch, "SCANNER / CANCEL / hi-lo switch - or Esc/A close, H/L detail, PgUp/Dn elev",
             new Vector2(o.X + 20, o.Y + h - 24), new Color(0, 168, 0));
     }
 

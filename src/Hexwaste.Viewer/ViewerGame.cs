@@ -1177,7 +1177,7 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
         }
         else
         {
-            Console.Error.WriteLine($"{gcdPath} not found — dude uses art-proto stats");
+            Console.Error.WriteLine($"{gcdPath} not found — dude uses art-proto stats");  // ascii-ok: stderr diagnostic, not font-rendered
         }
 
         try
@@ -1485,14 +1485,14 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
         }
         catch (Exception ex) when (ex is FileNotFoundException or InvalidDataException)
         {
-            Console.Error.WriteLine($"scripts.lst unavailable — script examine disabled: {ex.Message}");
+            Console.Error.WriteLine($"scripts.lst unavailable — script examine disabled: {ex.Message}");  // ascii-ok: stderr diagnostic, not font-rendered
         }
 
         // font1.aaf is the standard readable interface font.
         if (_vfs.Exists("font1.aaf"))
             _fontRenderer = new AafFontRenderer(GraphicsDevice, AafFont.Load(_vfs.ReadAllBytes("font1.aaf")));
         else
-            Console.Error.WriteLine("font1.aaf not found — text overlay disabled");
+            Console.Error.WriteLine("font1.aaf not found — text overlay disabled");  // ascii-ok: stderr diagnostic, not font-rendered
 
         LoadMap(_mapName, spawnAt: null);
 
@@ -1864,7 +1864,7 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
         _camera.PanX = 0;
         _camera.PanY = 0;
 
-        _baseTitle = $"Hexwaste viewer — {_map.Header.Name} (elevation {_elevation})";
+        _baseTitle = $"Hexwaste viewer — {_map.Header.Name} (elevation {_elevation})";  // ascii-ok: OS window title, not font-rendered
         Window.Title = _baseTitle;
 
         _audio?.PlayMusic(_mapList.GetMusic(mapName));
@@ -2913,7 +2913,7 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
         }
 
         if (_hoveredObject != previousHover)
-            Window.Title = _hoveredObject is null ? _baseTitle : $"{_baseTitle} — {DescribeObject(_hoveredObject)}";
+            Window.Title = _hoveredObject is null ? _baseTitle : $"{_baseTitle} — {DescribeObject(_hoveredObject)}";  // ascii-ok: OS window title, not font-rendered
 
         // P82-M6: right-click opens the FO2 action menu on the hovered object (the old right-click-
         // examines is now the menu's "Look" item). A second right-click / Esc closes it. (FO2 uses
@@ -3043,7 +3043,7 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
             critterIndex = _artIndex.FindCritterIndex("hmjmps"); // fallback
         if (critterIndex < 0)
         {
-            Console.Error.WriteLine($"{dudeArt} not found in critters.lst — no dude");
+            Console.Error.WriteLine($"{dudeArt} not found in critters.lst — no dude");  // ascii-ok: stderr diagnostic, not font-rendered
             return;
         }
 
@@ -5683,7 +5683,7 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
                 _elevation = next;
                 if (_dude is not null)
                     RebuildBlockedTiles(_dude.Dude);
-                _baseTitle = $"Hexwaste viewer — {_map.Header.Name} (elevation {_elevation})";
+                _baseTitle = $"Hexwaste viewer — {_map.Header.Name} (elevation {_elevation})";  // ascii-ok: OS window title, not font-rendered
                 break;
             }
         }
@@ -5809,7 +5809,7 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
         _fpsTimer += gameTime.ElapsedGameTime.TotalSeconds;
         if (_fpsTimer >= 1.0)
         {
-            Window.Title = $"{_baseTitle} — {_fpsFrames / _fpsTimer:F0} fps";
+            Window.Title = $"{_baseTitle} — {_fpsFrames / _fpsTimer:F0} fps";  // ascii-ok: OS window title, not font-rendered
             _fpsTimer = 0;
             _fpsFrames = 0;
         }
@@ -6533,7 +6533,7 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
 
         if (_menu == MenuState.CreateStats)
         {
-            Row(center.X - 200, center.Y - 90, $"CREATE CHARACTER — {_createPoints} points left", gold);
+            Row(center.X - 200, center.Y - 90, $"CREATE CHARACTER - {_createPoints} points left", gold);
             string[] sp = ["Strength", "Perception", "Endurance", "Charisma", "Intelligence", "Agility", "Luck"];
             float y = center.Y - 60;
             for (int i = 0; i < 7; i++)
@@ -6565,7 +6565,7 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
         }
         else if (_menu == MenuState.CreateTraits)
         {
-            Row(center.X - 200, center.Y - 130, $"OPTIONAL TRAITS — {_createTraits.Count}/2 chosen (optional)", gold);
+            Row(center.X - 200, center.Y - 130, $"OPTIONAL TRAITS - {_createTraits.Count}/2 chosen (optional)", gold);
             int perColT = 8;
             for (int i = 0; i < TraitCount; i++)
             {
@@ -6580,7 +6580,7 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
         }
         else // CreateTags
         {
-            Row(center.X - 200, center.Y - 130, $"TAG 3 SKILLS — {_createTags.Count}/3 chosen", gold);
+            Row(center.X - 200, center.Y - 130, $"TAG 3 SKILLS - {_createTags.Count}/3 chosen", gold);
             int perCol = 9;
             for (int i = 0; i < Formats.Combat.SkillSet.SkillCount; i++)
             {

@@ -873,7 +873,7 @@ if (!LooksLikeGameDir(gameDir))
         : $"'{gameDir}' does not contain master.dat.");
     Console.Error.WriteLine();
     Console.Error.WriteLine("Hexwaste needs the data files from an original copy of Fallout 2");
-    Console.Error.WriteLine("(GOG or Steam — no game assets ship with Hexwaste). Point it at the");
+    Console.Error.WriteLine("(GOG or Steam — no game assets ship with Hexwaste). Point it at the");  // ascii-ok: console usage text, not font-rendered
     Console.Error.WriteLine("install folder containing master.dat, critter.dat and patch000.dat:");
     Console.Error.WriteLine();
     Console.Error.WriteLine("    Hexwaste.Viewer --game-dir \"C:\\GOG Games\\Fallout 2\"");
