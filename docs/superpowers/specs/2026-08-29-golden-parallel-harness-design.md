@@ -59,8 +59,30 @@ flag — that six copies would drift apart and one of them would be wrong.
 **The library owns:** the build step, the job pool, per-job scratch directories, output ordering,
 result aggregation, and the final verdict line.
 
-**Each suite script declares:** the binary path, the build targets, `FILTER`, the per-run timeout,
-the verdict label, `SCENARIOS`, and optionally a per-suite result hook (census's empty-output rule).
+**Each suite script declares:** its build targets, one or more **named runners**, the verdict label,
+`SCENARIOS`, and optionally a result hook.
+
+### Named runners — the detail that decides the interface
+
+Five suites invoke a single tool with a single stdout filter. **`opening-golden.sh` does not.** Its
+`run()` takes a *kind* and dispatches to two different tools with two different filters — census
+scenarios go to `ProcAnalyze`, the rest to the viewer — and its scenarios carry a three-field form,
+`name|kind|args`, where the other five use `name|args`.
+
+A "one binary and one filter per suite" library would not fit it. So the model is:
+
+- a suite declares a **runner** by name: binary path, stdout filter regex, and per-run timeout;
+- a scenario optionally names its runner. Suites with one runner keep the two-field `name|args`
+  form and the runner is implied; `opening` declares two runners and keeps its three-field form.
+
+This is the existing behaviour expressed once, not a new capability.
+
+### The result hook
+
+`census-sweep.sh` has one rule the others lack: **empty output is `LOAD-FAIL`, not a diff** — a map
+that emitted no census line failed to load, and reporting that as a fixture mismatch would bury the
+cause. The library therefore lets a suite supply an optional post-run check that inspects a job's
+captured output and may declare a failure before the fixture comparison runs.
 
 ## 2. The job model
 
@@ -113,10 +135,11 @@ with the built binary (`bin/Debug/net10.0/Hexwaste.Viewer`, and `ProcAnalyze` fo
 The acceptance criterion is **not** "the suites pass". It is that the new harness produces
 **byte-identical stdout** to the current one.
 
-A full clean baseline already exists from a run earlier today —
-`golden-f46.log`, all six suites, 279 `ok` lines, zero differing. If that scratch file is gone by
-implementation time, capture a fresh baseline from `main` **before** changing anything; a baseline
-taken after the change proves nothing.
+A full clean baseline already exists from a run earlier today, at
+`/tmp/claude-1000/-home-eko-dev-FPOC/488274f1-a5c9-41fd-9a1c-a1673f9a03e5/scratchpad/golden-f46.log`
+— all six suites, 279 `ok` lines, zero differing. That path is session scratch and may not survive;
+if it is gone, capture a fresh baseline from `main` **before** changing anything. A baseline taken
+after the change proves nothing.
 
 Then: run each suite under the new harness, diff against the baseline, and require an empty diff.
 Also assert the wall-clock improvement, since a correct-but-still-slow result means the pool is not
