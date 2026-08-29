@@ -708,7 +708,7 @@ public sealed class CombatEngine
         // reaches this filter, because the walker guard (LineOfFire.Suppresses) already hid it.
         ShotFilter.BurstWalk, targetObj,
         // The victim list is built from Trace's onCandidate hook, which fires only for objects the
-        // walk actually saw — i.e. AFTER the walker's own SHOOT_THRU guard (animation.cc:1957,
+        // walk actually saw — i.e. AFTER the walker's own SHOOT_THRU guard (animation.cc:1956,
         // a6 == 32). Building it inside blockerAt instead would have to repeat that guard by hand.
         onCandidate: (obj, _) =>
         {
@@ -780,7 +780,7 @@ public sealed class CombatEngine
         // an obstruction here — which is exactly how it becomes the accidental victim.
         ShotFilter.AccidentalTarget, excludeTarget,
         // The accidental victim is picked in Trace's onCandidate hook, which fires only for objects
-        // the walk actually saw — AFTER the walker's own SHOOT_THRU guard (animation.cc:1957,
+        // the walk actually saw — AFTER the walker's own SHOOT_THRU guard (animation.cc:1956,
         // a6 == 32), so a SHOOT_THRU object is never the obstacle the reference reads back at
         // combat.cc:3957 and can never be the victim. Doing this inside blockerAt instead would
         // have to repeat that guard by hand.

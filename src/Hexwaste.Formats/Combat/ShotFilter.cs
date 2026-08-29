@@ -10,7 +10,7 @@ namespace Hexwaste.Formats.Combat;
 /// the differences between callers are the whole point and should be readable.
 ///
 /// ExcludesShootThru is NOT one of those differences. _make_straight_path_func's own guard
-/// (animation.cc:1957/:2039, ported as <see cref="LineOfFire.Suppresses"/>) already hides every
+/// (animation.cc:1956/:2050/:2103, ported as <see cref="LineOfFire.Suppresses"/>) already hides every
 /// SHOOT_THRU object from every shoot caller, because all five pass a6 == 32. Each filter below
 /// therefore mirrors its caller's SOURCE LINES — true only where the reference itself re-tests the
 /// flag (combat.cc:3586 and :3963) — and on a walker-reported object that term is unreachable
@@ -49,7 +49,7 @@ public sealed record ShotFilter(
 
     /// <summary>ported from fallout2-ce src/combat.cc:3644 — the burst / continuous walk. Its only
     /// test is `FID_TYPE(critter->fid) != OBJ_TYPE_CRITTER`; it does not re-test the flag because it
-    /// does not have to — the walker never hands it a SHOOT_THRU object (animation.cc:1957), so such
+    /// does not have to — the walker never hands it a SHOOT_THRU object (animation.cc:1956), so such
     /// an object does NOT end this walk.</summary>
     public static readonly ShotFilter BurstWalk = new(false, true, false);
 
@@ -62,7 +62,7 @@ public sealed record ShotFilter(
     /// <summary>ported from fallout2-ce src/combat.cc:5908 — the filter INSIDE
     /// _combat_is_shot_blocked itself: `FID_TYPE(obstacle->fid) != OBJ_TYPE_CRITTER &amp;&amp;
     /// obstacle != targetObj`. No flag test: the walker already dropped SHOOT_THRU objects, which
-    /// is also why such an object is never counted in numCrittersOnLof (:5911). Because the filter
+    /// is also why such an object is never counted in numCrittersOnLof (:5912-5919). Because the filter
     /// belongs to the FUNCTION and not to one call site, it is the filter for every caller of
     /// _combat_is_shot_blocked — the to-hit penalty (combat.cc:5906), the explosion victim's
     /// line-of-sight (combat.cc:4055) and the combat outline (combat.cc:2684). Those callers differ
@@ -71,6 +71,6 @@ public sealed record ShotFilter(
 
     /// <summary>ported from fallout2-ce src/combat_ai.cc:2586 — the friendly-fire check, which
     /// applies no flag or type test at all to what it is handed; the flag it would need was already
-    /// applied by the walker (animation.cc:1957, a6 == 32).</summary>
+    /// applied by the walker (animation.cc:1956, a6 == 32).</summary>
     public static readonly ShotFilter FriendlyFire = new(false, false, false);
 }

@@ -11,7 +11,7 @@ namespace Hexwaste.Formats.Combat;
 /// the walker itself (<see cref="Suppresses"/>); of what survives that, WHAT blocks is the caller's
 /// <see cref="ShotFilter"/>: an object the filter does not treat as an
 /// obstruction is walked past, and if it is a living critter that is not the caller's target it is
-/// counted (the −10/critter to-hit term, combat.cc:5911). The shooter's own tile is never
+/// counted (the −10/critter to-hit term, combat.cc:5912). The shooter's own tile is never
 /// blocker-checked here — a DIVERGENCE from the reference, which does probe it
 /// (_make_straight_path_func, animation.cc:1954; see the in-loop comment in Trace for the
 /// mechanism). The target tile IS checked, and the filter decides.
@@ -41,8 +41,9 @@ public static class LineOfFire
     /// the walker's SHOOT_THRU guard does not apply to it.</summary>
     public const int SightTraceStride = 16;
 
-    /// <summary>ported from fallout2-ce src/animation.cc:1957 and :2039 — _make_straight_path_func's
-    /// OWN guard at both of its callback sites:
+    /// <summary>ported from fallout2-ce src/animation.cc:1956, :2050 and :2103 — _make_straight_path_func's
+    /// OWN guard, repeated at ALL THREE of its callback sites (the `from` probe at :1954 and the two
+    /// Bresenham loops):
     /// `if (obstacle != *obstaclePtr &amp;&amp; (a6 != 32 || (obstacle->flags &amp; OBJECT_SHOOT_THRU) == 0))`.
     /// All five line-of-fire callers pass a6 == 32 (combat.cc:3584, :3641, :3956, :5906,
     /// combat_ai.cc:2585), so for every shoot trace the guard reduces to
@@ -50,7 +51,7 @@ public static class LineOfFire
     /// caller's obstacle pointer and never stops on it, so NO shoot caller ever sees one. That is
     /// stronger than "not a blocker" — the object is invisible to the caller, which is why a
     /// SHOOT_THRU critter is also never counted in _combat_is_shot_blocked's numCrittersOnLof
-    /// (combat.cc:5911 counts only the obstacles the walker reported). The sight caller passes
+    /// (combat.cc:5912 counts only the obstacles the walker reported). The sight caller passes
     /// a6 == 16, so the guard is off for it.
     ///
     /// The stride is deliberately NOT defaulted: the guard's whole content is "for a6 == 32", and a
@@ -76,7 +77,7 @@ public static class LineOfFire
     /// the destination tile.</summary>
     /// <param name="filter">The caller's policy — what the coarse predicate's answer means to it.</param>
     /// <param name="targetObj">The caller's target, for the filter's ExcludesTarget term and for the
-    /// crowd count's `obstacle != targetObj` exclusion (combat.cc:5911). null = the caller has no
+    /// crowd count's `obstacle != targetObj` exclusion (combat.cc:5912). null = the caller has no
     /// target identity, and nothing on the line is ever treated as one.</param>
     /// <param name="stride">The reference's `a6`. <see cref="ShootTraceStride"/> (32, the default —
     /// every line-of-fire caller) arms the walker's own SHOOT_THRU guard; the obj_can_see_obj SIGHT
@@ -147,7 +148,7 @@ public static class LineOfFire
                             return (obj, critters);
                         // Not an obstruction for this caller: the walk resumes past it. A living
                         // critter that is not the target is the -10/critter to-hit term
-                        // (combat.cc:5911-5919 counts `obstacle != targetObj` only).
+                        // (combat.cc:5912-5919 counts `obstacle != targetObj` only).
                         if (Fid.Type(obj.Fid) is ObjectType.Critter && !isTarget)
                             critters++;
                     }

@@ -3761,7 +3761,7 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
         // NOT a shoot caller: this is _make_straight_path(flag 16) over the MOVEMENT-blocking
         // predicate (SightBlockerAt), so no SHOOT_THRU/NO_BLOCK term applies — and passing that
         // a6 == 16 through as `stride` is also what opts this trace OUT of the walker's own
-        // SHOOT_THRU guard (animation.cc:1957, armed only for a6 == 32). The filter only
+        // SHOOT_THRU guard (animation.cc:1956, armed only for a6 == 32). The filter only
         // reproduces the split LineOfFire.Trace used to hard-code — a critter is counted rather
         // than a hard blocker (the `critters == 0` test below is what makes it opaque here), and
         // the target itself is never its own obstruction (SightBlockerAt already drops it too).

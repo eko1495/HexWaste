@@ -107,7 +107,7 @@ public class LineOfFireTests
         }
     }
 
-    /// <summary>ported from fallout2-ce src/animation.cc:1957/:2039 — _make_straight_path_func's own
+    /// <summary>ported from fallout2-ce src/animation.cc:1956/:2050/:2103 — _make_straight_path_func's own
     /// guard. Every line-of-fire caller passes a6 == 32, so a SHOOT_THRU object is never assigned to
     /// the caller's obstacle pointer: the walker walks straight past it, whatever the caller's own
     /// filter would have said. BurstWalk is deliberately the filter used here — it applies no flag
@@ -125,7 +125,7 @@ public class LineOfFireTests
     }
 
     /// <summary>The guard SUPPRESSES rather than merely un-blocks: the reference counts critters in
-    /// _combat_is_shot_blocked's own loop over the obstacles the walker REPORTED (combat.cc:5911),
+    /// _combat_is_shot_blocked's own loop over the obstacles the walker REPORTED (combat.cc:5912),
     /// so a SHOOT_THRU critter — never reported — is never counted either.</summary>
     [Fact]
     public void AShootThruCritterIsNeitherBlockingNorCounted()

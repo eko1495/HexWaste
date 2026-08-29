@@ -242,7 +242,7 @@ public sealed partial class ViewerGame
         if (onTile is not null)
             return onTile;
 
-        // ported from fallout2-ce src/object.cc _obj_shoot_blocking_at()'s SECOND loop (:2440):
+        // ported from fallout2-ce src/object.cc _obj_shoot_blocking_at()'s SECOND loop (:2469-2476):
         // with nothing on the tile itself, the six neighbours are scanned for MULTIHEX objects
         // under a STRICTER gate — !HIDDEN && NO_BLOCK == 0, with NO SHOOT_THRU disjunction. The
         // asymmetry with the tile phase above is the reference's own; do not "harmonise" it.

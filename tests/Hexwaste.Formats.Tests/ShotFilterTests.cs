@@ -12,7 +12,7 @@ namespace Hexwaste.Formats.Tests;
 /// and only fixed by reading the call sites — do not relax them without doing the same.
 ///
 /// These pin the FILTERS in isolation. The SHOOT_THRU arms of the three callers that apply no flag
-/// test are unreachable in a real trace: _make_straight_path_func's own guard (animation.cc:1957)
+/// test are unreachable in a real trace: _make_straight_path_func's own guard (animation.cc:1956)
 /// drops SHOOT_THRU objects before any shoot caller sees them. LineOfFireTests pins that.
 /// </summary>
 public class ShotFilterTests
@@ -43,7 +43,7 @@ public class ShotFilterTests
     [Fact]
     public void BurstWalkAppliesNoFlagTestOfItsOwn() =>
         // combat.cc:3644 applies no flag test — only the type test. This pins the FILTER, not the
-        // trace: in a shoot trace the walker's own guard (animation.cc:1957) has already dropped a
+        // trace: in a shoot trace the walker's own guard (animation.cc:1956) has already dropped a
         // SHOOT_THRU object, so this arm is unreachable and such an object does NOT end the walk.
         // See LineOfFireTests.ShootTraceNeverReportsAShootThruObject.
         Assert.True(ShotFilter.BurstWalk.Obstructs(Obj(ShootThru, ObjectType.Wall), isTarget: false));
