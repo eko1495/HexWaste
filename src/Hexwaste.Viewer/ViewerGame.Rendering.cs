@@ -366,8 +366,10 @@ public sealed partial class ViewerGame
     private Formats.Combat.OutlineType CombatOutlineType(MapObject critter)
     {
         MapObject dude = _dude!.Dude;
+        // excludeObj = dude = sourceObj (combat.cc:2684's _combat_is_shot_blocked(gDude, ...) —
+        // the outline/LOS consumer's sourceObj).
         bool clearLos = Formats.Combat.LineOfFire.Trace(dude.HexTile, critter.HexTile,
-            t => ShootBlockerAt(t, dude, critter) is { } o
+            t => ShootBlockerAt(t, dude) is { } o
                     && Formats.Combat.ShotFilter.LegacyCollapsed.Obstructs(o, isTarget: o == critter)
                 ? o : null).Blocker is null;
         int dist = Formats.Hex.HexGrid.Distance(dude.HexTile, critter.HexTile);

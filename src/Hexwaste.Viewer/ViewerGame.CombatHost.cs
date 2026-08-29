@@ -225,13 +225,17 @@ public sealed partial class ViewerGame
     /// src/object.cc _obj_shoot_blocking_at() (:2440), tile phase: !HIDDEN &&
     /// (NO_BLOCK == 0 || SHOOT_THRU == 0), then the type test. The disjunction is deliberate —
     /// each caller decides what SHOOT_THRU means for it, via ShotFilter.Obstructs.
-    /// Do NOT re-add a flag term here; that is what collapsed the two stages originally.</summary>
-    public MapObject? ShootBlockerAt(int tile, MapObject shooter, MapObject target)
+    /// Do NOT re-add a flag term here; that is what collapsed the two stages originally.
+    /// <paramref name="excludeObj"/> is the reference's excludeObj — the first argument of
+    /// _make_straight_path_func (animation.cc:1951), which each caller supplies: the attacker at
+    /// combat.cc:3584/:3641 and combat_ai.cc:2585, the DEFENDER at combat.cc:3956, sourceObj at
+    /// combat.cc:5906. It is a caller's choice, not a property of this predicate.</summary>
+    public MapObject? ShootBlockerAt(int tile, MapObject? excludeObj)
     {
         const int noBlock = 0x10;
         const uint shootThru = 0x80000000;
         MapObject? onTile = _solidObjects[_elevation].FirstOrDefault(o =>
-            o.HexTile == tile && o != shooter && o != target && !o.IsHidden
+            o.HexTile == tile && o != excludeObj && !o.IsHidden
             && ((o.Flags & noBlock) == 0 || ((uint)o.Flags & shootThru) == 0)
             && (Fid.Type(o.Fid) is ObjectType.Wall or ObjectType.Scenery
                 || (Fid.Type(o.Fid) is ObjectType.Critter && !o.IsDead)));
@@ -277,7 +281,7 @@ public sealed partial class ViewerGame
                 continue;
             MapObject? mh = _solidObjects[_elevation].FirstOrDefault(o =>
                 o.HexTile == adj && (o.Flags & multiHex) != 0
-                && o != shooter && o != target && !o.IsHidden
+                && o != excludeObj && !o.IsHidden
                 && (o.Flags & noBlock) == 0
                 && (Fid.Type(o.Fid) is ObjectType.Wall or ObjectType.Scenery
                     || (Fid.Type(o.Fid) is ObjectType.Critter && !o.IsDead)));

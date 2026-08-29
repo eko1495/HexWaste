@@ -4564,7 +4564,7 @@ public class CombatEngineTests
         public IReadOnlyList<int> CarriedCalibersOverride = [];
         public IReadOnlyList<int> CarriedAmmoCalibers(MapObject critter) => CarriedCalibersOverride;
         public Func<int, MapObject?>? BlockerOverride; // tests that need critters/walls on the line
-        public MapObject? ShootBlockerAt(int tile, MapObject shooter, MapObject target) => BlockerOverride?.Invoke(tile);
+        public MapObject? ShootBlockerAt(int tile, MapObject? excludeObj) => BlockerOverride?.Invoke(tile);
         public Func<int, bool>? IsBlockedOverride; // tests that need a specific tile reported blocked (e.g. Pathfinder callers like TryFlee)
         public bool IsBlocked(int tile) => IsBlockedOverride?.Invoke(tile) ?? false;
         public bool IsAnimating(MapObject critter) => Animating.Contains(critter);

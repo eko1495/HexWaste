@@ -273,7 +273,8 @@ public sealed class CombatEngine
         {
             (MapObject? blocker, crittersInPath) = LineOfFire.Trace(
                 dude.HexTile, target.HexTile,
-                tile => _host.ShootBlockerAt(tile, dude, target) is { } o
+                // excludeObj = attacker (combat.cc:3584/:3641-style refusal check).
+                tile => _host.ShootBlockerAt(tile, dude) is { } o
                         && ShotFilter.LegacyCollapsed.Obstructs(o, isTarget: o == target)
                     ? o : null);
             if (blocker is not null)
@@ -363,7 +364,8 @@ public sealed class CombatEngine
         {
             (MapObject? blocker, crittersInPath) = LineOfFire.Trace(
                 dude.HexTile, target.HexTile,
-                tile => _host.ShootBlockerAt(tile, dude, target) is { } o
+                // excludeObj = attacker (combat.cc:3584/:3641-style refusal check).
+                tile => _host.ShootBlockerAt(tile, dude) is { } o
                         && ShotFilter.LegacyCollapsed.Obstructs(o, isTarget: o == target)
                     ? o : null);
             if (blocker is not null)
@@ -500,7 +502,8 @@ public sealed class CombatEngine
 
         (MapObject? blocker, int crittersInPath) = LineOfFire.Trace(
             dude.HexTile, target.HexTile,
-            tile => _host.ShootBlockerAt(tile, dude, target) is { } o
+            // excludeObj = attacker (combat.cc:3584/:3641-style refusal check).
+            tile => _host.ShootBlockerAt(tile, dude) is { } o
                     && ShotFilter.LegacyCollapsed.Obstructs(o, isTarget: o == target)
                 ? o : null);
         if (blocker is not null)
@@ -694,7 +697,8 @@ public sealed class CombatEngine
         var line = new List<MapObject>();
         LineOfFire.Trace(from, endTile, tile =>
         {
-            MapObject? obj = _host.ShootBlockerAt(tile, dudeObj, targetObj) is { } o
+            // excludeObj = attacker (combat.cc:3641 _shoot_along_path — the burst walk).
+            MapObject? obj = _host.ShootBlockerAt(tile, dudeObj) is { } o
                     && ShotFilter.LegacyCollapsed.Obstructs(o, isTarget: o == targetObj)
                 ? o : null;
             if (obj is not null && Fid.Type(obj.Fid) is ObjectType.Critter
@@ -753,19 +757,21 @@ public sealed class CombatEngine
         if (endpoint == targetTile)
             return null;
 
-        // Exclude the shooter + the intended target from blocking (ShootBlockerAt takes both).
+        // excludeObj = the DEFENDER (combat.cc:3956's accidentalTarget, initialised to
+        // attack->defender) — NOT the attacker. targetObj falls back to attackerObj only when the
+        // caller has no defender to give us (defensive; the reference always has one here).
         MapObject excludeTarget = targetObj ?? attackerObj;
         MapObject? victim = null;
         LineOfFire.Trace(targetTile, endpoint, tile =>
         {
-            MapObject? obj = _host.ShootBlockerAt(tile, attackerObj, excludeTarget) is { } o
+            MapObject? obj = _host.ShootBlockerAt(tile, excludeTarget) is { } o
                     && ShotFilter.LegacyCollapsed.Obstructs(o, isTarget: o == excludeTarget)
                 ? o : null;
             if (victim is null && obj is not null && tile != targetTile && Fid.Type(obj.Fid) is ObjectType.Critter)
                 victim = obj;
             return obj; // a wall stops the line
         });
-        victim ??= _host.ShootBlockerAt(endpoint, attackerObj, excludeTarget) is { } endObj
+        victim ??= _host.ShootBlockerAt(endpoint, excludeTarget) is { } endObj
                 && ShotFilter.LegacyCollapsed.Obstructs(endObj, isTarget: endObj == excludeTarget)
             ? endObj : null; // endpoint fallback
 
@@ -1831,8 +1837,10 @@ public sealed class CombatEngine
             if (victim.IsDead)
                 continue;
             // Line-of-sight from the blast centre (walls shield).
+            // excludeObj = sourceObj = the victim itself (combat.cc:4055 — sourceObj is `obstacle`,
+            // the very object this LOF check is being run for).
             (MapObject? blocker, _) = LineOfFire.Trace(centerTile, victim.HexTile,
-                t => _host.ShootBlockerAt(t, victim, victim) is { } o
+                t => _host.ShootBlockerAt(t, victim) is { } o
                         && ShotFilter.LegacyCollapsed.Obstructs(o, isTarget: o == victim)
                     ? o : null);
             if (blocker is not null && victim.HexTile != centerTile)
@@ -2363,8 +2371,10 @@ public sealed class CombatEngine
         // covers the melee-reach case the isGun-only gate was missing.
         if (isGun || range > 1)
         {
+            // excludeObj = attacker = sourceObj (combat.cc:5688's _combat_is_shot_blocked(attacker, ...)
+            // — the to-hit-penalty consumer's sourceObj).
             (MapObject? blocker, _) = LineOfFire.Trace(attacker.HexTile, defender.HexTile,
-                tile => _host.ShootBlockerAt(tile, attacker, defender) is { } o
+                tile => _host.ShootBlockerAt(tile, attacker) is { } o
                         && ShotFilter.LegacyCollapsed.Obstructs(o, isTarget: o == defender)
                     ? o : null);
             if (blocker is not null)
@@ -3544,9 +3554,11 @@ public sealed class CombatEngine
         bool shotBlocked = false;
         if (enemyGun && enemyDistance <= attackRange)
         {
+            // excludeObj = attacker = sourceObj (combat.cc:4398's _combat_is_shot_blocked(attacker, ...)
+            // — the crowd-count consumer's sourceObj).
             (MapObject? blocker, enemyCritters) = LineOfFire.Trace(
                 enemy.HexTile, dudeTile,
-                tile => _host.ShootBlockerAt(tile, enemy, defenderObj) is { } o
+                tile => _host.ShootBlockerAt(tile, enemy) is { } o
                         && ShotFilter.LegacyCollapsed.Obstructs(o, isTarget: o == defenderObj)
                     ? o : null);
             // P78-M3: friendly-fire safety (_combat_safety_invalidate_weapon, combat.cc:2249) — don't take a
@@ -3817,9 +3829,11 @@ public sealed class CombatEngine
         bool blocked = false;
         if (isGun && distance <= range)
         {
+            // excludeObj = attacker = sourceObj (combat.cc:4398's _combat_is_shot_blocked(attacker, ...)
+            // — the crowd-count consumer's sourceObj), mirroring the enemy-AI path above.
             (MapObject? blocker, crittersInPath) = LineOfFire.Trace(
                 ally.HexTile, target.HexTile,
-                tile => _host.ShootBlockerAt(tile, ally, target) is { } o
+                tile => _host.ShootBlockerAt(tile, ally) is { } o
                         && ShotFilter.LegacyCollapsed.Obstructs(o, isTarget: o == target)
                     ? o : null);
             blocked = blocker is not null;
