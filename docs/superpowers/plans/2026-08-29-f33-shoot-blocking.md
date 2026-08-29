@@ -83,11 +83,16 @@ different thing: the predicate's own **six-neighbour adjacency scan** for multih
 | `CombatEngine.cs:1819` | explosion line-of-sight | identify in Task 7 |
 | `CombatEngine.cs:2349` | friendly-on-fire-line | `combat_ai.cc:2585` |
 | `CombatEngine.cs:3528` | enemy approach / crowd count | `combat.cc:5906` |
-| `ViewerGame.cs:3758` | to-hit line-of-fire penalty | `combat.cc:5906` |
-| `ViewerGame.Rendering.cs:369` | combat outline colour | identify in Task 7 |
+| `CombatEngine.cs` (a second overshoot site) | overshoot endpoint fallback | `combat.cc:3956` |
+| `ViewerGame.Rendering.cs` | combat outline colour | identify in Task 7 |
 
-Re-derive every one of these line numbers from the tree before you rely on it; this file's own edits
-will move them.
+There are **eleven**, not ten — an earlier draft of this plan miscounted, and also listed a
+`ViewerGame.cs` site that is not one: that call uses `SightBlockerAt`, a **different** predicate
+(flags `0x11`, no `SHOOT_THRU` term, and it includes flat objects). Do not wrap it and do not change
+it.
+
+Re-derive every one of these line numbers from the tree before you rely on it — `grep -rn
+ShootBlockerAt src/` is the way — because this branch's own edits move them.
 
 ---
 
@@ -745,8 +750,15 @@ past them, and it skips the target tile. Those are `ExcludesCritters` and `Exclu
 `ShotFilter.ShotBlockedPenalty`'s behaviour, baked into shared infrastructure. Consumers taking that
 filter are unaffected; the others must not silently inherit it. In particular
 `ShotFilter.AccidentalTarget` does **not** exclude critters, and it cannot work while the walker
-drops them. Move both terms out of the walker into the filter — pass the filter to `Trace` — and
-state the choice in your report.
+drops them.
+
+**This forces a shape change, and it is the biggest single piece of work in the plan — budget for
+it.** Task 2 established the pattern of pre-filtering the delegate: the call site applies the filter
+and hands `Trace` either the object or `null`. That cannot express critter counting, because a
+filter which excludes critters destroys the very object `Trace` needs in order to count it. So
+`Trace` must instead take the **raw** `blockerAt` plus a `ShotFilter`, and decide internally what
+blocks and what is merely counted. That means unwinding the inline wrapper at all eleven call sites
+rather than editing a policy argument in place. State in your report that you did this and how.
 
 - [ ] **Step 1: Assign the policies**
 
