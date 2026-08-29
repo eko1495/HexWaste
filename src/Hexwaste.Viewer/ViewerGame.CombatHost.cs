@@ -230,11 +230,34 @@ public sealed partial class ViewerGame
     {
         const int noBlock = 0x10;
         const uint shootThru = 0x80000000;
-        return _solidObjects[_elevation].FirstOrDefault(o =>
+        MapObject? onTile = _solidObjects[_elevation].FirstOrDefault(o =>
             o.HexTile == tile && o != shooter && o != target && !o.IsHidden
             && ((o.Flags & noBlock) == 0 || ((uint)o.Flags & shootThru) == 0)
             && (Fid.Type(o.Fid) is ObjectType.Wall or ObjectType.Scenery
                 || (Fid.Type(o.Fid) is ObjectType.Critter && !o.IsDead)));
+        if (onTile is not null)
+            return onTile;
+
+        // ported from fallout2-ce src/object.cc _obj_shoot_blocking_at()'s SECOND loop (:2440):
+        // with nothing on the tile itself, the six neighbours are scanned for MULTIHEX objects
+        // under a STRICTER gate — !HIDDEN && NO_BLOCK == 0, with NO SHOOT_THRU disjunction. The
+        // asymmetry with the tile phase above is the reference's own; do not "harmonise" it.
+        const int multiHex = 0x800;
+        for (int dir = 0; dir < 6; dir++)
+        {
+            int adj = Formats.Hex.HexGrid.TileInDirection(tile, dir, 1);
+            if (!Formats.Hex.HexGrid.IsValid(adj))
+                continue;
+            MapObject? mh = _solidObjects[_elevation].FirstOrDefault(o =>
+                o.HexTile == adj && (o.Flags & multiHex) != 0
+                && o != shooter && o != target && !o.IsHidden
+                && (o.Flags & noBlock) == 0
+                && (Fid.Type(o.Fid) is ObjectType.Wall or ObjectType.Scenery
+                    || (Fid.Type(o.Fid) is ObjectType.Critter && !o.IsDead)));
+            if (mh is not null)
+                return mh;
+        }
+        return null;
     }
 
     /// <summary>Reload from a matching-caliber ammo item: partial fills, no
