@@ -266,10 +266,23 @@ dotnet test           # set FALLOUT2_DIR=/path/to/game for the data-backed tests
 scripts/combat-golden.sh      # combat transcripts (check | record)
 scripts/encounter-golden.sh   # worldmap / encounter / companion / panel state lines
 scripts/quest-golden.sh       # original-game quests driven to completion (state-only)
+
+# Hermetic checks — no game data, no display, no build. These run in CI, where
+# the golden suites cannot:
+scripts/harness-selftest.sh   # breaks the golden harness on purpose; it must notice
+scripts/ascii-lint.sh         # no character above U+00FF in a font-rendered string
 ```
 
 The data-backed unit tests skip cleanly when `FALLOUT2_DIR` is unset, so a
 plain `dotnet test` passes without any game assets.
+
+The two hermetic checks cover what the golden suites structurally cannot. The
+self-test answers the question a green suite cannot answer about itself — when
+something *is* broken, does the harness fail? The lint guards a defect class no
+fixture can hold: the game's AAF fonts are byte-indexed, so a character above
+U+00FF has no glyph, and not one of the 279 committed transcripts contains a
+non-ASCII byte to catch it. A line that legitimately writes to stderr, harness
+stdout, or the OS window title opts out with `// ascii-ok: <reason>`.
 
 `scripts/quest-golden.sh` drives original-game quests to completion through the
 real script logic (dialogue VM + `set_global_var`, no faking) and locks each as

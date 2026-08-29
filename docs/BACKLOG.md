@@ -366,7 +366,7 @@ Three costs came out, none of them assertion strength:
 - **`dotnet run` overhead**, measured directly at 1.16 s of pure startup cost per invocation
   (`git show b488061`) — replaced by invoking the already-built binary.
 - **Serial execution** on a machine that reports 16 cores (`nproc`) — `golden-lib.sh` now owns a
-  job pool (`GOLDEN_JOBS="${GOLDEN_JOBS:-$(nproc)}"`, `scripts/golden-lib.sh:53`) and runs
+  job pool (`GOLDEN_JOBS="${GOLDEN_JOBS:-$(nproc)}"`, `scripts/golden-lib.sh:70`) and runs
   scenarios concurrently instead of one at a time.
 - **The determinism double run**, kept for every suite that had it (all but `census`, which never
   ran one): the unit of work is a *(fixture, pass)* pair, so both passes of a fixture can run
@@ -379,6 +379,50 @@ disk-writing scenario (`automap-persist`, `save-slot-roundtrip`, `save-slots-pro
 `vic-save-roundtrip`) its own private directory so two passes of the same fixture running at once
 don't race each other's save files on disk — a harness-only accommodation for concurrency, not a
 change to what is being asserted.
+
+**Harness guards — SHIPPED 2026-08-30 (`feat/harness-guards`), 0 fixtures touched.** Three
+measures against the pattern that kept recurring: a defect surviving a fully green suite. Each
+targets a blind spot the golden suites cannot cover by construction, and all three are hermetic
+— no game data, no GPU, no `DISPLAY` — so they run in CI, where the golden suites cannot.
+
+- **`scripts/harness-selftest.sh` — does the harness fail when it should?** A green run is the
+  evidence every change is merged on, which makes that question load-bearing and otherwise
+  unasked. Ten cases each break something on purpose and require `golden-lib.sh` to notice: a
+  corrupted fixture, a missing one, a nondeterministic runner, a scenario that outgrows its
+  timeout, a dropped scenario, both `mktemp -d` guards, a garbage `GOLDEN_JOBS`, and an exported
+  `DOUBLE_RUN=0` (which must *not* disable the determinism check — that is what the
+  unconditional source-time knob assignment at `scripts/golden-lib.sh:61-68` buys, and this case
+  is what proves it still holds). A fake runner script stands in for the viewer. Verified by
+  mutation: five separate sabotages of `golden-lib.sh` — removing the `DOUBLE_RUN=1` default,
+  neutering the diff verdict, the determinism comparison, the missing-fixture guard, and the
+  count assertion — each drop the self-test from 10/10 to a failure.
+  *Not covered:* the `JOB FAILED (no output)` path, which needs a job killed between running the
+  binary and writing its output; every way of faking it was less faithful than not testing it,
+  and it is a loud failure path rather than a silent-success one.
+- **`GOLDEN_EXPECT_SCENARIOS` — a coverage assertion.** Each suite now declares how many
+  scenarios it is supposed to have (`census` 16, `opening` 13, `endgame` 5, `encounter` 188,
+  `quest` 39, `combat` 18 — 279 total), and `golden_run_all` aborts before forking anything if
+  `SCENARIOS` holds a different number. Coverage is the one property a green suite cannot
+  demonstrate about itself: a scenario lost to a bad edit leaves every survivor passing and the
+  suite reporting `ALL PASS` over the hole. It prints nothing when it holds, so a passing run
+  stays byte-identical.
+  A second check — *did the run emit that many `ok` lines* — was written, then **dropped as
+  unreachable**: every failure path in the emit loop sets `GOLDEN_FAIL`, so `GOLDEN_FAIL=0`
+  already implies every scenario printed `ok`. Writing the self-test is what exposed it as dead
+  code; it is recorded here rather than shipped with a comment promising protection it cannot
+  give.
+- **`scripts/ascii-lint.sh` — no non-ASCII in font-rendered strings.** The game's AAF fonts are
+  byte-indexed (256 glyph records), so a character above U+00FF has no glyph and never can —
+  before `AafFont.GlyphIndex`, a `(byte)` cast silently *truncated* it (U+2014 `—` became 0x14).
+  No fixture can catch this: **not one of the 279 committed transcripts contains a single
+  non-ASCII byte**, so the entire class is invisible to the suite by construction. The lint found
+  26 literals in `src/`; **13 were font-bound and are fixed** (`CombatEngine.cs` ×5,
+  `ViewerGame.Panels.cs` ×5, `ViewerGame.cs` ×3), the other 13 go to stderr, harness stdout, or
+  the OS window title and now carry a per-line `// ascii-ok: <reason>` marker. The marker
+  requires a reason on purpose: the point is to force each case to be *classified*, not to hand
+  out a blanket exemption.
+
+Wired into `.github/workflows/ci.yml` ahead of the build, since both cost seconds and fail fast.
 
 ## Tier F — fidelity gaps surfaced by the maintained-fork survey (2026-08-14)
 

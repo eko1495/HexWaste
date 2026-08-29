@@ -13,6 +13,20 @@ jobs:
       - uses: actions/setup-dotnet@v4
         with:
           dotnet-version: "10.0.x"
+      # Both checks below are hermetic: no game data, no GPU, no DISPLAY. They
+      # cover the two blind spots the golden suites structurally cannot, and they
+      # run before the build because they cost seconds and fail fast.
+      #
+      # The lint guards a class of defect no fixture can hold: the game's AAF
+      # fonts are byte-indexed, so a character above U+00FF has no glyph, and not
+      # one of the 279 committed transcripts contains a non-ASCII byte to catch it.
+      - name: Lint (no non-ASCII in font-rendered strings)
+        run: ./scripts/ascii-lint.sh
+      # The self-test asks the question a green suite cannot answer about itself:
+      # when something IS broken, does the harness actually fail? The golden
+      # suites need game data and cannot run here; their runner can.
+      - name: Golden harness self-test
+        run: ./scripts/harness-selftest.sh
       - name: Build
         run: dotnet build Hexwaste.slnx -c Release
       # The data-backed tests self-skip when FALLOUT2_DIR is unset
