@@ -8,8 +8,33 @@
 # The unit of work is a (fixture, pass) pair. Both passes of the same fixture may
 # run concurrently, which is what makes the determinism double-run cost a core
 # instead of wall time.
+#
+# Suite-tunable knobs (set before calling golden_run_all; all optional):
+#   SCENARIO_FIELDS     "2" (name|args, default runner) or "3" (name|runner|args)
+#   DOUBLE_RUN           1 (default) to double-run each fixture for a determinism
+#                         check, 0 to run once
+#   MISMATCH_LABEL       label printed before a diff (default "DIFF")
+#   DIFF_TRUNC            if set, pipe the diff through `head -N` instead of full
+#   GOLDEN_RESULT_HOOK   name of a function called as `hook NAME OUTPUT`; a
+#                         non-zero return marks the fixture failed and skips it
+#   GOLDEN_RECORD_COUNT   1 (default) to suffix a recorded line with its line
+#                         count ("recorded NAME (N lines)"); 0 for the bare
+#                         "recorded NAME" wording (census-sweep.sh)
+#   GOLDEN_MISSING_HINT   text appended to "MISSING FIXTURE: NAME" (default
+#                         " (run 'record' first)"); set to "" for the bare
+#                         wording (census-sweep.sh)
+#
+# GOLDEN_FAIL is initialised to 0 at source time so a suite (or an early-return
+# path) can read it under `set -u` before golden_run_all has run.
+GOLDEN_FAIL=0
 
 GOLDEN_JOBS="${GOLDEN_JOBS:-$(nproc)}"
+# Guard against an empty/non-numeric throttle (unset nproc, a blank export) —
+# otherwise the `-ge` comparison below errors out and every job forks at once.
+case "$GOLDEN_JOBS" in
+  ''|*[!0-9]*) GOLDEN_JOBS=1 ;;
+  0) GOLDEN_JOBS=1 ;;
+esac
 
 declare -A _GR_TIMEOUT _GR_BIN _GR_FILTER _GR_EXTRA
 _GOLDEN_DEFAULT_RUNNER=""
@@ -50,12 +75,19 @@ _golden_job() {
 }
 
 golden_run_all() {
-  local jobdir; jobdir="$(mktemp -d)"
+  local jobdir
+  jobdir="$(mktemp -d)" || { echo "golden: mktemp -d failed" >&2; return 2; }
+  [ -n "$jobdir" ] && [ -d "$jobdir" ] || { echo "golden: mktemp -d returned no directory" >&2; return 2; }
+  # Interrupting a long run (the normal way to abandon a big suite) must not
+  # leave scratch subdirectories and savegames behind.
+  trap 'rm -rf "$jobdir"' EXIT INT TERM
   local fields="${SCENARIO_FIELDS:-2}"
   local double="${DOUBLE_RUN:-1}"
   local label="${MISMATCH_LABEL:-DIFF}"
   local trunc="${DIFF_TRUNC:-}"
   local hook="${GOLDEN_RESULT_HOOK:-}"
+  local record_count="${GOLDEN_RECORD_COUNT:-1}"
+  local missing_hint="${GOLDEN_MISSING_HINT- (run 'record' first)}"
 
   local -a names=() runners=() argses=()
   local entry name rest
@@ -88,6 +120,12 @@ golden_run_all() {
   local out out2
   for i in "${!names[@]}"; do
     name="${names[$i]}"
+
+    if [ ! -f "$jobdir/$i.1.out" ]; then
+      echo "JOB FAILED: $name (no output — job died before writing it)"
+      GOLDEN_FAIL=1
+      continue
+    fi
     out="$(cat "$jobdir/$i.1.out")"
 
     if [ -n "$hook" ]; then
@@ -96,17 +134,26 @@ golden_run_all() {
 
     if [ "$MODE" = "record" ]; then
       printf '%s\n' "$out" > "$FIX/$name.txt"
-      echo "recorded $name ($(printf '%s\n' "$out" | wc -l | tr -d ' ') lines)"
+      if [ "$record_count" = 1 ]; then
+        echo "recorded $name ($(printf '%s\n' "$out" | wc -l | tr -d ' ') lines)"
+      else
+        echo "recorded $name"
+      fi
       continue
     fi
 
     if [ "$double" = 1 ]; then
+      if [ ! -f "$jobdir/$i.2.out" ]; then
+        echo "JOB FAILED: $name (no output — job died before writing it)"
+        GOLDEN_FAIL=1
+        continue
+      fi
       out2="$(cat "$jobdir/$i.2.out")"
       if [ "$out" != "$out2" ]; then echo "NONDETERMINISTIC: $name"; GOLDEN_FAIL=1; fi
     fi
 
     if [ ! -f "$FIX/$name.txt" ]; then
-      echo "MISSING FIXTURE: $name (run 'record' first)"; GOLDEN_FAIL=1; continue
+      echo "MISSING FIXTURE: $name${missing_hint}"; GOLDEN_FAIL=1; continue
     fi
 
     if diff -u "$FIX/$name.txt" <(printf '%s\n' "$out") >/dev/null; then
@@ -123,5 +170,6 @@ golden_run_all() {
   done
 
   rm -rf "$jobdir"
+  trap - EXIT INT TERM
   return 0
 }

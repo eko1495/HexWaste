@@ -27,7 +27,7 @@ SCENARIOS=(
 
 dotnet build src/Hexwaste.Viewer -c Debug >/dev/null || { echo "build failed"; exit 2; }
 
-source "$(dirname "$0")/golden-lib.sh"
+source "scripts/golden-lib.sh" || exit 2
 golden_runner viewer 90 src/Hexwaste.Viewer/bin/Debug/net10.0/Hexwaste.Viewer \
   "slide:|endgame-probe:|death-ending-probe:" "--no-audio"
 
