@@ -1319,7 +1319,9 @@ pointer and never stops the walk. **No shoot caller ever sees one at all** — w
 (`combat.cc:5912-5919` counts only what the walker reported). The `SHOOT_THRU` exclusion is therefore
 **uniform and imposed by the walker**, not a per-caller difference; the two callers that re-test the
 flag (`:3586`, `:3963`) are redundant confirmations. Ported as `LineOfFire.Suppresses`
-(`src/Hexwaste.Formats/Combat/LineOfFire.cs:60`), applied inside `LineOfFire.Trace` (`:94`).
+(`src/Hexwaste.Formats/Combat/LineOfFire.cs:61`), applied inside `LineOfFire.Trace` (`:95`). It is
+`internal`, not `public`: `Trace` is its only caller, and callers that need to observe walked
+objects use `Trace`'s `onCandidate` hook (which fires *after* the guard) rather than re-running it.
 
 The sight trace opts out: `obj_can_see_obj` passes `a6 == 16` (`interpreter_extra.cc:1797`), so the
 guard is off for it. That is why `Trace` takes the stride as a parameter.
@@ -1341,7 +1343,7 @@ blast radius.
 **Two divergences the old entry never recorded, both closed here.**
 
 1. **The MULTIHEX adjacency phase was missing entirely.** `_obj_shoot_blocking_at`'s second loop
-   (`object.cc:2469-2476`) scans the six neighbouring tiles for `OBJECT_MULTIHEX` objects under a
+   (`object.cc:2464-2490`) scans the six neighbouring tiles for `OBJECT_MULTIHEX` objects under a
    **stricter** gate than the tile phase — `!HIDDEN && NO_BLOCK == 0`, with *no* `SHOOT_THRU`
    disjunction. The asymmetry is the reference's own. Ported in `2d44841`. **It is live but narrow:**
    a scan of every shipped map found 229 `OBJECT_MULTIHEX` objects across ~20 maps, and nearly all are
@@ -1354,6 +1356,31 @@ blast radius.
    `combat_ai.cc:2585`; the **defender** at `combat.cc:3956`; `sourceObj` at `:5906` — which is the
    victim itself for the explosion check (`:4055`) and `gDude` for the outline (`:2684`). Made a
    parameter in `2ee9bcf`.
+
+**Residue — divergences that remain, recorded here because they otherwise live only in source
+comments.**
+
+- **`Trace` never blocker-checks the shooter's own tile.** `_make_straight_path_func` probes `from`
+  first (`animation.cc:1954`), through the same callback, compared against `excludeObj` — and
+  `excludeObj` excludes the shooter *object*, not the shooter's *tile*. A second object standing on
+  the shooter's hex therefore blocks in the reference and does not here. (`LineOfFire.cs`, in-loop
+  comment.)
+- **The missed-shot endpoint fallback uses a different predicate *and* a different exclude object.**
+  The reference calls `_obj_blocking_at(nullptr, attack->tile, ...)` (`combat.cc:3960`) — the general
+  *movement*-blocking predicate, with **no** exclude object. `ComputeAccidentalMiss` calls
+  `_host.ShootBlockerAt(endpoint, excludeTarget)` — the shoot-blocking subset, with the defender
+  excluded.
+- **…and on that same line, `Obstructs(endObj, isTarget: endObj == excludeTarget)` is a dead
+  expression.** `ShootBlockerAt` has already dropped `excludeTarget`, so `isTarget` is always
+  `false` and the filter's `ExcludesTarget` term can never fire there. Kept as written so the filter
+  is applied whole, matching `:3963`.
+
+**One widening this port DOES carry, and no fixture stands near it.** The flag gate moved from a
+conjunction to the reference's disjunction, so a `NO_BLOCK`-set / `SHOOT_THRU`-clear wall or scenery
+object now obstructs where it did not before. The survey above counted **5,368** such objects across
+the 155 shipped maps. **No fixture stands near one** — so "moved zero fixtures" is, for this one
+term, *untested by fixture* rather than *confirmed by it*. The headline should not be read as
+coverage of the widening.
 
 **The +1 MULTIHEX crowd bump (`combat.cc:5921`) remains deliberately unported** — it is a to-hit term,
 not part of the predicate. So is SFALL's line-of-fire hit-chance extension. Both are out of scope at
@@ -1372,6 +1399,40 @@ call the coarse predicate at all. Giving it the reference's behaviour means port
 cited, tested, and used by the `--shot-blockers` probe (`ViewerGame.Harness.cs:1079`) — so the ported
 reading is not lost when that walk is eventually done. **File as its own entry if wanted; it is the
 only line-of-fire consumer left approximated.**
+
+**A second filter is now in the same "ported, not consumed" standing: `ShotBlockedRoll`
+(`combat.cc:3586`).** Pre-merge review found the three dude-side line-of-fire *refusals*
+(`PreviewToHit`, `TryAttack`, `TryBurst`) annotated against `_check_ranged_miss` (`combat.cc:3574`),
+which is not a refusal at all: it runs **after** a roll has already failed, inside `attackCompute`,
+and its outcome is a stray shot hitting something. The reference counterpart for those three is
+`_combat_check_bad_shot` (`combat.cc:5688` → `COMBAT_BAD_SHOT_AIM_BLOCKED`), which calls
+`_combat_is_shot_blocked`; and the `crittersInPath` the same `Trace` returns is that call's
+`numCrittersOnLof`, whose reference counterpart (`determine_to_hit_func`, `combat.cc:4398`) is also
+`_combat_is_shot_blocked`. Both are `ShotFilter.ShotBlocked` (`combat.cc:5908`) — which the NPC-side
+twin of the very same function, `CheckBadShot`, already carried, so one reference function had been
+implemented twice under two different filters. Corrected; **behaviourally inert** (the only terms
+that differ are `ExcludesShootThru`, already imposed uniformly by the walker guard, and
+`ExcludesTarget`, which all three sites make unreachable by hard-gating the target to a live
+critter, which `ExcludesCritters` already spares — and the crowd count's `!isTarget` test is
+independent of the filter). Verified: all six suites still ALL PASS, nothing re-recorded.
+`ShotBlockedRoll` is kept, cited and tested, exactly as `FriendlyFire` is.
+
+**The walker's first conjunct was missing, and the new MULTIHEX phase made that load-bearing.**
+`obstacle != *obstaclePtr` (`animation.cc:1956`, `:2050`, `:2103`) is not merely an initial
+exclusion: every looping caller re-enters the walker with `*obstaclePtr` still holding the object
+found last time, so the walker refuses to report the same object twice in a row. Hexwaste's
+single-pass `Trace` folded that outer loop away and the conjunct went with it. That was harmless
+while every reported object sat on the tile queried — but the adjacency phase returns MULTIHEX
+objects from up to six *neighbouring* tiles, and `Trace` dedupes by **tile**, never by object. A
+line passing beside one Brahmin touches two or three tiles that each hand back the same Brahmin, and
+each did `critters++` — triple-charging one animal against the −10/critter to-hit term
+(`combat.cc:5912`). Live on shipped maps (the phase's own evidence comment records it firing against
+Brahmin on `modmain.map`); no fixture covers it, which is why nothing moved. Ported explicitly in
+`Trace` as *last-reported*, not as a set — the reference's pointer holds only the most recent
+obstacle — with two tests pinning both halves. The burst walk's hand-rolled `line.Contains(obj)` is
+**not** made redundant by it: the one-slot pointer only stops an immediate repeat, and our
+collect-then-spend structure (vs the reference's spend-as-you-walk) would give a re-listed victim a
+second independent budget draw. Both are kept, with that reason recorded at the call site.
 
 **F25 is unblocked by this** — see its entry for the remaining one-line scope.
 
@@ -1870,6 +1931,39 @@ maps anything above U+00FF to `'?'` with both paths routed through it, marked in
 confirms the dash now renders and the line re-wraps accordingly. Five hermetic tests pin the mapping.
 **Worth generalising:** no golden fixture contains a single non-ASCII byte, so this class of defect is
 invisible to the entire suite by construction.
+
+**F50 — the missed-shot endpoint fallback can strike a critter THROUGH a wall.** *Effort S ·
+pre-existing (P114's `ComputeAccidentalMiss`, not introduced by F33) · filed by the F33 pre-merge
+review, which judged it file-and-merge rather than fix-in-branch.*
+
+`ComputeAccidentalMiss` (`src/Hexwaste.Formats/Combat/CombatEngine.cs`) walks from the defender's
+tile to the overshoot endpoint and picks the accidental victim, then falls back to whatever blocks
+the endpoint. Its `onCandidate` hook records `victim` **only for critters** — but the walk itself
+still *stops* on a wall (`ShotFilter.AccidentalTarget` applies no type test, `combat.cc:3963`). So a
+wall between the defender and the endpoint ends the walk with `victim == null`, and control falls
+through to `victim ??= _host.ShootBlockerAt(endpoint, ...)` — an endpoint lookup **behind the wall
+the shot just stopped at**. A critter standing there takes the damage.
+
+The reference cannot do this. `attackCompute` reads back the obstacle pointer and takes the `else`
+branch **only** when the walk found nothing or found the defender:
+
+```c
+_make_straight_path_func(accidentalTarget, attack->defender->tile, attack->tile, nullptr, &accidentalTarget, 32, _obj_shoot_blocking_at);
+if (accidentalTarget != nullptr && accidentalTarget != attack->defender) {
+    attack->tile = accidentalTarget->tile;          // combat.cc:3958 — the wall IS the answer
+} else {
+    accidentalTarget = _obj_blocking_at(nullptr, attack->tile, attack->defender->elevation);  // :3960
+}
+```
+
+(`combat.cc:3956-3960`.) A wall reported by the walk is the accidental target: it takes the `if`
+branch, the shot lands on the wall's tile, and the `:3963` type-free damage packet is applied to the
+wall — never to something beyond it. The fix is to make `onCandidate` record the obstacle the walk
+actually stopped on (i.e. use `Trace`'s returned `Blocker`, not a critter-only hook) and to gate the
+endpoint fallback on that blocker being null or the defender, mirroring the `if`/`else` above.
+
+**Re-record tier:** likely. Any fixture where a missed ranged shot overshoots past a wall would
+change. Not attempted in the F33 branch precisely because that branch shipped zero fixture movement.
 
 ### Pointer
 
