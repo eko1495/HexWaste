@@ -305,7 +305,48 @@ grep '^WALL endgame' .superpowers/sdd/golden-baseline.log
 
 Expected: the new time is clearly below the baseline. With only 5 fixtures the win is modest — the point is that it is not *slower*, which would mean the pool is not running.
 
-- [ ] **Step 5: Commit**
+- [ ] **Step 5: Prove `record` mode still works — without committing what it writes**
+
+`record` rewrites committed fixtures, so a broken record path is worse than a broken check path:
+nobody notices until someone re-records and clobbers 279 files. No later task exercises it, so it
+gets checked here, on the smallest suite, and then reverted.
+
+```bash
+cd /home/eko/dev/FPOC
+export DISPLAY=:0 FALLOUT2_DIR="$(pwd)/game-data"
+./scripts/endgame-golden.sh record
+git status --short tests/golden-endgame/
+git diff --stat tests/golden-endgame/
+```
+
+Expected: five `recorded <name> (N lines)` lines, and **`git diff --stat` empty** — re-recording an
+unchanged build must reproduce the committed fixtures byte for byte. If any fixture differs, stop:
+either the record path or the check path is wrong, and they disagree.
+
+```bash
+cd /home/eko/dev/FPOC
+git checkout -- tests/golden-endgame/   # leave the tree exactly as you found it
+```
+
+- [ ] **Step 6: Prove a timed-out job is reported, not silently passed**
+
+The spec requires this and nothing else in the plan checks it. Force a timeout by registering an
+absurdly short one, and confirm the suite fails loudly rather than printing `ok`.
+
+```bash
+cd /home/eko/dev/FPOC
+export DISPLAY=:0 FALLOUT2_DIR="$(pwd)/game-data"
+sed 's/golden_runner viewer 90/golden_runner viewer 1/' scripts/endgame-golden.sh > /tmp/endgame-timeout.sh
+chmod +x /tmp/endgame-timeout.sh
+bash /tmp/endgame-timeout.sh check; echo "exit=$?"
+```
+
+Expected: `DIFF:` lines (the timed-out jobs produced no output, so they mismatch their fixtures),
+`golden endgame: FAIL`, and `exit=1`. **A run that prints `ok` under a 1-second timeout means a
+timed-out job is being treated as a pass — that is a stop condition.** Delete `/tmp/endgame-timeout.sh`
+afterwards; do not commit it.
+
+- [ ] **Step 7: Commit**
 
 ```bash
 cd /home/eko/dev/FPOC
@@ -630,6 +671,12 @@ cd /home/eko/dev/FPOC
 grep -n '/tmp/hexwaste' scripts/encounter-golden.sh || echo "no hardcoded paths remain"
 ```
 
+Note the token expands to a directory the library has already created, but the paths above add a
+**subdirectory** under it (`@SCRATCH@/p48-rt`). The original paths (`/tmp/hexwaste-p48-rt`) did not
+pre-exist either and the viewer created them, so this should behave the same — Step 3's diff is what
+confirms it. If those two scenarios fail with a missing-directory error, create the subdirectory in
+`_golden_job` rather than reverting to a shared path.
+
 - [ ] **Step 2: Migrate the runner**
 
 Replace everything from the `run()` definition to the end of the file with:
@@ -754,7 +801,7 @@ git commit -m "docs: record the golden-harness speedup with measured numbers"
 | Task | How it is proven |
 |---|---|
 | 1 | Baseline exists, 279 `ok` lines, six `WALL` figures, captured from unmodified `scripts/` |
-| 2 | endgame byte-identical; not slower |
+| 2 | endgame byte-identical; not slower; `record` reproduces its fixtures exactly; a timed-out job fails loudly |
 | 3 | combat byte-identical; wall time vs the measured 112.3 s |
 | 4 | census byte-identical; single-pass confirmed; no `LOAD-FAIL` in the baseline |
 | 5 | opening byte-identical; every scenario kind maps to a registered runner |
