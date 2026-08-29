@@ -60,6 +60,10 @@ census_load_check() {
   return 0
 }
 
+# Coverage assertion: a suite that quietly lost a scenario still reports ALL PASS
+# over the hole. Update this deliberately when adding or removing a fixture.
+GOLDEN_EXPECT_SCENARIOS=16
+
 golden_run_all || exit 2
 [ "$MODE" = "record" ] && { [ "$GOLDEN_FAIL" = 0 ] && exit 0 || exit 1; }
 if [ "$GOLDEN_FAIL" = 0 ]; then echo "census sweep: ALL PASS"; else echo "census sweep: FAIL"; exit 1; fi

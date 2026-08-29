@@ -350,6 +350,10 @@ source "scripts/golden-lib.sh" || exit 2
 golden_runner viewer 120 src/Hexwaste.Viewer/bin/Debug/net10.0/Hexwaste.Viewer \
   "^(get-global:|quest-item:|quest-probe:|party-count:|party:)" "--no-audio"
 
+# Coverage assertion: a suite that quietly lost a scenario still reports ALL PASS
+# over the hole. Update this deliberately when adding or removing a fixture.
+GOLDEN_EXPECT_SCENARIOS=39
+
 golden_run_all || exit 2
 [ "$MODE" = "record" ] && { [ "$GOLDEN_FAIL" = 0 ] && exit 0 || exit 1; }
 if [ "$GOLDEN_FAIL" = 0 ]; then echo "quest e2e: ALL PASS"; else echo "quest e2e: FAIL"; exit 1; fi

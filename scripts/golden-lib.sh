@@ -27,6 +27,22 @@
 #   GOLDEN_MISSING_HINT   text appended to "MISSING FIXTURE: NAME" (default
 #                         " (run 'record' first)"); set to "" for the bare
 #                         wording (census-sweep.sh)
+#   GOLDEN_EXPECT_SCENARIOS  how many scenarios this suite is supposed to have.
+#                         Empty (default) asserts nothing. When set, the suite
+#                         aborts if SCENARIOS holds a different number.
+#                         Coverage is the one property a green suite
+#                         cannot demonstrate about itself: a scenario deleted
+#                         by a bad edit, or a whole array truncated, leaves
+#                         every surviving fixture passing and the suite
+#                         reporting ALL PASS over a hole. This turns the
+#                         intended count into an assertion rather than a
+#                         number nobody re-reads. It prints NOTHING when it
+#                         holds, so a passing run stays byte-identical.
+#                         (A second check — "did the run emit that many `ok`
+#                         lines" — was tried and dropped: every failure path in
+#                         the emit loop sets GOLDEN_FAIL, so GOLDEN_FAIL=0
+#                         already implies every scenario printed ok. It could
+#                         never fire.)
 #
 # GOLDEN_FAIL is initialised to 0 at source time so a suite (or an early-return
 # path) can read it under `set -u` before golden_run_all has run.
@@ -49,6 +65,7 @@ DIFF_TRUNC=
 GOLDEN_RESULT_HOOK=
 GOLDEN_RECORD_COUNT=1
 GOLDEN_MISSING_HINT=" (run 'record' first)"
+GOLDEN_EXPECT_SCENARIOS=
 
 GOLDEN_JOBS="${GOLDEN_JOBS:-$(nproc)}"
 # Guard against an empty/non-numeric throttle (unset nproc, a blank export) —
@@ -106,6 +123,15 @@ _golden_job() {
 }
 
 golden_run_all() {
+  # Checked before the jobdir exists and before anything forks: if the suite has
+  # lost scenarios there is no point spending 2 minutes confirming the survivors.
+  if [ -n "$GOLDEN_EXPECT_SCENARIOS" ] && [ "${#SCENARIOS[@]}" != "$GOLDEN_EXPECT_SCENARIOS" ]; then
+    echo "SCENARIO COUNT: expected $GOLDEN_EXPECT_SCENARIOS, SCENARIOS holds ${#SCENARIOS[@]}" >&2
+    echo "  A scenario was added or removed without updating GOLDEN_EXPECT_SCENARIOS." >&2
+    GOLDEN_FAIL=1
+    return 2
+  fi
+
   local jobdir
   jobdir="$(mktemp -d)" || { echo "golden: mktemp -d failed" >&2; GOLDEN_FAIL=1; return 2; }
   [ -n "$jobdir" ] && [ -d "$jobdir" ] || { echo "golden: mktemp -d returned no directory" >&2; GOLDEN_FAIL=1; return 2; }
