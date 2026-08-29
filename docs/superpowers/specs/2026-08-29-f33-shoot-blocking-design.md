@@ -90,9 +90,14 @@ function were never ported. This too makes us block less.
 
 The entry asked whether the flag word we survey is the flag word the engine uses. It is:
 `objectRead` (`object.cc:412`) reads `obj->flags` verbatim from the map file with a single
-`fileReadInt32`, and the only post-read fixup in `objectLoadAllInternal` clears `OBJECT_NO_REMOVE` on
-certain critters. No proto flags are merged in. **The survey measured the right field**, so the
-"our parser is wrong" hypothesis is dead and needs no experiment.
+`fileReadInt32`, and the post-read fixup in `objectLoadAllInternal` only clears `OBJECT_NO_REMOVE` on
+certain critters. **No proto flags are merged into a loaded map object's flag word.**
+
+Stated precisely, because the sweeping version would be wrong: there *is* a runtime `flags |=` during
+map load (`map.cc:961`, setting `LIGHT_THRU | NO_SAVE | HIDDEN`), but it applies to a synthetic
+misc-12 object created to carry the map script — not to any object read from the map, and hidden in
+any case. So **the survey measured the right field**, and the "our parser reads a different flag word
+than the engine uses" hypothesis is dead without needing an experiment.
 
 ---
 
@@ -123,8 +128,14 @@ probes; this one is worth keeping.
 
 The shape to port is one coarse predicate plus per-consumer policies:
 
-1. `ShootBlockerAt` becomes faithful to `_obj_shoot_blocking_at` — the reference flag test, the
-   attacker-only exclusion, and the multihex adjacency phase.
+1. `ShootBlockerAt` becomes faithful to `_obj_shoot_blocking_at`, which means three specific things,
+   spelled out because "be faithful" is where a port quietly keeps one of its old terms:
+   - the **tile phase** gates on `!HIDDEN && (NO_BLOCK == 0 || SHOOT_THRU == 0)`, then the type test
+     (live critter, scenery, or wall) that we already have correct;
+   - the exclusion is the **attacker only** — the target stops being excluded;
+   - the **multihex phase** runs when the tile phase finds nothing: the six adjacent tiles are
+     scanned for `OBJECT_MULTIHEX` objects under a *stricter* gate — `!HIDDEN && NO_BLOCK == 0`, with
+     **no `SHOOT_THRU` disjunction** — plus the same exclusion and type test.
 2. Each of the ten `LineOfFire.Trace` consumers gets the policy its reference counterpart has. Five
    have a counterpart in the table above; the others (rendering's outline check, explosion
    line-of-sight, `DangerSource` reachability, approach) must have their counterpart identified, and
