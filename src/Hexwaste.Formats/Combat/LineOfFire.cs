@@ -58,7 +58,7 @@ public static class LineOfFire
     /// default would let a call site silently assume a stride it never chose. <see cref="Trace"/> is
     /// its only caller — callers that need to observe walked objects use Trace's
     /// <c>onCandidate</c> hook, which fires AFTER this guard.</summary>
-    public static bool Suppresses(MapObject candidate, int stride) =>
+    internal static bool Suppresses(MapObject candidate, int stride) =>
         stride == ShootTraceStride && (candidate.Flags & ShootThru) != 0;
 
     /// <summary>blockerAt returns the RAW coarse predicate's answer for the tile — a
@@ -115,6 +115,19 @@ public static class LineOfFire
         int prevTile = fromTile;
         int critters = 0;
 
+        // ported from fallout2-ce src/animation.cc:1956, :2050, :2103 — the FIRST conjunct of
+        // _make_straight_path_func's guard, `obstacle != *obstaclePtr`. It is not merely an
+        // initial exclusion: every looping caller (_combat_is_shot_blocked's while at
+        // combat.cc:5905, _check_ranged_miss's at :3583, _shoot_along_path's at :3635) re-enters
+        // the walker with *obstaclePtr still holding the object found last time, so the walker
+        // refuses to report the SAME object twice in a row. Our single-pass Trace folds that outer
+        // loop away, so the conjunct has to be carried here explicitly — otherwise a MULTIHEX
+        // object, which ShootBlockerAt reports from up to six tiles ADJACENT to it
+        // (_obj_shoot_blocking_at's second loop, object.cc:2464-2490), would be seen — and, if a
+        // critter, COUNTED (combat.cc:5912) — two or three times on one line. The reference's
+        // pointer holds only the MOST RECENT object, so this is last-reported, not a set.
+        MapObject? lastReported = null;
+
         // Guard against any FromScreenEmbedding edge case never terminating; the
         // Bresenham reaches the destination in ~max(ddx,ddy)/2 steps.
         int guard = ddx + ddy + 8;
@@ -140,8 +153,9 @@ public static class LineOfFire
                     // here. The TARGET tile is checked — the engine's "obstacle != targetObj"
                     // is an identity test in the caller's filter, not a tile skip.
                     if (tile >= 0 && tile != fromTile && blockerAt(tile) is { } obj
-                        && !Suppresses(obj, stride))
+                        && !ReferenceEquals(obj, lastReported) && !Suppresses(obj, stride))
                     {
+                        lastReported = obj;
                         onCandidate?.Invoke(obj, tile);
                         bool isTarget = targetObj is not null && ReferenceEquals(obj, targetObj);
                         if (filter.Obstructs(obj, isTarget))
@@ -170,8 +184,9 @@ public static class LineOfFire
                 if (tile != prevTile)
                 {
                     if (tile >= 0 && tile != fromTile && blockerAt(tile) is { } obj
-                        && !Suppresses(obj, stride))
+                        && !ReferenceEquals(obj, lastReported) && !Suppresses(obj, stride))
                     {
+                        lastReported = obj;
                         onCandidate?.Invoke(obj, tile);
                         bool isTarget = targetObj is not null && ReferenceEquals(obj, targetObj);
                         if (filter.Obstructs(obj, isTarget))

@@ -273,12 +273,21 @@ public sealed class CombatEngine
         {
             (MapObject? blocker, crittersInPath) = LineOfFire.Trace(
                 dude.HexTile, target.HexTile,
-                // excludeObj = attacker (combat.cc:3584 _check_ranged_miss's refusal walk).
+                // excludeObj = sourceObj = the attacker: _combat_check_bad_shot calls
+                // _combat_is_shot_blocked(attacker, attacker->tile, tile, defender, nullptr)
+                // (combat.cc:5688), which hands sourceObj to _make_straight_path_func (:5906).
                 tile => _host.ShootBlockerAt(tile, dude),
-                // ported from fallout2-ce src/combat.cc:3586-3587 — the shot-blocked roll's own
-                // filter on what _obj_shoot_blocking_at handed back: SHOOT_THRU is re-tested, and
-                // a critter there is a to-hit roll rather than a hard obstruction.
-                ShotFilter.ShotBlockedRoll, target);
+                // ported from fallout2-ce src/combat.cc:5908 — the filter INSIDE
+                // _combat_is_shot_blocked: `FID_TYPE(obstacle->fid) != OBJ_TYPE_CRITTER &&
+                // obstacle != targetObj`. This is the dude-side REFUSAL walk
+                // (_combat_check_bad_shot, combat.cc:5688 -> COMBAT_BAD_SHOT_AIM_BLOCKED), and the
+                // crittersInPath it returns is that same call's numCrittersOnLof, whose reference
+                // counterpart feeds determine_to_hit_func (combat.cc:4398) — also
+                // _combat_is_shot_blocked. NOT _check_ranged_miss (combat.cc:3584): that runs
+                // AFTER a roll has already failed, inside attackCompute, and its outcome is a
+                // stray shot hitting something — never a refusal. (CheckBadShot, the NPC-side twin
+                // of this very reference function, already carries ShotFilter.ShotBlocked.)
+                ShotFilter.ShotBlocked, target);
             if (blocker is not null)
                 return null;
         }
@@ -366,12 +375,21 @@ public sealed class CombatEngine
         {
             (MapObject? blocker, crittersInPath) = LineOfFire.Trace(
                 dude.HexTile, target.HexTile,
-                // excludeObj = attacker (combat.cc:3584 _check_ranged_miss's refusal walk).
+                // excludeObj = sourceObj = the attacker: _combat_check_bad_shot calls
+                // _combat_is_shot_blocked(attacker, attacker->tile, tile, defender, nullptr)
+                // (combat.cc:5688), which hands sourceObj to _make_straight_path_func (:5906).
                 tile => _host.ShootBlockerAt(tile, dude),
-                // ported from fallout2-ce src/combat.cc:3586-3587 — the shot-blocked roll's own
-                // filter on what _obj_shoot_blocking_at handed back: SHOOT_THRU is re-tested, and
-                // a critter there is a to-hit roll rather than a hard obstruction.
-                ShotFilter.ShotBlockedRoll, target);
+                // ported from fallout2-ce src/combat.cc:5908 — the filter INSIDE
+                // _combat_is_shot_blocked: `FID_TYPE(obstacle->fid) != OBJ_TYPE_CRITTER &&
+                // obstacle != targetObj`. This is the dude-side REFUSAL walk
+                // (_combat_check_bad_shot, combat.cc:5688 -> COMBAT_BAD_SHOT_AIM_BLOCKED), and the
+                // crittersInPath it returns is that same call's numCrittersOnLof, whose reference
+                // counterpart feeds determine_to_hit_func (combat.cc:4398) — also
+                // _combat_is_shot_blocked. NOT _check_ranged_miss (combat.cc:3584): that runs
+                // AFTER a roll has already failed, inside attackCompute, and its outcome is a
+                // stray shot hitting something — never a refusal. (CheckBadShot, the NPC-side twin
+                // of this very reference function, already carries ShotFilter.ShotBlocked.)
+                ShotFilter.ShotBlocked, target);
             if (blocker is not null)
             {
                 _host.Log($"Your shot is blocked by the {_host.ObjectName(blocker)}.");
@@ -506,10 +524,17 @@ public sealed class CombatEngine
 
         (MapObject? blocker, int crittersInPath) = LineOfFire.Trace(
             dude.HexTile, target.HexTile,
-            // excludeObj = attacker (combat.cc:3584 _check_ranged_miss's refusal walk).
+            // excludeObj = sourceObj = the attacker: _combat_check_bad_shot calls
+            // _combat_is_shot_blocked(attacker, attacker->tile, tile, defender, nullptr)
+            // (combat.cc:5688), which hands sourceObj to _make_straight_path_func (:5906).
             tile => _host.ShootBlockerAt(tile, dude),
-            // ported from fallout2-ce src/combat.cc:3586-3587 — the shot-blocked roll.
-            ShotFilter.ShotBlockedRoll, target);
+            // ported from fallout2-ce src/combat.cc:5908 — the filter inside
+            // _combat_is_shot_blocked. This is the dude-side REFUSAL walk
+            // (_combat_check_bad_shot, combat.cc:5688); the crittersInPath is that call's
+            // numCrittersOnLof, whose counterpart feeds determine_to_hit_func (combat.cc:4398).
+            // NOT _check_ranged_miss (combat.cc:3584) — that is a post-roll stray-shot walk, not
+            // a refusal, and this method's own doc comment records it as unported.
+            ShotFilter.ShotBlocked, target);
         if (blocker is not null)
         {
             _host.Log($"Your shot is blocked by the {_host.ObjectName(blocker)}.");
@@ -710,6 +735,13 @@ public sealed class CombatEngine
         // The victim list is built from Trace's onCandidate hook, which fires only for objects the
         // walk actually saw — i.e. AFTER the walker's own SHOOT_THRU guard (animation.cc:1956,
         // a6 == 32). Building it inside blockerAt instead would have to repeat that guard by hand.
+        // `!line.Contains(obj)` is NOT redundant with Trace's ported `obstacle != *obstaclePtr`
+        // dedupe (animation.cc:1956). That conjunct is a ONE-SLOT pointer: it stops an object
+        // being reported twice IN A ROW, which is the MULTIHEX-adjacency case, but the reference
+        // itself will re-report an object seen earlier if a DIFFERENT object was reported in
+        // between. The reference tolerates that because _shoot_along_path spends its round budget
+        // inline as it walks; we collect the line first and then spend, so a re-listed victim
+        // would get a second independent budget draw. Kept as a divergence-of-structure guard.
         onCandidate: (obj, _) =>
         {
             if (Fid.Type(obj.Fid) is ObjectType.Critter
@@ -789,13 +821,20 @@ public sealed class CombatEngine
             if (victim is null && tile != targetTile && Fid.Type(obj.Fid) is ObjectType.Critter)
                 victim = obj;
         });
-        // Same filter, applied to combat.cc:3961's _obj_blocking_at endpoint fallback (:3963 gates
+        // Same filter, applied to combat.cc:3960's _obj_blocking_at endpoint fallback (:3963 gates
         // both arms of the if/else with the one SHOOT_THRU test).
-        // SIMPLIFICATION: the reference calls _obj_blocking_at here — the general movement-blocking
-        // predicate, not the shoot-blocking subset ShootBlockerAt wraps (_obj_shoot_blocking_at).
-        // Pre-existing, not introduced by this task; called out here because this is now the one
-        // site where ExcludesShootThru is load-bearing rather than a redundant confirmation, so the
-        // divergence should not be misread as faithful.
+        // SIMPLIFICATION (two parts, both pre-existing and neither introduced by this task):
+        //  (a) the reference calls _obj_blocking_at(nullptr, ...) here — the general
+        //      MOVEMENT-blocking predicate with NO exclude object — where we call
+        //      ShootBlockerAt(endpoint, excludeTarget), the shoot-blocking subset
+        //      (_obj_shoot_blocking_at) AND with the defender excluded. Different predicate, and a
+        //      different exclude object.
+        //  (b) because of that exclude object, `isTarget` below is ALWAYS false — ShootBlockerAt
+        //      has already dropped excludeTarget — so the Obstructs call's ExcludesTarget term is
+        //      a dead expression here. Kept as written so the filter is applied whole, matching
+        //      :3963; it is ExcludesShootThru that is load-bearing at this one site (the only
+        //      place the walker guard never runs), and the divergence should not be misread as
+        //      faithful.
         victim ??= _host.ShootBlockerAt(endpoint, excludeTarget) is { } endObj
                 && ShotFilter.AccidentalTarget.Obstructs(endObj, isTarget: endObj == excludeTarget)
             ? endObj : null; // endpoint fallback

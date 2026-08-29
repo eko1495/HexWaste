@@ -15,7 +15,7 @@ namespace Hexwaste.Formats.Combat;
 /// therefore mirrors its caller's SOURCE LINES — true only where the reference itself re-tests the
 /// flag (combat.cc:3586 and :3963) — and on a walker-reported object that term is unreachable
 /// either way. It is load-bearing in exactly one place: <see cref="AccidentalTarget"/> is also
-/// applied OUTSIDE the walker, to combat.cc:3961's _obj_blocking_at endpoint fallback, which the
+/// applied OUTSIDE the walker, to combat.cc:3960's _obj_blocking_at endpoint fallback, which the
 /// walker guard never touches and :3963 does test.
 /// </summary>
 /// <param name="ExcludesShootThru">A SHOOT_THRU object is not an obstruction for this caller. A
@@ -37,14 +37,27 @@ public sealed record ShotFilter(
         && !(ExcludesCritters && Fid.Type(candidate.Fid) is ObjectType.Critter)
         && !(ExcludesTarget && isTarget);
 
-    /// NOTE on NO_BLOCK: it is deliberately NOT a term here. _obj_shoot_blocking_at
-    /// (object.cc:2440) gates on the DISJUNCTION `NO_BLOCK == 0 || SHOOT_THRU == 0`, and no
-    /// reference caller re-tests NO_BLOCK afterwards, so a NO_BLOCK-but-not-SHOOT_THRU object
-    /// reported by the coarse predicate really does obstruct. A pre-F33 `ExcludesNoBlock` term
-    /// existed only to reproduce the collapsed flag CONJUNCTION while consumers were migrated;
-    /// every consumer now carries its reference filter, so the term is gone.
+    // NOTE on NO_BLOCK — never re-add it as a term. _obj_shoot_blocking_at (object.cc:2440) gates
+    // on the DISJUNCTION `NO_BLOCK == 0 || SHOOT_THRU == 0`, and no reference caller re-tests
+    // NO_BLOCK afterwards, so a NO_BLOCK-but-not-SHOOT_THRU object reported by the coarse
+    // predicate really does obstruct. A pre-F33 `ExcludesNoBlock` term existed only to reproduce
+    // the collapsed flag CONJUNCTION while consumers were migrated; every consumer now carries its
+    // reference filter, so the term is gone. (Deliberately a `//` comment, not `///`: it documents
+    // an ABSENT term, so it has no member to attach to — as `///` it emitted no tooltip and would
+    // warn CS1587 under documentation generation.)
 
-    /// <summary>ported from fallout2-ce src/combat.cc:3586-3587 — the shot-blocked roll.</summary>
+    /// <summary>ported from fallout2-ce src/combat.cc:3586-3587 — _check_ranged_miss's filter on
+    /// what _obj_shoot_blocking_at handed back: SHOOT_THRU is re-tested, and a critter there is a
+    /// to-hit roll rather than a hard obstruction.
+    ///
+    /// PORTED AS A FILTER, NOT AS A WALK — the same standing as <see cref="FriendlyFire"/>, and it
+    /// has no production consumer. _check_ranged_miss (combat.cc:3574) is NOT a refusal: it runs
+    /// after a roll has already failed, inside attackCompute, and its outcome is a stray shot
+    /// hitting something. Hexwaste does not port that walk (ComputeAccidentalMiss ports
+    /// attackCompute:3956's collateral pick instead — see <see cref="AccidentalTarget"/>). The
+    /// reading is kept, cited and tested so it is not lost if that walk is ever done; do NOT
+    /// re-point a refusal site at it (the dude-side refusals are _combat_check_bad_shot,
+    /// combat.cc:5688, which is <see cref="ShotBlocked"/>).</summary>
     public static readonly ShotFilter ShotBlockedRoll = new(true, true, false);
 
     /// <summary>ported from fallout2-ce src/combat.cc:3644 — the burst / continuous walk. Its only
@@ -55,7 +68,7 @@ public sealed record ShotFilter(
 
     /// <summary>ported from fallout2-ce src/combat.cc:3963 — the missed-shot collateral target.
     /// No type test: a critter DOES count here, unlike every other caller. Its SHOOT_THRU term is
-    /// the one that is load-bearing, for the :3961 _obj_blocking_at endpoint fallback the walker
+    /// the one that is load-bearing, for the :3960 _obj_blocking_at endpoint fallback the walker
     /// never sees.</summary>
     public static readonly ShotFilter AccidentalTarget = new(true, false, false);
 

@@ -157,4 +157,62 @@ public class LineOfFireTests
             ShotFilter.BurstWalk, targetObj: null, stride: LineOfFire.SightTraceStride);
         Assert.Same(wall, blocker);
     }
+
+    /// <summary>ported from fallout2-ce src/animation.cc:1956/:2050/:2103 — the guard's FIRST
+    /// conjunct, `obstacle != *obstaclePtr`. Every looping reference caller re-enters the walker
+    /// with *obstaclePtr still holding the object found last time (_combat_is_shot_blocked's while
+    /// at combat.cc:5905), so the walker never reports the same object twice in a row. Our
+    /// single-pass Trace folds that loop away, so the conjunct is carried explicitly.
+    ///
+    /// This matters because ShootBlockerAt returns MULTIHEX objects that are NOT on the queried
+    /// tile — _obj_shoot_blocking_at's adjacency loop (object.cc:2464-2490) scans the six
+    /// neighbours. A line passing beside one multihex critter therefore touches two or three tiles
+    /// that each hand back the SAME object, and without the conjunct each would increment
+    /// numCrittersOnLof (combat.cc:5912), triple-charging one Brahmin against the −10/critter
+    /// to-hit term. Trace dedupes by TILE only, so tile-dedup cannot catch this.</summary>
+    [Fact]
+    public void AMultihexObjectReportedFromSeveralAdjacentTilesIsSeenOnlyOnce()
+    {
+        int from = Tile(100, 100), to = Tile(112, 106);
+        List<int> path = Path(from, to);
+        Assert.True(path.Count >= 3);
+
+        // ONE object, handed back for three consecutive traced tiles — exactly what the adjacency
+        // phase does for a multihex critter sitting beside the line.
+        var brahmin = Obj(Critter, path[1]);
+        var reportedFrom = new HashSet<int> { path[0], path[1], path[2] };
+
+        var seen = new List<MapObject>();
+        var (blocker, critters) = LineOfFire.Trace(
+            from, to, t => reportedFrom.Contains(t) ? brahmin : null, Walker,
+            onCandidate: (obj, _) => seen.Add(obj));
+
+        Assert.Null(blocker);                 // a critter is not an obstruction for this filter
+        Assert.Equal(1, critters);            // counted ONCE, not three times
+        Assert.Single(seen);                  // and reported to the caller once
+        Assert.Same(brahmin, seen[0]);
+    }
+
+    /// <summary>The reference's pointer holds only the MOST RECENT obstacle, so the conjunct is
+    /// last-reported, not a set: an object seen earlier IS re-reported once a different object has
+    /// been reported in between. Pinning that so the dedupe is not "improved" into a HashSet.</summary>
+    [Fact]
+    public void TheDedupeIsLastReportedOnlyNotASet()
+    {
+        int from = Tile(100, 100), to = Tile(112, 106);
+        List<int> path = Path(from, to);
+        Assert.True(path.Count >= 4);
+
+        var brahmin = Obj(Critter, path[1]);
+        var other = Obj(Critter, path[2]); // a DIFFERENT object (identity, not Id, is what matters)
+
+        var seen = new List<MapObject>();
+        var (_, critters) = LineOfFire.Trace(
+            from, to,
+            t => t == path[1] || t == path[3] ? brahmin : t == path[2] ? other : null,
+            Walker, onCandidate: (obj, _) => seen.Add(obj));
+
+        Assert.Equal(new[] { brahmin, other, brahmin }, seen);
+        Assert.Equal(3, critters);
+    }
 }
