@@ -346,31 +346,10 @@ SCENARIOS=(
 
 dotnet build src/Hexwaste.Viewer -c Debug >/dev/null || { echo "build failed"; exit 2; }
 
-run() {
-  timeout 120 env DISPLAY="${DISPLAY:-:0}" FALLOUT2_DIR="$GAME" \
-    dotnet run --project src/Hexwaste.Viewer -c Debug --no-build -- \
-    --game-dir "$GAME" --no-audio $1 2>/dev/null \
-    | grep -E "^(get-global:|quest-item:|quest-probe:|party-count:|party:)"
-}
+source "scripts/golden-lib.sh" || exit 2
+golden_runner viewer 120 src/Hexwaste.Viewer/bin/Debug/net10.0/Hexwaste.Viewer \
+  "^(get-global:|quest-item:|quest-probe:|party-count:|party:)" "--no-audio"
 
-fail=0
-for entry in "${SCENARIOS[@]}"; do
-  name="${entry%%|*}"; args="${entry#*|}"
-  out="$(run "$args")"
-  if [ "$MODE" = "record" ]; then
-    printf '%s\n' "$out" > "$FIX/$name.txt"
-    echo "recorded $name ($(printf '%s\n' "$out" | wc -l | tr -d ' ') lines)"
-    continue
-  fi
-  out2="$(run "$args")"
-  if [ "$out" != "$out2" ]; then echo "NONDETERMINISTIC: $name"; fail=1; fi
-  if [ ! -f "$FIX/$name.txt" ]; then echo "MISSING FIXTURE: $name (run 'record' first)"; fail=1; continue; fi
-  if diff -u "$FIX/$name.txt" <(printf '%s\n' "$out") >/dev/null; then
-    echo "ok  $name"
-  else
-    echo "DIFF: $name"; diff -u "$FIX/$name.txt" <(printf '%s\n' "$out"); fail=1
-  fi
-done
-
+golden_run_all
 [ "$MODE" = "record" ] && exit 0
-if [ "$fail" = 0 ]; then echo "quest e2e: ALL PASS"; else echo "quest e2e: FAIL"; exit 1; fi
+if [ "$GOLDEN_FAIL" = 0 ]; then echo "quest e2e: ALL PASS"; else echo "quest e2e: FAIL"; exit 1; fi
