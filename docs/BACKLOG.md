@@ -338,6 +338,48 @@ now), and the monitor-log-vs-floating-damage-text divergence. All cosmetic; none
 lip-sync/harvest. Several docs say "16 goldens" (actual: 25). Reconcile so future work isn't
 misled by stale strategy docs. *Effort S.*
 
+## Tier E — test-harness maintenance
+
+**Golden-suite parallel harness — SHIPPED 2026-08-29 (`feat/golden-parallel-harness`), whole-run
+byte-identical, 0 fixtures touched.** *Was Effort M.* All six golden suites (`combat`, `quest`,
+`endgame`, `opening`, `encounter`, `census`) ran serially through `dotnet run`, one scenario at a
+time. Measured baseline (`.superpowers/sdd/golden-baseline.log`, captured before any change):
+
+| suite | before | fixtures | after (this run) |
+|---|---|---|---|
+| encounter | 960.03 s | 188 | 59.96 s |
+| quest | 221.29 s | 39 | 18.23 s |
+| combat | 112.73 s | 18 | 18.80 s |
+| opening | 58.96 s | 13 | 9.84 s |
+| endgame | 36.73 s | 5 | 5.34 s |
+| census | 25.75 s | 16 | 4.03 s |
+| **total** | **1415.5 s = 23.6 min** | **279** | **116.20 s = 1.94 min** |
+
+All six runners were migrated onto a shared driver, `scripts/golden-lib.sh`, one suite per
+commit, each verified byte-identical against the baseline before the next suite moved. This
+entry is the whole-set closeout: all six suites report `ALL PASS`, all 279 fixtures report `ok`,
+and `diff -u` of the full run's filtered output against the baseline is empty
+(`WHOLE-SUITE BYTE-IDENTICAL`) — every scenario, every recorded line, byte-for-byte the same as
+before the harness changed.
+
+Three costs came out, none of them assertion strength:
+- **`dotnet run` overhead**, measured directly at 1.16 s of pure startup cost per invocation
+  (`git show b488061`) — replaced by invoking the already-built binary.
+- **Serial execution** on a machine that reports 16 cores (`nproc`) — `golden-lib.sh` now owns a
+  job pool (`GOLDEN_JOBS="${GOLDEN_JOBS:-$(nproc)}"`, `scripts/golden-lib.sh:53`) and runs
+  scenarios concurrently instead of one at a time.
+- **The determinism double run**, kept for every suite that had it (all but `census`, which never
+  ran one): the unit of work is a *(fixture, pass)* pair, so both passes of a fixture can run
+  concurrently — the double-run now costs a core, not wall time (`scripts/golden-lib.sh:8-10`).
+
+**No assertion was weakened and no fixture under `tests/golden-*/` was touched.** The only change
+to any scenario's arguments is the four sanctioned `@SCRATCH@` substitutions
+(`scripts/encounter-golden.sh:153,188,189,212`), which give each concurrent pass of a
+disk-writing scenario (`automap-persist`, `save-slot-roundtrip`, `save-slots-probe`,
+`vic-save-roundtrip`) its own private directory so two passes of the same fixture running at once
+don't race each other's save files on disk — a harness-only accommodation for concurrency, not a
+change to what is being asserted.
+
 ## Tier F — fidelity gaps surfaced by the maintained-fork survey (2026-08-14)
 
 These were found while classifying fork candidates in

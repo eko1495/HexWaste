@@ -150,7 +150,7 @@ SCENARIOS=(
   "automap-arcaves|--map arcaves.map --automap --rng-seed 1"
   # P71 — automap fog persistence: reveal a far tile (20000), census, save+load, census again;
   # the far reveal must survive the round-trip (tiles stays 127, not the ~61 spawn disc).
-  "automap-persist|--map arcaves.map --save-path /tmp/hexwaste-automap-persist.json --reveal 20000 --automap --save-now --load-now --automap --rng-seed 1"
+  "automap-persist|--map arcaves.map --save-path @SCRATCH@/automap-persist.json --reveal 20000 --automap --save-now --load-now --automap --rng-seed 1"
   # P21 — script-driven lighting + reg_anim: artemple's map_enter calls set_light_level(100)
   # (now pins the ambient) and reg_anim_animate_forever on its two firepits (now reaches the
   # animator; redundant with FRM auto-loop on the slice, faithful for the critter case). Both
@@ -185,8 +185,8 @@ SCENARIOS=(
   # --save-slot/--load-slot/--slots-probe drive the real save-to/load-from-slot path; --reset-slots
   # clears the dir for a deterministic probe. Round-trip: save slot 3 then load it (party-count
   # matches); load an empty slot is a no-op; the probe reports each slot's state (L<level>/empty).
-  "save-slot-roundtrip|--character combat --map denbus2.map --give 41:500 --save-dir /tmp/hexwaste-p48-rt --reset-slots --save-slot 3 --party-count --load-slot 3 --party-count --load-slot 5 --rng-seed 1"
-  "save-slots-probe|--character combat --map denbus2.map --save-dir /tmp/hexwaste-p48-sp --reset-slots --save-slot 0 --save-slot 5 --slots-probe --rng-seed 1"
+  "save-slot-roundtrip|--character combat --map denbus2.map --give 41:500 --save-dir @SCRATCH@/p48-rt --reset-slots --save-slot 3 --party-count --load-slot 3 --party-count --load-slot 5 --rng-seed 1"
+  "save-slots-probe|--character combat --map denbus2.map --save-dir @SCRATCH@/p48-sp --reset-slots --save-slot 0 --save-slot 5 --slots-probe --rng-seed 1"
   # P49 called-shot click dialog (combat.cc calledShotSelectHitLocation): V opens it, 1-9/click picks a
   # hit location. --aim-click <row> drives the real SelectAimRow; reports the location + to-hit penalty
   # per the engine's CALLED.frm button order (head/eyes/r-arm/r-leg/torso/groin/l-arm/l-leg/uncalled).
@@ -209,7 +209,7 @@ SCENARIOS=(
   # #10 M3 — the scripted recruit + its proto level-up survive a save/load round-trip:
   # the party-count line is identical before and after (members=2, no duplication; Vic
   # keeps his levelled stage HP). Saves to /tmp so nothing lands in the repo.
-  "vic-save-roundtrip|--map denbus2.map --give 41:2000 --give 266:1 --talk-seq 17070 1,1,1 --talk-seq 15278 2,2,1,1 --talk-seq 17070 2,1 --grant-xp 60000 --save-path /tmp/hexwaste-m3golden.json --party-count --save-now --load-now --party-count --rng-seed 1"
+  "vic-save-roundtrip|--map denbus2.map --give 41:2000 --give 266:1 --talk-seq 17070 1,1,1 --talk-seq 15278 2,2,1,1 --talk-seq 17070 2,1 --grant-xp 60000 --save-path @SCRATCH@/m3golden.json --party-count --save-now --load-now --party-count --rng-seed 1"
   # P30 A-M0/M1/M2 — the sneak state probes (deterministic): the periodic SKILL_SNEAK roll under a
   # fixed seed (the isolated _sneakRng), the two-layer flag/working state, and the Silent Death facing
   # test (behind hex 0/0 → mult 4; front 0/3 → mult 2).
@@ -631,34 +631,11 @@ FILTER='^(encounter|travel-from|companion|dismiss-persist|trade:|party:|party-co
 echo "Building viewer..."
 dotnet build src/Hexwaste.Viewer -c Debug >/dev/null || { echo "build failed"; exit 2; }
 
-run() {
-  timeout 90 env DISPLAY="${DISPLAY:-:0}" FALLOUT2_DIR="$GAME" \
-    dotnet run --project src/Hexwaste.Viewer -c Debug --no-build -- \
-    --game-dir "$GAME" --no-audio $1 2>/dev/null | grep -E "$FILTER"
-}
+source "scripts/golden-lib.sh" || exit 2
+golden_runner viewer 90 src/Hexwaste.Viewer/bin/Debug/net10.0/Hexwaste.Viewer "$FILTER" "--no-audio"
+MISMATCH_LABEL=REGRESSION
+DIFF_TRUNC=30
 
-fail=0
-for entry in "${SCENARIOS[@]}"; do
-  name="${entry%%|*}"; args="${entry#*|}"
-  out="$(run "$args")"
-  if [ "$MODE" = "record" ]; then
-    printf '%s\n' "$out" > "$FIX/$name.txt"
-    echo "recorded $name ($(printf '%s\n' "$out" | wc -l | tr -d ' ') lines)"
-    continue
-  fi
-  out2="$(run "$args")"            # determinism: second run must match the first
-  if [ "$out" != "$out2" ]; then
-    echo "NONDETERMINISTIC: $name"; fail=1
-  fi
-  if [ ! -f "$FIX/$name.txt" ]; then
-    echo "MISSING FIXTURE: $name (run 'record' first)"; fail=1; continue
-  fi
-  if diff -u "$FIX/$name.txt" <(printf '%s\n' "$out") >/dev/null; then
-    echo "ok  $name"
-  else
-    echo "REGRESSION: $name"; diff -u "$FIX/$name.txt" <(printf '%s\n' "$out") | head -30; fail=1
-  fi
-done
-
-[ "$fail" -eq 0 ] && echo "golden encounter: ALL PASS" || echo "golden encounter: FAILURES"
-exit $fail
+golden_run_all || exit 2
+[ "$GOLDEN_FAIL" -eq 0 ] && echo "golden encounter: ALL PASS" || echo "golden encounter: FAILURES"
+exit "$GOLDEN_FAIL"
