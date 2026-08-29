@@ -8,11 +8,13 @@ namespace Hexwaste.Formats.Tests;
 public class LineOfFireTests
 {
     // Raw FIDs: the high nibble is the object type (1 critter, 2 wall, 3 scenery).
-    private static MapObject Obj(int rawFid, int tile) => new()
+    private static MapObject Obj(int rawFid, int tile, int flags = 0) => new()
     {
         Id = 1, HexTile = tile, X = 0, Y = 0, Frame = 0, Rotation = 0,
-        Fid = rawFid, Flags = 0, Pid = 0x01000001, Sid = -1,
+        Fid = rawFid, Flags = flags, Pid = 0x01000001, Sid = -1,
     };
+
+    private const int ShootThruFlag = unchecked((int)0x80000000);
 
     private const int Critter = 0x01000000;
     private const int Wall = 0x02000000;
@@ -103,5 +105,53 @@ public class LineOfFireTests
             Assert.Null(blocker);
             Assert.Equal(0, critters);
         }
+    }
+
+    /// <summary>ported from fallout2-ce src/animation.cc:1957/:2039 — _make_straight_path_func's own
+    /// guard. Every line-of-fire caller passes a6 == 32, so a SHOOT_THRU object is never assigned to
+    /// the caller's obstacle pointer: the walker walks straight past it, whatever the caller's own
+    /// filter would have said. BurstWalk is deliberately the filter used here — it applies no flag
+    /// test of its own (combat.cc:3644), so only the walker's guard can produce this result.</summary>
+    [Fact]
+    public void ShootTraceNeverReportsAShootThruObject()
+    {
+        int from = Tile(100, 100), to = Tile(112, 106);
+        List<int> path = Path(from, to);
+        int wallTile = path[path.Count / 2];
+        var wall = Obj(Wall, wallTile, ShootThruFlag);
+
+        var (blocker, _) = LineOfFire.Trace(from, to, t => t == wallTile ? wall : null, ShotFilter.BurstWalk);
+        Assert.Null(blocker);
+    }
+
+    /// <summary>The guard SUPPRESSES rather than merely un-blocks: the reference counts critters in
+    /// _combat_is_shot_blocked's own loop over the obstacles the walker REPORTED (combat.cc:5911),
+    /// so a SHOOT_THRU critter — never reported — is never counted either.</summary>
+    [Fact]
+    public void AShootThruCritterIsNeitherBlockingNorCounted()
+    {
+        int from = Tile(100, 100), to = Tile(112, 106);
+        List<int> path = Path(from, to);
+        int critterTile = path[path.Count / 2];
+        var critter = Obj(Critter, critterTile, ShootThruFlag);
+
+        var (blocker, critters) = LineOfFire.Trace(from, to, t => t == critterTile ? critter : null, Walker);
+        Assert.Null(blocker);
+        Assert.Equal(0, critters);
+    }
+
+    /// <summary>The guard is armed by a6 == 32 alone. obj_can_see_obj's SIGHT trace
+    /// (interpreter_extra.cc:1797) passes 16, so a SHOOT_THRU object still blocks sight.</summary>
+    [Fact]
+    public void SightTraceIsNotSubjectToTheShootThruGuard()
+    {
+        int from = Tile(100, 100), to = Tile(112, 106);
+        List<int> path = Path(from, to);
+        int wallTile = path[path.Count / 2];
+        var wall = Obj(Wall, wallTile, ShootThruFlag);
+
+        var (blocker, _) = LineOfFire.Trace(from, to, t => t == wallTile ? wall : null,
+            ShotFilter.BurstWalk, targetObj: null, stride: LineOfFire.SightTraceStride);
+        Assert.Same(wall, blocker);
     }
 }

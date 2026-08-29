@@ -7,8 +7,9 @@ namespace Hexwaste.Formats.Combat;
 /// _make_straight_path_func() (the inner screen-space Bresenham) wrapped by
 /// src/combat.cc _combat_is_shot_blocked(): it walks the pixel-straight line
 /// between the two tiles' screen centres, mapping each pixel back to a tile via
-/// <see cref="Hex.HexGrid.FromScreenEmbedding"/>. WHAT blocks is the caller's
-/// <see cref="ShotFilter"/>, not this walker: an object the filter does not treat as an
+/// <see cref="Hex.HexGrid.FromScreenEmbedding"/>. A shoot trace's SHOOT_THRU objects are dropped by
+/// the walker itself (<see cref="Suppresses"/>); of what survives that, WHAT blocks is the caller's
+/// <see cref="ShotFilter"/>: an object the filter does not treat as an
 /// obstruction is walked past, and if it is a living critter that is not the caller's target it is
 /// counted (the −10/critter to-hit term, combat.cc:5911). The shooter's own tile is never
 /// blocker-checked, matching the engine; the target tile IS, and the filter decides.
@@ -18,15 +19,40 @@ namespace Hexwaste.Formats.Combat;
 /// (_obj_shoot_blocking_at's NO_BLOCK||SHOOT_THRU test) plus the dead-critter filter;
 /// the NO_BLOCK/SHOOT_THRU FLAG CONJUNCTION each caller actually wants is applied by
 /// the caller's <see cref="ShotFilter"/> inside Trace, not by blockerAt itself.
-/// NOT PORTED (F33 Task 5 finding, see docs): _make_straight_path_func's OWN
-/// `a6 != 32 || (obstacle->flags &amp; OBJECT_SHOOT_THRU) == 0` guard (animation.cc:1957/2039) —
-/// every shoot caller passes a6 == 32, so the reference walker itself never stops on a SHOOT_THRU
-/// object regardless of what the caller's own re-test says. We do NOT port the
+/// The WALKER's own guard is ported here (see <see cref="Suppresses"/>): a SHOOT_THRU object is
+/// never reported to a shoot caller at all, so the callers' <see cref="ShotFilter"/> SHOOT_THRU
+/// terms are redundant confirmations rather than the mechanism. We do NOT port the
 /// +1 MULTIHEX crowd bump (combat.cc:5921) — no shippable-slice critter is multihex
 /// mid-line, and it would shift the to-hit term.
 /// </summary>
 public static class LineOfFire
 {
+    private const int ShootThru = unchecked((int)0x80000000);
+
+    /// <summary>The reference's `a6` for a LINE-OF-FIRE trace. All five shoot callers pass 32
+    /// (combat.cc:3584, :3641, :3956, :5906 and combat_ai.cc:2585), which is what arms the walker's
+    /// SHOOT_THRU guard — see <see cref="Suppresses"/>.</summary>
+    public const int ShootTraceStride = 32;
+
+    /// <summary>The reference's `a6` for the obj_can_see_obj SIGHT trace
+    /// (interpreter_extra.cc:1797 passes 16 to _make_straight_path / _obj_blocking_at). Not 32, so
+    /// the walker's SHOOT_THRU guard does not apply to it.</summary>
+    public const int SightTraceStride = 16;
+
+    /// <summary>ported from fallout2-ce src/animation.cc:1957 and :2039 — _make_straight_path_func's
+    /// OWN guard at both of its callback sites:
+    /// `if (obstacle != *obstaclePtr &amp;&amp; (a6 != 32 || (obstacle->flags &amp; OBJECT_SHOOT_THRU) == 0))`.
+    /// All five line-of-fire callers pass a6 == 32 (combat.cc:3584, :3641, :3956, :5906,
+    /// combat_ai.cc:2585), so for every shoot trace the guard reduces to
+    /// `(flags &amp; OBJECT_SHOOT_THRU) == 0`: the walker never assigns a SHOOT_THRU object to the
+    /// caller's obstacle pointer and never stops on it, so NO shoot caller ever sees one. That is
+    /// stronger than "not a blocker" — the object is invisible to the caller, which is why a
+    /// SHOOT_THRU critter is also never counted in _combat_is_shot_blocked's numCrittersOnLof
+    /// (combat.cc:5911 counts only the obstacles the walker reported). The sight caller passes
+    /// a6 == 16, so the guard is off for it.</summary>
+    public static bool Suppresses(MapObject candidate, int stride = ShootTraceStride) =>
+        stride == ShootTraceStride && (candidate.Flags & ShootThru) != 0;
+
     /// <summary>blockerAt returns the RAW coarse predicate's answer for the tile — a
     /// wall/scenery/living-critter object, with only `hidden` and the reference's own coarse
     /// disjunction applied (host-side ShootBlockerAt / _obj_shoot_blocking_at); null = nothing there.
@@ -45,9 +71,13 @@ public static class LineOfFire
     /// <param name="targetObj">The caller's target, for the filter's ExcludesTarget term and for the
     /// crowd count's `obstacle != targetObj` exclusion (combat.cc:5911). null = the caller has no
     /// target identity, and nothing on the line is ever treated as one.</param>
+    /// <param name="stride">The reference's `a6`. <see cref="ShootTraceStride"/> (32, the default —
+    /// every line-of-fire caller) arms the walker's own SHOOT_THRU guard; the obj_can_see_obj SIGHT
+    /// trace passes <see cref="SightTraceStride"/> (16) and opts out of it. See
+    /// <see cref="Suppresses"/>.</param>
     public static (MapObject? Blocker, int CrittersInPath) Trace(
         int fromTile, int toTile, Func<int, MapObject?> blockerAt, ShotFilter filter,
-        MapObject? targetObj = null)
+        MapObject? targetObj = null, int stride = ShootTraceStride)
     {
         if (fromTile == toTile)
             return (null, 0);
@@ -88,7 +118,8 @@ public static class LineOfFire
                     // excludes it host-side, via _make_straight_path_func's excludeObj).
                     // The TARGET tile is checked — the engine's "obstacle != targetObj"
                     // is an identity test in the caller's filter, not a tile skip.
-                    if (tile >= 0 && tile != fromTile && blockerAt(tile) is { } obj)
+                    if (tile >= 0 && tile != fromTile && blockerAt(tile) is { } obj
+                        && !Suppresses(obj, stride))
                     {
                         bool isTarget = targetObj is not null && ReferenceEquals(obj, targetObj);
                         if (filter.Obstructs(obj, isTarget))
@@ -116,7 +147,8 @@ public static class LineOfFire
 
                 if (tile != prevTile)
                 {
-                    if (tile >= 0 && tile != fromTile && blockerAt(tile) is { } obj)
+                    if (tile >= 0 && tile != fromTile && blockerAt(tile) is { } obj
+                        && !Suppresses(obj, stride))
                     {
                         bool isTarget = targetObj is not null && ReferenceEquals(obj, targetObj);
                         if (filter.Obstructs(obj, isTarget))

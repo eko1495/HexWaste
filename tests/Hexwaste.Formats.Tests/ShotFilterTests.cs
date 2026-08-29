@@ -10,6 +10,10 @@ namespace Hexwaste.Formats.Tests;
 /// caller's filter as the combination of independent terms it actually is, so Task 5
 /// can assign them without guessing. Two of these were wrong in the plan's first draft
 /// and only fixed by reading the call sites — do not relax them without doing the same.
+///
+/// These pin the FILTERS in isolation. The SHOOT_THRU arms of the three callers that apply no flag
+/// test are unreachable in a real trace: _make_straight_path_func's own guard (animation.cc:1957)
+/// drops SHOOT_THRU objects before any shoot caller sees them. LineOfFireTests pins that.
 /// </summary>
 public class ShotFilterTests
 {
@@ -37,8 +41,11 @@ public class ShotFilterTests
         Assert.True(ShotFilter.ShotBlockedRoll.Obstructs(Obj(0, ObjectType.Wall), isTarget: false));
 
     [Fact]
-    public void BurstWalkBlocksAShootThruObject() =>
-        // combat.cc:3644 applies no flag test — only the type test.
+    public void BurstWalkAppliesNoFlagTestOfItsOwn() =>
+        // combat.cc:3644 applies no flag test — only the type test. This pins the FILTER, not the
+        // trace: in a shoot trace the walker's own guard (animation.cc:1957) has already dropped a
+        // SHOOT_THRU object, so this arm is unreachable and such an object does NOT end the walk.
+        // See LineOfFireTests.ShootTraceNeverReportsAShootThruObject.
         Assert.True(ShotFilter.BurstWalk.Obstructs(Obj(ShootThru, ObjectType.Wall), isTarget: false));
 
     [Fact]
@@ -61,8 +68,9 @@ public class ShotFilterTests
         Assert.False(ShotFilter.ShotBlockedPenalty.Obstructs(Obj(0, ObjectType.Wall), isTarget: true));
 
     [Fact]
-    public void ShotBlockedPenaltyBlocksAShootThruWallThatIsNotTheTarget() =>
-        // No flag test at this caller — a SHOOT_THRU wall still counts.
+    public void ShotBlockedPenaltyAppliesNoFlagTestOfItsOwn() =>
+        // No flag test at this caller (combat.cc:5908). Filter-level only: the walker never hands
+        // this caller a SHOOT_THRU object, so the arm is unreachable in a real trace.
         Assert.True(ShotFilter.ShotBlockedPenalty.Obstructs(Obj(ShootThru, ObjectType.Wall), isTarget: false));
 
     [Fact]
@@ -73,8 +81,9 @@ public class ShotFilterTests
         Assert.False(ShotFilter.ShotBlockedPenalty.Obstructs(Obj(0, ObjectType.Critter), isTarget: false));
 
     [Fact]
-    public void FriendlyFireCountsEverythingTheCoarsePredicateReturns() =>
-        // combat_ai.cc:2586 compares identity only; it applies no flag or type test.
+    public void FriendlyFireCountsEverythingTheWalkerReports() =>
+        // combat_ai.cc:2586 compares identity only; it applies no flag or type test of its own —
+        // the SHOOT_THRU one it would need was already applied by the walker (a6 == 32).
         Assert.True(ShotFilter.FriendlyFire.Obstructs(Obj(ShootThru, ObjectType.Critter), isTarget: true));
 
     [Fact]

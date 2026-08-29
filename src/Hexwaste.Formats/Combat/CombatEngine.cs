@@ -703,7 +703,9 @@ public sealed class CombatEngine
         {
             // excludeObj = attacker (combat.cc:3641 _shoot_along_path — the burst walk).
             MapObject? obj = _host.ShootBlockerAt(tile, dudeObj);
-            if (obj is not null && Fid.Type(obj.Fid) is ObjectType.Critter
+            // The walker's own guard (animation.cc:1957, a6 == 32) hides a SHOOT_THRU object from
+            // every shoot caller, so it must not reach this caller-side list either.
+            if (obj is not null && !LineOfFire.Suppresses(obj) && Fid.Type(obj.Fid) is ObjectType.Critter
                 && obj != targetObj && obj != dudeObj && !line.Contains(obj))
                 line.Add(obj);
             return obj; // critters are counted + walked-past; a wall stops the line
@@ -771,7 +773,10 @@ public sealed class CombatEngine
         LineOfFire.Trace(targetTile, endpoint, tile =>
         {
             MapObject? obj = _host.ShootBlockerAt(tile, excludeTarget);
-            if (victim is null && obj is not null && tile != targetTile && Fid.Type(obj.Fid) is ObjectType.Critter)
+            // Same walker guard (animation.cc:1957, a6 == 32): a SHOOT_THRU object is never the
+            // obstacle the reference reads back at combat.cc:3957, so it can never be the victim.
+            if (victim is null && obj is not null && !LineOfFire.Suppresses(obj)
+                && tile != targetTile && Fid.Type(obj.Fid) is ObjectType.Critter)
                 victim = obj;
             return obj; // a wall stops the line
         },
