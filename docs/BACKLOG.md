@@ -1378,7 +1378,9 @@ comments.**
 **One widening this port DOES carry, and no fixture stands near it.** The flag gate moved from a
 conjunction to the reference's disjunction, so a `NO_BLOCK`-set / `SHOOT_THRU`-clear wall or scenery
 object now obstructs where it did not before. The survey above counted **5,368** such objects across
-the 155 shipped maps. **No fixture stands near one** — so "moved zero fixtures" is, for this one
+the 155 shipped maps. **No fixture is known to stand near one** — inferred from the zero-movement result, not from a
+positional survey of the fixtures, so the absence is weaker evidence than a survey would be. Either
+way "moved zero fixtures" is, for this one
 term, *untested by fixture* rather than *confirmed by it*. The headline should not be read as
 coverage of the widening.
 
