@@ -141,7 +141,10 @@ public class LineOfFireTests
     }
 
     /// <summary>The guard is armed by a6 == 32 alone. obj_can_see_obj's SIGHT trace
-    /// (interpreter_extra.cc:1797) passes 16, so a SHOOT_THRU object still blocks sight.</summary>
+    /// (interpreter_extra.cc:1797) passes 16, so a SHOOT_THRU object still blocks sight.
+    /// BurstWalk is used deliberately here too: it applies no flag test of its own, so if the
+    /// wall is still reported as a blocker, that can only be the stride guard's doing (or, on a
+    /// sight trace, its absence) — not the filter.</summary>
     [Fact]
     public void SightTraceIsNotSubjectToTheShootThruGuard()
     {

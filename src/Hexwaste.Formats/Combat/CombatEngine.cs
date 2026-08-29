@@ -711,8 +711,9 @@ public sealed class CombatEngine
             return obj; // critters are counted + walked-past; a wall stops the line
         },
         // ported from fallout2-ce src/combat.cc:3644 — _shoot_along_path's own filter: the ONLY
-        // test it applies is `FID_TYPE(critter->fid) != OBJ_TYPE_CRITTER` -> break. No flag test,
-        // so a SHOOT_THRU wall the coarse predicate returns DOES end this walk.
+        // test it applies is `FID_TYPE(critter->fid) != OBJ_TYPE_CRITTER` -> break. No flag test of
+        // its own (see ShotFilter.BurstWalk's own doc comment) — a SHOOT_THRU wall never even
+        // reaches this filter, because the walker guard (LineOfFire.Suppresses) already hid it.
         ShotFilter.BurstWalk, targetObj);
 
         int remaining = budget;
@@ -787,6 +788,11 @@ public sealed class CombatEngine
         ShotFilter.AccidentalTarget, excludeTarget);
         // Same filter, applied to combat.cc:3961's _obj_blocking_at endpoint fallback (:3963 gates
         // both arms of the if/else with the one SHOOT_THRU test).
+        // SIMPLIFICATION: the reference calls _obj_blocking_at here — the general movement-blocking
+        // predicate, not the shoot-blocking subset ShootBlockerAt wraps (_obj_shoot_blocking_at).
+        // Pre-existing, not introduced by this task; called out here because this is now the one
+        // site where ExcludesShootThru is load-bearing rather than a redundant confirmation, so the
+        // divergence should not be misread as faithful.
         victim ??= _host.ShootBlockerAt(endpoint, excludeTarget) is { } endObj
                 && ShotFilter.AccidentalTarget.Obstructs(endObj, isTarget: endObj == excludeTarget)
             ? endObj : null; // endpoint fallback

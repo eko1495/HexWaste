@@ -26,8 +26,8 @@ namespace Hexwaste.Formats.Combat;
 /// filter ever runs, matching the reference callers, which test FID_TYPE only.</param>
 /// <param name="ExcludesTarget">The caller's own target is not an obstruction.</param>
 /// <param name="ExcludesNoBlock">TEMPORARY, no reference counterpart: reproduces the pre-F33
-/// collapsed behaviour. Every consumer moves off <see cref="LegacyCollapsed"/> in Task 5 and it
-/// is deleted in Task 7.</param>
+/// collapsed behaviour. Task 5 moves most consumers off <see cref="LegacyCollapsed"/>, but two
+/// still hold it (see that field's own doc comment); Task 7 settles those and deletes this.</param>
 public sealed record ShotFilter(
     bool ExcludesShootThru,
     bool ExcludesCritters,

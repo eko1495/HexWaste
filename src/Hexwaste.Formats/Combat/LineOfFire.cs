@@ -12,7 +12,9 @@ namespace Hexwaste.Formats.Combat;
 /// <see cref="ShotFilter"/>: an object the filter does not treat as an
 /// obstruction is walked past, and if it is a living critter that is not the caller's target it is
 /// counted (the −10/critter to-hit term, combat.cc:5911). The shooter's own tile is never
-/// blocker-checked, matching the engine; the target tile IS, and the filter decides.
+/// blocker-checked here — a DIVERGENCE from the reference, which does probe it
+/// (_make_straight_path_func, animation.cc:1954; see the in-loop comment in Trace for the
+/// mechanism). The target tile IS checked, and the filter decides.
 ///
 /// Retained simplifications (unchanged from the prior greedy port): the host's
 /// blockerAt applies only `hidden` and the reference's own coarse disjunction
@@ -114,9 +116,12 @@ public static class LineOfFire
 
                 if (tile != prevTile)
                 {
-                    // The shooter's own tile is never blocker-checked (the reference
-                    // excludes it host-side, via _make_straight_path_func's excludeObj).
-                    // The TARGET tile is checked — the engine's "obstacle != targetObj"
+                    // DIVERGENCE from the reference: we never blocker-check the shooter's own
+                    // tile at all, but _make_straight_path_func (animation.cc:1954) DOES probe
+                    // `from` first, via a callback compared against excludeObj — and excludeObj
+                    // excludes the shooter OBJECT, not the shooter's tile. So a second object
+                    // standing on the shooter's hex is reported as blocking there and is not
+                    // here. The TARGET tile is checked — the engine's "obstacle != targetObj"
                     // is an identity test in the caller's filter, not a tile skip.
                     if (tile >= 0 && tile != fromTile && blockerAt(tile) is { } obj
                         && !Suppresses(obj, stride))
