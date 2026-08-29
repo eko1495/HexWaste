@@ -739,9 +739,13 @@ public sealed class CombatEngine
         // dedupe (animation.cc:1956). That conjunct is a ONE-SLOT pointer: it stops an object
         // being reported twice IN A ROW, which is the MULTIHEX-adjacency case, but the reference
         // itself will re-report an object seen earlier if a DIFFERENT object was reported in
-        // between. The reference tolerates that because _shoot_along_path spends its round budget
-        // inline as it walks; we collect the line first and then spend, so a re-listed victim
-        // would get a second independent budget draw. Kept as a divergence-of-structure guard.
+        // between, and hits it again from the SAME shared budget (combat.cc:3631's remainingRounds,
+        // decremented at :3654 — our `remaining` at the loop below is the same single counter, so
+        // an earlier draft's "a re-listed victim would get a second independent budget draw" was
+        // simply wrong about our own code). Keeping `line.Contains` is therefore a DELIBERATE
+        // DIVERGENCE, not a required guard: the reference re-hits an intervened-past victim and we
+        // do not. Kept because this branch moved zero fixtures and no fixture covers the case;
+        // recorded in docs/BACKLOG.md's F33 residue list. Do not "restore" it on budget grounds.
         onCandidate: (obj, _) =>
         {
             if (Fid.Type(obj.Fid) is ObjectType.Critter

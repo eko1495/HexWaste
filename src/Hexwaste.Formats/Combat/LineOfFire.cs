@@ -118,7 +118,7 @@ public static class LineOfFire
         // ported from fallout2-ce src/animation.cc:1956, :2050, :2103 — the FIRST conjunct of
         // _make_straight_path_func's guard, `obstacle != *obstaclePtr`. It is not merely an
         // initial exclusion: every looping caller (_combat_is_shot_blocked's while at
-        // combat.cc:5905, _check_ranged_miss's at :3583, _shoot_along_path's at :3635) re-enters
+        // combat.cc:5905, _check_ranged_miss's at :3583, _shoot_along_path's at :3635-3636) re-enters
         // the walker with *obstaclePtr still holding the object found last time, so the walker
         // refuses to report the SAME object twice in a row. Our single-pass Trace folds that outer
         // loop away, so the conjunct has to be carried here explicitly — otherwise a MULTIHEX

@@ -1,5 +1,11 @@
 # F33 — Shoot-Blocking Two-Stage Port Implementation Plan
 
+> **SUPERSEDED IN PART — do not mine this document for guidance.** Executing it disproved two of its
+> own premises. `_make_straight_path_func` suppresses `SHOOT_THRU` objects itself at all three of its
+> callback sites, so that exclusion is uniform rather than per-caller; and the filter this plan
+> assigns to the three refusal paths is the wrong reference caller's. `docs/BACKLOG.md`'s F33 entry
+> carries what was actually established.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Restore the reference's two-stage line-of-fire design — one coarse blocking predicate plus a per-consumer policy — and then give each consumer the policy its reference counterpart actually has.
