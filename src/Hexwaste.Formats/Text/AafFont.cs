@@ -75,8 +75,17 @@ public sealed class AafFont
         };
     }
 
+    /// <summary>The glyph slot a character renders from. AAF fonts are BYTE-indexed (256
+    /// records) and the engine's own text is single-byte, so it never encounters a character
+    /// above U+00FF; there is no reference behaviour to port here. A plain <c>(byte)</c> cast
+    /// would TRUNCATE — U+2014 '—' becomes 0x14, a control slot holding an arbitrary glyph —
+    /// so anything out of range is mapped to '?' instead. Hexwaste-side robustness guard, not
+    /// a port: it makes an unrepresentable character visibly wrong rather than silently wrong.
+    /// Draw and measure must both route through this, or wrapping desynchronises from output.</summary>
+    public static int GlyphIndex(char ch) => ch <= 0xFF ? ch : '?';
+
     public int CharWidth(char ch) =>
-        ch == ' ' ? WordSpacing : Glyphs[(byte)ch].Width;
+        ch == ' ' ? WordSpacing : Glyphs[GlyphIndex(ch)].Width;
 
     /// <summary>ported from interfaceFontGetStringWidthImpl(): letter spacing after every char.</summary>
     public int MeasureWidth(string text)

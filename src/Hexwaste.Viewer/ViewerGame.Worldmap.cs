@@ -178,7 +178,7 @@ public sealed partial class ViewerGame
         if (_scriptHost is not null)
             _scriptHost.Car.InCar = false;
         _worldmapOpen = false;
-        Log("The car sputters and dies — out of fuel.");
+        Log("The car sputters and dies - out of fuel.");
         Console.WriteLine($"car-outofgas: x={_worldPosX} y={_worldPosY} map=cardesrt");
         int idx = _mapList.FindByLookupName("Car Out of Gas");
         string? mapFile = idx >= 0 ? _mapList.GetMapFileName(idx) : "cardesrt.map";

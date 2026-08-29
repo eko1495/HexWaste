@@ -116,7 +116,7 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
         _weaponMode = WeaponMode.Single;
         (_, MapObject? item) = _dude is null ? (null, null) : EquippedWeapon(_dude.Dude);
         string hand = _activeHand == MapObject.FlagInRightHand ? "right" : "left";
-        Log($"Active hand: {hand}{(item is null ? " (empty)" : $" — {ObjectName(item)}")}.");
+        Log($"Active hand: {hand}{(item is null ? " (empty)" : $" - {ObjectName(item)}")}.");
         Console.WriteLine($"swap-hand: active={hand} weapon={(item is null ? "none" : $"0x{item.Pid:X}")}");
     }
 
@@ -3989,7 +3989,7 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
         {
             if (_combat.Phase != Formats.Combat.CombatPhase.Idle)
             {
-                Log("You can't do that in combat."); // proto.msg 902 — refuse mid-combat
+                Log("You can't do that in combat."); // proto.msg 902 - refuse mid-combat
                 Console.WriteLine($"book: pid={item.Pid} skill={bookSkill} refused=combat");
                 return;
             }
@@ -4032,7 +4032,7 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
             if (wp?.Weapon is not null && wi is not null)
             {
                 if (!TryReloadWith(_dude.Dude, wp, wi, item.Pid))
-                    Log($"Can't load that type — unload the {ObjectNameByPid(wp.Pid)} first (Shift+R).");
+                    Log($"Can't load that type - unload the {ObjectNameByPid(wp.Pid)} first (Shift+R).");
                 return;
             }
             Log("You have no compatible weapon equipped.");
@@ -4258,7 +4258,7 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
         if (Formats.Item.ChargedItems.IsStealthBoy(item.Pid) && _dude is not null)
             _dude.Dude.Flags |= Formats.Item.ChargedItems.TransGlassFlag;
         else if (_dude is not null)
-            Log($"The rem counter reads: {_dude.Dude.Radiation}."); // items.msg 8 (paraphrased — no game strings)
+            Log($"The rem counter reads: {_dude.Dude.Radiation}."); // items.msg 8 (paraphrased - no game strings)
         Console.WriteLine($"charged-item: pid={item.Pid} on charges={item.AmmoQuantity}"
             + (Formats.Item.ChargedItems.IsStealthBoy(item.Pid) ? " glass=1" : $" rems={_dude?.Dude.Radiation ?? 0}"));
     }
@@ -4814,7 +4814,7 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
                 _unspentSkillPoints = Math.Min(Formats.Combat.SkillSet.PointsBankCap,
                     _unspentSkillPoints + grant);
             }
-            Log($"You have reached level {_dudeLevel}! ({_unspentSkillPoints} skill points — press K)");
+            Log($"You have reached level {_dudeLevel}! ({_unspentSkillPoints} skill points - press K)");
             Console.WriteLine($"level-up: now level {_dudeLevel}, skillPoints={_unspentSkillPoints}");
             // P72-M1: a white "Level Up" float over the dude (party_member.cc:1554 textObjectAdd font 101,
             // _colorTable[0x7FFF]). Draw-only — mutates the float list, never the console → goldens unchanged.
@@ -4896,7 +4896,7 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
         sk[skill] += 1;
         _unspentSkillPoints -= cost;
         int after = Formats.Combat.SkillSet.Value(b, bo, sk, tags, skill);
-        Log($"{Formats.Combat.SkillSet.Names[skill]} {current}% → {after}% ({_unspentSkillPoints} pts left)");
+        Log($"{Formats.Combat.SkillSet.Names[skill]} {current}% -> {after}% ({_unspentSkillPoints} pts left)");
         Console.WriteLine($"skill-spend: {Formats.Combat.SkillSet.Names[skill]} {current}->{after} cost={cost} left={_unspentSkillPoints}");
     }
 

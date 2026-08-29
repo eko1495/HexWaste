@@ -96,7 +96,7 @@ public sealed class AafFontRenderer : IDisposable
         foreach (char ch in text)
         {
             if (ch != ' ')
-                spriteBatch.Draw(_atlas, new Vector2(x, position.Y), _sources[(byte)ch], color);
+                spriteBatch.Draw(_atlas, new Vector2(x, position.Y), _sources[AafFont.GlyphIndex(ch)], color);
             x += _font.CharWidth(ch) + _font.LetterSpacing;
         }
     }
