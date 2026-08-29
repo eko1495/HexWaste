@@ -272,7 +272,10 @@ public sealed class CombatEngine
         if (isGun)
         {
             (MapObject? blocker, crittersInPath) = LineOfFire.Trace(
-                dude.HexTile, target.HexTile, tile => _host.ShootBlockerAt(tile, dude, target));
+                dude.HexTile, target.HexTile,
+                tile => _host.ShootBlockerAt(tile, dude, target) is { } o
+                        && ShotFilter.LegacyCollapsed.Obstructs(o, isTarget: o == target)
+                    ? o : null);
             if (blocker is not null)
                 return null;
         }
@@ -359,7 +362,10 @@ public sealed class CombatEngine
         if (isGun)
         {
             (MapObject? blocker, crittersInPath) = LineOfFire.Trace(
-                dude.HexTile, target.HexTile, tile => _host.ShootBlockerAt(tile, dude, target));
+                dude.HexTile, target.HexTile,
+                tile => _host.ShootBlockerAt(tile, dude, target) is { } o
+                        && ShotFilter.LegacyCollapsed.Obstructs(o, isTarget: o == target)
+                    ? o : null);
             if (blocker is not null)
             {
                 _host.Log($"Your shot is blocked by the {_host.ObjectName(blocker)}.");
@@ -493,7 +499,10 @@ public sealed class CombatEngine
         }
 
         (MapObject? blocker, int crittersInPath) = LineOfFire.Trace(
-            dude.HexTile, target.HexTile, tile => _host.ShootBlockerAt(tile, dude, target));
+            dude.HexTile, target.HexTile,
+            tile => _host.ShootBlockerAt(tile, dude, target) is { } o
+                    && ShotFilter.LegacyCollapsed.Obstructs(o, isTarget: o == target)
+                ? o : null);
         if (blocker is not null)
         {
             _host.Log($"Your shot is blocked by the {_host.ObjectName(blocker)}.");
@@ -685,7 +694,9 @@ public sealed class CombatEngine
         var line = new List<MapObject>();
         LineOfFire.Trace(from, endTile, tile =>
         {
-            MapObject? obj = _host.ShootBlockerAt(tile, dudeObj, targetObj);
+            MapObject? obj = _host.ShootBlockerAt(tile, dudeObj, targetObj) is { } o
+                    && ShotFilter.LegacyCollapsed.Obstructs(o, isTarget: o == targetObj)
+                ? o : null;
             if (obj is not null && Fid.Type(obj.Fid) is ObjectType.Critter
                 && obj != targetObj && obj != dudeObj && !line.Contains(obj))
                 line.Add(obj);
@@ -747,12 +758,16 @@ public sealed class CombatEngine
         MapObject? victim = null;
         LineOfFire.Trace(targetTile, endpoint, tile =>
         {
-            MapObject? obj = _host.ShootBlockerAt(tile, attackerObj, excludeTarget);
+            MapObject? obj = _host.ShootBlockerAt(tile, attackerObj, excludeTarget) is { } o
+                    && ShotFilter.LegacyCollapsed.Obstructs(o, isTarget: o == excludeTarget)
+                ? o : null;
             if (victim is null && obj is not null && tile != targetTile && Fid.Type(obj.Fid) is ObjectType.Critter)
                 victim = obj;
             return obj; // a wall stops the line
         });
-        victim ??= _host.ShootBlockerAt(endpoint, attackerObj, excludeTarget); // endpoint fallback
+        victim ??= _host.ShootBlockerAt(endpoint, attackerObj, excludeTarget) is { } endObj
+                && ShotFilter.LegacyCollapsed.Obstructs(endObj, isTarget: endObj == excludeTarget)
+            ? endObj : null; // endpoint fallback
 
         if (victim is null || Fid.Type(victim.Fid) is not ObjectType.Critter || victim.IsDead
             || _host.GetCritterState(victim) is not { } vs)
@@ -1817,7 +1832,9 @@ public sealed class CombatEngine
                 continue;
             // Line-of-sight from the blast centre (walls shield).
             (MapObject? blocker, _) = LineOfFire.Trace(centerTile, victim.HexTile,
-                t => _host.ShootBlockerAt(t, victim, victim));
+                t => _host.ShootBlockerAt(t, victim, victim) is { } o
+                        && ShotFilter.LegacyCollapsed.Obstructs(o, isTarget: o == victim)
+                    ? o : null);
             if (blocker is not null && victim.HexTile != centerTile)
                 continue;
             if (_host.GetCritterState(victim) is not { } state)
@@ -2347,7 +2364,9 @@ public sealed class CombatEngine
         if (isGun || range > 1)
         {
             (MapObject? blocker, _) = LineOfFire.Trace(attacker.HexTile, defender.HexTile,
-                tile => _host.ShootBlockerAt(tile, attacker, defender));
+                tile => _host.ShootBlockerAt(tile, attacker, defender) is { } o
+                        && ShotFilter.LegacyCollapsed.Obstructs(o, isTarget: o == defender)
+                    ? o : null);
             if (blocker is not null)
                 return ShotStatus.AimBlocked;
         }
@@ -3526,7 +3545,10 @@ public sealed class CombatEngine
         if (enemyGun && enemyDistance <= attackRange)
         {
             (MapObject? blocker, enemyCritters) = LineOfFire.Trace(
-                enemy.HexTile, dudeTile, tile => _host.ShootBlockerAt(tile, enemy, defenderObj));
+                enemy.HexTile, dudeTile,
+                tile => _host.ShootBlockerAt(tile, enemy, defenderObj) is { } o
+                        && ShotFilter.LegacyCollapsed.Obstructs(o, isTarget: o == defenderObj)
+                    ? o : null);
             // P78-M3: friendly-fire safety (_combat_safety_invalidate_weapon, combat.cc:2249) — don't take a
             // RANGED shot that passes through a living teammate. SIMPLIFICATION: an exact-collinear hex test
             // (the friend lies between us and the target) rather than the engine's full LoF-tile scan +
@@ -3796,7 +3818,10 @@ public sealed class CombatEngine
         if (isGun && distance <= range)
         {
             (MapObject? blocker, crittersInPath) = LineOfFire.Trace(
-                ally.HexTile, target.HexTile, tile => _host.ShootBlockerAt(tile, ally, target));
+                ally.HexTile, target.HexTile,
+                tile => _host.ShootBlockerAt(tile, ally, target) is { } o
+                        && ShotFilter.LegacyCollapsed.Obstructs(o, isTarget: o == target)
+                    ? o : null);
             blocked = blocker is not null;
         }
 

@@ -221,15 +221,18 @@ public sealed partial class ViewerGame
         }
     }
 
-    /// <summary>_obj_shoot_blocking_at subset: walls/scenery/living critters on
-    /// the tile, skipping hidden, NO_BLOCK (open doors) and SHOOT_THRU.</summary>
+    /// <summary>The COARSE line-of-fire query. ported from fallout2-ce
+    /// src/object.cc _obj_shoot_blocking_at() (:2440), tile phase: !HIDDEN &&
+    /// (NO_BLOCK == 0 || SHOOT_THRU == 0), then the type test. The disjunction is deliberate —
+    /// each caller decides what SHOOT_THRU means for it, via ShotFilter.Obstructs.
+    /// Do NOT re-add a flag term here; that is what collapsed the two stages originally.</summary>
     public MapObject? ShootBlockerAt(int tile, MapObject shooter, MapObject target)
     {
         const int noBlock = 0x10;
         const uint shootThru = 0x80000000;
         return _solidObjects[_elevation].FirstOrDefault(o =>
             o.HexTile == tile && o != shooter && o != target && !o.IsHidden
-            && (o.Flags & noBlock) == 0 && ((uint)o.Flags & shootThru) == 0
+            && ((o.Flags & noBlock) == 0 || ((uint)o.Flags & shootThru) == 0)
             && (Fid.Type(o.Fid) is ObjectType.Wall or ObjectType.Scenery
                 || (Fid.Type(o.Fid) is ObjectType.Critter && !o.IsDead)));
     }

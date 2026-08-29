@@ -367,7 +367,9 @@ public sealed partial class ViewerGame
     {
         MapObject dude = _dude!.Dude;
         bool clearLos = Formats.Combat.LineOfFire.Trace(dude.HexTile, critter.HexTile,
-            t => ShootBlockerAt(t, dude, critter)).Blocker is null;
+            t => ShootBlockerAt(t, dude, critter) is { } o
+                    && Formats.Combat.ShotFilter.LegacyCollapsed.Obstructs(o, isTarget: o == critter)
+                ? o : null).Blocker is null;
         int dist = Formats.Hex.HexGrid.Distance(dude.HexTile, critter.HexTile);
         int pe = GetCritterState(dude)?.Stat(1) ?? 0; // STAT_PERCEPTION (SPECIAL index 1)
         bool glass = TranslucencyOf(critter) == Formats.Proto.TransType.Glass;
