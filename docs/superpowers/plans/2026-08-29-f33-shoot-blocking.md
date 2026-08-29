@@ -28,13 +28,29 @@ The reference's `_obj_shoot_blocking_at` (`reference/fallout2-ce/src/object.cc:2
 "is there something here" query. Each caller then applies its own filter to the object it gets back.
 The five combat-side callers:
 
-| caller | policy |
+Each policy is a combination of at most three independent terms. **Verified against each call
+site, and two of them contradict the loose summary an earlier draft of this plan carried:**
+
+| caller | excludes `SHOOT_THRU` | excludes critters | excludes the target |
+|---|---|---|---|
+| `combat.cc:3584` — shot-blocked roll | yes | yes | no |
+| `combat.cc:3641` — burst / continuous walk | **no** | yes | no |
+| `combat.cc:3956` — missed-shot collateral | yes | **no** | via `excludeObj` |
+| `combat.cc:5906` — `combat_is_shot_blocked` penalty | **no** | yes | yes |
+| `combat_ai.cc:2585` — friendly-fire check | no | no | no |
+
+`3641` and `5906` do **not** treat a living critter as a hard obstruction — it is a hit candidate and
+the walk continues — and `3956` applies **no type test at all**. Read each call site's code before
+you rely on any row of this table; that is how these three were caught.
+
+**`excludeObj` differs per call site too**, which is why it must become a parameter rather than a
+rule inside the predicate:
+
+| call site | `excludeObj` |
 |---|---|
-| `combat.cc:3584` — shot-blocked roll | requires `SHOOT_THRU == 0`, then type, then a to-hit roll |
-| `combat.cc:3641` — burst / continuous walk | **type only; no `SHOOT_THRU` test** |
-| `combat.cc:3956` — missed-shot collateral | requires `SHOOT_THRU == 0` |
-| `combat.cc:5906` — `combat_is_shot_blocked` to-hit penalty | type and `!= targetObj`; **no `SHOOT_THRU` test** |
-| `combat_ai.cc:2585` — friendly-fire check | no flag test; identity comparison |
+| `combat_ai.cc:2585`, `combat.cc:3584`, `combat.cc:3641` | the attacker |
+| `combat.cc:3956` | `accidentalTarget`, initialised to the **defender** |
+| `combat.cc:5906` | `sourceObj` |
 
 Hexwaste collapsed this. **Two different callers' policies are currently fused into shared
 infrastructure**, which is the thing this plan untangles:
@@ -243,24 +259,26 @@ attributable.
 - Test: `tests/Hexwaste.Formats.Tests/ShootBlockerPolicyTests.cs` (create)
 
 **Interfaces:**
-- Produces:
-  - `public enum ShotPolicy { RefusesOnShootThru, TypeOnly, NonCritterOnly }` in
-    `src/Hexwaste.Formats/Combat/` — the three distinct filters the reference callers apply.
-  - `public static bool ShotPolicyRules.Obstructs(ShotPolicy policy, MapObject candidate, bool isTarget)`
-    — the per-consumer filter, pure and hermetically testable.
-  - `ShootBlockerAt` keeps its signature for now; its *body* becomes the coarse predicate with the
-    old terms moved into the policies.
+- Produces, in `src/Hexwaste.Formats/Combat/ShotFilter.cs`:
+  - `public sealed record ShotFilter(bool ExcludesShootThru, bool ExcludesCritters, bool ExcludesTarget, bool ExcludesNoBlock = false)`
+    — a caller policy as the three independent terms the reference callers actually combine, plus a
+    fourth that exists only to reproduce today's collapsed behaviour.
+  - `public bool ShotFilter.Obstructs(MapObject candidate, bool isTarget)` — pure, hermetically testable.
+  - Static instances, one per reference call site, each citing it.
+- `ShootBlockerAt` keeps its signature in this task; its *body* becomes the coarse predicate with the
+  old flag term moved into the filter. Its exclusion parameters become a caller-supplied `excludeObj`
+  in Task 4, not here.
 
 **The behaviour-neutrality argument you must preserve.** Today's effective test at every consumer is
-`!HIDDEN && NO_BLOCK == 0 && SHOOT_THRU == 0 && type`. After this task the coarse predicate is
-`!HIDDEN && (NO_BLOCK == 0 || SHOOT_THRU == 0) && type` and each consumer applies
-`NO_BLOCK == 0 && SHOOT_THRU == 0` as its policy. Composed, those are identical — the coarse
-predicate's disjunction is subsumed. **Every consumer gets the same policy in this task**; the
-policies only start to differ in Task 5.
+`!HIDDEN && NO_BLOCK == 0 && SHOOT_THRU == 0 && type`, with `LineOfFire.Trace` additionally counting
+critters past and skipping the target tile. After this task the coarse predicate is
+`!HIDDEN && (NO_BLOCK == 0 || SHOOT_THRU == 0) && type` and every consumer applies
+`ShotFilter.LegacyCollapsed`, which reapplies the removed `NO_BLOCK`/`SHOOT_THRU` terms. Composed,
+those are identical. **Every consumer gets the same filter in this task**; they diverge in Task 5.
 
 - [ ] **Step 1: Write the failing test**
 
-Create `tests/Hexwaste.Formats.Tests/ShootBlockerPolicyTests.cs`:
+Create `tests/Hexwaste.Formats.Tests/ShotFilterTests.cs`:
 
 ```csharp
 using Hexwaste.Formats;
@@ -271,118 +289,154 @@ namespace Hexwaste.Formats.Tests;
 
 /// <summary>
 /// F33: the reference splits line-of-fire into a coarse predicate
-/// (_obj_shoot_blocking_at, object.cc:2440) and a per-caller filter. These pin the
-/// three distinct filters its callers apply, so a later task can give each consumer
-/// the one its counterpart has without guessing.
+/// (_obj_shoot_blocking_at, object.cc:2440) and a per-caller filter. These pin each
+/// caller's filter as the combination of independent terms it actually is, so Task 5
+/// can assign them without guessing. Two of these were wrong in the plan's first draft
+/// and only fixed by reading the call sites — do not relax them without doing the same.
 /// </summary>
-public class ShootBlockerPolicyTests
+public class ShotFilterTests
 {
-    private const int Hidden = 0x01, NoBlock = 0x10;
+    private const int NoBlock = 0x10;
     private const int ShootThru = unchecked((int)0x80000000);
 
-    private static MapObject Obj(int flags, ObjectType type, bool dead = false) => new()
+    private static MapObject Obj(int flags, ObjectType type) => new()
     {
         Id = 1, HexTile = 100, X = 0, Y = 0, Frame = 0, Rotation = 0,
         Fid = ((int)type << 24), Flags = flags, Pid = ((int)type << 24) | 5,
-        CombatResults = dead ? 1 : 0,
     };
 
     [Fact]
-    public void RefusesOnShootThruSkipsAShootThruObject() =>
-        // combat.cc:3585 re-tests the flag the coarse predicate let through.
-        Assert.False(ShotPolicyRules.Obstructs(
-            ShotPolicy.RefusesOnShootThru, Obj(ShootThru, ObjectType.Scenery), isTarget: false));
+    public void ShotBlockedRollSkipsAShootThruObject() =>
+        // combat.cc:3586 re-tests the flag the coarse predicate let through.
+        Assert.False(ShotFilter.ShotBlockedRoll.Obstructs(Obj(ShootThru, ObjectType.Wall), isTarget: false));
 
     [Fact]
-    public void RefusesOnShootThruBlocksAPlainScenery() =>
-        Assert.True(ShotPolicyRules.Obstructs(
-            ShotPolicy.RefusesOnShootThru, Obj(0, ObjectType.Scenery), isTarget: false));
+    public void ShotBlockedRollSkipsALivingCritter() =>
+        // combat.cc:3587 — a critter there runs a to-hit roll; it is not a hard obstruction.
+        Assert.False(ShotFilter.ShotBlockedRoll.Obstructs(Obj(0, ObjectType.Critter), isTarget: false));
 
     [Fact]
-    public void TypeOnlyBlocksAShootThruObject() =>
-        // combat.cc:3641 applies no flag test at all — this is the burst walk.
-        Assert.True(ShotPolicyRules.Obstructs(
-            ShotPolicy.TypeOnly, Obj(ShootThru, ObjectType.Scenery), isTarget: false));
+    public void ShotBlockedRollBlocksAPlainWall() =>
+        Assert.True(ShotFilter.ShotBlockedRoll.Obstructs(Obj(0, ObjectType.Wall), isTarget: false));
 
     [Fact]
-    public void NonCritterOnlyIgnoresALivingCritter() =>
-        // combat.cc:5906 breaks only on non-critters; critters are counted and passed.
-        Assert.False(ShotPolicyRules.Obstructs(
-            ShotPolicy.NonCritterOnly, Obj(0, ObjectType.Critter), isTarget: false));
+    public void BurstWalkBlocksAShootThruObject() =>
+        // combat.cc:3644 applies no flag test — only the type test.
+        Assert.True(ShotFilter.BurstWalk.Obstructs(Obj(ShootThru, ObjectType.Wall), isTarget: false));
 
     [Fact]
-    public void NonCritterOnlyIgnoresTheTarget() =>
-        // combat.cc:5909's `obstacle != targetObj`.
-        Assert.False(ShotPolicyRules.Obstructs(
-            ShotPolicy.NonCritterOnly, Obj(0, ObjectType.Wall), isTarget: true));
+    public void BurstWalkSkipsALivingCritter() =>
+        // combat.cc:3644 breaks only for NON-critters; a critter is a hit candidate.
+        Assert.False(ShotFilter.BurstWalk.Obstructs(Obj(0, ObjectType.Critter), isTarget: false));
 
     [Fact]
-    public void NonCritterOnlyBlocksAWallThatIsNotTheTarget() =>
-        Assert.True(ShotPolicyRules.Obstructs(
-            ShotPolicy.NonCritterOnly, Obj(0, ObjectType.Wall), isTarget: false));
+    public void AccidentalTargetCountsACritter() =>
+        // combat.cc:3963 has NO type test at all — this is the one caller where a critter counts.
+        Assert.True(ShotFilter.AccidentalTarget.Obstructs(Obj(0, ObjectType.Critter), isTarget: false));
+
+    [Fact]
+    public void AccidentalTargetSkipsAShootThruObject() =>
+        Assert.False(ShotFilter.AccidentalTarget.Obstructs(Obj(ShootThru, ObjectType.Wall), isTarget: false));
+
+    [Fact]
+    public void ShotBlockedPenaltySkipsTheTarget() =>
+        // combat.cc:5908's `obstacle != targetObj`.
+        Assert.False(ShotFilter.ShotBlockedPenalty.Obstructs(Obj(0, ObjectType.Wall), isTarget: true));
+
+    [Fact]
+    public void ShotBlockedPenaltyBlocksAShootThruWallThatIsNotTheTarget() =>
+        // No flag test at this caller — a SHOOT_THRU wall still counts.
+        Assert.True(ShotFilter.ShotBlockedPenalty.Obstructs(Obj(ShootThru, ObjectType.Wall), isTarget: false));
+
+    [Fact]
+    public void FriendlyFireCountsEverythingTheCoarsePredicateReturns() =>
+        // combat_ai.cc:2586 compares identity only; it applies no flag or type test.
+        Assert.True(ShotFilter.FriendlyFire.Obstructs(Obj(ShootThru, ObjectType.Critter), isTarget: true));
+
+    [Fact]
+    public void LegacyCollapsedReproducesTodaysBehaviour()
+    {
+        Assert.False(ShotFilter.LegacyCollapsed.Obstructs(Obj(NoBlock, ObjectType.Wall), isTarget: false));
+        Assert.False(ShotFilter.LegacyCollapsed.Obstructs(Obj(ShootThru, ObjectType.Wall), isTarget: false));
+        Assert.True(ShotFilter.LegacyCollapsed.Obstructs(Obj(0, ObjectType.Wall), isTarget: false));
+    }
 }
 ```
 
-Before running it, check `MapObject`'s required members and `CombatResults`' dead bit against
+Before running it, check `MapObject`'s required members against
 `src/Hexwaste.Formats/Map/MapFile.cs` and adapt the helper if the shape differs — do not invent
 members.
 
 - [ ] **Step 2: Run it and confirm it fails for the right reason**
 
 ```bash
-dotnet test --filter FullyQualifiedName~ShootBlockerPolicyTests 2>&1 | tail -10
+cd /home/eko/dev/FPOC
+dotnet test --filter FullyQualifiedName~ShotFilterTests 2>&1 | tail -10
 ```
 
-Expected: a build error naming `ShotPolicy` / `ShotPolicyRules` as undefined. A different failure
-means the test helper is wrong, not the production code.
+Expected: a build error naming `ShotFilter` as undefined. A different failure means the test helper
+is wrong, not the production code.
 
-- [ ] **Step 3: Add the policy type**
+- [ ] **Step 3: Add the filter type**
 
-Create `src/Hexwaste.Formats/Combat/ShotPolicy.cs`:
+Create `src/Hexwaste.Formats/Combat/ShotFilter.cs`:
 
 ```csharp
 using Hexwaste.Formats.Map;
 
 namespace Hexwaste.Formats.Combat;
 
-/// <summary>The filters the reference's line-of-fire callers apply to the object
-/// _obj_shoot_blocking_at hands back. The predicate is deliberately coarse; the policy
-/// is where each caller decides what the object means for it.</summary>
-public enum ShotPolicy
-{
-    /// <summary>ported from fallout2-ce src/combat.cc:3585 (the shot-blocked roll) and
-    /// :3963 (the missed-shot collateral target): a SHOOT_THRU object is not an obstruction.</summary>
-    RefusesOnShootThru,
-
-    /// <summary>ported from fallout2-ce src/combat.cc:3644 (the burst / continuous walk):
-    /// no flag test at all — anything the coarse predicate returns ends the walk.</summary>
-    TypeOnly,
-
-    /// <summary>ported from fallout2-ce src/combat.cc:5908-5909 (combat_is_shot_blocked):
-    /// only a non-critter that is not the target obstructs; critters are counted and passed.</summary>
-    NonCritterOnly,
-
-    /// <summary>TEMPORARY. Reproduces the pre-F33 collapsed behaviour — NO_BLOCK == 0 and
-    /// SHOOT_THRU == 0 — so the predicate can be made faithful without changing what any
-    /// consumer sees. Every consumer moves off this in Task 5, and it is deleted in Task 7.
-    /// It has no reference counterpart and must never be the answer for a shipped consumer.</summary>
-    LegacyCollapsed,
-}
-
-/// <summary>Applies a <see cref="ShotPolicy"/> to a candidate the coarse predicate returned.</summary>
-public static class ShotPolicyRules
+/// <summary>
+/// What one line-of-fire caller does with the object the COARSE predicate hands back.
+/// ported from fallout2-ce: _obj_shoot_blocking_at (src/object.cc:2440) is deliberately
+/// coarse, and each caller applies its own filter. Those filters are combinations of three
+/// independent terms, so they are modelled as terms rather than as opaque named policies —
+/// the differences between callers are the whole point and should be readable.
+/// </summary>
+/// <param name="ExcludesShootThru">A SHOOT_THRU object is not an obstruction for this caller.</param>
+/// <param name="ExcludesCritters">A living critter is not a hard obstruction — it is a hit
+/// candidate and the walk continues.</param>
+/// <param name="ExcludesTarget">The caller's own target is not an obstruction.</param>
+/// <param name="ExcludesNoBlock">TEMPORARY, no reference counterpart: reproduces the pre-F33
+/// collapsed behaviour. Every consumer moves off <see cref="LegacyCollapsed"/> in Task 5 and it
+/// is deleted in Task 7.</param>
+public sealed record ShotFilter(
+    bool ExcludesShootThru,
+    bool ExcludesCritters,
+    bool ExcludesTarget,
+    bool ExcludesNoBlock = false)
 {
     private const int NoBlock = 0x10;
     private const int ShootThru = unchecked((int)0x80000000);
 
-    public static bool Obstructs(ShotPolicy policy, MapObject candidate, bool isTarget) => policy switch
-    {
-        ShotPolicy.RefusesOnShootThru => (candidate.Flags & ShootThru) == 0,
-        ShotPolicy.TypeOnly => true,
-        ShotPolicy.NonCritterOnly => Fid.Type(candidate.Fid) is not ObjectType.Critter && !isTarget,
-        ShotPolicy.LegacyCollapsed => (candidate.Flags & NoBlock) == 0 && (candidate.Flags & ShootThru) == 0,
-        _ => true,
-    };
+    public bool Obstructs(MapObject candidate, bool isTarget) =>
+        !(ExcludesShootThru && (candidate.Flags & ShootThru) != 0)
+        && !(ExcludesCritters && Fid.Type(candidate.Fid) is ObjectType.Critter)
+        && !(ExcludesTarget && isTarget)
+        && !(ExcludesNoBlock && (candidate.Flags & NoBlock) != 0);
+
+    /// <summary>ported from fallout2-ce src/combat.cc:3586-3587 — the shot-blocked roll.</summary>
+    public static readonly ShotFilter ShotBlockedRoll = new(true, true, false);
+
+    /// <summary>ported from fallout2-ce src/combat.cc:3644 — the burst / continuous walk.
+    /// No flag test: a SHOOT_THRU object DOES end this walk.</summary>
+    public static readonly ShotFilter BurstWalk = new(false, true, false);
+
+    /// <summary>ported from fallout2-ce src/combat.cc:3963 — the missed-shot collateral target.
+    /// No type test: a critter DOES count here, unlike every other caller.</summary>
+    public static readonly ShotFilter AccidentalTarget = new(true, false, false);
+
+    /// <summary>ported from fallout2-ce src/combat.cc:5908 — combat_is_shot_blocked's penalty.</summary>
+    public static readonly ShotFilter ShotBlockedPenalty = new(false, true, true);
+
+    /// <summary>ported from fallout2-ce src/combat_ai.cc:2586 — the friendly-fire check,
+    /// which applies no flag or type test at all.</summary>
+    public static readonly ShotFilter FriendlyFire = new(false, false, false);
+
+    /// <summary>TEMPORARY. The pre-F33 collapsed behaviour, so the coarse predicate can be made
+    /// faithful without changing what any consumer sees. Has no reference counterpart and must
+    /// never be the answer for a shipped consumer.</summary>
+    public static readonly ShotFilter LegacyCollapsed = new(true, true, true, ExcludesNoBlock: true);
 }
 ```
 
@@ -392,7 +446,7 @@ public static class ShotPolicyRules
 cd /home/eko/dev/FPOC && dotnet test --filter FullyQualifiedName~ShootBlockerPolicyTests 2>&1 | tail -4
 ```
 
-Expected: `Passed!  - Failed: 0, Passed: 6`.
+Expected: `Passed!  - Failed: 0, Passed: 11`.
 
 - [ ] **Step 5: Move the old terms out of the predicate and into a policy at every consumer**
 
@@ -403,7 +457,7 @@ two flag tests becomes the reference's `||`:
     /// <summary>The COARSE line-of-fire query. ported from fallout2-ce
     /// src/object.cc _obj_shoot_blocking_at() (:2440), tile phase: !HIDDEN &&
     /// (NO_BLOCK == 0 || SHOOT_THRU == 0), then the type test. The disjunction is deliberate —
-    /// each caller decides what SHOOT_THRU means for it, via ShotPolicyRules.Obstructs.
+    /// each caller decides what SHOOT_THRU means for it, via ShotFilter.Obstructs.
     /// Do NOT re-add a flag term here; that is what collapsed the two stages originally.</summary>
     public MapObject? ShootBlockerAt(int tile, MapObject shooter, MapObject target)
     {
@@ -424,7 +478,7 @@ shape, using `CombatEngine.cs:274` as the worked example — apply the same shap
             (MapObject? blocker, crittersInPath) = LineOfFire.Trace(
                 dude.HexTile, target.HexTile,
                 tile => _host.ShootBlockerAt(tile, dude, target) is { } o
-                        && ShotPolicyRules.Obstructs(ShotPolicy.LegacyCollapsed, o, isTarget: o == target)
+                        && ShotFilter.LegacyCollapsed.Obstructs(o, isTarget: o == target)
                     ? o : null);
 ```
 
@@ -441,7 +495,7 @@ for s in combat quest endgame opening encounter; do ./scripts/$s-golden.sh check
 ./scripts/census-sweep.sh check 2>&1 | tail -1
 ```
 
-Expected: `Failed: 0` with 1022 passed (1016 + 6), and **six `ALL PASS` verdicts with nothing
+Expected: `Failed: 0` with 1027 passed (1016 + 11), and **six `ALL PASS` verdicts with nothing
 re-recorded**. A moved fixture here means the split was not behaviour-neutral — that is a stop
 condition, not something to record.
 
@@ -449,15 +503,15 @@ condition, not something to record.
 
 ```bash
 cd /home/eko/dev/FPOC
-git add src/Hexwaste.Formats/Combat/ShotPolicy.cs tests/Hexwaste.Formats.Tests/ShootBlockerPolicyTests.cs src/Hexwaste.Viewer/ViewerGame.CombatHost.cs src/Hexwaste.Formats/Combat/CombatEngine.cs src/Hexwaste.Viewer/ViewerGame.cs src/Hexwaste.Viewer/ViewerGame.Rendering.cs
+git add src/Hexwaste.Formats/Combat/ShotFilter.cs tests/Hexwaste.Formats.Tests/ShotFilterTests.cs src/Hexwaste.Viewer/ViewerGame.CombatHost.cs src/Hexwaste.Formats/Combat/CombatEngine.cs src/Hexwaste.Viewer/ViewerGame.cs src/Hexwaste.Viewer/ViewerGame.Rendering.cs
 git commit -m "refactor(combat): split line-of-fire into a coarse predicate and a policy
 
 The reference's _obj_shoot_blocking_at (object.cc:2440) is a coarse query and
 each caller filters what it returns; Hexwaste had the filters baked into the
 predicate, so no consumer could have its own policy. This separates the two
 without changing any behaviour: the coarse predicate gains the reference's
-disjunction, and every consumer gets a LegacyCollapsed policy that composes
-back to exactly the old test.
+disjunction, and every consumer gets the LegacyCollapsed filter, which
+composes back to exactly the old test.
 
 All six golden suites byte-identical, nothing re-recorded — which is the
 point of doing the restructure alone."
@@ -485,10 +539,10 @@ fixture movement — which is a stop condition in both tasks.
 
 **Files:**
 - Modify: `src/Hexwaste.Viewer/ViewerGame.CombatHost.cs` (`ShootBlockerAt`)
-- Test: `tests/Hexwaste.Formats.Tests/ShootBlockerPolicyTests.cs` (extend)
+- Test: `tests/Hexwaste.Formats.Tests/ShotFilterTests.cs` (extend if the phase needs pinning)
 
 **Interfaces:**
-- Consumes: `ShotPolicy` / `ShotPolicyRules` from Task 2.
+- Consumes: `ShotFilter` from Task 2.
 
 `_obj_shoot_blocking_at`'s second loop, which Hexwaste never ported: when the tile itself yields
 nothing, the six adjacent tiles are scanned for objects carrying `OBJECT_MULTIHEX` (`0x800`), under a
@@ -566,7 +620,7 @@ fixture that moves without a multihex object on its line is a stop condition —
 
 ```bash
 cd /home/eko/dev/FPOC
-git add src/Hexwaste.Viewer/ViewerGame.CombatHost.cs tests/Hexwaste.Formats.Tests/ShootBlockerPolicyTests.cs
+git add src/Hexwaste.Viewer/ViewerGame.CombatHost.cs tests/Hexwaste.Formats.Tests/ShotFilterTests.cs
 git commit -m "fix(combat): port _obj_shoot_blocking_at's multihex adjacency phase
 
 The reference scans the six neighbouring tiles for OBJECT_MULTIHEX objects
@@ -577,26 +631,59 @@ this, so it blocked too little around multihex critters."
 
 ---
 
-### Task 4: Stop excluding the target from the coarse predicate
+### Task 4: Make the exclusion a caller-supplied parameter
 
 **Files:**
 - Modify: `src/Hexwaste.Viewer/ViewerGame.CombatHost.cs` (`ShootBlockerAt`)
+- Modify: every `LineOfFire.Trace` call site (the ten listed in the consumer table)
 
 `_make_straight_path_func` (`animation.cc:1951`) calls `callback(obj, from, obj->elevation)`, so the
-predicate's `excludeObj` is the walker's first argument — the **attacker** at every combat call site.
-`ShootBlockerAt` excludes shooter *and* target. The target exclusion is ours alone.
+predicate's `excludeObj` is the walker's first argument — **and it differs per call site**:
+
+| call site | `excludeObj` |
+|---|---|
+| `combat_ai.cc:2585`, `combat.cc:3584`, `combat.cc:3641` | the attacker |
+| `combat.cc:3956` | `accidentalTarget`, initialised to the **defender** |
+| `combat.cc:5906` | `sourceObj` |
+
+`ShootBlockerAt(tile, shooter, target)` hardcodes two exclusions, which is neither what the reference
+does nor expressible as what it does — it cannot represent `combat.cc:3956`'s defender-exclusion at
+all. So the exclusion becomes a parameter.
 
 Note the target is *also* excluded inside `LineOfFire.Trace` (its `tile != toTile` guard, which is
-`combat.cc:5909`'s `obstacle != targetObj` — a **caller policy**, and one that `NonCritterOnly`
-now expresses). Removing the predicate's copy is what this task does; the walker's copy is dealt with
-in Task 5, where it becomes a policy rather than a hard-coded rule.
+`combat.cc:5908`'s `obstacle != targetObj` — a **caller policy**, and one `ShotFilter.ExcludesTarget`
+now expresses). Leave the walker's guard alone in this task; Task 5 turns it into a filter term.
 
-- [ ] **Step 1: Remove the target exclusion from the predicate**
+- [ ] **Step 1: Change the signature**
 
-Drop `o != target` from `ShootBlockerAt`'s filter. Keep the shooter exclusion. Update the doc comment
-to state that the reference excludes only the attacker and cite `animation.cc:1951`.
+In `src/Hexwaste.Viewer/ViewerGame.CombatHost.cs`, replace the two exclusion parameters with one:
 
-- [ ] **Step 2: Run everything**
+```csharp
+    /// <summary>The COARSE line-of-fire query. ported from fallout2-ce
+    /// src/object.cc _obj_shoot_blocking_at() (:2440). <paramref name="excludeObj"/> is the
+    /// reference's excludeObj — the first argument of _make_straight_path_func
+    /// (animation.cc:1951), which each caller supplies: the attacker at combat.cc:3584/:3641 and
+    /// combat_ai.cc:2585, the DEFENDER at combat.cc:3956, sourceObj at combat.cc:5906. It is a
+    /// caller's choice, not a property of this predicate.</summary>
+    public MapObject? ShootBlockerAt(int tile, MapObject? excludeObj)
+```
+
+and drop `o != shooter && o != target` in favour of `o != excludeObj`.
+
+- [ ] **Step 2: Give each call site the exclusion its counterpart passes**
+
+At the three refusal paths, the burst walk and the friendly-fire check, pass the attacker. At the
+missed-shot overshoot consumer, pass the **defender** — that is `combat.cc:3956`'s
+`accidentalTarget`, and it is the one call site where passing the attacker would be wrong. For the
+crowd-count and to-hit-penalty consumers, identify what `sourceObj` is at `combat.cc:5906` and pass
+the equivalent; if it is the attacker, say so explicitly rather than assuming.
+
+Where a consumer previously relied on the target being excluded by the predicate, that exclusion now
+comes from `ShotFilter.ExcludesTarget` in Task 5 — or from `LineOfFire.Trace`'s own `tile != toTile`
+guard, which is still in place. **State in your report which consumers changed behaviour here and
+which did not**, because they will not all be the same.
+
+- [ ] **Step 3: Run everything**
 
 ```bash
 cd /home/eko/dev/FPOC
@@ -607,22 +694,24 @@ for s in combat quest endgame opening encounter; do echo "=== $s ==="; ./scripts
 ```
 
 Fixtures may not move at all, because `LineOfFire.Trace` still skips the target tile independently.
-If nothing moves, say so — that is the expected outcome and it is worth stating rather than implying
-the change did something.
+If nothing moves, say so — that is a plausible outcome and worth stating rather than implying the
+change did something.
 
-- [ ] **Step 3: Explain any movement, then commit**
+- [ ] **Step 4: Explain any movement, then commit**
 
-Same rule as Task 3: diff, explain, then re-record. Then:
+Same rule as Task 3: diff, explain in terms of a changed exclusion, then re-record. An unexplained
+movement is a stop condition.
 
 ```bash
 cd /home/eko/dev/FPOC
-git add src/Hexwaste.Viewer/ViewerGame.CombatHost.cs
-git commit -m "fix(combat): exclude only the attacker from the shoot-blocking predicate
+git add -A src/
+git commit -m "fix(combat): make the shoot-blocking exclusion a caller-supplied parameter
 
-_make_straight_path_func passes its first argument as excludeObj, which is the
-attacker at every combat call site (animation.cc:1951). Excluding the target
-as well was ours alone. LineOfFire.Trace still skips the target tile, so this
-may be inert on its own; Task 5 turns that into a policy."
+_make_straight_path_func passes its first argument as excludeObj, and it
+differs per call site: the attacker at most, but the DEFENDER at
+combat.cc:3956 and sourceObj at combat.cc:5906. ShootBlockerAt hardcoded
+two exclusions, which is neither the reference's behaviour nor able to
+express it."
 ```
 
 ---
@@ -636,18 +725,28 @@ policy its reference counterpart applies.
 - Modify: `src/Hexwaste.Formats/Combat/CombatEngine.cs` (eight call sites)
 - Modify: `src/Hexwaste.Viewer/ViewerGame.cs`, `src/Hexwaste.Viewer/ViewerGame.Rendering.cs`
 - Modify: `src/Hexwaste.Formats/Combat/LineOfFire.cs`
-- Modify: `src/Hexwaste.Formats/Combat/ShotPolicy.cs` (remove `LegacyCollapsed`)
+- Modify: `src/Hexwaste.Formats/Combat/ShotFilter.cs` (remove `LegacyCollapsed` and `ExcludesNoBlock`)
 
-Assign from the consumer table in this plan's Background section: the three refusal paths take
-`RefusesOnShootThru`; the burst line takes `TypeOnly`; the overshoot victim takes
-`RefusesOnShootThru`; the friendly-fire check takes `TypeOnly` (`combat_ai.cc:2585` applies no flag
-test); the crowd-count and to-hit-penalty consumers take `NonCritterOnly`. The explosion
-line-of-sight and rendering-outline consumers are settled in Task 7 — leave them on `LegacyCollapsed`
-until then and say so in the commit.
+Assign from the Background section's verified table:
 
-`LineOfFire.Trace`'s hard-coded critter counting is `NonCritterOnly`'s behaviour. Consumers that take
-that policy keep it; the others must not silently inherit it. Decide how the walker expresses this —
-a policy parameter is the obvious route — and state the choice in your report.
+| our consumer | filter |
+|---|---|
+| the three refusal paths | `ShotFilter.ShotBlockedRoll` |
+| the burst line | `ShotFilter.BurstWalk` |
+| the missed-shot overshoot victim | `ShotFilter.AccidentalTarget` |
+| the friendly-on-fire-line check | `ShotFilter.FriendlyFire` |
+| the crowd count and the to-hit penalty | `ShotFilter.ShotBlockedPenalty` |
+
+The explosion line-of-sight and rendering-outline consumers are settled in Task 7 — leave them on
+`LegacyCollapsed` until then and say so in the commit.
+
+**`LineOfFire.Trace` currently hard-codes two of these terms**: it counts living critters and resumes
+past them, and it skips the target tile. Those are `ExcludesCritters` and `ExcludesTarget` — i.e.
+`ShotFilter.ShotBlockedPenalty`'s behaviour, baked into shared infrastructure. Consumers taking that
+filter are unaffected; the others must not silently inherit it. In particular
+`ShotFilter.AccidentalTarget` does **not** exclude critters, and it cannot work while the walker
+drops them. Move both terms out of the walker into the filter — pass the filter to `Trace` — and
+state the choice in your report.
 
 - [ ] **Step 1: Assign the policies**
 
