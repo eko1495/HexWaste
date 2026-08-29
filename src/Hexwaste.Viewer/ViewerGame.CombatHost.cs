@@ -242,6 +242,33 @@ public sealed partial class ViewerGame
         // with nothing on the tile itself, the six neighbours are scanned for MULTIHEX objects
         // under a STRICTER gate — !HIDDEN && NO_BLOCK == 0, with NO SHOOT_THRU disjunction. The
         // asymmetry with the tile phase above is the reference's own; do not "harmonise" it.
+        //
+        // EVIDENCE (Task 3 review finding, closed without behaviour change): a full scan of every
+        // shipped .map found 229 OBJECT_MULTIHEX (0x800) objects across ~20 maps. Almost all of
+        // them are pid 0x100000A/0x10000BF (Brahmin/Deathclaw-family CRITTERS) — and a live
+        // critter can never reach this loop's `mh is not null` return as a REAL block, because
+        // LineOfFire.Trace (Formats/Combat/LineOfFire.cs) special-cases any object whose FID type
+        // is Critter: it counts it (crittersInPath++) and walks past rather than stopping, even
+        // when ShootBlockerAt hands one back. Confirmed live: modmain.map, shooter=16463,
+        // target(critter)=15464 — --shot-blockers reports 0 on-path objects, yet the neighbour
+        // Brahmin at 16264 sits adjacent to the traced tile 16263 — and a real
+        // `--character combat --map modmain.map --give 9 --use-item 9 --burst-at 16463 15464
+        // --rng-seed 1` fires normally (transcript: "burst Dog@15464 ... chance=40% ... damage=10",
+        // plus a burst-extra hit on the Brahmin itself — never a block).
+        //
+        // VCTYCTYD.map (Vault City courtyard) DOES carry genuine non-critter multihex SCENERY
+        // (pid 0x20006BC, tile 26736 among others) that exercises this loop for real: with
+        // shooter=27137, target(critter)=25521, `--shot-blockers 27137 25521` again reports 0
+        // on-path objects (confirmed no Wall/Scenery/live-Critter sits on any traced tile), and
+        // tile 26936 — one of the traced tiles — has that scenery pid as its direction-neighbour.
+        // Running the identical `--character combat --map VCTYCTYD.map --give 9 --use-item 9
+        // --burst-at 27137 25521 --rng-seed 1` (10mm SMG, MaxRange1=25, well in range) produces NO
+        // "burst ...: chance=" transcript line at all (contrast the modmain run above), the dude's
+        // AP stays untouched, and the target's hp is unchanged — every other early-return in
+        // TryBurst (out of ammo, non-burst weapon, too far, not enough AP, crippled arms) is ruled
+        // out by construction, so this loop returning the scenery object as the blocker is the only
+        // remaining explanation. This phase is therefore live on shipped content (Vault City), not
+        // dormant — it just never fires against the far more common multihex CRITTER case.
         const int multiHex = 0x800;
         for (int dir = 0; dir < 6; dir++)
         {
