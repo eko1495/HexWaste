@@ -1014,6 +1014,46 @@ public sealed partial class ViewerGame
                         + $" partyToPartyRan={(ppPartyToParty ? 1 : 0)} enemyToPartyRan={(ppEnemyToParty ? 1 : 0)}");
                     break;
                 }
+                case StartupAction.ShotBlockers(var sbShooter, var sbTarget):
+                {
+                    // F33: the coarse question the reference's _obj_shoot_blocking_at answers, and
+                    // the five different verdicts its callers reach from the same object.
+                    const int hidden = 0x01, noBlock = 0x10, multiHex = 0x800;
+                    const uint shootThru = 0x80000000;
+                    Console.WriteLine($"shot-blockers: from={sbShooter} to={sbTarget} elev={_elevation}");
+                    int seen = 0;
+                    Formats.Combat.LineOfFire.Trace(sbShooter, sbTarget, tile =>
+                    {
+                        foreach (MapObject o in _solidObjects[_elevation].Where(o => o.HexTile == tile))
+                        {
+                            uint f = (uint)o.Flags;
+                            bool isHidden = (f & hidden) != 0;
+                            bool nb = (f & noBlock) != 0;
+                            bool st = (f & shootThru) != 0;
+                            bool mh = (f & multiHex) != 0;
+                            ObjectType t = Fid.Type(o.Fid);
+                            bool typeOk = t is ObjectType.Wall or ObjectType.Scenery
+                                || (t is ObjectType.Critter && !o.IsDead);
+                            // The reference predicate: !HIDDEN && (NO_BLOCK==0 || SHOOT_THRU==0) && type
+                            bool refCoarse = !isHidden && (!nb || !st) && typeOk;
+                            // Ours today: !HIDDEN && NO_BLOCK==0 && SHOOT_THRU==0 && type
+                            bool ours = !isHidden && !nb && !st && typeOk;
+                            Console.WriteLine(
+                                $"  tile={tile} pid={o.Pid} type={t} flags=0x{f:X8}"
+                                + $" hidden={(isHidden ? 1 : 0)} noBlock={(nb ? 1 : 0)}"
+                                + $" shootThru={(st ? 1 : 0)} multiHex={(mh ? 1 : 0)}"
+                                + $" refCoarse={(refCoarse ? 1 : 0)} ours={(ours ? 1 : 0)}"
+                                + $" p3584={(refCoarse && !st ? 1 : 0)}"
+                                + $" p3641={(refCoarse ? 1 : 0)}"
+                                + $" p3956={(refCoarse && !st ? 1 : 0)}"
+                                + $" p5906={(refCoarse && t is not ObjectType.Critter ? 1 : 0)}");
+                            seen++;
+                        }
+                        return null; // never block: we want the whole line, not the first hit
+                    });
+                    Console.WriteLine($"shot-blockers: {seen} object(s) on the line");
+                    break;
+                }
                 case StartupAction.BlockedProbe(var bpHex):
                 {
                     // P109 QA: the live blocked-set truth around a tile — each neighbor's blocked

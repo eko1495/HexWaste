@@ -881,6 +881,9 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
         /// critter — proves (or disproves) that a finished walker still blocks a later StartNpcWalk call
         /// because it was never removed from _npcWalkers.</summary>
         public sealed record WalkerRestartProbe(int Hex, int Target1, int Target2) : StartupAction;
+        /// <summary>F33: dump every solid object on the line between two hexes, with the flags
+        /// and the verdict each reference caller policy would reach.</summary>
+        public sealed record ShotBlockers(int ShooterHex, int TargetHex) : StartupAction;
         /// <summary>F46/F5: the head's fidget variants and the X sway each one carries.</summary>
         public sealed record FidgetProbe(int HeadId, int Rolls) : StartupAction;
         /// <summary>F32 QA: golden coverage for ShouldRunDamageProc's party pair gate (combat.cc:4849).
