@@ -30,13 +30,22 @@ if (critter != nullptr) {
 
 The five combat-side callers filter differently, and the differences are the design:
 
-| caller | what it does with the obstacle |
-|---|---|
-| `combat.cc:3584` — the shot-blocked roll | requires `SHOOT_THRU == 0`, then type, then a to-hit roll |
-| `combat.cc:3641` — the burst / continuous-fire walk | **type only — no `SHOOT_THRU` test at all** |
-| `combat.cc:3956` — the missed-shot collateral target | requires `SHOOT_THRU == 0` |
-| `combat.cc:5906` — `combat_is_shot_blocked`'s to-hit penalty | type and `!= targetObj`; **no `SHOOT_THRU` test** |
-| `combat_ai.cc:2585` — the friendly-fire check | no flag test; identity comparison against the friend |
+Each policy is a combination of at most three independent terms — *does a `SHOOT_THRU` object
+count*, *does a living critter count*, *does the target count*. Verified against each call site:
+
+| caller | excludes `SHOOT_THRU` | excludes critters | excludes the target |
+|---|---|---|---|
+| `combat.cc:3584` — the shot-blocked roll | yes | yes | no |
+| `combat.cc:3641` — the burst / continuous walk | **no** | yes | no |
+| `combat.cc:3956` — the missed-shot collateral target | yes | **no** | (via `excludeObj`) |
+| `combat.cc:5906` — `combat_is_shot_blocked`'s penalty | **no** | yes | yes |
+| `combat_ai.cc:2585` — the friendly-fire check | no | no | no |
+
+Two of these were got wrong in an earlier draft and corrected only after reading the call sites
+directly: `3641` and `5906` do **not** treat a living critter as a hard obstruction — it is a hit
+candidate and the walk continues — and `3956` applies **no type test at all**, so a critter does
+count there. Deriving a policy from the caller's prose summary rather than its code is exactly how
+this entry went wrong the first time.
 
 Hexwaste has the same *shape* — `LineOfFire.Trace(from, to, blockerFunc)`
 (`src/Hexwaste.Formats/Combat/LineOfFire.cs:20`) with ten consumers — but **every consumer passes the
@@ -77,8 +86,21 @@ any consumer actually sees.
 
 **The exclusion set.** `_make_straight_path_func` (`animation.cc:1951`) invokes
 `callback(obj, from, obj->elevation)`, so the predicate's `excludeObj` is the walker's first
-argument — the **attacker** at every combat call site. `ShootBlockerAt` excludes
-`o != shooter && o != target`. Excluding the target is ours alone, and it makes us block less.
+argument — and **it differs per call site**, which an earlier draft of this spec got wrong by
+asserting it is always the attacker:
+
+| call site | `excludeObj` |
+|---|---|
+| `combat_ai.cc:2585` | `attacker` |
+| `combat.cc:3584` | `attack->attacker` |
+| `combat.cc:3641` | `attack->attacker` |
+| `combat.cc:3956` | `accidentalTarget`, initialised to `attack->defender` — the **defender** |
+| `combat.cc:5906` | `sourceObj` |
+
+So the exclusion is a **caller-supplied parameter of the coarse query**, not a property of the
+predicate. `ShootBlockerAt` hardcodes `o != shooter && o != target`, which is neither: it excludes
+two objects where the reference excludes one, and it cannot express `3956`'s defender-exclusion at
+all.
 
 **The missing multihex phase.** After finding nothing on the tile itself, `_obj_shoot_blocking_at`
 walks the six adjacent tiles looking for `OBJECT_MULTIHEX` objects and blocks on those — with a
@@ -132,7 +154,8 @@ The shape to port is one coarse predicate plus per-consumer policies:
    spelled out because "be faithful" is where a port quietly keeps one of its old terms:
    - the **tile phase** gates on `!HIDDEN && (NO_BLOCK == 0 || SHOOT_THRU == 0)`, then the type test
      (live critter, scenery, or wall) that we already have correct;
-   - the exclusion is the **attacker only** — the target stops being excluded;
+   - the exclusion becomes a **caller-supplied parameter** — one object, whatever that consumer's
+     reference counterpart passes (usually the attacker, but the defender at `combat.cc:3956`);
    - the **multihex phase** runs when the tile phase finds nothing: the six adjacent tiles are
      scanned for `OBJECT_MULTIHEX` objects under a *stricter* gate — `!HIDDEN && NO_BLOCK == 0`, with
      **no `SHOOT_THRU` disjunction** — plus the same exclusion and type test.
