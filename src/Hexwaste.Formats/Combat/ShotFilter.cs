@@ -25,23 +25,24 @@ namespace Hexwaste.Formats.Combat;
 /// the coarse predicate (ShootBlockerAt/_obj_shoot_blocking_at) already drops corpses before this
 /// filter ever runs, matching the reference callers, which test FID_TYPE only.</param>
 /// <param name="ExcludesTarget">The caller's own target is not an obstruction.</param>
-/// <param name="ExcludesNoBlock">TEMPORARY, no reference counterpart: reproduces the pre-F33
-/// collapsed behaviour. Task 5 moves most consumers off <see cref="LegacyCollapsed"/>, but two
-/// still hold it (see that field's own doc comment); Task 7 settles those and deletes this.</param>
 public sealed record ShotFilter(
     bool ExcludesShootThru,
     bool ExcludesCritters,
-    bool ExcludesTarget,
-    bool ExcludesNoBlock = false)
+    bool ExcludesTarget)
 {
-    private const int NoBlock = 0x10;
     private const int ShootThru = unchecked((int)0x80000000);
 
     public bool Obstructs(MapObject candidate, bool isTarget) =>
         !(ExcludesShootThru && (candidate.Flags & ShootThru) != 0)
         && !(ExcludesCritters && Fid.Type(candidate.Fid) is ObjectType.Critter)
-        && !(ExcludesTarget && isTarget)
-        && !(ExcludesNoBlock && (candidate.Flags & NoBlock) != 0);
+        && !(ExcludesTarget && isTarget);
+
+    /// NOTE on NO_BLOCK: it is deliberately NOT a term here. _obj_shoot_blocking_at
+    /// (object.cc:2440) gates on the DISJUNCTION `NO_BLOCK == 0 || SHOOT_THRU == 0`, and no
+    /// reference caller re-tests NO_BLOCK afterwards, so a NO_BLOCK-but-not-SHOOT_THRU object
+    /// reported by the coarse predicate really does obstruct. A pre-F33 `ExcludesNoBlock` term
+    /// existed only to reproduce the collapsed flag CONJUNCTION while consumers were migrated;
+    /// every consumer now carries its reference filter, so the term is gone.
 
     /// <summary>ported from fallout2-ce src/combat.cc:3586-3587 — the shot-blocked roll.</summary>
     public static readonly ShotFilter ShotBlockedRoll = new(true, true, false);
@@ -58,36 +59,18 @@ public sealed record ShotFilter(
     /// never sees.</summary>
     public static readonly ShotFilter AccidentalTarget = new(true, false, false);
 
-    /// <summary>ported from fallout2-ce src/combat.cc:5908 — combat_is_shot_blocked's penalty. No
-    /// flag test at the caller: the walker already dropped SHOOT_THRU objects, which is also why
-    /// such an object is never counted in numCrittersOnLof (:5911).</summary>
-    public static readonly ShotFilter ShotBlockedPenalty = new(false, true, true);
+    /// <summary>ported from fallout2-ce src/combat.cc:5908 — the filter INSIDE
+    /// _combat_is_shot_blocked itself: `FID_TYPE(obstacle->fid) != OBJ_TYPE_CRITTER &amp;&amp;
+    /// obstacle != targetObj`. No flag test: the walker already dropped SHOOT_THRU objects, which
+    /// is also why such an object is never counted in numCrittersOnLof (:5911). Because the filter
+    /// belongs to the FUNCTION and not to one call site, it is the filter for every caller of
+    /// _combat_is_shot_blocked — the to-hit penalty (combat.cc:5906), the explosion victim's
+    /// line-of-sight (combat.cc:4055) and the combat outline (combat.cc:2684). Those callers differ
+    /// only in what they pass as sourceObj and targetObj, which are Trace's own arguments.</summary>
+    public static readonly ShotFilter ShotBlocked = new(false, true, true);
 
     /// <summary>ported from fallout2-ce src/combat_ai.cc:2586 — the friendly-fire check, which
     /// applies no flag or type test at all to what it is handed; the flag it would need was already
     /// applied by the walker (animation.cc:1957, a6 == 32).</summary>
     public static readonly ShotFilter FriendlyFire = new(false, false, false);
-
-    /// <summary>TEMPORARY. The pre-F33 collapsed behaviour, so the coarse predicate can be made
-    /// faithful without changing what any consumer sees. Has no reference counterpart and must
-    /// never be the answer for a shipped consumer. Two consumers still hold it after Task 5 — the
-    /// explosion line-of-sight check and the combat rendering outline — and Task 7 settles them.
-    ///
-    /// ExcludesShootThru / ExcludesNoBlock reproduce the old flag CONJUNCTION: composed with the new
-    /// coarse predicate's `NO_BLOCK == 0 || SHOOT_THRU == 0`, `Obstructs` reduces to exactly
-    /// `NO_BLOCK == 0 &amp;&amp; SHOOT_THRU == 0` — the pre-F33 test, nothing more.
-    ///
-    /// ExcludesCritters FLIPPED to true in Task 5, and ExcludesTarget went live. Before it,
-    /// LineOfFire.Trace hard-coded both the critter-counted-not-blocking split and the target-TILE
-    /// skip: ExcludesCritters had to stay FALSE here or the pre-filtered callback would have
-    /// destroyed the very object the walker needed to count, and ExcludesTarget was set but inert
-    /// (nothing could ever be flagged isTarget). Task 5 moved both terms out of the walker and into
-    /// the filter, so reproducing the same collapsed behaviour now requires both to be TRUE. That is
-    /// the same behaviour expressed on the other side of the shape change, not a change of policy.
-    ///
-    /// ONE residual difference, deliberate and accepted: the old target skip was by TILE
-    /// (`tile != toTile`), this one is by OBJECT IDENTITY (`obj == targetObj`) — the reference's own
-    /// test. They differ only for a second object sharing the target's tile, which the old walker
-    /// skipped and this one lets the caller's policy judge.</summary>
-    public static readonly ShotFilter LegacyCollapsed = new(true, true, true, ExcludesNoBlock: true);
 }

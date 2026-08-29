@@ -24,7 +24,7 @@ public class LineOfFireTests
     /// <summary>The policy these walker tests exercise: the crowd-count caller
     /// (combat.cc:5908), which is the one whose terms the walker used to hard-code —
     /// critters counted rather than blocking, the target never its own obstruction.</summary>
-    private static readonly ShotFilter Walker = ShotFilter.ShotBlockedPenalty;
+    private static readonly ShotFilter Walker = ShotFilter.ShotBlocked;
 
     /// <summary>The intermediate tiles the Bresenham visits (excludes from/to, which
     /// the engine never blocker-checks).</summary>

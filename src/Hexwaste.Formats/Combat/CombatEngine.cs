@@ -699,22 +699,23 @@ public sealed class CombatEngine
             return;
 
         var line = new List<MapObject>();
-        LineOfFire.Trace(from, endTile, tile =>
-        {
-            // excludeObj = attacker (combat.cc:3641 _shoot_along_path — the burst walk).
-            MapObject? obj = _host.ShootBlockerAt(tile, dudeObj);
-            // The walker's own guard (animation.cc:1957, a6 == 32) hides a SHOOT_THRU object from
-            // every shoot caller, so it must not reach this caller-side list either.
-            if (obj is not null && !LineOfFire.Suppresses(obj) && Fid.Type(obj.Fid) is ObjectType.Critter
-                && obj != targetObj && obj != dudeObj && !line.Contains(obj))
-                line.Add(obj);
-            return obj; // critters are counted + walked-past; a wall stops the line
-        },
+        LineOfFire.Trace(from, endTile,
+        // excludeObj = attacker (combat.cc:3641 _shoot_along_path — the burst walk).
+        tile => _host.ShootBlockerAt(tile, dudeObj), // critters are counted + walked-past; a wall stops the line
         // ported from fallout2-ce src/combat.cc:3644 — _shoot_along_path's own filter: the ONLY
         // test it applies is `FID_TYPE(critter->fid) != OBJ_TYPE_CRITTER` -> break. No flag test of
         // its own (see ShotFilter.BurstWalk's own doc comment) — a SHOOT_THRU wall never even
         // reaches this filter, because the walker guard (LineOfFire.Suppresses) already hid it.
-        ShotFilter.BurstWalk, targetObj);
+        ShotFilter.BurstWalk, targetObj,
+        // The victim list is built from Trace's onCandidate hook, which fires only for objects the
+        // walk actually saw — i.e. AFTER the walker's own SHOOT_THRU guard (animation.cc:1957,
+        // a6 == 32). Building it inside blockerAt instead would have to repeat that guard by hand.
+        onCandidate: (obj, _) =>
+        {
+            if (Fid.Type(obj.Fid) is ObjectType.Critter
+                && obj != targetObj && obj != dudeObj && !line.Contains(obj))
+                line.Add(obj);
+        });
 
         int remaining = budget;
         foreach (MapObject victim in line)
@@ -771,21 +772,23 @@ public sealed class CombatEngine
         // caller has no defender to give us (defensive; the reference always has one here).
         MapObject excludeTarget = targetObj ?? attackerObj;
         MapObject? victim = null;
-        LineOfFire.Trace(targetTile, endpoint, tile =>
-        {
-            MapObject? obj = _host.ShootBlockerAt(tile, excludeTarget);
-            // Same walker guard (animation.cc:1957, a6 == 32): a SHOOT_THRU object is never the
-            // obstacle the reference reads back at combat.cc:3957, so it can never be the victim.
-            if (victim is null && obj is not null && !LineOfFire.Suppresses(obj)
-                && tile != targetTile && Fid.Type(obj.Fid) is ObjectType.Critter)
-                victim = obj;
-            return obj; // a wall stops the line
-        },
+        LineOfFire.Trace(targetTile, endpoint,
+        tile => _host.ShootBlockerAt(tile, excludeTarget), // a wall stops the line
         // ported from fallout2-ce src/combat.cc:3963 — the missed-shot collateral target's filter:
         // `accidentalTarget != nullptr && (accidentalTarget->flags & OBJECT_SHOOT_THRU) == 0`.
         // There is NO type test at this caller, so unlike every other one a critter on the line is
         // an obstruction here — which is exactly how it becomes the accidental victim.
-        ShotFilter.AccidentalTarget, excludeTarget);
+        ShotFilter.AccidentalTarget, excludeTarget,
+        // The accidental victim is picked in Trace's onCandidate hook, which fires only for objects
+        // the walk actually saw — AFTER the walker's own SHOOT_THRU guard (animation.cc:1957,
+        // a6 == 32), so a SHOOT_THRU object is never the obstacle the reference reads back at
+        // combat.cc:3957 and can never be the victim. Doing this inside blockerAt instead would
+        // have to repeat that guard by hand.
+        onCandidate: (obj, tile) =>
+        {
+            if (victim is null && tile != targetTile && Fid.Type(obj.Fid) is ObjectType.Critter)
+                victim = obj;
+        });
         // Same filter, applied to combat.cc:3961's _obj_blocking_at endpoint fallback (:3963 gates
         // both arms of the if/else with the one SHOOT_THRU test).
         // SIMPLIFICATION: the reference calls _obj_blocking_at here — the general movement-blocking
@@ -1859,11 +1862,21 @@ public sealed class CombatEngine
             if (victim.IsDead)
                 continue;
             // Line-of-sight from the blast centre (walls shield).
-            // excludeObj = sourceObj = the victim itself (combat.cc:4055 — sourceObj is `obstacle`,
-            // the very object this LOF check is being run for).
+            // ported from fallout2-ce src/combat.cc _compute_explosion_on_extras (:4055):
+            // `!_combat_is_shot_blocked(obstacle, obstacle->tile, explosionTile, nullptr, nullptr)`.
+            // So this consumer IS a _combat_is_shot_blocked caller and takes that function's own
+            // filter (ShotFilter.ShotBlocked, combat.cc:5908) — the same one the to-hit penalty and
+            // the combat outline take. What is per-call-site is the two object arguments:
+            //   sourceObj = obstacle = the victim itself -> excludeObj passed to ShootBlockerAt;
+            //   targetObj = nullptr   -> Trace's targetObj is null, so ExcludesTarget can never
+            //     fire and nothing on the line is spared as "the target". Passing `victim` here
+            //     would be wrong (the reference passes nullptr); it is also unnecessary, since the
+            //     victim is already excludeObj and the coarse predicate never reports it.
+            // DIVERGENCE from the reference's traversal direction: it walks obstacle->tile ->
+            // explosionTile; we walk centre -> victim. Pre-existing and unchanged here.
             (MapObject? blocker, _) = LineOfFire.Trace(centerTile, victim.HexTile,
                 t => _host.ShootBlockerAt(t, victim),
-                ShotFilter.LegacyCollapsed, victim);
+                ShotFilter.ShotBlocked, targetObj: null);
             if (blocker is not null && victim.HexTile != centerTile)
                 continue;
             if (_host.GetCritterState(victim) is not { } state)
@@ -2399,7 +2412,7 @@ public sealed class CombatEngine
                 // ported from fallout2-ce src/combat.cc:5908 — _combat_is_shot_blocked's filter:
                 // `FID_TYPE(obstacle->fid) != OBJ_TYPE_CRITTER && obstacle != targetObj` blocks;
                 // anything else is walked past, and a non-target living critter is the crowd count.
-                ShotFilter.ShotBlockedPenalty, defender);
+                ShotFilter.ShotBlocked, defender);
             if (blocker is not null)
                 return ShotStatus.AimBlocked;
         }
@@ -3593,7 +3606,7 @@ public sealed class CombatEngine
                 // ported from fallout2-ce src/combat.cc:5908 — _combat_is_shot_blocked's filter:
                 // `FID_TYPE(obstacle->fid) != OBJ_TYPE_CRITTER && obstacle != targetObj` blocks;
                 // anything else is walked past, and a non-target living critter is the crowd count.
-                ShotFilter.ShotBlockedPenalty, defenderObj);
+                ShotFilter.ShotBlocked, defenderObj);
             // P78-M3: friendly-fire safety (_combat_safety_invalidate_weapon, combat.cc:2249) — don't take a
             // RANGED shot that passes through a living teammate. SIMPLIFICATION: an exact-collinear hex test
             // (the friend lies between us and the target) rather than the engine's full LoF-tile scan +
@@ -3870,7 +3883,7 @@ public sealed class CombatEngine
                 // ported from fallout2-ce src/combat.cc:5908 — _combat_is_shot_blocked's filter:
                 // `FID_TYPE(obstacle->fid) != OBJ_TYPE_CRITTER && obstacle != targetObj` blocks;
                 // anything else is walked past, and a non-target living critter is the crowd count.
-                ShotFilter.ShotBlockedPenalty, target);
+                ShotFilter.ShotBlocked, target);
             blocked = blocker is not null;
         }
 

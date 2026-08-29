@@ -63,22 +63,22 @@ public class ShotFilterTests
         Assert.False(ShotFilter.AccidentalTarget.Obstructs(Obj(ShootThru, ObjectType.Wall), isTarget: false));
 
     [Fact]
-    public void ShotBlockedPenaltySkipsTheTarget() =>
+    public void ShotBlockedSkipsTheTarget() =>
         // combat.cc:5908's `obstacle != targetObj`.
-        Assert.False(ShotFilter.ShotBlockedPenalty.Obstructs(Obj(0, ObjectType.Wall), isTarget: true));
+        Assert.False(ShotFilter.ShotBlocked.Obstructs(Obj(0, ObjectType.Wall), isTarget: true));
 
     [Fact]
-    public void ShotBlockedPenaltyAppliesNoFlagTestOfItsOwn() =>
+    public void ShotBlockedAppliesNoFlagTestOfItsOwn() =>
         // No flag test at this caller (combat.cc:5908). Filter-level only: the walker never hands
         // this caller a SHOOT_THRU object, so the arm is unreachable in a real trace.
-        Assert.True(ShotFilter.ShotBlockedPenalty.Obstructs(Obj(ShootThru, ObjectType.Wall), isTarget: false));
+        Assert.True(ShotFilter.ShotBlocked.Obstructs(Obj(ShootThru, ObjectType.Wall), isTarget: false));
 
     [Fact]
-    public void ShotBlockedPenaltySkipsALivingCritter() =>
+    public void ShotBlockedSkipsALivingCritter() =>
         // combat.cc:5908's FID_TYPE(obstacle->fid) != OBJ_TYPE_CRITTER half — the other of the
         // two terms this caller distinguishes on. A wrong filter that dropped ExcludesCritters
         // would pass every other test in this file.
-        Assert.False(ShotFilter.ShotBlockedPenalty.Obstructs(Obj(0, ObjectType.Critter), isTarget: false));
+        Assert.False(ShotFilter.ShotBlocked.Obstructs(Obj(0, ObjectType.Critter), isTarget: false));
 
     [Fact]
     public void FriendlyFireCountsEverythingTheWalkerReports() =>
@@ -87,20 +87,19 @@ public class ShotFilterTests
         Assert.True(ShotFilter.FriendlyFire.Obstructs(Obj(ShootThru, ObjectType.Critter), isTarget: true));
 
     [Fact]
-    public void LegacyCollapsedReproducesTodaysBehaviour()
+    public void NoBlockIsNotAFilterTermForAnyCaller()
     {
-        Assert.False(ShotFilter.LegacyCollapsed.Obstructs(Obj(NoBlock, ObjectType.Wall), isTarget: false));
-        Assert.False(ShotFilter.LegacyCollapsed.Obstructs(Obj(ShootThru, ObjectType.Wall), isTarget: false));
-        Assert.True(ShotFilter.LegacyCollapsed.Obstructs(Obj(0, ObjectType.Wall), isTarget: false));
-
-        // ExcludesCritters is TRUE here as of Task 5: the critter-vs-blocker split moved OUT of
-        // LineOfFire.Trace and into the filter, so reproducing the collapsed behaviour (critters
-        // counted, never a hard obstruction) now requires the term to be set here.
-        Assert.False(ShotFilter.LegacyCollapsed.Obstructs(Obj(0, ObjectType.Critter), isTarget: false));
-
-        // ExcludesTarget is TRUE — as of Task 5 this is live, not forward-safety: it reproduces the
-        // target-tile skip Trace used to hard-code, now expressed as the reference's own identity
-        // test.
-        Assert.False(ShotFilter.LegacyCollapsed.Obstructs(Obj(0, ObjectType.Wall), isTarget: true));
+        // F33 (Task 7): the placeholder ShotFilter.LegacyCollapsed carried an ExcludesNoBlock term
+        // purely to reproduce the pre-F33 flag CONJUNCTION while consumers were migrated. It has no
+        // reference counterpart: _obj_shoot_blocking_at (object.cc:2440) gates on the DISJUNCTION
+        // `NO_BLOCK == 0 || SHOOT_THRU == 0`, and NO reference caller re-tests NO_BLOCK, so a
+        // NO_BLOCK-but-not-SHOOT_THRU wall the coarse predicate reports really does obstruct. This
+        // pins that for every shipped filter, so the collapsed behaviour cannot creep back.
+        MapObject noBlockWall = Obj(NoBlock, ObjectType.Wall);
+        Assert.True(ShotFilter.ShotBlockedRoll.Obstructs(noBlockWall, isTarget: false));
+        Assert.True(ShotFilter.BurstWalk.Obstructs(noBlockWall, isTarget: false));
+        Assert.True(ShotFilter.AccidentalTarget.Obstructs(noBlockWall, isTarget: false));
+        Assert.True(ShotFilter.ShotBlocked.Obstructs(noBlockWall, isTarget: false));
+        Assert.True(ShotFilter.FriendlyFire.Obstructs(noBlockWall, isTarget: false));
     }
 }

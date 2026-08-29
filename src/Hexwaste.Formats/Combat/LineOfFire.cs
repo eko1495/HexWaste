@@ -51,8 +51,13 @@ public static class LineOfFire
     /// stronger than "not a blocker" — the object is invisible to the caller, which is why a
     /// SHOOT_THRU critter is also never counted in _combat_is_shot_blocked's numCrittersOnLof
     /// (combat.cc:5911 counts only the obstacles the walker reported). The sight caller passes
-    /// a6 == 16, so the guard is off for it.</summary>
-    public static bool Suppresses(MapObject candidate, int stride = ShootTraceStride) =>
+    /// a6 == 16, so the guard is off for it.
+    ///
+    /// The stride is deliberately NOT defaulted: the guard's whole content is "for a6 == 32", and a
+    /// default would let a call site silently assume a stride it never chose. <see cref="Trace"/> is
+    /// its only caller — callers that need to observe walked objects use Trace's
+    /// <c>onCandidate</c> hook, which fires AFTER this guard.</summary>
+    public static bool Suppresses(MapObject candidate, int stride) =>
         stride == ShootTraceStride && (candidate.Flags & ShootThru) != 0;
 
     /// <summary>blockerAt returns the RAW coarse predicate's answer for the tile — a
@@ -77,9 +82,19 @@ public static class LineOfFire
     /// every line-of-fire caller) arms the walker's own SHOOT_THRU guard; the obj_can_see_obj SIGHT
     /// trace passes <see cref="SightTraceStride"/> (16) and opts out of it. See
     /// <see cref="Suppresses"/>.</param>
+    /// <param name="onCandidate">Optional bookkeeping hook, called with (object, tile) for every
+    /// object the walk actually SEES — i.e. after <see cref="Suppresses"/> and before the filter,
+    /// exactly where the reference's callers read back their obstacle pointer. Callers that need to
+    /// record objects (the burst walk's victim list, the missed-shot walk's accidental target) must
+    /// use this rather than doing the bookkeeping inside <paramref name="blockerAt"/>: blockerAt is
+    /// the raw per-TILE coarse predicate and runs before the walker's guard, so a side effect there
+    /// would see suppressed objects the caller must never see, and no walker-side guard could undo
+    /// it. F33 (Task 7): both callers previously repeated Suppresses by hand in their blockerAt; a
+    /// future one would have silently forgotten to.</param>
     public static (MapObject? Blocker, int CrittersInPath) Trace(
         int fromTile, int toTile, Func<int, MapObject?> blockerAt, ShotFilter filter,
-        MapObject? targetObj = null, int stride = ShootTraceStride)
+        MapObject? targetObj = null, int stride = ShootTraceStride,
+        Action<MapObject, int>? onCandidate = null)
     {
         if (fromTile == toTile)
             return (null, 0);
@@ -126,6 +141,7 @@ public static class LineOfFire
                     if (tile >= 0 && tile != fromTile && blockerAt(tile) is { } obj
                         && !Suppresses(obj, stride))
                     {
+                        onCandidate?.Invoke(obj, tile);
                         bool isTarget = targetObj is not null && ReferenceEquals(obj, targetObj);
                         if (filter.Obstructs(obj, isTarget))
                             return (obj, critters);
@@ -155,6 +171,7 @@ public static class LineOfFire
                     if (tile >= 0 && tile != fromTile && blockerAt(tile) is { } obj
                         && !Suppresses(obj, stride))
                     {
+                        onCandidate?.Invoke(obj, tile);
                         bool isTarget = targetObj is not null && ReferenceEquals(obj, targetObj);
                         if (filter.Obstructs(obj, isTarget))
                             return (obj, critters);
