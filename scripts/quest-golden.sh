@@ -350,6 +350,6 @@ source "scripts/golden-lib.sh" || exit 2
 golden_runner viewer 120 src/Hexwaste.Viewer/bin/Debug/net10.0/Hexwaste.Viewer \
   "^(get-global:|quest-item:|quest-probe:|party-count:|party:)" "--no-audio"
 
-golden_run_all
-[ "$MODE" = "record" ] && exit 0
+golden_run_all || exit 2
+[ "$MODE" = "record" ] && { [ "$GOLDEN_FAIL" = 0 ] && exit 0 || exit 1; }
 if [ "$GOLDEN_FAIL" = 0 ]; then echo "quest e2e: ALL PASS"; else echo "quest e2e: FAIL"; exit 1; fi

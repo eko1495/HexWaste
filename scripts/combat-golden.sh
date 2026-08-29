@@ -61,6 +61,6 @@ golden_runner viewer 90 src/Hexwaste.Viewer/bin/Debug/net10.0/Hexwaste.Viewer ""
 MISMATCH_LABEL=REGRESSION
 DIFF_TRUNC=30
 
-golden_run_all
+golden_run_all || exit 2
 [ "$GOLDEN_FAIL" -eq 0 ] && echo "golden combat: ALL PASS" || echo "golden combat: FAILURES"
 exit "$GOLDEN_FAIL"

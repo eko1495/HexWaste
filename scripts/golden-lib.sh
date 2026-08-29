@@ -15,8 +15,12 @@
 #                         check, 0 to run once
 #   MISMATCH_LABEL       label printed before a diff (default "DIFF")
 #   DIFF_TRUNC            if set, pipe the diff through `head -N` instead of full
-#   GOLDEN_RESULT_HOOK   name of a function called as `hook NAME OUTPUT`; a
-#                         non-zero return marks the fixture failed and skips it
+#   GOLDEN_RESULT_HOOK   name of a function called as `hook NAME OUTPUT ARGS`; a
+#                         non-zero return marks the fixture failed and skips it.
+#                         ARGS is the scenario's own raw argument string (the
+#                         SCENARIOS entry's args field), for suites that need
+#                         it in their own failure wording (e.g. census-sweep.sh's
+#                         "LOAD-FAIL: NAME (ARGS emitted no census line)").
 #   GOLDEN_RECORD_COUNT   1 (default) to suffix a recorded line with its line
 #                         count ("recorded NAME (N lines)"); 0 for the bare
 #                         "recorded NAME" wording (census-sweep.sh)
@@ -27,6 +31,24 @@
 # GOLDEN_FAIL is initialised to 0 at source time so a suite (or an early-return
 # path) can read it under `set -u` before golden_run_all has run.
 GOLDEN_FAIL=0
+
+# The tuning knobs are given their defaults here, unconditionally, at source
+# time — NOT via `${X:-default}` inside golden_run_all. A suite sets these
+# (if at all) *after* sourcing this file, so an unconditional assignment here
+# is always overwritten by a suite's later assignment while still shadowing
+# anything the same-named variable held in the environment. golden_run_all
+# below reads them plainly. Without this, `export DOUBLE_RUN=0` (or any of
+# the others) silently changes suite behaviour with zero output difference —
+# exactly the kind of "reports success when it shouldn't" bug a golden
+# harness must not have. GOLDEN_JOBS is deliberately exempt: its env override
+# is documented and intentional (see below).
+SCENARIO_FIELDS=2
+DOUBLE_RUN=1
+MISMATCH_LABEL=DIFF
+DIFF_TRUNC=
+GOLDEN_RESULT_HOOK=
+GOLDEN_RECORD_COUNT=1
+GOLDEN_MISSING_HINT=" (run 'record' first)"
 
 GOLDEN_JOBS="${GOLDEN_JOBS:-$(nproc)}"
 # Guard against an empty/non-numeric throttle (unset nproc, a blank export) —
@@ -48,6 +70,15 @@ golden_runner() {
 
 # _golden_exec RUNNER SCRATCH ARGS_STRING -> filtered stdout
 # ARGS_STRING is deliberately expanded unquoted: the scenarios rely on word splitting.
+#
+# TMPDIR is set to the per-job SCRATCH directory below, and that is load-bearing, not
+# defensive: three encounter scenarios (travel-save-mid, companion-persist, and
+# companion-dismiss-persist) drive harness actions that write to FIXED filenames —
+# hexwaste-travelmid-test.json, hexwaste-persist-test.json, hexwaste-dismiss-test.json —
+# under Path.GetTempPath() (src/Hexwaste.Viewer/ViewerGame.Harness.cs), which .NET
+# resolves via TMPDIR on Unix. Both passes of the same fixture run concurrently under
+# this runner (see the file header); without a distinct TMPDIR per pass, the two passes
+# would race on the same fixed path. Do not remove this override.
 _golden_exec() {
   local r="$1" scratch="$2" args="$3"
   local t="${_GR_TIMEOUT[$r]}" bin="${_GR_BIN[$r]}" f="${_GR_FILTER[$r]}" x="${_GR_EXTRA[$r]}"
@@ -76,18 +107,24 @@ _golden_job() {
 
 golden_run_all() {
   local jobdir
-  jobdir="$(mktemp -d)" || { echo "golden: mktemp -d failed" >&2; return 2; }
-  [ -n "$jobdir" ] && [ -d "$jobdir" ] || { echo "golden: mktemp -d returned no directory" >&2; return 2; }
+  jobdir="$(mktemp -d)" || { echo "golden: mktemp -d failed" >&2; GOLDEN_FAIL=1; return 2; }
+  [ -n "$jobdir" ] && [ -d "$jobdir" ] || { echo "golden: mktemp -d returned no directory" >&2; GOLDEN_FAIL=1; return 2; }
   # Interrupting a long run (the normal way to abandon a big suite) must not
-  # leave scratch subdirectories and savegames behind.
-  trap 'rm -rf "$jobdir"' EXIT INT TERM
-  local fields="${SCENARIO_FIELDS:-2}"
-  local double="${DOUBLE_RUN:-1}"
-  local label="${MISMATCH_LABEL:-DIFF}"
-  local trunc="${DIFF_TRUNC:-}"
-  local hook="${GOLDEN_RESULT_HOOK:-}"
-  local record_count="${GOLDEN_RECORD_COUNT:-1}"
-  local missing_hint="${GOLDEN_MISSING_HINT- (run 'record' first)}"
+  # leave scratch subdirectories and savegames behind. Plain EXIT just cleans
+  # up; INT/TERM must ALSO exit here — otherwise execution falls through into
+  # the emit phase below against a jobdir that was just rm -rf'd, printing a
+  # failure line per scenario instead of stopping. 128+signum is the
+  # conventional shell exit status for "killed by signal".
+  trap 'rm -rf "$jobdir"' EXIT
+  trap 'rm -rf "$jobdir"; exit 130' INT
+  trap 'rm -rf "$jobdir"; exit 143' TERM
+  local fields="$SCENARIO_FIELDS"
+  local double="$DOUBLE_RUN"
+  local label="$MISMATCH_LABEL"
+  local trunc="$DIFF_TRUNC"
+  local hook="$GOLDEN_RESULT_HOOK"
+  local record_count="$GOLDEN_RECORD_COUNT"
+  local missing_hint="$GOLDEN_MISSING_HINT"
 
   local -a names=() runners=() argses=()
   local entry name rest
@@ -129,7 +166,7 @@ golden_run_all() {
     out="$(cat "$jobdir/$i.1.out")"
 
     if [ -n "$hook" ]; then
-      if ! "$hook" "$name" "$out"; then GOLDEN_FAIL=1; continue; fi
+      if ! "$hook" "$name" "$out" "${argses[$i]}"; then GOLDEN_FAIL=1; continue; fi
     fi
 
     if [ "$MODE" = "record" ]; then

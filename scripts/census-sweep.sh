@@ -52,14 +52,14 @@ GOLDEN_RESULT_HOOK=census_load_check
 # mismatch would bury the cause. Runs before the record/compare branch, as it did
 # in the original loop.
 census_load_check() {
-  local name="$1" out="$2"
+  local name="$1" out="$2" map="$3"
   if [ -z "$out" ]; then
-    echo "LOAD-FAIL: $name (emitted no census line)"
+    echo "LOAD-FAIL: $name ($map emitted no census line)"
     return 1
   fi
   return 0
 }
 
-golden_run_all
+golden_run_all || exit 2
 [ "$MODE" = "record" ] && { [ "$GOLDEN_FAIL" = 0 ] && exit 0 || exit 1; }
 if [ "$GOLDEN_FAIL" = 0 ]; then echo "census sweep: ALL PASS"; else echo "census sweep: FAIL"; exit 1; fi
