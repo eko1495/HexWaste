@@ -39,28 +39,27 @@ SCENARIOS=(
 
 dotnet build tools/ProcAnalyze -c Debug >/dev/null || { echo "procanalyze build failed"; exit 2; }
 
-run() {
-  dotnet run --project tools/ProcAnalyze -c Debug --no-build -- --game-dir "$GAME" --map "$1" 2>/dev/null \
-    | grep -E "procanalyze:|stubbed:"
+source "scripts/golden-lib.sh" || exit 2
+# The scenario field is a bare map filename, so --map lives in the runner's EXTRA.
+golden_runner procanalyze 0 tools/ProcAnalyze/bin/Debug/net10.0/ProcAnalyze \
+  "procanalyze:|stubbed:" "--map"
+DOUBLE_RUN=0
+GOLDEN_RECORD_COUNT=0
+GOLDEN_MISSING_HINT=""
+GOLDEN_RESULT_HOOK=census_load_check
+
+# A map that emitted no census line failed to LOAD; reporting that as a fixture
+# mismatch would bury the cause. Runs before the record/compare branch, as it did
+# in the original loop.
+census_load_check() {
+  local name="$1" out="$2"
+  if [ -z "$out" ]; then
+    echo "LOAD-FAIL: $name (emitted no census line)"
+    return 1
+  fi
+  return 0
 }
 
-fail=0
-for entry in "${SCENARIOS[@]}"; do
-  name="${entry%%|*}"; map="${entry#*|}"
-  out="$(run "$map")"
-  if [ -z "$out" ]; then echo "LOAD-FAIL: $name ($map emitted no census line)"; fail=1; continue; fi
-  if [ "$MODE" = "record" ]; then
-    printf '%s\n' "$out" > "$FIX/$name.txt"
-    echo "recorded $name"
-    continue
-  fi
-  if [ ! -f "$FIX/$name.txt" ]; then echo "MISSING FIXTURE: $name"; fail=1; continue; fi
-  if diff -u "$FIX/$name.txt" <(printf '%s\n' "$out") >/dev/null; then
-    echo "ok  $name"
-  else
-    echo "DIFF: $name"; diff -u "$FIX/$name.txt" <(printf '%s\n' "$out"); fail=1
-  fi
-done
-
-[ "$MODE" = "record" ] && { [ "$fail" = 0 ] && exit 0 || exit 1; }
-if [ "$fail" = 0 ]; then echo "census sweep: ALL PASS"; else echo "census sweep: FAIL"; exit 1; fi
+golden_run_all
+[ "$MODE" = "record" ] && { [ "$GOLDEN_FAIL" = 0 ] && exit 0 || exit 1; }
+if [ "$GOLDEN_FAIL" = 0 ]; then echo "census sweep: ALL PASS"; else echo "census sweep: FAIL"; exit 1; fi
