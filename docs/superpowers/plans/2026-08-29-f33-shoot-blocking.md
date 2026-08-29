@@ -361,11 +361,18 @@ public enum ShotPolicy
     /// <summary>ported from fallout2-ce src/combat.cc:5908-5909 (combat_is_shot_blocked):
     /// only a non-critter that is not the target obstructs; critters are counted and passed.</summary>
     NonCritterOnly,
+
+    /// <summary>TEMPORARY. Reproduces the pre-F33 collapsed behaviour — NO_BLOCK == 0 and
+    /// SHOOT_THRU == 0 — so the predicate can be made faithful without changing what any
+    /// consumer sees. Every consumer moves off this in Task 5, and it is deleted in Task 7.
+    /// It has no reference counterpart and must never be the answer for a shipped consumer.</summary>
+    LegacyCollapsed,
 }
 
 /// <summary>Applies a <see cref="ShotPolicy"/> to a candidate the coarse predicate returned.</summary>
 public static class ShotPolicyRules
 {
+    private const int NoBlock = 0x10;
     private const int ShootThru = unchecked((int)0x80000000);
 
     public static bool Obstructs(ShotPolicy policy, MapObject candidate, bool isTarget) => policy switch
@@ -373,6 +380,7 @@ public static class ShotPolicyRules
         ShotPolicy.RefusesOnShootThru => (candidate.Flags & ShootThru) == 0,
         ShotPolicy.TypeOnly => true,
         ShotPolicy.NonCritterOnly => Fid.Type(candidate.Fid) is not ObjectType.Critter && !isTarget,
+        ShotPolicy.LegacyCollapsed => (candidate.Flags & NoBlock) == 0 && (candidate.Flags & ShootThru) == 0,
         _ => true,
     };
 }
@@ -388,16 +396,40 @@ Expected: `Passed!  - Failed: 0, Passed: 6`.
 
 - [ ] **Step 5: Move the old terms out of the predicate and into a policy at every consumer**
 
-Change `ShootBlockerAt`'s flag test to the reference's coarse form
-(`!HIDDEN && (NO_BLOCK == 0 || SHOOT_THRU == 0)`), keeping its existing exclusions and type test
-untouched for now, and give **every** consumer a policy that reproduces today's behaviour:
-`NO_BLOCK == 0 && SHOOT_THRU == 0`.
+In `src/Hexwaste.Viewer/ViewerGame.CombatHost.cs`, change only the flag term — the `&&` between the
+two flag tests becomes the reference's `||`:
 
-Add a temporary policy value for exactly that composed test — name it so its temporary nature is
-obvious, e.g. `ShotPolicy.LegacyCollapsed`, documented as "reproduces the pre-F33 collapsed
-behaviour; every consumer moves off this in Task 5". Wire it at all ten `LineOfFire.Trace` call
-sites. Leave `LineOfFire.Trace`'s own critter-counting and target-tile exclusion **unchanged** in
-this task.
+```csharp
+    /// <summary>The COARSE line-of-fire query. ported from fallout2-ce
+    /// src/object.cc _obj_shoot_blocking_at() (:2440), tile phase: !HIDDEN &&
+    /// (NO_BLOCK == 0 || SHOOT_THRU == 0), then the type test. The disjunction is deliberate —
+    /// each caller decides what SHOOT_THRU means for it, via ShotPolicyRules.Obstructs.
+    /// Do NOT re-add a flag term here; that is what collapsed the two stages originally.</summary>
+    public MapObject? ShootBlockerAt(int tile, MapObject shooter, MapObject target)
+    {
+        const int noBlock = 0x10;
+        const uint shootThru = 0x80000000;
+        return _solidObjects[_elevation].FirstOrDefault(o =>
+            o.HexTile == tile && o != shooter && o != target && !o.IsHidden
+            && ((o.Flags & noBlock) == 0 || ((uint)o.Flags & shootThru) == 0)
+            && (Fid.Type(o.Fid) is ObjectType.Wall or ObjectType.Scenery
+                || (Fid.Type(o.Fid) is ObjectType.Critter && !o.IsDead)));
+    }
+```
+
+Then wrap **every** `LineOfFire.Trace` delegate so the removed terms are reapplied as a policy. The
+shape, using `CombatEngine.cs:274` as the worked example — apply the same shape at all ten sites:
+
+```csharp
+            (MapObject? blocker, crittersInPath) = LineOfFire.Trace(
+                dude.HexTile, target.HexTile,
+                tile => _host.ShootBlockerAt(tile, dude, target) is { } o
+                        && ShotPolicyRules.Obstructs(ShotPolicy.LegacyCollapsed, o, isTarget: o == target)
+                    ? o : null);
+```
+
+Leave `LineOfFire.Trace`'s own critter-counting and target-tile exclusion **unchanged** in this task —
+they become policies in Task 5, and changing them here would break this task's neutrality.
 
 - [ ] **Step 6: Prove behaviour-neutrality**
 
@@ -433,6 +465,22 @@ point of doing the restructure alone."
 
 ---
 
+### A note on ordering, because the spec warns about exactly this
+
+The spec says **"Do not do step 1 without step 2"** — do not make the predicate faithful while the
+consumers still carry the old policies, because that is the change that was tried and reverted.
+
+Tasks 3 and 4 do change the predicate while every consumer is still on `LegacyCollapsed`, so read why
+that is not the thing the spec forbids. The reverted attempt adopted the reference's **flag
+operator**, whose whole meaning depends on the caller filters — the disjunction exists precisely so
+callers can decide what `SHOOT_THRU` means. Task 2 lands that operator **behaviour-neutrally**, with
+the filter moved rather than dropped. What Tasks 3 and 4 change is different: the multihex phase and
+the exclusion set are terms no caller filter interacts with, so each can be landed and measured on
+its own. If either turns out to interact with a policy after all, that surfaces as an unexplained
+fixture movement — which is a stop condition in both tasks.
+
+---
+
 ### Task 3: Port the missing multihex adjacency phase
 
 **Files:**
@@ -461,9 +509,42 @@ Use the existing hex-neighbour function; do not write a new one.
 
 - [ ] **Step 2: Add the adjacency phase to `ShootBlockerAt`**
 
-After the tile-phase lookup returns nothing, scan the six neighbours for multihex candidates under
-the stricter gate. Carry a comment citing `object.cc`'s second loop and stating explicitly that the
-gate omits the `SHOOT_THRU` disjunction on purpose.
+Rewrite `ShootBlockerAt` so the tile phase's result is captured, and the adjacency scan runs only
+when it is null. Substitute the real neighbour helper name from Step 1 for `TileInDirection`:
+
+```csharp
+        MapObject? onTile = _solidObjects[_elevation].FirstOrDefault(o =>
+            o.HexTile == tile && o != shooter && o != target && !o.IsHidden
+            && ((o.Flags & noBlock) == 0 || ((uint)o.Flags & shootThru) == 0)
+            && (Fid.Type(o.Fid) is ObjectType.Wall or ObjectType.Scenery
+                || (Fid.Type(o.Fid) is ObjectType.Critter && !o.IsDead)));
+        if (onTile is not null)
+            return onTile;
+
+        // ported from fallout2-ce src/object.cc _obj_shoot_blocking_at()'s SECOND loop (:2440):
+        // with nothing on the tile itself, the six neighbours are scanned for MULTIHEX objects
+        // under a STRICTER gate — !HIDDEN && NO_BLOCK == 0, with NO SHOOT_THRU disjunction. The
+        // asymmetry with the tile phase above is the reference's own; do not "harmonise" it.
+        const int multiHex = 0x800;
+        for (int dir = 0; dir < 6; dir++)
+        {
+            int adj = Formats.Hex.HexGrid.TileInDirection(tile, dir, 1);
+            if (adj < 0)
+                continue;
+            MapObject? mh = _solidObjects[_elevation].FirstOrDefault(o =>
+                o.HexTile == adj && (o.Flags & multiHex) != 0
+                && o != shooter && o != target && !o.IsHidden
+                && (o.Flags & noBlock) == 0
+                && (Fid.Type(o.Fid) is ObjectType.Wall or ObjectType.Scenery
+                    || (Fid.Type(o.Fid) is ObjectType.Critter && !o.IsDead)));
+            if (mh is not null)
+                return mh;
+        }
+        return null;
+```
+
+If Task 4 has already run, the `o != target` terms above are gone — reconcile with whatever the file
+actually contains rather than pasting over it.
 
 - [ ] **Step 3: Run the hermetic suite and all six golden suites**
 
