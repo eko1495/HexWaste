@@ -698,8 +698,8 @@ is still wanted, since `_objPMAttemptPlacement` also refuses an occupied tile.
 
 **F4 — SHIPPED 2026-08-29 (`6c7bc25`).** *Was Effort S.* Talking heads are now bottom-anchored inside
 the 388x200 display buffer, matching the engine's `destWidth * (200 - height)`:
-`y = frameY + 14 + (200 - head.Height)` (`ViewerGame.cs:6212`, inside `DrawTalkingHead`,
-`ViewerGame.cs:6157`). One expression change. The reference's `a3` term also carries
+`y = frameY + 14 + (200 - head.Height)` (`ViewerGame.cs:6330`, inside `DrawTalkingHead`,
+`ViewerGame.cs:6275`). One expression change. The reference's `a3` term also carries
 `artGetRotationOffsets(...)`'s X and Y out-params, feeding both the horizontal position and a
 `destOffset + width * v8 > 0` guard on the vertical one; **neither was ported**, deliberately — the
 186-head probe (`art\heads\*.FRM` in `master.dat`, established rejecting PR #675 hunk 20) found both
@@ -710,28 +710,44 @@ shift between frames now that the anchor is bottom-relative.
 **F5 — SHIPPED 2026-08-29 (`6c7bc25`, fix `87c9c7f`) — implemented correctly, but DORMANT on shipped
 data; this is the most consequential finding of the batch.** *Was Effort S.* The accumulated
 per-frame X offset (`_totalHotx`, `game_dialog.cc:4557,4585`) is now summed and applied —
-`HeadAccumulatedHotX` (`ViewerGame.cs:6258`) computes it as a prefix sum over frames 0..N rather than
+`HeadAccumulatedHotX` (`ViewerGame.cs:6380`) computes it as a prefix sum over frames 0..N rather than
 accumulating in a field, because `DrawTalkingHead` runs once per render frame while the reference
 runs once per animation frame, and a field would over-accumulate at high frame rates; the fix `87c9c7f`
 threads the *resolved* frame (post frame-count clamp) through so the sum matches what
-`HeadTexture` (`ViewerGame.cs:6224`) actually drew. **The term is provably 0 on shipped data today for
+`HeadTexture` (`ViewerGame.cs:6342`) actually drew. **The term is provably 0 on shipped data today for
 an unrelated reason**: both `HeadTexture` and `HeadAccumulatedHotX` build the head FID with
-`weaponCode: 1` (`ViewerGame.cs:6231`, `:6260`) — that nibble is the *fidget number*, and the
+`weaponCode: 1` (the pre-F46 state; `HeadTexture` now builds it at `ViewerGame.cs:6352` from the
+rolled fidget) — that nibble is the *fidget number*, and the
 reference chooses it in `_gdSetupFidget` (`reference/fallout2-ce/src/game_dialog.cc`), a count-gated
 weighted roll that folds in `_dialogue_seconds_since_last_input`; Hexwaste never ports fidget
 selection, so the nibble is hardcoded to fidget 1. The 186-head probe's 5 heads carrying a nonzero
 frame X offset — `HRLD2BF3`, `HRLD2GF2`, `HRLD2NF3`, `TNDI2GF2`, `TNDI2NF3` — are all fidgets 2 and 3,
 never fidget 1, so `HeadAccumulatedHotX` sums to 0 for every FID this code path can currently build,
 regardless of the arithmetic being right. **Do not read this as sway being observable in-app** — it
-is not, until fidget selection is ported (see the new entry below). The arithmetic itself is correct
-and future-proof.
+was not, until fidget selection was ported. The arithmetic itself is correct and future-proof.
+
+**UN-DORMANTED 2026-08-29 by F46 (below), and now MEASURED rather than argued.** With fidget
+selection ported, `HeadTexture` builds the FID with the rolled fidget instead of a constant 1, so the
+2/3 variants that carry the offsets are reachable. The new `--fidget-probe <headId> <rolls>` harness
+reports, per fidget, the running sum of `OffsetX` over the anim's frames:
+
+| head | fidget 1 | fidget 2 | fidget 3 |
+|---|---|---|---|
+| 5 `hrld2` (Harold) | maxSway 0 (2 frames) | maxSway 0 | **maxSway 12** (8 frames) |
+| 6 `tndi2` (Tandi) | maxSway 0 (2 frames) | maxSway 0 | **maxSway 1** |
+| 3 `elder` | maxSway 0 | maxSway 0 | maxSway 0 |
+
+That is the whole dormancy claim closed with numbers: **every head's fidget 1 sways 0**, which is why
+hardcoding the nibble to 1 could never show the term, and Harold's fidget 3 now sways up to 12 px.
+Confirmed on screen too — the same Harold dialog rendered under two RNG seeds produces visibly
+different fidget art where before F46 every seed produced identical output.
 
 **F6 — SHIPPED 2026-08-29 (`4777d8e`, fix `9315661`).** *Was Effort S.* Monitor messages now prefix
 the `'\x95'` bullet knob to each message's first line and wrap against the engine's own budget
 (`MonitorLayout`, `src/Hexwaste.Formats/Text/MonitorLayout.cs`; call site `ViewerGame.Hud.cs:198-217`).
 The open font question is resolved: `DISPLAY_MONITOR_FONT` is 101, which routes through
 `interfaceFontLoad`'s `"font%d.aaf"` naming over `id - 100` — i.e. `font1.aaf`, the interface font
-Hexwaste already loads at startup (`ViewerGame.cs:1487-1488`); no new asset is needed. `_max_disp`'s
+Hexwaste already loads at startup (`ViewerGame.cs:1489-1490`); no new asset is needed. `_max_disp`'s
 unit mismatch — the wrap budget subtracts a LINE COUNT from a PIXEL width
 (`display_monitor.cc:262`) — is faithful and intentional, reproduced verbatim
 (`MonitorLayout.WrapBudget`, `src/Hexwaste.Formats/Text/MonitorLayout.cs:23-30`) rather than "fixed":
@@ -1607,14 +1623,63 @@ type-based and has no PID rules at all, so both objects currently render by thei
 their special case. F45 as shipped covers the item/critter/misc half of this divergence; these two
 special PIDs are the other half and remain open.
 
-**F46 — Fidget selection is unported, which is what makes F5's sway dormant.** *Effort M · found
-shipping F5 (2026-08-29).* `_gdSetupFidget` (`reference/fallout2-ce/src/game_dialog.cc`) is a
+**F46 — SHIPPED 2026-08-29. Fidget selection ported; F5's sway is now reachable.** *Was Effort M ·
+found shipping F5 (2026-08-29).* `_gdSetupFidget` (`reference/fallout2-ce/src/game_dialog.cc`) is a
 count-gated weighted roll — folding in `_dialogue_seconds_since_last_input` — that picks which of a
 head's 1/2/3 fidget variants plays. Hexwaste hardcodes the fidget nibble to 1 everywhere a head FID is
-built (`HeadTexture` `ViewerGame.cs:6231`, `HeadAccumulatedHotX` `ViewerGame.cs:6260`, both
-`weaponCode: 1`). Porting the roll so the fidget nibble stops being a constant is what would make F5's
+built (`HeadTexture` and `HeadAccumulatedHotX`, both `weaponCode: 1` — line numbers as of `8bcd551`,
+before this entry shipped). Porting the roll so the fidget nibble stops being a constant is what makes F5's
 already-correct sway arithmetic observable: all 5 heads with a nonzero frame X offset
 (`HRLD2BF3`, `HRLD2GF2`, `HRLD2NF3`, `TNDI2GF2`, `TNDI2NF3`) are fidgets 2/3, never fidget 1.
+
+**Shipped, in four parts:**
+- `HeadFidget` (`src/Hexwaste.Formats/Art/HeadFidget.cs`) — the roll itself
+  (`_gdSetupFidget`, `game_dialog.cc:2505-2529`): 1 variant → 1; 2 → split at 68; 3 → split at 52/77;
+  `chance = randomBetween(1,100) + secondsSinceLastInput / 2`. Two quirks reproduced deliberately
+  rather than regularised: the idle term is integer-halved (so it only starts biasing after two
+  seconds), and the reset of the idle accumulator lives inside the **3-variant case alone**
+  (`:2520`) — a 1- or 2-variant head keeps accumulating across rolls.
+- `ArtIndex.HeadFidgetCount` — `artGetFidgetCount` (`art.cc:365-388`) over the `heads.lst` counts.
+  **The reference's parse is itself defective and is reproduced as such:** after `*sep1 = '\0'` the
+  next `strchr(sep1, ',')` starts *on* that NUL, so `sep2`/`sep3` collapse back onto `sep1` and all
+  three emotion counts parse the same first number (`art.cc:286-316`). Provably unobservable — all
+  12 comma-bearing `heads.lst` lines carry equal triples (ten `3,3,3`, two `2,2,2`), pinned by
+  `HeadFidgetCountsMatchTheShippedList`. Head 0 (`reser`) has no comma and yields 0, exactly as the
+  reference's `atoi("eser")` does.
+- The idle-fidget loop in `ViewerGame.TickHeadFidget` — a fidget plays out, parks the head on frame 0,
+  waits `_tocksWaiting` (`1000 * (randomBetween(0,3) + 4)`, i.e. 4-7 s), then a NEW fidget is rolled
+  (`gameDialogTicker`, `:2861-2875`). A finished voiced line seeds the accumulator at **3**, not 0
+  (`:2853-2857`). Before this, our head played its fidget once and froze — there was no re-roll at all.
+- `HeadAccumulatedHotX` now takes the FID `HeadTexture` resolved instead of rebuilding its own, which
+  closes the review finding that the two would desynchronise the moment the nibble became a variable.
+
+**One deliberate divergence:** the reference rolls from the shared global RNG (`randomBetween`);
+Hexwaste gives the head its own `_fidgetRng`, following the per-subsystem pattern already used by
+`_sneakRng`/`_stealRng`/`_tauntRng`. A purely cosmetic dialog animation must not perturb the gameplay
+RNG stream that 279 golden fixtures pin.
+
+**Verification, all three re-runnable via the new `--fidget-probe <headId> <rolls>` harness:**
+- *The roll:* 1000 rolls on a 3-variant head give 499/260/241 against the thresholds' expected
+  51/25/24.
+- *The loop:* driven over 60 s of simulated time, the head changes fidget **6 times** at 7.3 s /
+  5.0 s / 13.5 s / 8.0 s / 11.5 s intervals, cycling through variants 1, 2 and 3 — consistent with an
+  8-frame fidget at ~8 fps plus the 4-7 s pause. Before F46 the head played one fidget and froze.
+- *On screen:* the same Harold dialog under two RNG seeds now renders visibly different fidget art;
+  before F46 every seed produced byte-identical output.
+
+Note the probe needs its own driver (`StepHeadFidgetForProbe`): the ticker lives in `Update`, and
+`--pump-ms` pumps subsystems directly without ever calling it, so the existing pump cannot reach the
+fidget loop.
+
+**A shipped-data gap this newly reaches, found by auditing the art before trusting the feature.**
+Loading fidget 2/3 art is new — before F46 only fidget 1 was ever built, and fidget 1 exists for
+every head. Enumerating every declared variant against `master.dat` turns up exactly **one hole**:
+head 11 `bosss` declares 2 fidgets and ships `bosssnf2`/`bosssbf2` but **not `bosssgf2`** — the GOOD
+family's second fidget has no art. Vanilla hits the same hole (its own `artGetFidgetCount` returns 2
+for the good family too) and renders *nothing*: `artLock` fails and `_gdSetupFidget` only
+`debugPrint`s. Hexwaste degrades better — `DrawTalkingHead`'s missing-family fallback drops to the
+neutral family at the same fidget, `bosssnf2`, so the head still renders, in the wrong emotion.
+Recorded rather than "fixed": matching vanilla here would mean rendering no head at all.
 
 **F47 — The monitor's continuation-line wrap budget is narrower than vanilla for every line after the
 first.** *Effort S · found shipping F6 (2026-08-29).* The reference re-widens the available width
@@ -1670,13 +1735,33 @@ rediscovered:**
 - The hermetic test named `TheDudeMarkOverpaintsAWall` actually exercises the `AutomapMark.Other`
   rule (an unclassified object mark over a wall), not the dude — the real dude marker is drawn in its
   own separate pass and never goes through `AutomapPaint.Overpaints` at all.
-- `HeadAccumulatedHotX` (`ViewerGame.cs:6258`) re-derives the head FID with its own hardcoded
-  `weaponCode: 1` instead of receiving the FID `HeadTexture` (`ViewerGame.cs:6224`) already resolved
-  for the same frame — when F46 ports fidget selection, changing the nibble in only one of the two
-  call sites would silently desynchronise the sway from the drawn head.
-- `HeadTexture` (`ViewerGame.cs:6224`) still throws and catches an exception per render frame for
+- ~~`HeadAccumulatedHotX` re-derives the head FID with its own hardcoded `weaponCode: 1` instead of
+  receiving the FID `HeadTexture` already resolved for the same frame — when F46 ports fidget
+  selection, changing the nibble in only one of the two call sites would silently desynchronise the
+  sway from the drawn head.~~ **CLOSED 2026-08-29 with F46**, which is exactly the change this
+  predicted: `HeadTexture` now reports its resolved FID through an `out` parameter and
+  `HeadAccumulatedHotX` consumes it, so the two cannot diverge.
+- `HeadTexture` (`ViewerGame.cs:6342`) still throws and catches an exception per render frame for
   genuinely missing head art — the per-frame exception cost that was deliberately removed from its
   sibling helper (`HeadAccumulatedHotX`'s `TryGetFrm` path) was not also removed here.
+
+**F49 — SHIPPED 2026-08-29. Non-ASCII characters were truncated into arbitrary glyphs.**
+*Was undiscovered · found by the visual HUD verification F6 never had.* A screenshot of the message
+monitor showed `Active hand: right [box] 10mm SMG.` — an em-dash rendering as a meaningless glyph.
+AAF fonts are **byte-indexed** (256 glyph records) and the engine's own text is single-byte, so the
+reference never meets a character above U+00FF and there is nothing here to port. C# strings are
+UTF-16, though, and both the draw path (`AafFontRenderer.DrawGlyphs`) and the measure path
+(`AafFont.CharWidth`) indexed with a plain `(byte)` cast, which **truncates**: U+2014 becomes `0x14`,
+a control slot holding whatever the font has there. Because both paths truncated *identically*,
+wrapping stayed self-consistent and only the glyph shown was wrong — which is precisely why no test
+and no golden could have caught it, and why it took a screenshot. Fixed in two deliberately separate
+layers: the seven monitor-bound messages that used a non-ASCII dash or arrow now use ASCII (the
+actual visible fix — the game's own font has no such glyph and never could), and `AafFont.GlyphIndex`
+maps anything above U+00FF to `'?'` with both paths routed through it, marked in its doc comment as a
+**Hexwaste-side robustness guard with no reference counterpart**. Re-screenshotting the same scene
+confirms the dash now renders and the line re-wraps accordingly. Five hermetic tests pin the mapping.
+**Worth generalising:** no golden fixture contains a single non-ASCII byte, so this class of defect is
+invisible to the entire suite by construction.
 
 ### Pointer
 

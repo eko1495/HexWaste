@@ -881,6 +881,8 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
         /// critter — proves (or disproves) that a finished walker still blocks a later StartNpcWalk call
         /// because it was never removed from _npcWalkers.</summary>
         public sealed record WalkerRestartProbe(int Hex, int Target1, int Target2) : StartupAction;
+        /// <summary>F46/F5: the head's fidget variants and the X sway each one carries.</summary>
+        public sealed record FidgetProbe(int HeadId, int Rolls) : StartupAction;
         /// <summary>F32 QA: golden coverage for ShouldRunDamageProc's party pair gate (combat.cc:4849).
         /// The proc's own output never reaches stdout (RunDamageProc routes through Log, not Transcript —
         /// see BACKLOG F32), so this reports the GATE's discriminating outcome for both quadrants: forces
@@ -1951,10 +1953,30 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
             {
                 _lipElapsedMs += gameTime.ElapsedGameTime.TotalMilliseconds;
                 if (_lipElapsedMs >= _lipDurationMs)
+                {
                     _activeLip = null;
+                    // gameDialogTicker():2853-2857 — a finished voiced line parks the head on frame 0,
+                    // opens the fidget gate and seeds the idle accumulator at 3, not 0.
+                    _fidgetIdleSeconds = 3;
+                    _canStartNewFidget = true;
+                    _fidgetPauseElapsedMs = 0;
+                    _headFrame = 0;
+                }
+            }
+            else
+            {
+                TickHeadFidget(EffectiveHeadId(), _dialog?.HeadReaction ?? Formats.Art.HeadFidget.Neutral,
+                    gameTime.ElapsedGameTime.TotalMilliseconds);
             }
         }
-        else { _headFrame = 0; _headFrameTimerMs = 0; _activeLip = null; _headTransitionAnim = null; }
+        else
+        {
+            _headFrame = 0; _headFrameTimerMs = 0; _activeLip = null; _headTransitionAnim = null;
+            // Leaving the dialog clears the fidget state so the next one rolls fresh
+            // (_gdSetupFidget's headFrmId == -1 arm, :2450-2463).
+            _headFidget = 1; _fidgetIdleSeconds = 0; _canStartNewFidget = false;
+            _fidgetPauseMs = 0; _fidgetPauseElapsedMs = 0; _fidgetRolledForHead = -1;
+        }
 
         // P139: full-screen MVE cutscene — ticks its own clock in ANY state (incl. the main menu's
         // INTRO button), so it must run BEFORE the menu-state early-return below. Any key/click skips it
@@ -6147,6 +6169,23 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
     private int _lipAnim = Formats.Sound.LipData.AnimNeutralPhonemes;
     private const double HeadFrameMs = 1000.0 / 8; // heads.lst fps ~8
 
+    // F46: the fidget the head is currently playing, its idle accumulator and the pause between
+    // fidgets. ported from fallout2-ce src/game_dialog.cc _gdSetupFidget() (:2505-2529) and
+    // gameDialogTicker()'s _can_start_new_fidget arm (:2861-2868).
+    // Before F46 the fidget nibble was hardcoded to 1, so F5's accumulated X sway could never be
+    // seen: every head that has a nonzero frame offset is a fidget 2 or 3.
+    private int _headFidget = 1;
+    private int _fidgetIdleSeconds;          // _dialogue_seconds_since_last_input (:279)
+    private double _fidgetPauseMs;           // _tocksWaiting — 4..7s, re-rolled per fidget (:2865)
+    private double _fidgetPauseElapsedMs;
+    private bool _canStartNewFidget;         // _can_start_new_fidget (:2861)
+    private int _fidgetRolledForHead = -1;   // head+reaction the current fidget was rolled for
+    /// <summary>DIVERGENCE, deliberate: the reference rolls the fidget from the SHARED global RNG
+    /// (randomBetween). Hexwaste gives the head its own stream, following the per-subsystem pattern
+    /// already used by _sneakRng/_stealRng/_tauntRng — a purely cosmetic dialog animation must not
+    /// perturb the gameplay RNG that 279 golden fixtures pin.</summary>
+    private Formats.Combat.ICombatRng? _fidgetRng;
+
     /// <summary>P87/P89: render the dialogue talking head in the upper area of the centred 640x480 dialog
     /// frame, at the engine's display anchor. P122: the pose follows the script's REACTION — the fidget
     /// family (anim 1 good / 4 neutral / 7 bad, e.g. ELDERGF1/NF1/BF1), a one-shot transition anim when
@@ -6154,6 +6193,97 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
     /// Missing family art falls back to neutral, then to a text-only dialog. ported from fallout2-ce
     /// src/game_dialog.cc _gdSetupFidget()/_talk_to_critter_reacts() (display buffer at window-local
     /// (126,14), gameDialogRenderTalkingHead).</summary>
+    /// <summary>F46: the idle-fidget loop. A fidget plays through its frames, parks the head on
+    /// frame 0, waits <c>_tocksWaiting</c> (4-7s), then a NEW fidget is rolled and plays.
+    /// ported from fallout2-ce src/game_dialog.cc gameDialogTicker() (:2861-2875) +
+    /// _gdSetupFidget() (:2505-2529).</summary>
+    private void TickHeadFidget(int headId, int reaction, double elapsedMs)
+    {
+        if (_headTransitionAnim is not null)
+            return; // a one-shot mood transition owns the head until it finishes (P122)
+
+        int key = headId * 16 + reaction;
+        if (_fidgetRolledForHead != key)
+        {
+            // First fidget for this head+mood — the reference rolls one in _gdSetupFidget as the
+            // dialog opens, before any idle has accumulated.
+            RollHeadFidget(headId, reaction);
+            _fidgetRolledForHead = key;
+            return;
+        }
+
+        if (!_canStartNewFidget)
+        {
+            // Still playing: the anim is done once the frame counter passes its last frame.
+            if (_headFrame >= HeadFidgetFrameCount(headId, reaction))
+            {
+                _canStartNewFidget = true;   // :2872-2873
+                _fidgetPauseElapsedMs = 0;
+                _headFrame = 0;              // gameDialogRenderTalkingHead(frm, 0) — park on the rest pose
+            }
+            return;
+        }
+
+        _fidgetPauseElapsedMs += elapsedMs;
+        if (_fidgetPauseElapsedMs < _fidgetPauseMs)
+            return;
+
+        // :2864 — the idle accumulator grows by the pause that just elapsed, in whole seconds.
+        _fidgetIdleSeconds += (int)(_fidgetPauseMs / 1000);
+        RollHeadFidget(headId, reaction);
+    }
+
+    /// <summary>One simulated head frame: the same frame advance <see cref="Update"/> runs, then one
+    /// fidget-ticker step. Exists so the idle-fidget loop can be driven off the wall clock by
+    /// <c>--fidget-probe</c> — <c>--pump-ms</c> pumps subsystems directly and never calls
+    /// <see cref="Update"/>, so it cannot reach the ticker.</summary>
+    internal void StepHeadFidgetForProbe(int headId, int reaction, double elapsedMs)
+    {
+        _headFrameTimerMs += elapsedMs;
+        while (_headFrameTimerMs >= HeadFrameMs) { _headFrameTimerMs -= HeadFrameMs; _headFrame++; }
+        TickHeadFidget(headId, reaction, elapsedMs);
+    }
+
+    internal int ProbeHeadFidget => _headFidget;
+
+    /// <summary>Rolls the next fidget and restarts the head on frame 0.
+    /// ported from fallout2-ce src/game_dialog.cc _gdSetupFidget() (:2498-2529) — the pause before
+    /// the NEXT fidget is <c>1000 * (randomBetween(0, 3) + 4)</c> (:2865).</summary>
+    private void RollHeadFidget(int headId, int reaction)
+    {
+        _fidgetRng ??= new Formats.Combat.SystemCombatRng(RngSeed ?? Environment.TickCount);
+        int count = _artIndex.HeadFidgetCount(
+            Formats.Fid.Build(Formats.ObjectType.Head, headId, reaction, weaponCode: 0));
+        int chance = Formats.Art.HeadFidget.Chance(_fidgetRng.Next(1, 101), _fidgetIdleSeconds);
+        int fidget = Formats.Art.HeadFidget.Roll(count, chance);
+        if (Formats.Art.HeadFidget.ResetsIdleAccumulator(count))
+            _fidgetIdleSeconds = 0; // the reset lives inside `case 3:` alone (:2520)
+
+        // A head with no usable count (head 0 "reser") would roll 0 and build art that cannot
+        // exist; keep the pre-F46 fidget 1 there rather than render nothing.
+        _headFidget = fidget >= 1 ? fidget : 1;
+        _headFrame = 0;
+        _headFrameTimerMs = 0;
+        _canStartNewFidget = false;
+        _fidgetPauseElapsedMs = 0;
+        _fidgetPauseMs = 1000 * (_fidgetRng.Next(0, 4) + 4);
+    }
+
+    /// <summary>Frame count of the fidget currently on screen, or 0 when its art is missing
+    /// (which makes the loop fall straight through to the next roll rather than wedging).</summary>
+    private int HeadFidgetFrameCount(int headId, int reaction)
+    {
+        try
+        {
+            return _frmCache.FrameCount(
+                Formats.Fid.Build(Formats.ObjectType.Head, headId, reaction, weaponCode: _headFidget));
+        }
+        catch (Exception ex) when (ex is FileNotFoundException or InvalidDataException or NotSupportedException)
+        {
+            return 0;
+        }
+    }
+
     private void DrawTalkingHead(int headId, int frameX, int frameY)
     {
         int reaction = _dialog?.HeadReaction ?? 4;
@@ -6176,7 +6306,7 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
         }
 
         int drawnAnim = animType;
-        Texture2D? head = HeadTexture(headId, animType, requestedFrame, out bool finishedOnce, out int drawnFrame);
+        Texture2D? head = HeadTexture(headId, animType, requestedFrame, out bool finishedOnce, out int drawnFrame, out int drawnFid);
         if (_headTransitionAnim is not null && finishedOnce)
         {
             // The transition ran its frames — resume the (new) family's fidget.
@@ -6185,14 +6315,14 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
             if (head is null)
             {
                 drawnAnim = reaction;
-                head = HeadTexture(headId, reaction, 0, out _, out drawnFrame);
+                head = HeadTexture(headId, reaction, 0, out _, out drawnFrame, out drawnFid);
             }
         }
         // A missing good/bad family degrades to the neutral art rather than a blank frame.
         if (head is null && animType != 4)
         {
             drawnAnim = 4;
-            head = HeadTexture(headId, 4, requestedFrame, out _, out drawnFrame);
+            head = HeadTexture(headId, 4, requestedFrame, out _, out drawnFrame, out drawnFid);
         }
         if (head is null)
             return; // head art missing -> graceful text-only dialog
@@ -6207,7 +6337,7 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
         // `if (destOffset + width * v8 > 0)` guard carries its Y. Both are 0 on all 186
         // shipped art\heads\*.FRM (established when PR #675 hunk 20 was rejected), so
         // neither term is ported — they would be identity.
-        int hotX = HeadAccumulatedHotX(headId, drawnAnim, drawnFrame);
+        int hotX = HeadAccumulatedHotX(drawnFid, drawnFrame);
         int x = frameX + 126 + (388 - head.Width) / 2 + hotX;
         int y = frameY + 14 + (200 - head.Height);
         _spriteBatch.Draw(head, new Vector2(x, y), Color.White);
@@ -6221,11 +6351,18 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
     /// <paramref name="resolvedFrame"/> reports the frame index actually resolved (post clamp), so
     /// callers can sum offsets over the frame really drawn rather than duplicating this clamp
     /// themselves.</summary>
-    private Texture2D? HeadTexture(int headId, int animType, int frame, out bool finishedOnce, out int resolvedFrame)
+    private Texture2D? HeadTexture(int headId, int animType, int frame, out bool finishedOnce,
+        out int resolvedFrame, out int resolvedFid)
     {
         finishedOnce = false;
         resolvedFrame = 0;
-        int fid = Formats.Fid.Build(Formats.ObjectType.Head, headId, animType, weaponCode: 1);
+        // F46: for a FIDGET family the weapon nibble IS the fidget number (art.cc
+        // artBuildFilePath type 8 formats a head as "<name><emotion>f<digit>.frm"). The
+        // transition and phoneme anims do not carry one, so they keep the historical 1.
+        int fidget = animType is Formats.Art.HeadFidget.Good or Formats.Art.HeadFidget.Neutral
+            or Formats.Art.HeadFidget.Bad ? _headFidget : 1;
+        int fid = Formats.Fid.Build(Formats.ObjectType.Head, headId, animType, weaponCode: fidget);
+        resolvedFid = fid;
         try
         {
             int frames = _frmCache.FrameCount(fid);
@@ -6249,15 +6386,11 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
     /// where the reference would sum the frames it actually showed. Inert on shipped data — all
     /// 5 heads with a nonzero X offset (HRLD2BF3, HRLD2GF2, HRLD2NF3, TNDI2GF2, TNDI2NF3) are
     /// fidget anims, which do play sequentially.
-    /// GAP: also dormant on shipped data for an unrelated reason — <paramref name="animType"/>'s FID is
-    /// always built with weaponCode (fidget number) 1, because fidget selection
-    /// (game_dialog.cc _gdSetupFidget picking 1/2/3 at random) is not ported. All 5 nonzero-offset
-    /// heads above are fidget 2 or 3, never fidget 1, so this term sums to 0 today regardless of the
-    /// caller's <paramref name="animType"/>/<paramref name="drawnFrame"/>. The arithmetic here is
-    /// correct and future-proof; porting fidget selection is out of scope for this task.</summary>
-    private int HeadAccumulatedHotX(int headId, int animType, int drawnFrame)
+    /// F46: takes the FID <see cref="HeadTexture"/> actually resolved, rather than rebuilding one —
+    /// the two used to derive it independently with a hardcoded fidget nibble, which would have
+    /// silently desynchronised the moment fidget selection became a variable (it now is).</summary>
+    private int HeadAccumulatedHotX(int fid, int drawnFrame)
     {
-        int fid = Formats.Fid.Build(Formats.ObjectType.Head, headId, animType, weaponCode: 1);
         if (!_frmCache.TryGetFrm(fid, out Formats.Frm.FrmFile? frm))
             return 0; // a head whose offsets can't be read simply doesn't sway
 

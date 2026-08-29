@@ -536,6 +536,9 @@ for (int i = 0; i < args.Length; i++)
             actions.Add(new ViewerGame.StartupAction.NpcWalk(int.Parse(args[i + 1]), int.Parse(args[i + 2]), Run: true));
             i += 2;
             break;
+        case "--fidget-probe" when i + 2 < args.Length: // F46: head fidget selection + the F5 sway it unlocks
+            actions.Add(new ViewerGame.StartupAction.FidgetProbe(int.Parse(args[++i]), int.Parse(args[++i])));
+            break;
         case "--walker-restart-probe" when i + 3 < args.Length: // F21 QA: does a finished walker block a second walk?
             actions.Add(new ViewerGame.StartupAction.WalkerRestartProbe(
                 int.Parse(args[i + 1]), int.Parse(args[i + 2]), int.Parse(args[i + 3])));

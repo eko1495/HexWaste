@@ -903,6 +903,60 @@ public sealed partial class ViewerGame
                         _npcWalkProbe = (nwNpc, nwTarget);
                     break;
                 }
+                case StartupAction.FidgetProbe(var fpHead, var fpRolls):
+                {
+                    // F46: prove the fidget nibble is no longer a constant, and that the F5 sway it
+                    // unlocks is actually reachable. For the neutral family, report how many fidget
+                    // variants heads.lst gives this head, the total per-fidget X offset (the sway
+                    // F5 sums), and the distribution of `fpRolls` rolls.
+                    int fpFid0 = Formats.Fid.Build(Formats.ObjectType.Head, fpHead,
+                        Formats.Art.HeadFidget.Neutral, weaponCode: 0);
+                    int fpCount = _artIndex.HeadFidgetCount(fpFid0);
+                    Console.WriteLine($"fidget-probe: head={fpHead} count={fpCount}");
+                    for (int f = 1; f <= Math.Max(fpCount, 1); f++)
+                    {
+                        int fid = Formats.Fid.Build(Formats.ObjectType.Head, fpHead,
+                            Formats.Art.HeadFidget.Neutral, weaponCode: f);
+                        if (!_frmCache.TryGetFrm(fid, out Formats.Frm.FrmFile? frm))
+                        {
+                            Console.WriteLine($"  fidget {f}: art missing");
+                            continue;
+                        }
+                        int frames = frm.Directions[0].Length, sway = 0, maxAbs = 0;
+                        for (int i = 0; i < frames; i++)
+                        {
+                            sway += frm.GetFrame(i, 0).OffsetX;
+                            maxAbs = Math.Max(maxAbs, Math.Abs(sway));
+                        }
+                        Console.WriteLine($"  fidget {f}: frames={frames} finalSway={sway} maxSway={maxAbs}");
+                    }
+                    var fpRng = new Formats.Combat.SystemCombatRng(RngSeed ?? 1);
+                    var fpHist = new int[5];
+                    for (int i = 0; i < fpRolls; i++)
+                    {
+                        int rolled = Formats.Art.HeadFidget.Roll(fpCount,
+                            Formats.Art.HeadFidget.Chance(fpRng.Next(1, 101), 0));
+                        if (rolled >= 0 && rolled < fpHist.Length) fpHist[rolled]++;
+                    }
+                    Console.WriteLine($"  rolls={fpRolls} -> 1:{fpHist[1]} 2:{fpHist[2]} 3:{fpHist[3]}");
+
+                    // Drive the idle-fidget LOOP itself over simulated wall time: a fidget plays out,
+                    // the head parks, the 4-7s pause elapses, a new fidget is rolled. Reports each
+                    // change so "it re-rolls" is observable rather than argued.
+                    var fpSeen = new List<string>();
+                    int fpLast = -1;
+                    for (double t = 0; t < 60000; t += 50)
+                    {
+                        StepHeadFidgetForProbe(fpHead, Formats.Art.HeadFidget.Neutral, 50);
+                        if (ProbeHeadFidget != fpLast)
+                        {
+                            fpLast = ProbeHeadFidget;
+                            fpSeen.Add($"{(int)t}ms:f{fpLast}");
+                        }
+                    }
+                    Console.WriteLine($"  60s loop -> {fpSeen.Count} fidget change(s): {string.Join(" ", fpSeen)}");
+                    break;
+                }
                 case StartupAction.WalkerRestartProbe(var wrHex, var wrTarget1, var wrTarget2):
                 {
                     // F21: start a walk, pump it to completion, then start a SECOND walk for the same

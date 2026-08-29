@@ -82,6 +82,56 @@ public sealed class ArtIndex(GameFileSystem vfs)
         return index >= 0 && index < _critterShouldRun.Length && _critterShouldRun[index] != 0;
     }
 
+    private int[]? _headFidgetCounts;
+
+    /// <summary>How many fidget variants a talking head has, for the fidget family named by
+    /// <paramref name="fid"/>'s anim type (1 good / 4 neutral / 7 bad).
+    /// ported from fallout2-ce src/art.cc artGetFidgetCount() (:365-388) + the heads.lst parse
+    /// in artInit() (:281-316).
+    ///
+    /// The reference keeps three per-head counts but its parse reads ONE number into all three.
+    /// After <c>*sep1 = '\0'</c> the next <c>strchr(sep1, ',')</c> starts ON that NUL, so it can
+    /// only return null and <c>sep2</c>/<c>sep3</c> collapse back onto <c>sep1</c> — every
+    /// <c>atoi</c> then parses the same "3,3,3" tail (art.cc:286-316). Reproduced here rather
+    /// than regularised, and provably unobservable: all 12 comma-bearing heads.lst lines carry
+    /// EQUAL triples (ten "3,3,3", two "2,2,2"), so a clean per-field read would return the same
+    /// number. HeadFidgetCountsMatchTheShippedList pins that.
+    ///
+    /// A comma-less line yields 0 — head 0 ("reser") is the only one, and the reference's own
+    /// <c>atoi(sep1 + 1)</c> on it parses "eser" to 0 the same way.</summary>
+    public int HeadFidgetCount(int fid)
+    {
+        if (Fid.Type(fid) is not ObjectType.Head)
+            return 0; // artGetFidgetCount's FID_TYPE guard (:367)
+        int anim = Fid.AnimType(fid);
+        if (anim is not (HeadFidget.Good or HeadFidget.Neutral or HeadFidget.Bad))
+            return 0; // the switch falls through to `return 0` for a non-fidget anim (:387)
+        if (_headFidgetCounts is null)
+        {
+            using Stream stream = vfs.OpenRead(@"art\heads\heads.lst");
+            using var reader = new StreamReader(stream);
+            var counts = new List<int>();
+            while (reader.ReadLine() is { } line)
+            {
+                int sep = line.IndexOf(',');
+                // atoi stops at the first non-digit, so "3,3,3" parses as 3.
+                counts.Add(sep < 0 ? 0 : Atoi(line[(sep + 1)..]));
+            }
+            _headFidgetCounts = [.. counts];
+        }
+        int index = Fid.Index(fid);
+        return index >= 0 && index < _headFidgetCounts.Length ? _headFidgetCounts[index] : 0;
+    }
+
+    /// <summary>C's <c>atoi</c>: leading digits only, 0 when there are none.</summary>
+    private static int Atoi(string text)
+    {
+        int i = 0, value = 0;
+        while (i < text.Length && char.IsAsciiDigit(text[i]))
+            value = value * 10 + (text[i++] - '0');
+        return value;
+    }
+
     private int[]? _critterAlias;
 
     /// <summary>The critters.lst ALIAS field (2nd comma value) — the index of the critter whose
