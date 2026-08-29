@@ -455,7 +455,7 @@ been recording a harness artefact as game behaviour. Surfaced reviewing F18:
 with the critter's origin tile frozen at 10270 both times — 8870 is not blocked, so F18's new
 destination check correctly leaves this pair alone; the cause is different and F18 could not have
 touched it. Mechanism, traced through the actual code:
-- `StartNpcWalk` (`ViewerGame.cs:3326`, guard at `:3328`) refuses a new walk whenever
+- `StartNpcWalk` (`ViewerGame.cs:3389`, guard at `:3391`) refuses a new walk whenever
   `_npcWalkers.ContainsKey(npc)` — keyed on dictionary **presence**, not on `walker.Moving`.
 - A finished walker is pruned only inside `UpdateAmbientLife` (`ViewerGame.cs:3262-3272`).
 - The `--fight` autoplay harness that `combat-golden.sh` drives never calls `UpdateAmbientLife` — it
@@ -465,7 +465,7 @@ touched it. Mechanism, traced through the actual code:
   `StartWalk` fails silently while the `flee:` transcript line and the AP-zeroing (`CombatEngine.cs`,
   same shape as the failure mode F18 fixed, but a different cause) have already fired.
 - **Not purely a harness artefact — but only via `--no-ambient`, not an open worldmap.** The prune
-  sits *after* `if (DisableAmbientLife || _worldmapOpen) return;` (`ViewerGame.cs:3259-3260`) inside
+  sits *after* `if (DisableAmbientLife || _worldmapOpen) return;` (`ViewerGame.cs:3334-3335`) inside
   `UpdateAmbientLife` itself, so `--no-ambient` defeats the same prune in the real interactive game —
   walker lifecycle management is nested inside an unrelated cosmetic feature's early return, not
   solely a test-loop omission. **The open-worldmap half of that claim does not hold**, corrected during
@@ -525,7 +525,7 @@ touched it. Mechanism, traced through the actual code:
     than inferred. Frozen critters cannot close, so the brawl dragged to 9 rounds and resolved by
     attrition; unfrozen ones close and settle it in 6.
 - `f64b5d4` hoisted finished-walker pruning out of `UpdateAmbientLife` into its own
-  `PruneFinishedWalkers(double)` (`ViewerGame.cs:3265`), called from `Update` independently of the
+  `PruneFinishedWalkers(double)` (`ViewerGame.cs:3310`), called from `Update` independently of the
   `DisableAmbientLife || _worldmapOpen` early return that used to gate it, and used by both autoplay
   loops (`ViewerGame.Harness.cs:207`, dt `100000` for brawl-watch; `:2066`, dt `10` for `--fight`; each
   kept its original dt). Behaviour-neutral by construction after the guard fix: no fixture moved here.
@@ -698,8 +698,8 @@ is still wanted, since `_objPMAttemptPlacement` also refuses an occupied tile.
 
 **F4 — SHIPPED 2026-08-29 (`6c7bc25`).** *Was Effort S.* Talking heads are now bottom-anchored inside
 the 388x200 display buffer, matching the engine's `destWidth * (200 - height)`:
-`y = frameY + 14 + (200 - head.Height)` (`ViewerGame.cs:6330`, inside `DrawTalkingHead`,
-`ViewerGame.cs:6275`). One expression change. The reference's `a3` term also carries
+`y = frameY + 14 + (200 - head.Height)` (`ViewerGame.cs:6342`, inside `DrawTalkingHead`,
+`ViewerGame.cs:6287`). One expression change. The reference's `a3` term also carries
 `artGetRotationOffsets(...)`'s X and Y out-params, feeding both the horizontal position and a
 `destOffset + width * v8 > 0` guard on the vertical one; **neither was ported**, deliberately — the
 186-head probe (`art\heads\*.FRM` in `master.dat`, established rejecting PR #675 hunk 20) found both
@@ -710,13 +710,13 @@ shift between frames now that the anchor is bottom-relative.
 **F5 — SHIPPED 2026-08-29 (`6c7bc25`, fix `87c9c7f`) — implemented correctly, but DORMANT on shipped
 data; this is the most consequential finding of the batch.** *Was Effort S.* The accumulated
 per-frame X offset (`_totalHotx`, `game_dialog.cc:4557,4585`) is now summed and applied —
-`HeadAccumulatedHotX` (`ViewerGame.cs:6380`) computes it as a prefix sum over frames 0..N rather than
+`HeadAccumulatedHotX` (`ViewerGame.cs:6392`) computes it as a prefix sum over frames 0..N rather than
 accumulating in a field, because `DrawTalkingHead` runs once per render frame while the reference
 runs once per animation frame, and a field would over-accumulate at high frame rates; the fix `87c9c7f`
 threads the *resolved* frame (post frame-count clamp) through so the sum matches what
-`HeadTexture` (`ViewerGame.cs:6342`) actually drew. **The term is provably 0 on shipped data today for
+`HeadTexture` (`ViewerGame.cs:6354`) actually drew. **The term is provably 0 on shipped data today for
 an unrelated reason**: both `HeadTexture` and `HeadAccumulatedHotX` build the head FID with
-`weaponCode: 1` (the pre-F46 state; `HeadTexture` now builds it at `ViewerGame.cs:6352` from the
+`weaponCode: 1` (the pre-F46 state; `HeadTexture` now builds it at `ViewerGame.cs:6364` from the
 rolled fidget) — that nibble is the *fidget number*, and the
 reference chooses it in `_gdSetupFidget` (`reference/fallout2-ce/src/game_dialog.cc`), a count-gated
 weighted roll that folds in `_dialogue_seconds_since_last_input`; Hexwaste never ports fidget
@@ -802,7 +802,7 @@ handles 1000 (set rotation) and 1010 (set frame) explicitly (`interpreter_extra.
 `ScriptHost.Anim` (`ScriptHost.cs:1638`) now dispatches both through the new
 `ApplyDirectAnim` (`ScriptHost.cs:103`) before falling through to `AnimRequested`. **The change was
 purely additive**: `AnimRequested`'s own callback already gated `anim < 40`
-(`ViewerGame.cs:1235`, `if (anim is >= 0 and < 40 …)`), so a script calling `anim(obj, 1000, rot)` was
+(`ViewerGame.cs:1237`, `if (anim is >= 0 and < 40 …)`), so a script calling `anim(obj, 1000, rot)` was
 never crashing or misbehaving before this fix — 1000/1010 simply fell through that gate and did
 nothing, a silent no-op rather than a bogus animation request reaching the renderer.
 `MapObject.Frame` (`Map/MapFile.cs:50`) became settable (not init-only) to let `anim(obj, 1010,
@@ -921,7 +921,7 @@ from that adopted polarity, not from `e97087b`'s literal text; a future reader w
 `e97087b` and sees the proc firing here needs this paragraph, not a revert.
 **Scope question, resolved against the drafted recommendation:** the recommendation was to gate the
 new proc on `killer is not null` ("this blast had an attacker"). That heuristic is falsified by
-`ProcessArmedCharges` (`ViewerGame.cs:4348`), which passes `killer: _dude?.Dude` (non-null) for a
+`ProcessArmedCharges` (`ViewerGame.cs:4377`), which passes `killer: _dude?.Dude` (non-null) for a
 *planted* C4 charge — not an attack-sourced blast in the reference's sense. Traced in the reference:
 `actionExplode` (`actions.cc:1582`) builds a synthetic `Attack` via
 `attackInit(attack, explosion, critter, HIT_MODE_PUNCH, HIT_LOCATION_TORSO)` (`actions.cc:1631`)
@@ -1020,7 +1020,7 @@ in `_report_explosion` (`:1727`), for XP/reputation bookkeeping. Because the mar
 object, `_damage_object`'s party gate (`!objectIsPartyMember(a5)`) is trivially true for it, so a
 faithful port would run the victim `damage_p_proc` for blasts on these paths too, sourced from the
 marker rather than the placer. Hexwaste has no marker-object concept — `ProcessArmedCharges`
-(`ViewerGame.cs:4348`) passes the placer (`_dude?.Dude`) directly as `killer`, and F16 deliberately
+(`ViewerGame.cs:4377`) passes the placer (`_dude?.Dude`) directly as `killer`, and F16 deliberately
 left `attackSourced: false` at this call site and at the scripted-`explosion` site
 (`ViewerGame.cs:1282`, `killer: null`) rather than approximate the reference's synthetic-attacker
 shape. Closing this properly needs a marker-object concept Hexwaste doesn't currently model (the
@@ -1054,7 +1054,7 @@ sibling branch. Hexwaste's divergence from this was real in principle but unobse
 the dude's Hexwaste `Sid` was never live enough to reach the difference.
 
 **Hardening applied alongside the cleanup:** `SpawnDude` now sets `Sid = -1` explicitly
-(`ViewerGame.cs:3042`), turning "inert because no shipped map happens to bind sid 0 to an object" into
+(`ViewerGame.cs:3064`), turning "inert because no shipped map happens to bind sid 0 to an object" into
 "inert by construction." This was applied only after Task 2's codebase-wide survey of 44 `Sid != -1`
 / `Sid == -1` sites confirmed every one of them either already excludes the dude explicitly, never
 receives the dude object at all, or wraps a `ScriptsBySid.TryGetValue` lookup that fails identically
@@ -1406,7 +1406,7 @@ gates are now re-based on the reference condition instead of `IsGun`:
 - `ViewerGame.Hud.cs:146` (HUD ammo-bar counter) now gates on `AmmoCapacity > 0`
   (`ShowsAmmoReadout`, `ViewerGame.CombatHost.cs`), citing `interface.cc:1357-1359`:
   `if (p->isWeapon != 0) { int maximum = ammoGetCapacity(p->item); if (maximum > 0) { ... } }`.
-- `ViewerGame.cs:5962` (the Awareness examine readout) now gates on `Caliber != 0`
+- `ViewerGame.cs:5987` (the Awareness examine readout) now gates on `Caliber != 0`
   (`ShowsExamineShots`), citing `proto_instance.cc` `_obj_examine_func` (`:316-323`, the caliber test
   at `:319`) and `item.cc:1395-1412` (`ammoGetCaliber`).
 
@@ -1484,7 +1484,7 @@ charges to show:
   (`"%d/%d %s"`), gated on `ammoGetCaliber(target) != 0`. Reachable when examining an item from
   inventory (`inventory.cc:3687`, `_obj_examine_func(_stack[0], item, ...)`) or from the barter screen
   (`inventory.cc:3962`, the `GAME_MOUSE_ACTION_MENU_ITEM_LOOK` case). Hexwaste's `Examine`
-  (`ViewerGame.cs:5939`) has a critter branch only — there is no item-examine path at all, in or out
+  (`ViewerGame.cs:5961`) has a critter branch only — there is no item-examine path at all, in or out
   of combat.
 
 Closing either needs new UI surface (an inventory summary panel; an item-examine entry point), not a
@@ -1741,7 +1741,7 @@ rediscovered:**
   sway from the drawn head.~~ **CLOSED 2026-08-29 with F46**, which is exactly the change this
   predicted: `HeadTexture` now reports its resolved FID through an `out` parameter and
   `HeadAccumulatedHotX` consumes it, so the two cannot diverge.
-- `HeadTexture` (`ViewerGame.cs:6342`) still throws and catches an exception per render frame for
+- `HeadTexture` (`ViewerGame.cs:6354`) still throws and catches an exception per render frame for
   genuinely missing head art — the per-frame exception cost that was deliberately removed from its
   sibling helper (`HeadAccumulatedHotX`'s `TryGetFrm` path) was not also removed here.
 
