@@ -366,11 +366,11 @@ Three costs came out, none of them assertion strength:
 - **`dotnet run` overhead**, measured directly at 1.16 s of pure startup cost per invocation
   (`git show b488061`) — replaced by invoking the already-built binary.
 - **Serial execution** on a machine that reports 16 cores (`nproc`) — `golden-lib.sh` now owns a
-  job pool (`GOLDEN_JOBS="${GOLDEN_JOBS:-$(nproc)}"`, `scripts/golden-lib.sh:31`) and runs
+  job pool (`GOLDEN_JOBS="${GOLDEN_JOBS:-$(nproc)}"`, `scripts/golden-lib.sh:53`) and runs
   scenarios concurrently instead of one at a time.
 - **The determinism double run**, kept for every suite that had it (all but `census`, which never
   ran one): the unit of work is a *(fixture, pass)* pair, so both passes of a fixture can run
-  concurrently — the double-run now costs a core, not wall time (`scripts/golden-lib.sh:8-9`).
+  concurrently — the double-run now costs a core, not wall time (`scripts/golden-lib.sh:8-10`).
 
 **No assertion was weakened and no fixture under `tests/golden-*/` was touched.** The only change
 to any scenario's arguments is the four sanctioned `@SCRATCH@` substitutions
