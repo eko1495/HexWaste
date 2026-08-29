@@ -1073,7 +1073,10 @@ public sealed partial class ViewerGame
                             seen++;
                         }
                         return null; // never block: we want the whole line, not the first hit
-                    });
+                    },
+                    // Inert: the callback above always returns null, so no filter term can ever
+                    // fire. The probe's whole point is the per-policy verdict columns it prints.
+                    Formats.Combat.ShotFilter.FriendlyFire);
                     Console.WriteLine($"shot-blockers: {seen} object(s) on the line");
                     break;
                 }

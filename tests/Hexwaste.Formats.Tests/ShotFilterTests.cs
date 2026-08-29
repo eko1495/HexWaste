@@ -84,13 +84,14 @@ public class ShotFilterTests
         Assert.False(ShotFilter.LegacyCollapsed.Obstructs(Obj(ShootThru, ObjectType.Wall), isTarget: false));
         Assert.True(ShotFilter.LegacyCollapsed.Obstructs(Obj(0, ObjectType.Wall), isTarget: false));
 
-        // ExcludesCritters is FALSE here: a living critter still obstructs under LegacyCollapsed
-        // (LineOfFire.Trace does the critter-vs-blocker split downstream, not this filter).
-        Assert.True(ShotFilter.LegacyCollapsed.Obstructs(Obj(0, ObjectType.Critter), isTarget: false));
+        // ExcludesCritters is TRUE here as of Task 5: the critter-vs-blocker split moved OUT of
+        // LineOfFire.Trace and into the filter, so reproducing the collapsed behaviour (critters
+        // counted, never a hard obstruction) now requires the term to be set here.
+        Assert.False(ShotFilter.LegacyCollapsed.Obstructs(Obj(0, ObjectType.Critter), isTarget: false));
 
-        // ExcludesTarget is TRUE here (set for Task 4 forward-safety) — pin it directly. It is
-        // inert today only because ShootBlockerAt still filters identity itself, so isTarget can
-        // never actually be true at a real call site; this asserts what the term does in isolation.
+        // ExcludesTarget is TRUE — as of Task 5 this is live, not forward-safety: it reproduces the
+        // target-tile skip Trace used to hard-code, now expressed as the reference's own identity
+        // test.
         Assert.False(ShotFilter.LegacyCollapsed.Obstructs(Obj(0, ObjectType.Wall), isTarget: true));
     }
 }

@@ -19,19 +19,24 @@ public class LineOfFireTests
 
     private static int Tile(int x, int y) => y * HexGrid.Width + x;
 
+    /// <summary>The policy these walker tests exercise: the crowd-count caller
+    /// (combat.cc:5908), which is the one whose terms the walker used to hard-code —
+    /// critters counted rather than blocking, the target never its own obstruction.</summary>
+    private static readonly ShotFilter Walker = ShotFilter.ShotBlockedPenalty;
+
     /// <summary>The intermediate tiles the Bresenham visits (excludes from/to, which
     /// the engine never blocker-checks).</summary>
     private static List<int> Path(int from, int to)
     {
         var seen = new List<int>();
-        LineOfFire.Trace(from, to, t => { seen.Add(t); return null; });
+        LineOfFire.Trace(from, to, t => { seen.Add(t); return null; }, Walker);
         return seen;
     }
 
     [Fact]
     public void ClearLineReturnsNoBlocker()
     {
-        var (blocker, critters) = LineOfFire.Trace(Tile(100, 100), Tile(112, 106), _ => null);
+        var (blocker, critters) = LineOfFire.Trace(Tile(100, 100), Tile(112, 106), _ => null, Walker);
         Assert.Null(blocker);
         Assert.Equal(0, critters);
     }
@@ -45,7 +50,7 @@ public class LineOfFireTests
         int wallTile = path[path.Count / 2];
         var wall = Obj(Wall, wallTile);
 
-        var (blocker, _) = LineOfFire.Trace(from, to, t => t == wallTile ? wall : null);
+        var (blocker, _) = LineOfFire.Trace(from, to, t => t == wallTile ? wall : null, Walker);
         Assert.Same(wall, blocker);
     }
 
@@ -57,7 +62,7 @@ public class LineOfFireTests
         int critterTile = path[path.Count / 2];
         var critter = Obj(Critter, critterTile);
 
-        var (blocker, critters) = LineOfFire.Trace(from, to, t => t == critterTile ? critter : null);
+        var (blocker, critters) = LineOfFire.Trace(from, to, t => t == critterTile ? critter : null, Walker);
         Assert.Null(blocker);             // critters never block the shot
         Assert.Equal(1, critters);        // but they are counted (the -10/critter term)
     }
@@ -67,10 +72,19 @@ public class LineOfFireTests
     {
         int from = Tile(100, 100), to = Tile(112, 106);
         // A wall sitting on the shooter's own tile or the target tile is ignored.
-        var (b1, _) = LineOfFire.Trace(from, to, t => t == from ? Obj(Wall, from) : null);
-        var (b2, _) = LineOfFire.Trace(from, to, t => t == to ? Obj(Wall, to) : null);
+        var (b1, _) = LineOfFire.Trace(from, to, t => t == from ? Obj(Wall, from) : null, Walker);
         Assert.Null(b1);
+
+        // The TARGET tile is queried (the reference walker queries it too) — what saves it is the
+        // caller's ExcludesTarget term, matched on object IDENTITY, not a tile skip.
+        var targetWall = Obj(Wall, to);
+        var (b2, _) = LineOfFire.Trace(from, to, t => t == to ? targetWall : null, Walker, targetWall);
         Assert.Null(b2);
+
+        // A DIFFERENT object on the target tile is not the target, so it does block — the one
+        // behaviour the identity test has that the old tile skip did not.
+        var (b3, _) = LineOfFire.Trace(from, to, t => t == to ? Obj(Wall, to) : null, Walker, targetWall);
+        Assert.NotNull(b3);
     }
 
     [Fact]
@@ -80,9 +94,12 @@ public class LineOfFireTests
         for (int rotation = 0; rotation < 6; rotation++)
         {
             int to = HexGrid.TileInDirection(from, rotation);
-            // Even a blocker that fires on every queried tile can't block an
-            // adjacent shot — there is no tile strictly between the two.
-            var (blocker, critters) = LineOfFire.Trace(from, to, t => Obj(Wall, t));
+            // There is no tile strictly between the two, and the only tiles the walker can
+            // query are the shooter's own (never checked) and the target's (checked, but the
+            // object there IS the target). So an adjacent shot is never blocked.
+            var targetWall = Obj(Wall, to);
+            var (blocker, critters) = LineOfFire.Trace(
+                from, to, t => t == from ? Obj(Wall, from) : targetWall, Walker, targetWall);
             Assert.Null(blocker);
             Assert.Equal(0, critters);
         }

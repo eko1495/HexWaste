@@ -2189,7 +2189,7 @@ public class CombatEngineTests
         // Stand a bystander on the from->target overshoot line, beyond the target.
         int endpoint = HexGrid.TileNumBeyond(from, target, 40);
         var line = new List<int>();
-        LineOfFire.Trace(target, endpoint, t => { line.Add(t); return null; });
+        LineOfFire.Trace(target, endpoint, t => { line.Add(t); return null; }, ShotFilter.ShotBlockedPenalty);
         Assert.True(line.Count > 1, "there must be an overshoot tile beyond the target");
         MapObject bystander = host.AddCritter(NewCritter(line[1], hp: 500));
 
@@ -2246,7 +2246,7 @@ public class CombatEngineTests
 
         int endpoint = HexGrid.TileNumBeyond(from, target, 40);
         var line = new List<int>();
-        LineOfFire.Trace(target, endpoint, t => { line.Add(t); return null; });
+        LineOfFire.Trace(target, endpoint, t => { line.Add(t); return null; }, ShotFilter.ShotBlockedPenalty);
         Assert.True(line.Count > 1, "there must be an overshoot tile beyond the target");
         MapObject bystander = host.AddCritter(NewCritter(line[1], hp: 500));
         bystander.Sid = 7; // scripted: a damage_p_proc COULD run — the point is that it must not
@@ -2307,7 +2307,7 @@ public class CombatEngineTests
         int leftTile = HexGrid.TileInDirection(pivot, (rotation + 1) % 6, 1);
         int leftEnd = HexGrid.TileNumBeyond(from, leftTile, 40);
         var leftLine = new List<int>();
-        LineOfFire.Trace(from, leftEnd, t => { leftLine.Add(t); return null; });
+        LineOfFire.Trace(from, leftEnd, t => { leftLine.Add(t); return null; }, ShotFilter.ShotBlockedPenalty);
         Assert.NotEmpty(leftLine);
         MapObject bystander = host.AddCritter(NewCritter(leftLine[Math.Min(2, leftLine.Count - 1)], hp: 500));
 
@@ -2368,7 +2368,7 @@ public class CombatEngineTests
         int leftTile = HexGrid.TileInDirection(pivot, (rotation + 1) % 6, 1);
         int leftEnd = HexGrid.TileNumBeyond(from, leftTile, 40);
         var leftLine = new List<int>();
-        LineOfFire.Trace(from, leftEnd, t => { leftLine.Add(t); return null; });
+        LineOfFire.Trace(from, leftEnd, t => { leftLine.Add(t); return null; }, ShotFilter.ShotBlockedPenalty);
         Assert.NotEmpty(leftLine);
         MapObject companion = host.AddAlly(NewCritter(leftLine[Math.Min(2, leftLine.Count - 1)], hp: 500), CompanionAi.Default);
         companion.Sid = 11; // scripted: a damage_p_proc COULD run — the point is that it must not

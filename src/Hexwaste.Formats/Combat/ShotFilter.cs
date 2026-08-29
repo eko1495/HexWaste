@@ -53,24 +53,24 @@ public sealed record ShotFilter(
 
     /// <summary>TEMPORARY. The pre-F33 collapsed behaviour, so the coarse predicate can be made
     /// faithful without changing what any consumer sees. Has no reference counterpart and must
-    /// never be the answer for a shipped consumer.
+    /// never be the answer for a shipped consumer. Two consumers still hold it after Task 5 — the
+    /// explosion line-of-sight check and the combat rendering outline — and Task 7 settles them.
     ///
-    /// ExcludesCritters is FALSE — load-bearing, not incidental. The pre-F33 single-stage predicate
-    /// never excluded critters at this layer: they were part of the coarse type test, and
-    /// LineOfFire.Trace's own walker does the critter-vs-blocker split downstream, unchanged by this
-    /// task. Setting it here (as the plan's first draft did) silently drops every critter the coarse
-    /// predicate hands back — including from LineOfFire.Trace's blockerAt callback, where Trace needs
-    /// the raw critter object to run its own counted-not-blocking logic — which four CombatEngineTests
-    /// caught immediately (bystander/collateral detection went dark).
+    /// ExcludesShootThru / ExcludesNoBlock reproduce the old flag CONJUNCTION: composed with the new
+    /// coarse predicate's `NO_BLOCK == 0 || SHOOT_THRU == 0`, `Obstructs` reduces to exactly
+    /// `NO_BLOCK == 0 &amp;&amp; SHOOT_THRU == 0` — the pre-F33 test, nothing more.
     ///
-    /// ExcludesTarget is TRUE — unlike the other terms, this one is NOT chosen for today's behaviour.
-    /// It is inert today: ShootBlockerAt still filters `o != target` identity-based inside itself
-    /// (pre-Task-4), so `isTarget` can never be true at any of the 11 call sites and this term never
-    /// fires either way. It is set to `true` purely for FORWARD SAFETY: Task 4 moves that exclusion
-    /// out of ShootBlockerAt into a caller-supplied parameter, at which point `isTarget` goes live at
-    /// every site, and only `true` here reproduces the pre-F33 collapsed behaviour from that point on.
-    /// Composed with the new coarse predicate's `NO_BLOCK==0 || SHOOT_THRU==0`, `Obstructs` here
-    /// reduces (today) to exactly `NO_BLOCK==0 && SHOOT_THRU==0` — the old flag conjunction, nothing
-    /// more; the `ExcludesTarget` term simply has no candidate to fire on yet.</summary>
-    public static readonly ShotFilter LegacyCollapsed = new(true, false, true, ExcludesNoBlock: true);
+    /// ExcludesCritters FLIPPED to true in Task 5, and ExcludesTarget went live. Before it,
+    /// LineOfFire.Trace hard-coded both the critter-counted-not-blocking split and the target-TILE
+    /// skip: ExcludesCritters had to stay FALSE here or the pre-filtered callback would have
+    /// destroyed the very object the walker needed to count, and ExcludesTarget was set but inert
+    /// (nothing could ever be flagged isTarget). Task 5 moved both terms out of the walker and into
+    /// the filter, so reproducing the same collapsed behaviour now requires both to be TRUE. That is
+    /// the same behaviour expressed on the other side of the shape change, not a change of policy.
+    ///
+    /// ONE residual difference, deliberate and accepted: the old target skip was by TILE
+    /// (`tile != toTile`), this one is by OBJECT IDENTITY (`obj == targetObj`) — the reference's own
+    /// test. They differ only for a second object sharing the target's tile, which the old walker
+    /// skipped and this one lets the caller's policy judge.</summary>
+    public static readonly ShotFilter LegacyCollapsed = new(true, true, true, ExcludesNoBlock: true);
 }

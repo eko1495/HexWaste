@@ -369,9 +369,8 @@ public sealed partial class ViewerGame
         // excludeObj = dude = sourceObj (combat.cc:2684's _combat_is_shot_blocked(gDude, ...) —
         // the outline/LOS consumer's sourceObj).
         bool clearLos = Formats.Combat.LineOfFire.Trace(dude.HexTile, critter.HexTile,
-            t => ShootBlockerAt(t, dude) is { } o
-                    && Formats.Combat.ShotFilter.LegacyCollapsed.Obstructs(o, isTarget: o == critter)
-                ? o : null).Blocker is null;
+            t => ShootBlockerAt(t, dude),
+            Formats.Combat.ShotFilter.LegacyCollapsed, critter).Blocker is null;
         int dist = Formats.Hex.HexGrid.Distance(dude.HexTile, critter.HexTile);
         int pe = GetCritterState(dude)?.Stat(1) ?? 0; // STAT_PERCEPTION (SPECIAL index 1)
         bool glass = TranslucencyOf(critter) == Formats.Proto.TransType.Glass;

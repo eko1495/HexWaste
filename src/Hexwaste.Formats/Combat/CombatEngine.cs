@@ -273,10 +273,12 @@ public sealed class CombatEngine
         {
             (MapObject? blocker, crittersInPath) = LineOfFire.Trace(
                 dude.HexTile, target.HexTile,
-                // excludeObj = attacker (combat.cc:3584/:3641-style refusal check).
-                tile => _host.ShootBlockerAt(tile, dude) is { } o
-                        && ShotFilter.LegacyCollapsed.Obstructs(o, isTarget: o == target)
-                    ? o : null);
+                // excludeObj = attacker (combat.cc:3584 _check_ranged_miss's refusal walk).
+                tile => _host.ShootBlockerAt(tile, dude),
+                // ported from fallout2-ce src/combat.cc:3586-3587 — the shot-blocked roll's own
+                // filter on what _obj_shoot_blocking_at handed back: SHOOT_THRU is re-tested, and
+                // a critter there is a to-hit roll rather than a hard obstruction.
+                ShotFilter.ShotBlockedRoll, target);
             if (blocker is not null)
                 return null;
         }
@@ -364,10 +366,12 @@ public sealed class CombatEngine
         {
             (MapObject? blocker, crittersInPath) = LineOfFire.Trace(
                 dude.HexTile, target.HexTile,
-                // excludeObj = attacker (combat.cc:3584/:3641-style refusal check).
-                tile => _host.ShootBlockerAt(tile, dude) is { } o
-                        && ShotFilter.LegacyCollapsed.Obstructs(o, isTarget: o == target)
-                    ? o : null);
+                // excludeObj = attacker (combat.cc:3584 _check_ranged_miss's refusal walk).
+                tile => _host.ShootBlockerAt(tile, dude),
+                // ported from fallout2-ce src/combat.cc:3586-3587 — the shot-blocked roll's own
+                // filter on what _obj_shoot_blocking_at handed back: SHOOT_THRU is re-tested, and
+                // a critter there is a to-hit roll rather than a hard obstruction.
+                ShotFilter.ShotBlockedRoll, target);
             if (blocker is not null)
             {
                 _host.Log($"Your shot is blocked by the {_host.ObjectName(blocker)}.");
@@ -502,10 +506,10 @@ public sealed class CombatEngine
 
         (MapObject? blocker, int crittersInPath) = LineOfFire.Trace(
             dude.HexTile, target.HexTile,
-            // excludeObj = attacker (combat.cc:3584/:3641-style refusal check).
-            tile => _host.ShootBlockerAt(tile, dude) is { } o
-                    && ShotFilter.LegacyCollapsed.Obstructs(o, isTarget: o == target)
-                ? o : null);
+            // excludeObj = attacker (combat.cc:3584 _check_ranged_miss's refusal walk).
+            tile => _host.ShootBlockerAt(tile, dude),
+            // ported from fallout2-ce src/combat.cc:3586-3587 — the shot-blocked roll.
+            ShotFilter.ShotBlockedRoll, target);
         if (blocker is not null)
         {
             _host.Log($"Your shot is blocked by the {_host.ObjectName(blocker)}.");
@@ -698,14 +702,16 @@ public sealed class CombatEngine
         LineOfFire.Trace(from, endTile, tile =>
         {
             // excludeObj = attacker (combat.cc:3641 _shoot_along_path — the burst walk).
-            MapObject? obj = _host.ShootBlockerAt(tile, dudeObj) is { } o
-                    && ShotFilter.LegacyCollapsed.Obstructs(o, isTarget: o == targetObj)
-                ? o : null;
+            MapObject? obj = _host.ShootBlockerAt(tile, dudeObj);
             if (obj is not null && Fid.Type(obj.Fid) is ObjectType.Critter
                 && obj != targetObj && obj != dudeObj && !line.Contains(obj))
                 line.Add(obj);
             return obj; // critters are counted + walked-past; a wall stops the line
-        });
+        },
+        // ported from fallout2-ce src/combat.cc:3644 — _shoot_along_path's own filter: the ONLY
+        // test it applies is `FID_TYPE(critter->fid) != OBJ_TYPE_CRITTER` -> break. No flag test,
+        // so a SHOOT_THRU wall the coarse predicate returns DOES end this walk.
+        ShotFilter.BurstWalk, targetObj);
 
         int remaining = budget;
         foreach (MapObject victim in line)
@@ -764,15 +770,20 @@ public sealed class CombatEngine
         MapObject? victim = null;
         LineOfFire.Trace(targetTile, endpoint, tile =>
         {
-            MapObject? obj = _host.ShootBlockerAt(tile, excludeTarget) is { } o
-                    && ShotFilter.LegacyCollapsed.Obstructs(o, isTarget: o == excludeTarget)
-                ? o : null;
+            MapObject? obj = _host.ShootBlockerAt(tile, excludeTarget);
             if (victim is null && obj is not null && tile != targetTile && Fid.Type(obj.Fid) is ObjectType.Critter)
                 victim = obj;
             return obj; // a wall stops the line
-        });
+        },
+        // ported from fallout2-ce src/combat.cc:3963 — the missed-shot collateral target's filter:
+        // `accidentalTarget != nullptr && (accidentalTarget->flags & OBJECT_SHOOT_THRU) == 0`.
+        // There is NO type test at this caller, so unlike every other one a critter on the line is
+        // an obstruction here — which is exactly how it becomes the accidental victim.
+        ShotFilter.AccidentalTarget, excludeTarget);
+        // Same filter, applied to combat.cc:3961's _obj_blocking_at endpoint fallback (:3963 gates
+        // both arms of the if/else with the one SHOOT_THRU test).
         victim ??= _host.ShootBlockerAt(endpoint, excludeTarget) is { } endObj
-                && ShotFilter.LegacyCollapsed.Obstructs(endObj, isTarget: endObj == excludeTarget)
+                && ShotFilter.AccidentalTarget.Obstructs(endObj, isTarget: endObj == excludeTarget)
             ? endObj : null; // endpoint fallback
 
         if (victim is null || Fid.Type(victim.Fid) is not ObjectType.Critter || victim.IsDead
@@ -1840,9 +1851,8 @@ public sealed class CombatEngine
             // excludeObj = sourceObj = the victim itself (combat.cc:4055 — sourceObj is `obstacle`,
             // the very object this LOF check is being run for).
             (MapObject? blocker, _) = LineOfFire.Trace(centerTile, victim.HexTile,
-                t => _host.ShootBlockerAt(t, victim) is { } o
-                        && ShotFilter.LegacyCollapsed.Obstructs(o, isTarget: o == victim)
-                    ? o : null);
+                t => _host.ShootBlockerAt(t, victim),
+                ShotFilter.LegacyCollapsed, victim);
             if (blocker is not null && victim.HexTile != centerTile)
                 continue;
             if (_host.GetCritterState(victim) is not { } state)
@@ -2374,9 +2384,11 @@ public sealed class CombatEngine
             // excludeObj = attacker = sourceObj (combat.cc:5688's _combat_is_shot_blocked(attacker, ...)
             // — the to-hit-penalty consumer's sourceObj).
             (MapObject? blocker, _) = LineOfFire.Trace(attacker.HexTile, defender.HexTile,
-                tile => _host.ShootBlockerAt(tile, attacker) is { } o
-                        && ShotFilter.LegacyCollapsed.Obstructs(o, isTarget: o == defender)
-                    ? o : null);
+                tile => _host.ShootBlockerAt(tile, attacker),
+                // ported from fallout2-ce src/combat.cc:5908 — _combat_is_shot_blocked's filter:
+                // `FID_TYPE(obstacle->fid) != OBJ_TYPE_CRITTER && obstacle != targetObj` blocks;
+                // anything else is walked past, and a non-target living critter is the crowd count.
+                ShotFilter.ShotBlockedPenalty, defender);
             if (blocker is not null)
                 return ShotStatus.AimBlocked;
         }
@@ -3135,6 +3147,14 @@ public sealed class CombatEngine
     /// target (so a ranged shot would pass through it)? An exact-collinear approximation of the engine's
     /// _combat_safety_invalidate_weapon LoF-tile scan (combat.cc:2249). Only consulted for gun shots, so
     /// melee golden enemies never reach it → byte-identical.</summary>
+    /// <summary>F33 (Task 5): this is the reference's FIFTH line-of-fire consumer —
+    /// _cai_attackWouldIntersect (combat_ai.cc:2585), whose filter is
+    /// <see cref="ShotFilter.FriendlyFire"/> (no flag and no type test; identity only). It is NOT
+    /// wired to that filter here because this port does not call the coarse predicate at all: it is
+    /// the documented P78-M3 simplification below — an exact-collinear hex test over the known
+    /// teammates instead of the reference's LoF-tile walk + retarget. Giving it its reference policy
+    /// therefore means porting the walk, not assigning a filter, so ShotFilter.FriendlyFire stays
+    /// declared-and-cited but unconsumed until that port happens.</summary>
     private bool FriendlyOnFireLine(MapObject shooter, int targetTile) =>
         _hostiles.Any(h => h != shooter && !h.IsDead && h.Team == shooter.Team
             && HexGrid.IsOnSegment(shooter.HexTile, h.HexTile, targetTile));
@@ -3558,9 +3578,11 @@ public sealed class CombatEngine
             // — the crowd-count consumer's sourceObj).
             (MapObject? blocker, enemyCritters) = LineOfFire.Trace(
                 enemy.HexTile, dudeTile,
-                tile => _host.ShootBlockerAt(tile, enemy) is { } o
-                        && ShotFilter.LegacyCollapsed.Obstructs(o, isTarget: o == defenderObj)
-                    ? o : null);
+                tile => _host.ShootBlockerAt(tile, enemy),
+                // ported from fallout2-ce src/combat.cc:5908 — _combat_is_shot_blocked's filter:
+                // `FID_TYPE(obstacle->fid) != OBJ_TYPE_CRITTER && obstacle != targetObj` blocks;
+                // anything else is walked past, and a non-target living critter is the crowd count.
+                ShotFilter.ShotBlockedPenalty, defenderObj);
             // P78-M3: friendly-fire safety (_combat_safety_invalidate_weapon, combat.cc:2249) — don't take a
             // RANGED shot that passes through a living teammate. SIMPLIFICATION: an exact-collinear hex test
             // (the friend lies between us and the target) rather than the engine's full LoF-tile scan +
@@ -3833,9 +3855,11 @@ public sealed class CombatEngine
             // — the crowd-count consumer's sourceObj), mirroring the enemy-AI path above.
             (MapObject? blocker, crittersInPath) = LineOfFire.Trace(
                 ally.HexTile, target.HexTile,
-                tile => _host.ShootBlockerAt(tile, ally) is { } o
-                        && ShotFilter.LegacyCollapsed.Obstructs(o, isTarget: o == target)
-                    ? o : null);
+                tile => _host.ShootBlockerAt(tile, ally),
+                // ported from fallout2-ce src/combat.cc:5908 — _combat_is_shot_blocked's filter:
+                // `FID_TYPE(obstacle->fid) != OBJ_TYPE_CRITTER && obstacle != targetObj` blocks;
+                // anything else is walked past, and a non-target living critter is the crowd count.
+                ShotFilter.ShotBlockedPenalty, target);
             blocked = blocker is not null;
         }
 

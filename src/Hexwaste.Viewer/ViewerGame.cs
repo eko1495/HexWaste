@@ -3758,8 +3758,16 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
         if (target.IsHidden || (target.Flags & 0x10) != 0
             || (Fid.Type(target.Fid) is ObjectType.Critter && target.IsDead))
             return false;
+        // NOT a shoot caller: this is _make_straight_path(flag 16) over the MOVEMENT-blocking
+        // predicate (SightBlockerAt), so no SHOOT_THRU/NO_BLOCK term applies. The filter only
+        // reproduces the split LineOfFire.Trace used to hard-code — a critter is counted rather
+        // than a hard blocker (the `critters == 0` test below is what makes it opaque here), and
+        // the target itself is never its own obstruction (SightBlockerAt already drops it too).
         (MapObject? blocker, int critters) = Formats.Combat.LineOfFire.Trace(
-            source.HexTile, target.HexTile, t => SightBlockerAt(t, source, target));
+            source.HexTile, target.HexTile, t => SightBlockerAt(t, source, target),
+            new Formats.Combat.ShotFilter(
+                ExcludesShootThru: false, ExcludesCritters: true, ExcludesTarget: true),
+            target);
         return blocker is null && critters == 0;
     }
 
