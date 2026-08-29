@@ -10,8 +10,10 @@ namespace Hexwaste.Formats.Combat;
 /// the differences between callers are the whole point and should be readable.
 /// </summary>
 /// <param name="ExcludesShootThru">A SHOOT_THRU object is not an obstruction for this caller.</param>
-/// <param name="ExcludesCritters">A living critter is not a hard obstruction — it is a hit
-/// candidate and the walk continues.</param>
+/// <param name="ExcludesCritters">An object whose FID type is OBJ_TYPE_CRITTER is not a hard
+/// obstruction — it is a hit candidate and the walk continues. No liveness test is applied here;
+/// the coarse predicate (ShootBlockerAt/_obj_shoot_blocking_at) already drops corpses before this
+/// filter ever runs, matching the reference callers, which test FID_TYPE only.</param>
 /// <param name="ExcludesTarget">The caller's own target is not an obstruction.</param>
 /// <param name="ExcludesNoBlock">TEMPORARY, no reference counterpart: reproduces the pre-F33
 /// collapsed behaviour. Every consumer moves off <see cref="LegacyCollapsed"/> in Task 5 and it
@@ -53,16 +55,22 @@ public sealed record ShotFilter(
     /// faithful without changing what any consumer sees. Has no reference counterpart and must
     /// never be the answer for a shipped consumer.
     ///
-    /// ExcludesCritters/ExcludesTarget are deliberately FALSE here, unlike every real reference
-    /// filter above: the pre-F33 single-stage predicate never excluded critters or the target at
-    /// this layer (target exclusion was — and still is — identity-based inside ShootBlockerAt
-    /// itself; critters were part of the coarse type test, and LineOfFire.Trace's own walker does
-    /// the critter-vs-blocker split downstream, unchanged by this task). Composed with the new
-    /// coarse predicate's `NO_BLOCK==0 || SHOOT_THRU==0`, `Obstructs` here reduces to exactly
-    /// `NO_BLOCK==0 && SHOOT_THRU==0` — the old flag conjunction, nothing more. Setting
-    /// ExcludesCritters here (as the plan's first draft did) silently drops every critter the
-    /// coarse predicate hands back — including from LineOfFire.Trace's blockerAt callback, where
-    /// Trace needs the raw critter object to run its own counted-not-blocking logic — which four
-    /// CombatEngineTests caught immediately (bystander/collateral detection went dark).</summary>
-    public static readonly ShotFilter LegacyCollapsed = new(true, false, false, ExcludesNoBlock: true);
+    /// ExcludesCritters is FALSE — load-bearing, not incidental. The pre-F33 single-stage predicate
+    /// never excluded critters at this layer: they were part of the coarse type test, and
+    /// LineOfFire.Trace's own walker does the critter-vs-blocker split downstream, unchanged by this
+    /// task. Setting it here (as the plan's first draft did) silently drops every critter the coarse
+    /// predicate hands back — including from LineOfFire.Trace's blockerAt callback, where Trace needs
+    /// the raw critter object to run its own counted-not-blocking logic — which four CombatEngineTests
+    /// caught immediately (bystander/collateral detection went dark).
+    ///
+    /// ExcludesTarget is TRUE — unlike the other terms, this one is NOT chosen for today's behaviour.
+    /// It is inert today: ShootBlockerAt still filters `o != target` identity-based inside itself
+    /// (pre-Task-4), so `isTarget` can never be true at any of the 11 call sites and this term never
+    /// fires either way. It is set to `true` purely for FORWARD SAFETY: Task 4 moves that exclusion
+    /// out of ShootBlockerAt into a caller-supplied parameter, at which point `isTarget` goes live at
+    /// every site, and only `true` here reproduces the pre-F33 collapsed behaviour from that point on.
+    /// Composed with the new coarse predicate's `NO_BLOCK==0 || SHOOT_THRU==0`, `Obstructs` here
+    /// reduces (today) to exactly `NO_BLOCK==0 && SHOOT_THRU==0` — the old flag conjunction, nothing
+    /// more; the `ExcludesTarget` term simply has no candidate to fire on yet.</summary>
+    public static readonly ShotFilter LegacyCollapsed = new(true, false, true, ExcludesNoBlock: true);
 }

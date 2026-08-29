@@ -13,14 +13,19 @@ namespace Hexwaste.Formats.Combat;
 /// never blocker-checked, matching the engine.
 ///
 /// Retained simplifications (unchanged from the prior greedy port): the host's
-/// blockerAt applies the NO_BLOCK / hidden / shoot-thru rules and the dead-critter
-/// filter; we do NOT port the +1 MULTIHEX crowd bump (combat.cc:5921) — no
-/// shippable-slice critter is multihex mid-line, and it would shift the to-hit term.
+/// blockerAt applies only `hidden` and the reference's own coarse disjunction
+/// (_obj_shoot_blocking_at's NO_BLOCK||SHOOT_THRU test) plus the dead-critter filter;
+/// the NO_BLOCK/SHOOT_THRU FLAG CONJUNCTION each caller actually wants is applied by
+/// the caller's <see cref="ShotFilter"/>, not by blockerAt itself. We do NOT port the
+/// +1 MULTIHEX crowd bump (combat.cc:5921) — no shippable-slice critter is multihex
+/// mid-line, and it would shift the to-hit term.
 /// </summary>
 public static class LineOfFire
 {
-    /// <summary>blockerAt returns a wall/scenery/living-critter object on the
-    /// tile (the host applies the NO_BLOCK/hidden/shoot-thru rules); null = clear.</summary>
+    /// <summary>blockerAt returns a wall/scenery/living-critter object on the tile — the host's
+    /// coarse ShootBlockerAt query wrapped in the caller's <see cref="ShotFilter"/>, which applies
+    /// the NO_BLOCK/SHOOT_THRU flag terms; blockerAt itself only applies `hidden` and the
+    /// reference's own coarse disjunction. null = clear.</summary>
     public static (MapObject? Blocker, int CrittersInPath) Trace(
         int fromTile, int toTile, Func<int, MapObject?> blockerAt)
     {

@@ -66,6 +66,13 @@ public class ShotFilterTests
         Assert.True(ShotFilter.ShotBlockedPenalty.Obstructs(Obj(ShootThru, ObjectType.Wall), isTarget: false));
 
     [Fact]
+    public void ShotBlockedPenaltySkipsALivingCritter() =>
+        // combat.cc:5908's FID_TYPE(obstacle->fid) != OBJ_TYPE_CRITTER half — the other of the
+        // two terms this caller distinguishes on. A wrong filter that dropped ExcludesCritters
+        // would pass every other test in this file.
+        Assert.False(ShotFilter.ShotBlockedPenalty.Obstructs(Obj(0, ObjectType.Critter), isTarget: false));
+
+    [Fact]
     public void FriendlyFireCountsEverythingTheCoarsePredicateReturns() =>
         // combat_ai.cc:2586 compares identity only; it applies no flag or type test.
         Assert.True(ShotFilter.FriendlyFire.Obstructs(Obj(ShootThru, ObjectType.Critter), isTarget: true));
@@ -76,5 +83,14 @@ public class ShotFilterTests
         Assert.False(ShotFilter.LegacyCollapsed.Obstructs(Obj(NoBlock, ObjectType.Wall), isTarget: false));
         Assert.False(ShotFilter.LegacyCollapsed.Obstructs(Obj(ShootThru, ObjectType.Wall), isTarget: false));
         Assert.True(ShotFilter.LegacyCollapsed.Obstructs(Obj(0, ObjectType.Wall), isTarget: false));
+
+        // ExcludesCritters is FALSE here: a living critter still obstructs under LegacyCollapsed
+        // (LineOfFire.Trace does the critter-vs-blocker split downstream, not this filter).
+        Assert.True(ShotFilter.LegacyCollapsed.Obstructs(Obj(0, ObjectType.Critter), isTarget: false));
+
+        // ExcludesTarget is TRUE here (set for Task 4 forward-safety) — pin it directly. It is
+        // inert today only because ShootBlockerAt still filters identity itself, so isTarget can
+        // never actually be true at a real call site; this asserts what the term does in isolation.
+        Assert.False(ShotFilter.LegacyCollapsed.Obstructs(Obj(0, ObjectType.Wall), isTarget: true));
     }
 }
