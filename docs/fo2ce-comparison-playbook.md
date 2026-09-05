@@ -12,6 +12,12 @@ screenshot + a one-line note at each checkpoint. You are not comparing anything 
 that happens later, back in the main conversation, once both pilots (fo2ce and Hexwaste) have
 reported their artifacts.
 
+**The fo2ce pilot has exclusive use of the display while it runs.** `fo2ce-control.sh shot`
+screenshots the whole screen, and the fo2ce window runs fullscreen — if a Hexwaste pilot opens
+its own MonoGame window on the same display at the same time, it will pop over fo2ce mid-scenario
+(corrupting its checkpoint screenshots) or steal `xdotool`'s input focus. Run the two pilots
+**sequentially, one after the other — never concurrently.**
+
 Your run directory was created for you by `scripts/compare-run-init.sh <slug>` (prints
 `scratch/compare-runs/<slug>-<timestamp>/`). Write your checkpoints and notes under your
 engine's subdirectory of that path: `<run-dir>/fo2ce/` or `<run-dir>/hexwaste/`.
@@ -24,14 +30,24 @@ decide what to press or click, act, look again.
 Commands (all via `scripts/fo2ce-control.sh`, run from the repo root):
 - `scripts/fo2ce-control.sh launch` — starts fo2ce, prints its PID. Run this first. If it
   errors "already running", something from a previous run is still up — run `kill` first.
-- `scripts/fo2ce-control.sh shot <path>.png` — screenshots the whole screen (the game fills
-  it at 640x480). Use this for every checkpoint.
+- `scripts/fo2ce-control.sh shot <path>.png` — screenshots the whole screen. fo2ce runs
+  **fullscreen at the desktop's actual resolution** (1920x1080 on this machine, as of this
+  writing) — not 640x480 — because there's no `fallout2.cfg` in `reference/fallout2-ce/run/`
+  (only `EXAMPLE_fallout2.cfg`), so it falls back to the desktop resolution with its classic
+  4:3 game content stretched to fill the screen. Use this for every checkpoint.
 - `scripts/fo2ce-control.sh key "<xdotool key spec>"` — sends a key, e.g. `key Return`,
   `key Down`, or a sequence like `key "Down Down Return"`.
 - `scripts/fo2ce-control.sh click <x> <y>` — clicks inside the fo2ce window at window-relative
-  pixel (x, y). The window is 640x480; read your last screenshot to figure out where to click.
+  pixel (x, y). Since the window is fullscreen and sits at (0,0), and `xdotool mousemove
+  --window` coordinates are window-relative, read click coordinates **directly off the pixel
+  positions in your own screenshots** — no rescaling needed.
+- `scripts/fo2ce-control.sh status` — exits 0 if fo2ce is currently running, 1 if not. Useful
+  to sanity-check state between steps.
 - `scripts/fo2ce-control.sh kill` — stop fo2ce. **Always run this when your scenario is done**,
   even if something went wrong — a stray process will block the next pilot's `launch`.
+
+`launch` writes fo2ce's own stdout/stderr to `/tmp/fo2ce-control.log` — check there if `launch`
+fails or the game seems stuck.
 
 Workflow:
 1. `scripts/fo2ce-control.sh launch`, wait a couple seconds for the intro/menu.
@@ -67,8 +83,10 @@ Command: `scripts/hexwaste-checkpoint.sh <output.png> [-- <action flags...>]`
 
 Available action flags (see `src/Hexwaste.Viewer/Program.cs` for the full authoritative list —
 this is not exhaustive): `--goto <tile>`, `--walk`, `--talk <x,y>`, `--choose <n>`,
-`--menu-click <panel> <n>`, `--attack <x,y>`, `--door <x,y>`, `--create <stats string>` (see
-existing `scripts/*-golden.sh` for real examples of these flags in use).
+`--menu-click <panel> <n>`, `--attack <hex>`, `--door <hex>`, `--create <stats string>` (see
+existing `scripts/*-golden.sh` for real examples of these flags in use). Note `--talk` takes a
+screen point (`x,y`) while `--attack` and `--door` each take a single integer hex tile number,
+not a coordinate pair.
 
 Workflow:
 1. Translate your scenario brief's checkpoints into a growing list of action flags — e.g. if

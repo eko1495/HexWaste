@@ -5,7 +5,7 @@
 # e.g. `RUN_DIR="$(scripts/compare-run-init.sh my-scenario | tail -1)"`.
 #
 # Usage: scripts/compare-run-init.sh <scenario-slug>
-set -uo pipefail
+set -euo pipefail
 cd "$(dirname "$0")/.."
 
 SLUG="${1:?usage: $0 <scenario-slug>}"

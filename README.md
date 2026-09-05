@@ -289,6 +289,9 @@ real script logic (dialogue VM + `set_global_var`, no faking) and locks each as
 a state-only golden. The per-town recipes and mechanics behind them live in
 [`docs/qa-sweep/`](docs/qa-sweep/) — the campaign quest-QA sweep notes.
 
+[`docs/fo2ce-comparison-playbook.md`](docs/fo2ce-comparison-playbook.md) — the reference for
+piloting fo2ce and Hexwaste through a shared scenario to compare their behavior.
+
 ## Layout
 
 - `src/Hexwaste.Formats` — engine + format code (DAT2/FRM/PAL/MAP/PRO/INT VM,
