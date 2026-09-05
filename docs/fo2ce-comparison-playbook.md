@@ -32,9 +32,10 @@ Commands (all via `scripts/fo2ce-control.sh`, run from the repo root):
   errors "already running", something from a previous run is still up — run `kill` first.
 - `scripts/fo2ce-control.sh shot <path>.png` — screenshots the whole screen. fo2ce runs
   **fullscreen at the desktop's actual resolution** (1920x1080 on this machine, as of this
-  writing) — not 640x480 — because there's no `fallout2.cfg` in `reference/fallout2-ce/run/`
+  writing) — not 640x480 — because there's no `f2_res.ini` in `reference/fallout2-ce/run/`
   (only `EXAMPLE_fallout2.cfg`), so it falls back to the desktop resolution with its classic
-  4:3 game content stretched to fill the screen. Use this for every checkpoint.
+  4:3 game content stretched to fill the screen. Confirm with `file <shot>.png` on your first
+  checkpoint if running on a different machine. Use this for every checkpoint.
 - `scripts/fo2ce-control.sh key "<xdotool key spec>"` — sends a key, e.g. `key Return`,
   `key Down`, or a sequence like `key "Down Down Return"`.
 - `scripts/fo2ce-control.sh click <x> <y>` — clicks inside the fo2ce window at window-relative
