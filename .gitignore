@@ -53,3 +53,6 @@ __pycache__/
 *.pyc
 .harvest-log/
 docs/qa-sweep/harvest-recipes.txt
+
+# Ad hoc comparison runs (never commit)
+scratch/compare-runs/
