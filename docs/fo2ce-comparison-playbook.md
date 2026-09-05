@@ -50,6 +50,11 @@ Gotchas:
   vanilla — it may carry `// CE:` quality-of-life changes. If something looks different from
   what you'd expect of vanilla Fallout 2, note it, but don't assume it's a Hexwaste bug — that
   judgment happens later, against `reference/fallout2-ce/src/*.cc`.
+- `fo2ce-control.sh` already handles two fragile bits of this machine's setup: it launches
+  with `SDL_VIDEODRIVER=x11` (without it, fo2ce's window is invisible to input/screenshot
+  tools) and screenshots via `spectacle` (ffmpeg/ImageMagick's `import` silently return black
+  frames here). If either symptom shows up, that's a sign something else broke — not a reason
+  to change the launch/screenshot method.
 
 ## If you are piloting Hexwaste
 
