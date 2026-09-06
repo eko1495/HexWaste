@@ -118,7 +118,14 @@ public sealed partial class ViewerGame
                 new Rectangle(off + v % 10 * 14, 0, 14, 24), Color.White);
         }
         for (int i = 0; i < 7; i++)
+        {
             BigNumber(58, statY[i], Sp(i));
+            // ported from fallout2-ce src/character_editor.cc:2485/statGetValueDescription (:601):
+            // the value-word (V. Bad..Heroic) at x=103, the stat's own y+8 — stat.msg 301+(value-1),
+            // value clamped to the primary-stat range (1-10).
+            int wordId = 301 + Math.Clamp(Sp(i), 1, 10) - 1;
+            T(103, statY[i] + 8, StatMsg(wordId), _charSelId == i ? gold : green);
+        }
 
         // Level / Experience / next-level (x=32, y=280; character_editor.cc:2378-2429) — gold when selected.
         T(33, 281, $"Level {_dudeLevel}", _charSelId == 7 ? gold : green);
@@ -177,12 +184,15 @@ public sealed partial class ViewerGame
                 selected ? $"{value}% +{Formats.Combat.SkillSet.Cost(value)}" : $"{value}%", c);
         }
 
-        // Tag-skill counter (always drawn at 522,228 — character_editor.cc:1421/2961): the number
-        // of unused tag slots (NUM_TAGGED_SKILLS 4 − tagged), faithful even in the read-only view.
-        BigNumber(522, 228, Math.Max(0, 4 - tg.Count(t => t >= 0)));
-        // "Tag Skill(s)" caption left of the counter (editor.msg 138 at 422,233; the engine renders
-        // it in creation mode only — we surface it in view too so the bare counter reads clearly).
-        T(422, 233, EditorMsg(138), tan);
+        // ported from fallout2-ce src/character_editor.cc characterEditorDrawSkills (:2932-2961):
+        // this counter/label pair is creation-mode-only in the engine — "TAG SKILLS" + the unused
+        // tag-slot count during chargen, "SKILL POINTS" (editor.msg 112) + pcGetStat(PC_STAT_
+        // UNSPENT_SKILL_POINTS) once the game is actually running. DrawSkillAllocator is only ever
+        // reached post-creation (chargen uses DrawAuthenticCreation instead), so it always takes
+        // the SKILL POINTS branch — showing the tag count here was a documented but incorrect
+        // guess (found by comparing against a real fo2ce screenshot, which reads "SKILL POINTS 00").
+        BigNumber(522, 228, _unspentSkillPoints);
+        T(400, 233, EditorMsg(112), tan);
 
         // Selection cue: a gold outline on the selected recess/row (the engine leaves the view-mode
         // bignum white, so the outline + the description card are the click feedback).
