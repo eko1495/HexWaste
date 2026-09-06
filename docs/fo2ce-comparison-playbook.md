@@ -57,6 +57,10 @@ Commands (all via `scripts/fo2ce-control.sh`, run from the repo root):
   (no new right-click) also prints a fresh `You see: <Name>.` line for it. `Escape` while in
   this state opens the pause/options menu, not a look-cursor cancel — press it again or click
   Done to get back to gameplay.
+- **Pause menu / Preferences**: `key Escape` from gameplay reliably opens the pause menu
+  (Save Game/Load Game/Preferences/Help/Exit Game/Done). On this machine's 1920x1080 output the
+  cursor lands near EXIT GAME (~(980, 555)) when the menu opens; PREFERENCES sits at roughly
+  (940, 362) — `move -40 -193` then `click` gets there without a `shot`-and-recheck loop.
 - `scripts/fo2ce-control.sh status` — exits 0 if fo2ce is currently running, 1 if not. Useful
   to sanity-check state between steps.
 - `scripts/fo2ce-control.sh kill` — stop fo2ce. **Always run this when your scenario is done**,
