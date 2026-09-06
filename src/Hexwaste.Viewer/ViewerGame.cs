@@ -6174,7 +6174,7 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
         if (_companionHub is not null)
         {
             DrawConversationPanel(ObjectName(_companionHub), "What do you need?",
-                [.. _hubOptions.Select(o => o.Label)]);
+                [.. _hubOptions.Select(o => o.Label)], isPartyMember: true);
             return;
         }
         if (_dialog is not null)
@@ -6430,8 +6430,27 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
         return total;
     }
 
+    // ported from fallout2-ce src/game_dialog.cc gameDialogWindowRenderBackground() (:4470) +
+    // _talkToRefreshDialogWindowRect() (:4488): alltlk.frm is the 640x480 dialog frame, drawn
+    // unconditionally whether or not the speaker has head art; di_talk.frm/di_talkp.frm is the
+    // reply/options backdrop, chosen by whether the speaker is a party member. Loaded lazily on
+    // the first live Draw, same pattern as _charBg/_invBox — stays null headless so the existing
+    // plain-rectangle fallback (golden-safe) is unchanged when there's no game data.
+    private Texture2D? _dialogFrame, _dialogReplyBg, _dialogReplyBgParty;
+    private bool _dialogFrameTried;
+
+    private void EnsureDialogFrameArt()
+    {
+        if (_dialogFrameTried)
+            return;
+        _dialogFrameTried = true;
+        _dialogFrame = InterfaceBar.LoadFrm(GraphicsDevice, _vfs, _palette, @"art\intrface\ALLTLK.FRM");
+        _dialogReplyBg = InterfaceBar.LoadFrm(GraphicsDevice, _vfs, _palette, @"art\intrface\DI_TALK.FRM");
+        _dialogReplyBgParty = InterfaceBar.LoadFrm(GraphicsDevice, _vfs, _palette, @"art\intrface\DI_TALKP.FRM");
+    }
+
     private void DrawConversationPanel(string name, string reply, IReadOnlyList<string> options,
-        IReadOnlyList<int>? reactions = null, int headId = -1)
+        IReadOnlyList<int>? reactions = null, int headId = -1, bool isPartyMember = false)
     {
         if (_fontRenderer is null)
             return;
@@ -6441,6 +6460,7 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
         bool empathy = reactions is not null && DudePerkRank(Formats.Perks.PerkId.Empathy) > 0;
 
         _panelPixel ??= CreatePixel();
+        EnsureDialogFrameArt();
 
         Rectangle viewport = GraphicsDevice.Viewport.Bounds;
 
@@ -6449,12 +6469,13 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
         _spriteBatch.Draw(_panelPixel, viewport, new Color(0, 0, 0, 175));
 
         // FO2 lays the dialog in a 640x480 frame centred on screen: the head display at window-local
-        // (126,14), the reply window at (135,225). With a head we honour that frame; a head-less dialog
-        // keeps the simple bottom panel over the dimmed scene.
+        // (126,14), the reply window at (135,225). ported from fallout2-ce src/game_dialog.cc
+        // _gdCreateHeadWindow() (:2380): the frame draws unconditionally, head or not.
         int frameX = Math.Max(0, (viewport.Width - 640) / 2);
         int frameY = Math.Max(0, (viewport.Height - 480) / 2);
 
-        int panelWidth = headId >= 0 ? 397 : Math.Min(720, viewport.Width - 40);
+        bool framed = _dialogFrame is not null;
+        int panelWidth = framed ? 397 : Math.Min(720, viewport.Width - 40);
         int textWidth = panelWidth - 32;
         int lineHeight = _fontRenderer.LineHeight;
 
@@ -6468,16 +6489,28 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
         }
 
         int panelHeight = (replyLines.Count + optionLines.Count + 3) * lineHeight + 24;
-        // With a head, anchor the reply/options panel in the FO2 lower-frame region (the ~225 reply window)
-        // so head + panel form the authentic dialog screen; otherwise pin it to the bottom of the screen.
-        int panelX = headId >= 0 ? frameX + 122 : (viewport.Width - panelWidth) / 2;
-        int panelY = headId >= 0 ? frameY + 219 : viewport.Height - panelHeight - 16;
+        // With the frame art, anchor the reply/options panel in the FO2 lower-frame region (the ~225
+        // reply window) so head + panel form the authentic dialog screen; otherwise (art missing —
+        // headless/no-game-data) pin it to the bottom of the screen, the existing fallback.
+        int panelX = framed ? frameX + 122 : (viewport.Width - panelWidth) / 2;
+        int panelY = framed ? frameY + 219 : viewport.Height - panelHeight - 16;
+
+        if (framed)
+            _spriteBatch.Draw(_dialogFrame, new Vector2(frameX, frameY), Color.White);
 
         if (headId >= 0) // P89: the talking head sits in the upper frame, over the dimmed scene
             DrawTalkingHead(headId, frameX, frameY);
 
-        _spriteBatch.Draw(_panelPixel, new Rectangle(panelX, panelY, panelWidth, panelHeight),
-            new Color(8, 8, 8, 230));
+        // ported from fallout2-ce src/game_dialog.cc _talkToRefreshDialogWindowRect() (:4488):
+        // di_talk.frm (NPC) / di_talkp.frm (party member) behind the reply/options text, stretched
+        // to Hexwaste's dynamically-computed panel size (vanilla's own box is a fixed 379x58 — ours
+        // isn't, since dialogue text length varies more than vanilla's fixed layout assumed).
+        Texture2D? replyBg = isPartyMember ? _dialogReplyBgParty : _dialogReplyBg;
+        if (replyBg is not null)
+            _spriteBatch.Draw(replyBg, new Rectangle(panelX, panelY, panelWidth, panelHeight), Color.White);
+        else
+            _spriteBatch.Draw(_panelPixel, new Rectangle(panelX, panelY, panelWidth, panelHeight),
+                new Color(8, 8, 8, 230));
 
         var lightGreen = new Color(140, 252, 140);
         var green = new Color(0, 252, 0);
