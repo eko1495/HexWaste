@@ -501,12 +501,14 @@ public sealed partial class ViewerGame
     private const int PerkWinCardX = 280;
 
     /// <summary>Top-left of the centred PERKWIN window + the per-row height (the list area divided so
-    /// up to ~11 perks fit). One source the render + hit-test share (the SkilldexRowAt pattern).</summary>
+    /// up to ~11 perks fit). One source the render + hit-test share (the SkilldexRowAt pattern).
+    /// Stage 3a (UI Scale): reads the virtual-canvas viewport — this is drawn inside DrawPerkPicker's
+    /// scoped, scaled SpriteBatch block.</summary>
     private Point PerkWindowOrigin(out int rowH, out int rowsShown, int eligCount)
     {
         rowH = Math.Max(_fontRenderer!.LineHeight + 1, 11);
         rowsShown = Math.Min(eligCount, PerkWinListH / rowH);
-        Rectangle vp = GraphicsDevice.Viewport.Bounds;
+        Rectangle vp = VirtualViewport();
         return new Point(Math.Max(0, (vp.Width - PerkWinW) / 2), Math.Max(0, (vp.Height - PerkWinH) / 2));
     }
 
@@ -541,6 +543,13 @@ public sealed partial class ViewerGame
             return;
         }
 
+        // Stage 3a (UI Scale): the art path draws into its own scoped, scaled SpriteBatch block —
+        // same technique as Stage 2's DrawDialogPanel — so the perk picker matches fo2ce's
+        // fullscreen stretch while DrawPerkPickerTextFallback (above) stays unscaled, matching
+        // Stage 2's main-menu-family precedent for an art-missing fallback.
+        _spriteBatch.End();
+        _spriteBatch.Begin(samplerState: SamplerState.PointClamp, transformMatrix: UiScaleMatrix());
+
         List<int> elig = EligiblePerks();
         Point o = PerkWindowOrigin(out int rowH, out int rowsShown, elig.Count);
         _spriteBatch.Draw(_perkWin, new Vector2(o.X, o.Y), Color.White);
@@ -548,7 +557,8 @@ public sealed partial class ViewerGame
         var green = new Color(0, 252, 0);
         var hi = new Color(252, 252, 84);
         var cardColor = new Color(0, 0, 0); // the card area is parchment — dark text reads on it
-        int hovered = PerkPickerRowAt(Mouse.GetState().X, Mouse.GetState().Y);
+        Point mp = UiMouse();
+        int hovered = PerkPickerRowAt(mp.X, mp.Y);
         for (int i = 0; i < rowsShown; i++)
         {
             int pi = elig[i];
@@ -571,6 +581,9 @@ public sealed partial class ViewerGame
         }
         if (elig.Count == 0)
             _fontRenderer.Draw(_spriteBatch, "(none qualify)", new Vector2(o.X + PerkWinListX + 4, o.Y + PerkWinListY), green);
+
+        _spriteBatch.End();
+        _spriteBatch.Begin(samplerState: SamplerState.PointClamp);
     }
 
     /// <summary>The pre-art text flyout, kept as the fallback when PERKWIN.FRM is absent.</summary>

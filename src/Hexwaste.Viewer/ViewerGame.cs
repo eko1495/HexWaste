@@ -2137,7 +2137,7 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
                     ChoosePerk(elig[i]);
             // P29-M5: click a row in the PERKWIN list to take that perk (additive to 1-9).
             if (mouse.LeftButton == ButtonState.Pressed && _previousMouse.LeftButton == ButtonState.Released
-                && PerkPickerRowAt(mouse.X, mouse.Y) is var prow && prow >= 0 && prow < elig.Count)
+                && PerkPickerRowAt(uiMouse.X, uiMouse.Y) is var prow && prow >= 0 && prow < elig.Count)
                 ChoosePerk(elig[prow]);
             if (IsKeyPressed(keyboard, Keys.Escape) || IsKeyPressed(keyboard, Keys.G))
                 _perkPickOpen = false;
