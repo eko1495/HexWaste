@@ -125,6 +125,10 @@ Workflow:
 4. Report back: the run directory path, the list of checkpoint files, and a short summary.
 
 Gotchas:
+- `--hud-click OPT` opens Hexwaste's pause menu (Save/Load/Preferences/Main Menu/Quit/Resume),
+  matching fo2ce's Escape pause menu — it does NOT go straight to Preferences. Reaching the
+  Preferences screen itself headlessly needs the separate `--prefs` flag; `--menu-click options 2`
+  only hit-tests the row without dispatching to `OpenPreferences()`.
 - `--no-build` is passed by the wrapper — if you've changed engine code, `dotnet build
   src/Hexwaste.Viewer -c Debug` first or your changes won't be reflected.
 - If an action flag needs a tile/hex coordinate you don't know yet, it's fine to run a
