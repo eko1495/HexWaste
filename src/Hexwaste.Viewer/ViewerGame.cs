@@ -5989,15 +5989,18 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
     {
         // Script-provided description first (micro INT VM), proto text as the
         // default — mirroring how look_at/description procs override defaults.
+        // ported from fallout2-ce src/proto_instance.cc _obj_examine_func() (:243-280): the engine
+        // prints the description (or its own "nothing out of the ordinary" fallback) UNPREFIXED —
+        // no "<Name>: " header, whether the text comes from a scripted description_p_proc override
+        // or the plain proto description.
         if (_scriptHost?.GetScriptedDescription(obj, _map, _dude?.Dude) is { } scripted)
         {
-            Log($"{ObjectName(obj)}:");
             foreach (string line in scripted)
                 Log(line);
         }
         else
         {
-            Log($"{ObjectName(obj)}: {ObjectDescription(obj)}");
+            Log(ObjectDescription(obj));
         }
 
         // PERK_AWARENESS (proto_instance.cc:294): examining a LIVE critter reveals its HP/condition + the
