@@ -6,7 +6,8 @@
 #   scripts/fo2ce-control.sh launch                 # start fo2ce, print its PID
 #   scripts/fo2ce-control.sh shot <output.png>       # screenshot the whole screen
 #   scripts/fo2ce-control.sh key <xdotool-key-spec>  # e.g. "Return", "Down Down Return"
-#   scripts/fo2ce-control.sh click <x> <y>           # click inside the fo2ce window at (x,y)
+#   scripts/fo2ce-control.sh move <dx> <dy>          # jog the in-game cursor by a relative offset
+#   scripts/fo2ce-control.sh click                   # click at the CURRENT cursor position
 #   scripts/fo2ce-control.sh status                  # exit 0 if fo2ce is running, else 1
 #   scripts/fo2ce-control.sh kill                    # stop fo2ce
 set -uo pipefail
@@ -47,12 +48,25 @@ case "$cmd" in
     DISPLAY="$DISP" xdotool windowactivate "$wid"
     DISPLAY="$DISP" xdotool key --window "$wid" $spec
     ;;
-  click)
-    x="${1:?usage: click <x> <y>}"; y="${2:?usage: click <x> <y>}"
+  move)
+    # fo2ce runs SDL in relative-mouse mode (src/dinput.cc), so an absolute mousemove warp
+    # never reaches the game's cursor — only real relative motion events do.
+    dx="${1:?usage: move <dx> <dy>}"; dy="${2:?usage: move <dx> <dy>}"
     wid="$(DISPLAY="$DISP" xdotool search --name "FALLOUT II" | head -1)"
     [ -n "$wid" ] || { echo "fo2ce window not found" >&2; exit 1; }
     DISPLAY="$DISP" xdotool windowactivate "$wid"
-    DISPLAY="$DISP" xdotool mousemove --window "$wid" "$x" "$y" click 1
+    DISPLAY="$DISP" xdotool mousemove_relative -- "$dx" "$dy"
+    ;;
+  click)
+    # A combined "mousemove ... click 1" was found unreliable against fo2ce; a separate
+    # mousedown/sleep/mouseup at the cursor's current position (set via `move` first) is what
+    # actually registers. Use `move` to position the cursor, then `click` to press here.
+    wid="$(DISPLAY="$DISP" xdotool search --name "FALLOUT II" | head -1)"
+    [ -n "$wid" ] || { echo "fo2ce window not found" >&2; exit 1; }
+    DISPLAY="$DISP" xdotool windowactivate "$wid"
+    DISPLAY="$DISP" xdotool mousedown 1
+    sleep 0.15
+    DISPLAY="$DISP" xdotool mouseup 1
     ;;
   status)
     pgrep -f "$BIN" >/dev/null 2>&1
@@ -61,7 +75,7 @@ case "$cmd" in
     pkill -f "$BIN" 2>/dev/null || true
     ;;
   *)
-    echo "usage: $0 {launch|shot <file>|key <spec>|click <x> <y>|status|kill}" >&2
+    echo "usage: $0 {launch|shot <file>|key <spec>|move <dx> <dy>|click|status|kill}" >&2
     exit 2
     ;;
 esac

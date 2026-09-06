@@ -37,11 +37,18 @@ Commands (all via `scripts/fo2ce-control.sh`, run from the repo root):
   4:3 game content stretched to fill the screen. Confirm with `file <shot>.png` on your first
   checkpoint if running on a different machine. Use this for every checkpoint.
 - `scripts/fo2ce-control.sh key "<xdotool key spec>"` — sends a key, e.g. `key Return`,
-  `key Down`, or a sequence like `key "Down Down Return"`.
-- `scripts/fo2ce-control.sh click <x> <y>` — clicks inside the fo2ce window at window-relative
-  pixel (x, y). Since the window is fullscreen and sits at (0,0), and `xdotool mousemove
-  --window` coordinates are window-relative, read click coordinates **directly off the pixel
-  positions in your own screenshots** — no rescaling needed.
+  `key Down`, or a sequence like `key "Down Down Return"`. **Arrow keys pan the camera, not the
+  dude** (`src/game.cc`'s arrow-key handling calls `mapScroll()`) — movement in gameplay is
+  mouse-only, click-to-walk.
+- `scripts/fo2ce-control.sh move <dx> <dy>` then `scripts/fo2ce-control.sh click` — jogs the
+  in-game cursor by a *relative* offset, then clicks at wherever it now is. fo2ce runs SDL in
+  relative-mouse mode, so there is no way to warp the cursor to an absolute (x, y) and have the
+  game see it — a combined absolute `mousemove ... click` silently no-ops in-game even though
+  the OS-level cursor does move. Workflow: `shot`, look at the highlighted hex under the cursor
+  (plain outline = walkable, red X = blocked), `move` by an estimated delta, `shot` again to
+  confirm you're over the right tile, then `click`. Getting somewhere non-adjacent (e.g. through
+  a doorway) often takes several small `move`+`shot` corrections rather than one big jump, and a
+  destination close to a wall/threshold may need two shorter click-to-walk hops instead of one.
 - `scripts/fo2ce-control.sh status` — exits 0 if fo2ce is currently running, 1 if not. Useful
   to sanity-check state between steps.
 - `scripts/fo2ce-control.sh kill` — stop fo2ce. **Always run this when your scenario is done**,
@@ -61,8 +68,14 @@ Workflow:
    short summary — not the images themselves.
 
 Gotchas:
-- The intro plays two movies (`iplogo.mve`, `intro.mve`) before the main menu — expect to
-  wait and/or press a key to skip them if your brief starts past the intro.
+- The intro plays two movies (`iplogo.mve`, `intro.mve`) before the main menu. **Any keypress or
+  click aborts a playing movie immediately** (`reference/fallout2-ce/src/movie.cc:764`,
+  `inputGetInput() != -1`) — send a `key Return` (or similar) the moment a movie starts rather
+  than waiting for it to finish; this took launch-to-menu from ~2 minutes down to ~20 seconds in
+  practice. Send one key per movie in the sequence.
+- Reaching the character-selection/creation screen and picking the premade character has worked
+  via keyboard mnemonics: `key n` at the main menu (NEW GAME), `key t` at character selection
+  (TAKE the premade), `key Return` to skip the character-intro cutscene straight into gameplay.
 - This binary is the `fallout2-ce/fallout2-ce` **community** continuous build, not strictly
   vanilla — it may carry `// CE:` quality-of-life changes. If something looks different from
   what you'd expect of vanilla Fallout 2, note it, but don't assume it's a Hexwaste bug — that
@@ -104,6 +117,13 @@ Gotchas:
   src/Hexwaste.Viewer -c Debug` first or your changes won't be reflected.
 - If an action flag needs a tile/hex coordinate you don't know yet, it's fine to run a
   throwaway checkpoint first just to look at the map and figure out where things are.
+  `tools/MapDump --map <name>.map` dumps a map's exit grids (per elevation) with their
+  destination map and tile — useful for finding a tile that triggers a map transition.
+- `--goto <tile>` onto a map-exit-grid tile queues the transition but does **not** by itself
+  advance simulation time far enough for it to apply — pass `--advance-ms <n>` (e.g. `8000`)
+  alongside it to pump the update loop until the walk-and-transition actually completes.
+  Without it, `--goto` leaves you still on the origin map. A `STOPPED` line in stdout after
+  arriving on the new map is expected/benign (it just means "no more path to the old target").
 
 ## Format recap
 
