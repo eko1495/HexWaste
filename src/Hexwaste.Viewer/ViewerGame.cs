@@ -6178,7 +6178,9 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
             return;
         }
         if (_dialog is not null)
-            DrawConversationPanel(_dialog.NpcName, _dialog.Reply, _dialog.Options, _dialog.OptionReactions, EffectiveHeadId());
+            DrawConversationPanel(_dialog.NpcName, _dialog.Reply, _dialog.Options, _dialog.OptionReactions,
+                EffectiveHeadId(),
+                isPartyMember: _dialogNpc is not null && (_scriptHost?.PartyMembers.Contains(_dialogNpc) ?? false));
     }
 
     /// <summary>The shared conversation panel — reply text + numbered options at the
