@@ -600,15 +600,21 @@ public sealed partial class ViewerGame
 
     /// <summary>Top-left of the Skilldex box: bottom-right, just above the HUD bar
     /// (skilldex.cc:225-226 — right margin 4, bottom margin 6). btnW/btnH = the SKLDXOFF
-    /// button size; row i sits at bar-local (15, 45 + i*36).</summary>
+    /// button size; row i sits at bar-local (15, 45 + i*36).
+    /// Stage 3a (UI Scale): reads the virtual-canvas viewport, since this is drawn inside
+    /// DrawSkilldex's scoped, scaled SpriteBatch block. _hudBarHeight is a fixed DEVICE-pixel
+    /// constant (the HUD bar's native texture height, unscaled until a later stage) — it must be
+    /// converted to virtual-canvas units here, or the scale transform would double-apply to it and
+    /// anchor the box at the wrong height above the (still native-sized) bar.</summary>
     private Point SkilldexOrigin(out int boxW, out int boxH, out int btnW, out int btnH)
     {
         boxW = _skilldexBox?.Width ?? 185;
         boxH = _skilldexBox?.Height ?? 368;
         btnW = _skilldexBtnOff?.Width ?? 88;
         btnH = _skilldexBtnOff?.Height ?? 33;
-        Rectangle vp = GraphicsDevice.Viewport.Bounds;
-        return new Point(Math.Max(0, vp.Width - boxW - 4), Math.Max(0, vp.Height - _hudBarHeight - boxH - 6));
+        Rectangle vp = VirtualViewport();
+        int hudBarVirtual = (int)(_hudBarHeight / UiScale());
+        return new Point(Math.Max(0, vp.Width - boxW - 4), Math.Max(0, vp.Height - hudBarVirtual - boxH - 6));
     }
 
     /// <summary>The Skilldex row index under (mx,my), or -1 — the 8 buttons at
@@ -644,6 +650,13 @@ public sealed partial class ViewerGame
             return;
         }
 
+        // Stage 3a (UI Scale): the art path draws into its own scoped, scaled SpriteBatch block —
+        // same technique as Stage 2's DrawDialogPanel — so Skilldex matches fo2ce's fullscreen
+        // stretch while DrawSkilldexTextFallback (above) stays unscaled, matching Stage 2's
+        // main-menu-family precedent for an art-missing fallback.
+        _spriteBatch.End();
+        _spriteBatch.Begin(samplerState: SamplerState.PointClamp, transformMatrix: UiScaleMatrix());
+
         Point o = SkilldexOrigin(out _, out _, out int btnW, out int btnH);
         var titleColor = new Color(252, 252, 84);
         var nameColor = new Color(0, 252, 0);
@@ -652,7 +665,7 @@ public sealed partial class ViewerGame
         _spriteBatch.Draw(_skilldexBox, new Vector2(o.X, o.Y), Color.White);
         _fontRenderer.Draw(_spriteBatch, "SKILLDEX", new Vector2(o.X + 55, o.Y + 14), titleColor);
 
-        MouseState m = Mouse.GetState();
+        Point m = UiMouse();
         int hovered = SkilldexRowAt(m.X, m.Y);
         for (int i = 0; i < SkilldexSkills.Length; i++)
         {
@@ -677,6 +690,9 @@ public sealed partial class ViewerGame
             _fontRenderer.Draw(_spriteBatch, val,
                 new Vector2(fieldX + fieldW - _fontRenderer.MeasureWidth(val) - 4, fieldY + (26 - _fontRenderer.LineHeight) / 2), dim);
         }
+
+        _spriteBatch.End();
+        _spriteBatch.Begin(samplerState: SamplerState.PointClamp);
     }
 
     /// <summary>The pre-art text flyout, kept as the fallback when SKLDXBOX is absent.</summary>

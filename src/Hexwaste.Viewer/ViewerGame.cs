@@ -2206,7 +2206,7 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
                     break;
                 }
             if (mouse.LeftButton == ButtonState.Pressed && _previousMouse.LeftButton == ButtonState.Released
-                && SkilldexRowAt(mouse.X, mouse.Y) is var row && row >= 0)
+                && SkilldexRowAt(uiMouse.X, uiMouse.Y) is var row && row >= 0)
                 ArmSkill(SkilldexSkills[row]);
             if (IsKeyPressed(keyboard, Keys.Escape) || IsKeyPressed(keyboard, Keys.S))
                 _skilldexOpen = false;
