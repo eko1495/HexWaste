@@ -49,6 +49,14 @@ Commands (all via `scripts/fo2ce-control.sh`, run from the repo root):
   confirm you're over the right tile, then `click`. Getting somewhere non-adjacent (e.g. through
   a doorway) often takes several small `move`+`shot` corrections rather than one big jump, and a
   destination close to a wall/threshold may need two shorter click-to-walk hops instead of one.
+- **Right-click ("look"/examine)**: `fo2ce-control.sh` has no built-in right-click command —
+  after `move`ing the cursor over a target, run the same down/sleep/up pattern directly with
+  button 3: `DISPLAY=:0 xdotool mousedown 3; sleep 0.15; DISPLAY=:0 xdotool mouseup 3`. This
+  performs the default "look" action and prints `You see: <Name>.` to the monitor box — no
+  cursor-mode switch needed first. Once in look mode, simply hovering over a *different* object
+  (no new right-click) also prints a fresh `You see: <Name>.` line for it. `Escape` while in
+  this state opens the pause/options menu, not a look-cursor cancel — press it again or click
+  Done to get back to gameplay.
 - `scripts/fo2ce-control.sh status` — exits 0 if fo2ce is currently running, 1 if not. Useful
   to sanity-check state between steps.
 - `scripts/fo2ce-control.sh kill` — stop fo2ce. **Always run this when your scenario is done**,
