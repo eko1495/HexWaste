@@ -6527,16 +6527,18 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
         if (headId >= 0) // P89: the talking head sits in the upper frame, over the dimmed scene
             DrawTalkingHead(headId, frameX, frameY);
 
-        // ported from fallout2-ce src/game_dialog.cc _talkToRefreshDialogWindowRect() (:4488):
-        // di_talk.frm (NPC) / di_talkp.frm (party member) behind the reply/options text, stretched
-        // to Hexwaste's dynamically-computed panel size (vanilla's own box is a fixed 379x58 — ours
-        // isn't, since dialogue text length varies more than vanilla's fixed layout assumed).
-        Texture2D? replyBg = isPartyMember ? _dialogReplyBgParty : _dialogReplyBg;
-        if (replyBg is not null)
-            _spriteBatch.Draw(replyBg, new Rectangle(panelX, panelY, panelWidth, panelHeight), Color.White);
-        else
-            _spriteBatch.Draw(_panelPixel, new Rectangle(panelX, panelY, panelWidth, panelHeight),
-                new Color(8, 8, 8, 230));
+        // di_talk.frm/di_talkp.frm (fallout2-ce src/game_dialog.cc _talkToRefreshDialogWindowRect(),
+        // :4488) is NOT a small stretchable text-box texture: it's the full 640x190 lower third of
+        // the dialog screen (REVIEW panel + BARTER button flanking a ~small fixed text screen in the
+        // middle), meant to be blitted 1:1 over the matching region of alltlk.frm's own (screen-less)
+        // lower section. Stretching that whole image down to Hexwaste's narrow, dynamically-sized
+        // text box drags the REVIEW panel's decorations into the option-text area (visually corrupts
+        // it — found by a user report after this feature shipped). Hexwaste's dialogue text also runs
+        // longer than vanilla's tiny fixed screen was ever sized for (vanilla scrolls; Hexwaste
+        // doesn't), so a flat backdrop sized to the actual content remains the right call here even
+        // though di_talk.frm/di_talkp.frm stay loaded for a future, more careful composite.
+        _spriteBatch.Draw(_panelPixel, new Rectangle(panelX, panelY, panelWidth, panelHeight),
+            new Color(8, 8, 8, 230));
 
         var lightGreen = new Color(140, 252, 140);
         var green = new Color(0, 252, 0);
