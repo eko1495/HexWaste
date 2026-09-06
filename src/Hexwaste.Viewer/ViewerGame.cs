@@ -2034,10 +2034,17 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
                 UpdateEndgame(gameTime.ElapsedGameTime.TotalMilliseconds, keyboard, mouse);
             else
             {
+                // Stage 2 (UI Scale): these three handlers hit-test against MenuOrigin()'s
+                // VirtualViewport()-derived rectangles, so they need the same scaled position as
+                // the draw path (DrawTextOverlay's scoped batch) — a synthetic MouseState carries
+                // uiMouse's position through unchanged, since only its X/Y differ from `mouse`.
                 HandleMenuInput(keyboard);
-                HandleMenuMouse(mouse);
-                HandleSelectorMouse(mouse);
-                HandleCreationMouse(mouse);
+                MouseState uiMouseState = new(uiMouse.X, uiMouse.Y, mouse.ScrollWheelValue,
+                    mouse.LeftButton, mouse.MiddleButton, mouse.RightButton,
+                    mouse.XButton1, mouse.XButton2, mouse.HorizontalScrollWheelValue);
+                HandleMenuMouse(uiMouseState);
+                HandleSelectorMouse(uiMouseState);
+                HandleCreationMouse(uiMouseState);
             }
             _previousMouse = mouse;
             _previousKeyboard = keyboard;

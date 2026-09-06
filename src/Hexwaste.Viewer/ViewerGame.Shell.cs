@@ -38,10 +38,14 @@ public sealed partial class ViewerGame
 
     private const string MenuVersionString = "Hexwaste P83";
 
-    /// <summary>The window-centred origin of the 640x480 shell backdrop (the panels' ox/oy convention).</summary>
+    /// <summary>The window-centred origin of the 640x480 shell backdrop (the panels' ox/oy
+    /// convention). Stage 2 (UI Scale): callers (DrawAuthenticMainMenu/Selector/Creation and
+    /// their mouse handlers) always run inside the scaled SpriteBatch block DrawTextOverlay opens
+    /// around the menu-family dispatch, so this must return a virtual-canvas origin, not a real
+    /// device one.</summary>
     private (int ox, int oy) MenuOrigin()
     {
-        Viewport vp = GraphicsDevice.Viewport;
+        Rectangle vp = VirtualViewport();
         return ((vp.Width - 640) / 2, (vp.Height - 480) / 2);
     }
 
@@ -79,7 +83,7 @@ public sealed partial class ViewerGame
         if (_mainMenuBg is null || _fontRenderer is null)
             return false;
 
-        Viewport vp = GraphicsDevice.Viewport;
+        Rectangle vp = VirtualViewport();
         _panelPixel ??= CreatePixel();
         _spriteBatch.Draw(_panelPixel, new Rectangle(0, 0, vp.Width, vp.Height), Color.Black);
         (int ox, int oy) = MenuOrigin();
@@ -252,7 +256,7 @@ public sealed partial class ViewerGame
         if (_pickCharBg is null || _fontRenderer is null || _premadeGcds.Count == 0)
             return false;
 
-        Viewport vp = GraphicsDevice.Viewport;
+        Rectangle vp = VirtualViewport();
         _panelPixel ??= CreatePixel();
         _spriteBatch.Draw(_panelPixel, new Rectangle(0, 0, vp.Width, vp.Height), Color.Black);
         (int ox, int oy) = MenuOrigin();
@@ -423,7 +427,7 @@ public sealed partial class ViewerGame
         if (_createBg is null || _fontRenderer is null)
             return false;
 
-        Viewport vp = GraphicsDevice.Viewport;
+        Rectangle vp = VirtualViewport();
         _panelPixel ??= CreatePixel();
         _spriteBatch.Draw(_panelPixel, new Rectangle(0, 0, vp.Width, vp.Height), Color.Black);
         (int ox, int oy) = MenuOrigin();

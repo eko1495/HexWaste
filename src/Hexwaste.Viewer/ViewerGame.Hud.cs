@@ -573,62 +573,67 @@ public sealed partial class ViewerGame
         {
             DrawEndgame();
         }
-        else if (_menu == MenuState.Title && DrawAuthenticMainMenu())
-        {
-            // handled by the art path
-        }
-        else if (_menu == MenuState.CharacterPick && DrawAuthenticSelector())
-        {
-            // handled by the art path
-        }
-        else if (_menu is MenuState.CreateStats or MenuState.CreateTraits or MenuState.CreateTags
-                 && DrawAuthenticCreation())
-        {
-            // handled by the art path (the unified edtrcrte.frm creation screen)
-        }
         else if (_menu != MenuState.None)
         {
-            _panelPixel ??= CreatePixel();
-            _spriteBatch.Draw(_panelPixel,
-                new Rectangle(0, 0, GraphicsDevice.Viewport.Width, GraphicsDevice.Viewport.Height),
-                new Color(0, 0, 0, 200));
-            var center = new Vector2(GraphicsDevice.Viewport.Width / 2f, GraphicsDevice.Viewport.Height / 2f);
-            var gold = new Color(252, 252, 84);
-            var menuGreen = new Color(0, 252, 0);
-            var gray = new Color(140, 140, 140);
+            // Stage 2 (UI Scale): the main-menu family (Title/CharacterPick/CreateStats-Traits-
+            // Tags — the only remaining MenuState values reachable here) draws into its own
+            // scoped, scaled SpriteBatch block — same technique as DrawDialogPanel — so these
+            // three screens match fo2ce's fullscreen stretch. Credits/Endgame above don't use
+            // MenuOrigin() and stay unscaled; the plain-text fallback below (art missing) also
+            // stays unscaled, matching its pre-existing, already-degraded presentation.
+            _spriteBatch.End();
+            _spriteBatch.Begin(samplerState: SamplerState.PointClamp, transformMatrix: UiScaleMatrix());
+            bool handled = _menu == MenuState.Title ? DrawAuthenticMainMenu()
+                : _menu == MenuState.CharacterPick ? DrawAuthenticSelector()
+                : _menu is MenuState.CreateStats or MenuState.CreateTraits or MenuState.CreateTags
+                  && DrawAuthenticCreation();
+            _spriteBatch.End();
+            _spriteBatch.Begin(samplerState: SamplerState.PointClamp);
 
-            const string title = "H E X W A S T E";
-            _fontRenderer.Draw(_spriteBatch, title,
-                new Vector2(center.X - _fontRenderer.MeasureWidth(title) / 2f, center.Y - 120), gold);
-            const string subtitle = "a Fallout 2 engine slice - needs your own game data";
-            _fontRenderer.Draw(_spriteBatch, subtitle,
-                new Vector2(center.X - _fontRenderer.MeasureWidth(subtitle) / 2f, center.Y - 120 + _fontRenderer.LineHeight * 1.4f), gray);
-
-            if (_menu is MenuState.Title or MenuState.CharacterPick)
+            if (!handled)
             {
-                // The Title fallback must list the 6 buttons in MainMenuButtons order so the row index maps
-                // to the same ActivateMainMenuButton action the art path uses (P83-M1 review fix).
-                string[] items = _menu == MenuState.Title
-                    ? ["Intro", "New game", "Load game", "Options", "Credits", "Exit"]
-                    : ["Create your own", .. _premadeGcds.Select(g => g.Label)];
-                float itemY = center.Y - 20;
-                for (int i = 0; i < items.Length; i++)
+                _panelPixel ??= CreatePixel();
+                _spriteBatch.Draw(_panelPixel,
+                    new Rectangle(0, 0, GraphicsDevice.Viewport.Width, GraphicsDevice.Viewport.Height),
+                    new Color(0, 0, 0, 200));
+                var center = new Vector2(GraphicsDevice.Viewport.Width / 2f, GraphicsDevice.Viewport.Height / 2f);
+                var gold = new Color(252, 252, 84);
+                var menuGreen = new Color(0, 252, 0);
+                var gray = new Color(140, 140, 140);
+
+                const string title = "H E X W A S T E";
+                _fontRenderer.Draw(_spriteBatch, title,
+                    new Vector2(center.X - _fontRenderer.MeasureWidth(title) / 2f, center.Y - 120), gold);
+                const string subtitle = "a Fallout 2 engine slice - needs your own game data";
+                _fontRenderer.Draw(_spriteBatch, subtitle,
+                    new Vector2(center.X - _fontRenderer.MeasureWidth(subtitle) / 2f, center.Y - 120 + _fontRenderer.LineHeight * 1.4f), gray);
+
+                if (_menu is MenuState.Title or MenuState.CharacterPick)
                 {
-                    string line = (i == _menuIndex ? "> " : "  ") + items[i];
-                    _fontRenderer.Draw(_spriteBatch, line,
-                        new Vector2(center.X - _fontRenderer.MeasureWidth(line) / 2f, itemY),
-                        i == _menuIndex ? menuGreen : gray);
-                    itemY += _fontRenderer.LineHeight * 1.6f;
+                    // The Title fallback must list the 6 buttons in MainMenuButtons order so the row index maps
+                    // to the same ActivateMainMenuButton action the art path uses (P83-M1 review fix).
+                    string[] items = _menu == MenuState.Title
+                        ? ["Intro", "New game", "Load game", "Options", "Credits", "Exit"]
+                        : ["Create your own", .. _premadeGcds.Select(g => g.Label)];
+                    float itemY = center.Y - 20;
+                    for (int i = 0; i < items.Length; i++)
+                    {
+                        string line = (i == _menuIndex ? "> " : "  ") + items[i];
+                        _fontRenderer.Draw(_spriteBatch, line,
+                            new Vector2(center.X - _fontRenderer.MeasureWidth(line) / 2f, itemY),
+                            i == _menuIndex ? menuGreen : gray);
+                        itemY += _fontRenderer.LineHeight * 1.6f;
+                    }
+                    string hint = _menu == MenuState.Title
+                        ? "arrows + Enter; Esc quits"
+                        : "create or pick a character - arrows + Enter; Esc back";
+                    _fontRenderer.Draw(_spriteBatch, hint,
+                        new Vector2(center.X - _fontRenderer.MeasureWidth(hint) / 2f, itemY + _fontRenderer.LineHeight), gray);
                 }
-                string hint = _menu == MenuState.Title
-                    ? "arrows + Enter; Esc quits"
-                    : "create or pick a character - arrows + Enter; Esc back";
-                _fontRenderer.Draw(_spriteBatch, hint,
-                    new Vector2(center.X - _fontRenderer.MeasureWidth(hint) / 2f, itemY + _fontRenderer.LineHeight), gray);
-            }
-            else
-            {
-                DrawCreationScreen(center, gold, menuGreen, gray);
+                else
+                {
+                    DrawCreationScreen(center, gold, menuGreen, gray);
+                }
             }
         }
 
