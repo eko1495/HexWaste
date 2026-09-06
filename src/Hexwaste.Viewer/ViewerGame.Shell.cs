@@ -49,6 +49,15 @@ public sealed partial class ViewerGame
         return ((vp.Width - 640) / 2, (vp.Height - 480) / 2);
     }
 
+    /// <summary>The device-pixel twin of MenuOrigin(), for the 640x480 shell screens that are NOT
+    /// yet drawn inside a scaled SpriteBatch block (death art/narration, the endgame slides).
+    /// Later stages delete this once those screens fold into their own scaled batch.</summary>
+    private (int ox, int oy) MenuOriginDevice()
+    {
+        Viewport vp = GraphicsDevice.Viewport;
+        return ((vp.Width - 640) / 2, (vp.Height - 480) / 2);
+    }
+
     // The 26x26 button at window-local x=30, y=19+index*41 (mainmenu.cc:180-200, "19 + index*42 - index").
     private static Rectangle MenuButtonRect(int ox, int oy, int i) => new(ox + 30, oy + 19 + i * 41, 26, 26);
 
@@ -836,7 +845,7 @@ public sealed partial class ViewerGame
         Viewport vp = GraphicsDevice.Viewport;
         _panelPixel ??= CreatePixel();
         _spriteBatch.Draw(_panelPixel, new Rectangle(0, 0, vp.Width, vp.Height), Color.Black);
-        (int ox, int oy) = MenuOrigin();
+        (int ox, int oy) = MenuOriginDevice();
         _spriteBatch.Draw(_deathBg, new Rectangle(ox, oy, 640, 480), Color.White);
         return true;
     }

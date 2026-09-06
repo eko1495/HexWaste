@@ -156,7 +156,7 @@ public sealed partial class ViewerGame
         _panelPixel ??= CreatePixel();
         _spriteBatch.Draw(_panelPixel, new Rectangle(0, 0, vp.Width, vp.Height), Color.Black);
 
-        (int ox, int oy) = MenuOrigin();
+        (int ox, int oy) = MenuOriginDevice();
         if (GetEndgameTexture(slide.FrmPath) is { } tex)
         {
             // Art 327 (DP.FRM) is the wide panning-desert scene, referenced only by commented endgame.txt
@@ -288,7 +288,7 @@ public sealed partial class ViewerGame
         EnsureDeathNarration();
         if (_fontRenderer is null || _deathNarrationLines is null)
             return;
-        (int ox, int oy) = MenuOrigin();
+        (int ox, int oy) = MenuOriginDevice();
         int lh = _fontRenderer.LineHeight;
         float y = oy + 480 - lh * _deathNarrationLines.Count - 8;
         foreach (string line in _deathNarrationLines)
