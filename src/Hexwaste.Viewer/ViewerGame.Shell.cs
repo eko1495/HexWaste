@@ -86,23 +86,24 @@ public sealed partial class ViewerGame
         _spriteBatch.Draw(_mainMenuBg, new Rectangle(ox, oy, 640, 480), Color.White);
 
         bool mouseDown = Mouse.GetState().LeftButton == ButtonState.Pressed;
-        var red = new Color(165, 0, 0);
-        var redLit = new Color(252, 0, 0);
-        var dim = new Color(96, 12, 12);
+        // ported from fallout2-ce src/mainmenu.cc:130,205 — button label color is _colorTable[21091],
+        // a constant reused for both normal and pressed states; hover/press is conveyed by the
+        // menuup/menudown button-graphic swap below, not by recoloring the text.
+        var gold = new Color(165, 156, 25);
+        var dimGold = new Color(99, 94, 15);
         var tan = new Color(180, 156, 96);
 
         for (int i = 0; i < MainMenuButtons.Length; i++)
         {
             Rectangle r = MenuButtonRect(ox, oy, i);
             bool enabled = MainMenuButtons[i].Enabled;
-            bool highlit = _menuHover == i || _menuIndex == i;
             bool pressed = _menuHover == i && mouseDown && enabled;
             Texture2D? btn = pressed ? _menuBtnDn : _menuBtnUp;
             if (btn is not null)
                 _spriteBatch.Draw(btn, new Vector2(r.X, r.Y), Color.White);
 
             string label = MiscMsg(MainMenuButtons[i].MsgId);
-            Color c = !enabled ? dim : highlit ? redLit : red;
+            Color c = enabled ? gold : dimGold;
             // Vertically centre the label on the button (the engine's font 104 is taller than ours, so we
             // centre rather than pin to its baked y=41*i+20 — a small presentation divergence).
             float ly = r.Y + (26 - _fontRenderer.LineHeight) / 2f;
