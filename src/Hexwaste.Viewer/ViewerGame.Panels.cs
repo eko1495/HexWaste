@@ -1692,6 +1692,83 @@ public sealed partial class ViewerGame
                 DrawWeightReadout(panel.X, bottom);
         }
         DrawEquipSlots(); // P47: the weapon/armor equip slots + the dragged-item ghost
+        if (_inventoryOpen && _lootContainer is null && _tradePartner is null && _barterNpc is null)
+            DrawInventorySummary(); // the dude's own plain INV screen only, matching DrawEquipSlots' gate
+    }
+
+    /// <summary>The character-summary panel beside the paperdoll — name, SPECIAL, HP, AC, the five
+    /// damage-resistance rows, and a per-hand weapon/unarmed-damage readout. ported from fallout2-ce
+    /// src/inventory.cc inventoryRenderSummary() (:2878-3160), labels from inventry.msg.
+    /// Simplifications (nothing this project tests exercises the gap yet): Hexwaste tracks a single
+    /// Normal-only DT/DR critter stat rather than five per-damage-type critter stats, so Laser/Fire/
+    /// Plasma/Explode read straight off the worn armor's proto arrays instead (0 unarmored, matching
+    /// vanilla's own unarmored baseline exactly); an equipped weapon's "Dmg:" line shows its proto
+    /// MinDamage-MaxDamage range without vanilla's melee-bonus/range-mode adjustments.</summary>
+    private void DrawInventorySummary()
+    {
+        if (_fontRenderer is null || _dude is null || InvBoxOrigin() is not { } o)
+            return;
+        Formats.Combat.CritterState? stats = GetCritterState(_dude.Dude);
+        if (stats is null)
+            return;
+
+        var pale = new Color(252, 252, 252); // the INVBOX readout's pale text (_colorTable[992])
+        int x = o.X + 297, y = o.Y + 44;
+        int lh = _fontRenderer.LineHeight;
+
+        string name = _dudeGcd?.Name is { Length: > 0 } n ? n : "Wanderer";
+        _fontRenderer.Draw(_spriteBatch, name, new Vector2(x, y), pale);
+        int lineY = y + lh * 2;
+
+        string[] specialLabels = ["ST", "PE", "EN", "CH", "IN", "AG", "LK"];
+        for (int i = 0; i < specialLabels.Length; i++)
+        {
+            _fontRenderer.Draw(_spriteBatch, specialLabels[i], new Vector2(x, lineY), pale);
+            _fontRenderer.Draw(_spriteBatch, stats.Stat(i).ToString(), new Vector2(x + 24, lineY), pale);
+            lineY += lh;
+        }
+
+        ArmorProtoStats? armor = _dudeInventory.FirstOrDefault(i => (i.Flags & MapObject.FlagWorn) != 0)
+            is { } worn ? SafeProto(worn.Pid)?.Armor : null;
+        int ArmorDt(int index) => armor?.DamageThreshold is { } dt && index < dt.Length ? dt[index] : 0;
+        int ArmorDr(int index) => armor?.DamageResistance is { } dr && index < dr.Length ? dr[index] : 0;
+
+        (string Label, string Value)[] secondary =
+        [
+            ("Hit Points", $"{stats.CurrentHp}/{stats.MaxHp}"),
+            ("Armor Class", $"{stats.ArmorClass}"),
+            ("  Normal", $"{stats.Stat(Formats.Combat.CritterStat.DamageThreshold)}/{stats.Stat(Formats.Combat.CritterStat.DamageResistance)}%"),
+            ("  Laser", $"{ArmorDt(1)}/{ArmorDr(1)}%"),
+            ("  Fire", $"{ArmorDt(2)}/{ArmorDr(2)}%"),
+            ("  Plasma", $"{ArmorDt(3)}/{ArmorDr(3)}%"),
+            ("  Explode", $"{ArmorDt(4)}/{ArmorDr(4)}%"),
+        ];
+        foreach ((string label, string value) in secondary)
+        {
+            _fontRenderer.Draw(_spriteBatch, label, new Vector2(x + 40, lineY), pale);
+            _fontRenderer.Draw(_spriteBatch, value, new Vector2(x + 104, lineY), pale);
+            lineY += lh;
+        }
+
+        lineY += lh; // vanilla draws a separator rule here; skip the decoration, keep the spacing
+        MapObject?[] hands = [EquippedInSlot(Formats.Combat.EquipSlot.WeaponLeft), EquippedInSlot(Formats.Combat.EquipSlot.Weapon)];
+        foreach (MapObject? hand in hands)
+        {
+            if (hand is null)
+            {
+                _fontRenderer.Draw(_spriteBatch, "No item", new Vector2(x, lineY), pale);
+                lineY += lh;
+                _fontRenderer.Draw(_spriteBatch, $"Unarmed dmg: 1-{stats.MeleeDamage + 2}", new Vector2(x, lineY), pale);
+            }
+            else
+            {
+                _fontRenderer.Draw(_spriteBatch, ObjectName(hand), new Vector2(x, lineY), pale);
+                lineY += lh;
+                if (SafeProto(hand.Pid)?.Weapon is { } weapon)
+                    _fontRenderer.Draw(_spriteBatch, $"Dmg: {weapon.MinDamage}-{weapon.MaxDamage}", new Vector2(x, lineY), pale);
+            }
+            lineY += lh * 3;
+        }
     }
 
     // ====================================================================
