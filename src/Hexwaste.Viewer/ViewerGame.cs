@@ -2314,7 +2314,7 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
         if (_saveLoadOpen)
         {
             int slrow = mouse.LeftButton == ButtonState.Pressed && _previousMouse.LeftButton == ButtonState.Released
-                ? SaveLoadSlotAt(mouse.X, mouse.Y) : -1;
+                ? SaveLoadSlotAt(uiMouse.X, uiMouse.Y) : -1;
             int keySlot = -1;
             for (int i = 0; i < Formats.SaveSlots.Count; i++)
                 if (IsKeyPressed(keyboard, Keys.D0 + i) || IsKeyPressed(keyboard, Keys.NumPad0 + i))

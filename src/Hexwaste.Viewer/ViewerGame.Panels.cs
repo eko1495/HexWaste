@@ -1317,9 +1317,14 @@ public sealed partial class ViewerGame
     // LSGAME.frm slot list: window-local (55, 87) 230x353, 10 slots evenly (loadsave.cc _ShowSlotList:2032).
     private const int SaveLoadListTop = 87, SaveLoadListX = 55, SaveLoadSlotH = 35;
 
+    /// <summary>Stage 3a (UI Scale): reads the virtual-canvas viewport in BOTH the art and
+    /// text-only branches — unlike Skilldex/perk-picker, save/load's fallback is not a separate
+    /// method with independent, disconnected positioning; it shares this exact function with the
+    /// art path, so there is no seam to leave one branch unscaled. Both branches are drawn inside
+    /// DrawSaveLoad's scoped, scaled SpriteBatch block.</summary>
     private Rectangle SaveLoadPanelRect()
     {
-        Rectangle vp = GraphicsDevice.Viewport.Bounds;
+        Rectangle vp = VirtualViewport();
         if (_saveLoadArt)
         {
             const int w = 640, h = 480; // LSGAME.frm
@@ -1358,6 +1363,13 @@ public sealed partial class ViewerGame
         _lsgameFrm ??= InterfaceBar.LoadFrm(GraphicsDevice, _vfs, _palette, @"art\intrface\LSGAME.frm");
         _saveLoadArt = _lsgameFrm is not null;
         _panelPixel ??= CreatePixel();
+
+        // Stage 3a (UI Scale): both the art and text-only rendering below scale together (see
+        // SaveLoadPanelRect's doc comment) inside their own scoped SpriteBatch block, the same
+        // technique as Stage 2's DrawDialogPanel.
+        _spriteBatch.End();
+        _spriteBatch.Begin(samplerState: SamplerState.PointClamp, transformMatrix: UiScaleMatrix());
+
         Rectangle p = SaveLoadPanelRect();
         var green = new Color(0, 252, 0);
         var hot = new Color(252, 252, 84);
@@ -1373,7 +1385,8 @@ public sealed partial class ViewerGame
             : "LOAD GAME - pick a slot (0-9 / click, Esc cancel)";
         _fontRenderer.Draw(_spriteBatch, title, new Vector2(p.X + 12, p.Y + (_saveLoadArt ? 60 : 10)), Color.LightGray);
 
-        int hovered = SaveLoadSlotAt(Mouse.GetState().X, Mouse.GetState().Y);
+        Point m = UiMouse();
+        int hovered = SaveLoadSlotAt(m.X, m.Y);
         for (int i = 0; i < Formats.SaveSlots.Count; i++)
         {
             Formats.SlotInfo info = _slotInfos[i];
@@ -1423,6 +1436,9 @@ public sealed partial class ViewerGame
                 _fontRenderer.Draw(_spriteBatch, none, new Vector2(preview.X + 70, preview.Y + 60), gray);
             }
         }
+
+        _spriteBatch.End();
+        _spriteBatch.Begin(samplerState: SamplerState.PointClamp);
     }
 
     // ====================================================================
