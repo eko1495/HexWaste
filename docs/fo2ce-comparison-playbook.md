@@ -120,10 +120,16 @@ Gotchas:
   `tools/MapDump --map <name>.map` dumps a map's exit grids (per elevation) with their
   destination map and tile — useful for finding a tile that triggers a map transition.
 - `--goto <tile>` onto a map-exit-grid tile queues the transition but does **not** by itself
-  advance simulation time far enough for it to apply — pass `--advance-ms <n>` (e.g. `8000`)
-  alongside it to pump the update loop until the walk-and-transition actually completes.
-  Without it, `--goto` leaves you still on the origin map. A `STOPPED` line in stdout after
-  arriving on the new map is expected/benign (it just means "no more path to the old target").
+  advance simulation time far enough for it to apply — pass `--advance-ms <n>` alongside it to
+  pump the update loop until the walk-and-transition actually completes. Without it, `--goto`
+  leaves you still on the origin map. A `STOPPED` line in stdout after arriving on the new map
+  is expected/benign (it just means "no more path to the old target"). `--goto` alone teleports
+  instantly (`8000`ms was enough just for the transition check); adding `--walk` makes the dude
+  actually path there tile-by-tile first, which needs more simulated time (`15000`ms was needed
+  for the artemple→arcaves distance) — tune upward if the dude hasn't arrived yet.
+- A screenshot with `--walk` is pixel-identical to the equivalent instant `--goto` (verified on
+  the artemple→arcaves transition) once both actually complete — `--walk` only matters if a
+  checkpoint needs to show the dude mid-transit, not for where it ends up.
 
 ## Format recap
 
