@@ -112,12 +112,15 @@ Pure math in `Hexwaste.Formats` is directly unit-testable with xUnit,
 matching this project's existing test conventions (no `FALLOUT2_DIR` guard
 needed — this logic touches no game data). Required coverage:
 
-- `ComputeScale`: width-limiting case (e.g. 1280×720 → 1.5, since
-  720/480 = 1.5 < 1280/640 = 2.0), height-limiting case (e.g. 1920×1080 →
-  3.0 exactly, since both axes agree, and a case where width is stricter —
-  e.g. 640×1000 → 1.0, limited by width), the exact-4:3 case (640×480 → 1.0,
-  1280×960 → 2.0), and the degenerate-viewport clamp (e.g. 1×1 → 0.1, not 0
-  or a negative/NaN value).
+- `ComputeScale`: height-limiting case (e.g. 1280×720 → 1.5, since
+  720/480 = 1.5 < 1280/640 = 2.0 — the height ratio is the stricter, smaller
+  one) and a width-limiting case (e.g. 640×1000 → 1.0, since 640/640 = 1.0 <
+  1000/480 ≈ 2.08), the exact-4:3 case (640×480 → 1.0, 1280×960 → 2.0), and
+  the degenerate-viewport clamp (e.g. 1×1 → 0.1, not 0 or a negative/NaN
+  value). Note 1920×1080 is NOT a "both axes agree" case: it's 16:9, not
+  4:3, so its two ratios differ (3.0 vs 2.25) exactly like 1280×720 — pick
+  test sizes that are genuinely exact-4:3 (e.g. 1280×960) if a clean overall
+  test value is wanted.
 - `ComputeVirtualViewport`: at a width-limiting scale, virtual width comes
   back as exactly the base width (640) and virtual height is `>= 480`; at a
   height-limiting scale, the reverse. A round-trip check
