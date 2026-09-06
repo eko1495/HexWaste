@@ -420,6 +420,23 @@ EOF
 )"
 ```
 
+## Lesson from the final whole-branch review
+
+**Any shared layout helper switched to `VirtualViewport()` must have every one of its callers
+enumerated and classified scaled/unscaled *before* the switch, not just its callers within the
+task's own named files.** Task 2's Step 1 changed `MenuOrigin()` on the premise that every caller
+"always runs inside the scaled SpriteBatch block" — true for the three callers this task's own
+files touch (`DrawAuthenticMainMenu`/`Selector`/`Creation` and their mouse handlers), but false
+for three callers outside this task's file list: `DrawEndgame()` and `DrawDeathNarration()`
+(`ViewerGame.Endgame.cs`) and `DrawDeathArt()` (`ViewerGame.Shell.cs`), none of which either task
+touched or listed as in scope. Because neither task's diff touched those files, neither task
+review caught it — only the final whole-branch review, which greps the whole tree rather than one
+task's file list, found it (fixed via a `MenuOriginDevice()` twin for the three unscaled
+callers). Apply this rule to every later stage (3: remaining modal screens; 4: HUD bar/action
+menu/elevator picker; 5: worldmap chrome): before switching a shared helper like `MenuOrigin()`
+or introducing a new one, `grep -rn` its name across `src/Hexwaste.Viewer/` and classify every
+result, not just the ones the current task's own files reference.
+
 ## Task 2: Main-menu family (Title / character-pick / creation editor)
 
 **Files:**
