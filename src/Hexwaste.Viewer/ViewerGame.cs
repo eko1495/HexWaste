@@ -3032,15 +3032,21 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
     /// </summary>
     private void SpawnDude(int tile, int rotation)
     {
-        // hmjmps/hfjmps (the engine's vault-suit default per gender — art.cc
-        // _art_vault_person_nums[JUMPSUIT][gender]) ship every weapon anim set;
-        // hmwarr only had unarmed+spear (phase-7 track A). Gender = gcd
-        // baseStats[34] (STAT_GENDER: 0 male, 1 female).
+        // hmwarr/hfprim — the Arroyo tribal look, matching art.cc's actual default: art_init's
+        // "SFALL: Modify player model settings" loop always ends by setting _art_vault_guy_num
+        // to the tribal-name match (gDefaultTribalMaleFileName = "hmwarr", art.cc:49), regardless
+        // of any earlier jumpsuit-name match — the jumpsuit index is only used via the optional
+        // SFALL DUDE_NATIVE_LOOK preference. hmwarr/hfprim previously had thinner weapon-anim
+        // coverage than the jumpsuit set (phase-7 track A), but SetWieldedWeaponArt's missing-art
+        // degrade (CombatHost.cs, "no armed art for this critter — keep the unarmed stand") now
+        // makes that gap harmless, so there's no more reason to diverge from vanilla here — see
+        // UpdateDudeArmorArt for the same fix on the re-base-after-armor-change path.
+        // Gender = gcd baseStats[34] (STAT_GENDER: 0 male, 1 female).
         bool female = _dudeGcd?.Stats.BaseStats[34] == 1;
-        string dudeArt = female ? "hfjmps" : "hmjmps";
+        string dudeArt = female ? "hfprim" : "hmwarr";
         int critterIndex = _artIndex.FindCritterIndex(dudeArt);
         if (critterIndex < 0 && female)
-            critterIndex = _artIndex.FindCritterIndex("hmjmps"); // fallback
+            critterIndex = _artIndex.FindCritterIndex("hmwarr"); // fallback
         if (critterIndex < 0)
         {
             Console.Error.WriteLine($"{dudeArt} not found in critters.lst — no dude");  // ascii-ok: stderr diagnostic, not font-rendered
@@ -4424,17 +4430,25 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
 
     /// <summary>Re-base the dude's sprite to the worn armor's gendered appearance FID —
     /// ported from fallout2-ce inventory.cc _invenWieldFunc's armor branch (:3289-3301)
-    /// + _adjust_fid (:2582): base = armor male/female fid (−1 → the natural jumpsuit),
+    /// + _adjust_fid (:2582): base = armor male/female fid (−1 → the natural unarmored look),
     /// anim/weapon/rotation nibbles preserved; a missing armored-art + weapon-nibble
     /// combination degrades to weapon 0 (the P118 rule). DUDE-ONLY, like the engine —
-    /// NPC armor changes stats, never art.</summary>
+    /// NPC armor changes stats, never art.
+    /// The unarmored default is the Arroyo tribal look (hmwarr/hfprim), not the vault
+    /// jumpsuit: art.cc's art_init always ends by setting _art_vault_guy_num to the
+    /// "tribal" filename match (gDefaultTribalMaleFileName = "hmwarr", :49) regardless of
+    /// its earlier jumpsuit-name lookup — the jumpsuit index is only used via the optional
+    /// SFALL DUDE_NATIVE_LOOK preference, which this project doesn't need to replicate.
+    /// Getting this wrong is visible, not just cosmetic: e.g. Klint's talk_p_proc branches
+    /// on the dude's art_fid base being 0x3D/0x3E (hfprim/hmwarr) to pick the correct
+    /// "have you passed the trial" opening line.</summary>
     private void UpdateDudeArmorArt()
     {
         _armorArtDirty = false;
         if (_dude is null)
             return;
         bool female = _dudeGcd?.Stats.BaseStats[34] == 1;
-        int baseIdx = _artIndex.FindCritterIndex(female ? "hfjmps" : "hmjmps");
+        int baseIdx = _artIndex.FindCritterIndex(female ? "hfprim" : "hmwarr");
         if (baseIdx < 0)
             baseIdx = Fid.Index(_dude.Dude.Fid); // no jumpsuit art shipped — keep the current base
         MapObject? worn = _dudeInventory.FirstOrDefault(i => (i.Flags & MapObject.FlagWorn) != 0);

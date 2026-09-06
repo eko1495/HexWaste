@@ -36,6 +36,7 @@ public sealed class ScriptHost(GameFileSystem vfs, ScriptList scripts, Hexwaste.
     private readonly Dictionary<string, IntProgram?> _programs = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<int, MessageFile?> _dialogMessages = [];
     private readonly Dictionary<int, int> _globalVars = [];
+    private readonly CritterNames _critterNames = new(vfs);
 
     /// <summary>Lazily allocated LVAR slices per (map NAME, sid) — the engine
     /// appends zeroed slices to the map array on first access
@@ -1440,7 +1441,14 @@ public sealed class ScriptHost(GameFileSystem vfs, ScriptList scripts, Hexwaste.
             if (context.DialogOptions.Count == 0)
                 return null; // floater-only NPC — no dialog window
 
-            string npcName = NameResolver?.Invoke(obj) ?? "stranger";
+            // ported from fallout2-ce src/critter.cc critterGetName(): a critter with a bound
+            // script is named from scrname.msg at 101+scriptIndex (e.g. 851 "Klint" for
+            // ACKlint.int at scripts.lst line 751), falling back to the proto's generic species
+            // name — which is all NameResolver gives us — only when that lookup misses.
+            string? npcName = Fid.PidType(obj.Pid) == (int)ObjectType.Critter
+                ? _critterNames.GetName(record.ScriptListIndex)
+                : null;
+            npcName ??= NameResolver?.Invoke(obj) ?? "stranger";
             return new DialogSession(vm, context, npcName);
         }
         catch (Exception ex) when (ex is InvalidDataException or FileNotFoundException or NotSupportedException)
