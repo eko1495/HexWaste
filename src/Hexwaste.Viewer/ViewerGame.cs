@@ -6449,6 +6449,24 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
         _dialogReplyBgParty = InterfaceBar.LoadFrm(GraphicsDevice, _vfs, _palette, @"art\intrface\DI_TALKP.FRM");
     }
 
+    // Tiles the dim overlay as four strips around `hole`, leaving `hole` itself completely
+    // undimmed — ported behavior, not ported code: fallout2-ce achieves the same observable
+    // effect (the live scene shows through alltlk.frm's transparent portrait cutout when
+    // there's no head) via a DOS-era snapshot-and-patch technique (_backgrndRects,
+    // game_dialog.cc :237) that has no equivalent need in a modern immediate-mode renderer.
+    private void DimExcluding(Rectangle viewport, Rectangle hole)
+    {
+        var dim = new Color(0, 0, 0, 175);
+        if (hole.Top > viewport.Top)
+            _spriteBatch.Draw(_panelPixel, new Rectangle(viewport.Left, viewport.Top, viewport.Width, hole.Top - viewport.Top), dim);
+        if (hole.Bottom < viewport.Bottom)
+            _spriteBatch.Draw(_panelPixel, new Rectangle(viewport.Left, hole.Bottom, viewport.Width, viewport.Bottom - hole.Bottom), dim);
+        if (hole.Left > viewport.Left)
+            _spriteBatch.Draw(_panelPixel, new Rectangle(viewport.Left, hole.Top, hole.Left - viewport.Left, hole.Height), dim);
+        if (hole.Right < viewport.Right)
+            _spriteBatch.Draw(_panelPixel, new Rectangle(hole.Right, hole.Top, viewport.Right - hole.Right, hole.Height), dim);
+    }
+
     private void DrawConversationPanel(string name, string reply, IReadOnlyList<string> options,
         IReadOnlyList<int>? reactions = null, int headId = -1, bool isPartyMember = false)
     {
@@ -6464,10 +6482,6 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
 
         Rectangle viewport = GraphicsDevice.Viewport.Bounds;
 
-        // P89: the dialogue is a screen takeover — dim the world so the head + text read as the FO2 dialog
-        // screen (game_dialog.cc darkens the captured scene), instead of floating over live, lit play.
-        _spriteBatch.Draw(_panelPixel, viewport, new Color(0, 0, 0, 175));
-
         // FO2 lays the dialog in a 640x480 frame centred on screen: the head display at window-local
         // (126,14), the reply window at (135,225). ported from fallout2-ce src/game_dialog.cc
         // _gdCreateHeadWindow() (:2380): the frame draws unconditionally, head or not.
@@ -6475,6 +6489,16 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
         int frameY = Math.Max(0, (viewport.Height - 480) / 2);
 
         bool framed = _dialogFrame is not null;
+
+        // P89: the dialogue is a screen takeover — dim the world so the head + text read as the FO2 dialog
+        // screen (game_dialog.cc darkens the captured scene), instead of floating over live, lit play.
+        // ported from fallout2-ce src/game_dialog.cc gameDialogRenderTalkingHead(nullptr, 0): a head-less
+        // NPC draws nothing into the portrait cutout, so the live (undimmed) scene shows through it —
+        // the dim mask must exclude that rectangle rather than covering the whole screen uniformly.
+        if (framed && headId < 0)
+            DimExcluding(viewport, new Rectangle(frameX + 126, frameY + 14, 388, 200));
+        else
+            _spriteBatch.Draw(_panelPixel, viewport, new Color(0, 0, 0, 175));
         int panelWidth = framed ? 397 : Math.Min(720, viewport.Width - 40);
         int textWidth = panelWidth - 32;
         int lineHeight = _fontRenderer.LineHeight;
