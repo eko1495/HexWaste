@@ -1932,6 +1932,12 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
         _frameClock.Restart();
         KeyboardState keyboard = Keyboard.GetState();
         MouseState mouse = Mouse.GetState();
+        // Stage 2 (UI Scale): the dialog panel and the main-menu family hit-test against
+        // VirtualViewport()-derived rectangles, so their click position must be the same
+        // transformed point, not the raw device mouse. Every other Update() mouse hit-test in
+        // this method (worldmap, character sheet, inventory, etc.) keeps using `mouse` directly —
+        // only in-scope screens use `uiMouse`.
+        Point uiMouse = UiMouse();
 
         // P129: an armor change re-bases the dude's sprite (deferred one frame so the
         // callers' FlagWorn bookkeeping settles regardless of call order).
@@ -2530,7 +2536,7 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
             if (_dialog is not null && mouse.LeftButton == ButtonState.Pressed
                 && _previousMouse.LeftButton == ButtonState.Released)
             {
-                int hit = HitTestDialogOption(mouse.X, mouse.Y);
+                int hit = HitTestDialogOption(uiMouse.X, uiMouse.Y);
                 if (hit >= 0)
                     ChooseDialogOption(hit);
             }
@@ -2559,7 +2565,7 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
             if (_companionHub is not null && mouse.LeftButton == ButtonState.Pressed
                 && _previousMouse.LeftButton == ButtonState.Released)
             {
-                int hit = HitTestDialogOption(mouse.X, mouse.Y);
+                int hit = HitTestDialogOption(uiMouse.X, uiMouse.Y);
                 if (hit >= 0)
                     ChooseCompanionOption(hit);
             }
@@ -6168,19 +6174,33 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
         }
     }
 
-    /// <summary>Text dialog panel: reply on top, numbered options below (keys 1-9 or click).</summary>
+    /// <summary>Text dialog panel: reply on top, numbered options below (keys 1-9 or click).
+    /// Stage 2 (UI Scale): draws into its own scoped, scaled SpriteBatch block — the shared
+    /// unscaled batch (opened once per frame in Draw()) is suspended for the duration and resumed
+    /// immediately after, so only the dialog panel scales; every other screen drawn later in the
+    /// same frame is unaffected.</summary>
     private void DrawDialogPanel()
     {
+        if (_companionHub is null && _dialog is null)
+            return;
+
+        _spriteBatch.End();
+        _spriteBatch.Begin(samplerState: SamplerState.PointClamp, transformMatrix: UiScaleMatrix());
+
         if (_companionHub is not null)
         {
             DrawConversationPanel(ObjectName(_companionHub), "What do you need?",
                 [.. _hubOptions.Select(o => o.Label)], isPartyMember: true);
-            return;
         }
-        if (_dialog is not null)
+        else if (_dialog is not null)
+        {
             DrawConversationPanel(_dialog.NpcName, _dialog.Reply, _dialog.Options, _dialog.OptionReactions,
                 EffectiveHeadId(),
                 isPartyMember: _dialogNpc is not null && (_scriptHost?.PartyMembers.Contains(_dialogNpc) ?? false));
+        }
+
+        _spriteBatch.End();
+        _spriteBatch.Begin(samplerState: SamplerState.PointClamp);
     }
 
     /// <summary>The shared conversation panel — reply text + numbered options at the
@@ -6482,7 +6502,12 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
         _panelPixel ??= CreatePixel();
         EnsureDialogFrameArt();
 
-        Rectangle viewport = GraphicsDevice.Viewport.Bounds;
+        // Stage 2 (UI Scale): DrawDialogPanel already opened a scaled SpriteBatch block around
+        // this call, so every rectangle built from `viewport` below (the frame origin, the dim
+        // overlay, the reply/options panel) must be expressed in virtual-canvas coordinates, not
+        // real device pixels — VirtualViewport() (not GraphicsDevice.Viewport.Bounds) is what the
+        // scaled batch's transform expects.
+        Rectangle viewport = VirtualViewport();
 
         // FO2 lays the dialog in a 640x480 frame centred on screen: the head display at window-local
         // (126,14), the reply window at (135,225). ported from fallout2-ce src/game_dialog.cc
@@ -6554,7 +6579,7 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
         }
 
         y += lineHeight / 2;
-        MouseState mouse = Mouse.GetState();
+        Point mouse = UiMouse(); // Stage 2 (UI Scale): hover-highlight against the same virtual-canvas point Update() hit-tests with
         _dialogOptionRects.Clear();
         Rectangle currentRect = Rectangle.Empty;
         int currentOption = -1;
