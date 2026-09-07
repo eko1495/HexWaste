@@ -2457,10 +2457,9 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
             // the drag handler, so click-to-equip is preserved.
             bool clickPress = mouse.LeftButton == ButtonState.Pressed && _previousMouse.LeftButton == ButtonState.Released;
             // The INVBOX DONE button closes the pure inventory (the baked-in art button, inventory.cc).
-            // Stage: Inventory Piece 1 (UI Scale) — uiMouse.X/Y here, since InvBoxDoneRect() now
+            // Stage: Inventory Piece 1/2 (UI Scale) — uiMouse.X/Y here, since InvBoxDoneRect() now
             // reads VirtualViewport() via InvBoxOrigin(). LootDoneRect (below) and the final
-            // TryClickItemPanel fallback stay on the raw mouse -- Piece 2 (loot/barter/trade)
-            // territory, not yet migrated.
+            // TryClickItemPanel fallback also use uiMouse now (Piece 2 migrated loot/barter/trade).
             if (clickPress && _inventoryOpen && _lootContainer is null && _tradePartner is null
                 && InvBoxDoneRect() is { } done && done.Contains(uiMouse.X, uiMouse.Y))
             {
