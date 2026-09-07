@@ -33,7 +33,7 @@ chrome).
   Rectangle vp = VirtualViewport();
   int hudBarVirtual = (int)(_hudBarHeight / UiScale());
   ```
-  Task B's `hudY` formula must use this identical substitution.
+  Task 2's `hudY` formula must use this identical substitution.
 - Confirmed via direct grep this session: `ViewerGame.Harness.cs` has zero references to
   `MenuOriginDevice`, `DrawDeathArt`, `DrawDeathNarration`, `DrawEndgame`, `DrawCredits`,
   `DrawCutsceneMenu`, `CutsceneListLayout`, or `MenuOrigin` — no changes needed there. It does
@@ -57,7 +57,7 @@ chrome).
   block.
 - `src/Hexwaste.Viewer/MviePlayer.cs` — `Draw`'s signature.
 
-## Task A: Static screens (death art, endgame, credits, movie player/card)
+## Task 1: Static screens (death art, endgame, credits, movie player/card)
 
 **Files:**
 - Modify: `src/Hexwaste.Viewer/ViewerGame.Shell.cs:46-59` (delete `MenuOriginDevice`, keep
@@ -72,7 +72,7 @@ chrome).
 - Consumes: `MenuOrigin()` (already shipped, `ViewerGame.Shell.cs:46-50`), `VirtualViewport()`,
   `UiScaleMatrix()` (Stage 1, already shipped).
 - Produces: `MviePlayer.Draw(SpriteBatch sb, Texture2D pixel, Rectangle viewport)` — the new
-  signature Task A's one call site (`ViewerGame.Hud.cs:558`) uses; no other file calls this
+  signature Task 1's one call site (`ViewerGame.Hud.cs:558`) uses; no other file calls this
   method (confirmed via whole-tree grep).
 
 - [ ] **Step 1: Delete `MenuOriginDevice()` and convert its 3 callers to `MenuOrigin()`**
@@ -377,7 +377,7 @@ Replace with:
         }
 ```
 
-(`DrawCutsceneMenu()`'s own call site in between is untouched here — Task B converts its internal
+(`DrawCutsceneMenu()`'s own call site in between is untouched here — Task 2 converts its internal
 body.)
 
 - [ ] **Step 9: Build**
@@ -605,9 +605,9 @@ already-scaled main-menu-family block as the template. MviePlayer.Draw
 takes a Rectangle instead of a Viewport (matching WorldmapScreen's
 convention) so its caller can pass VirtualViewport().
 
-This is Task A of 2 for UI Scale Stage 6 (shell/endgame/cutscene
+This is Task 1 of 2 for UI Scale Stage 6 (shell/endgame/cutscene
 screens + the HUD text overlay). The cutscene browser and the
-persistent gameplay HUD text (Task B) still render unscaled.
+persistent gameplay HUD text (Task 2) still render unscaled.
 
 Co-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>
 Claude-Session: https://claude.ai/code/session_013X1Nsyn1sjdtu4miA36EFr
@@ -615,7 +615,7 @@ EOF
 )"
 ```
 
-## Task B: Cutscene browser + persistent HUD text overlay
+## Task 2: Cutscene browser + persistent HUD text overlay
 
 **Files:**
 - Modify: `src/Hexwaste.Viewer/ViewerGame.cs:7081-7085` (`CutsceneListLayout`), `:2096-2109`
@@ -916,7 +916,7 @@ into its own block at the top of DrawTextOverlay(); its hudY formula
 gets the same _hudBarHeight/UiScale() device-to-virtual conversion
 already established by SkilldexOrigin.
 
-This is Task B of 2 for UI Scale Stage 6 and completes UI Scale for
+This is Task 2 of 2 for UI Scale Stage 6 and completes UI Scale for
 the entire Viewer -- every screen and overlay now scales uniformly to
 fill non-4:3 windows, with zero remaining GraphicsDevice.Viewport or
 bare Mouse.GetState() reads feeding rendering or hit-test math outside
