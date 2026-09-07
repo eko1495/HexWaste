@@ -2395,7 +2395,7 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
             }
 
             if (mouse.LeftButton == ButtonState.Pressed && _previousMouse.LeftButton == ButtonState.Released)
-                TryClickItemPanel(mouse.X, mouse.Y, shift);
+                TryClickItemPanel(uiMouse.X, uiMouse.Y, shift);
 
             HandlePanelPaging(keyboard);
 
@@ -2469,7 +2469,7 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
             }
             // P111: the LOOT window's DONE button (fo2ce inventory.cc:1052-1066 — fires KEY_ESCAPE).
             else if (clickPress && _lootContainer is not null
-                && LootDoneRect() is { } lootDone && lootDone.Contains(mouse.X, mouse.Y))
+                && LootDoneRect() is { } lootDone && lootDone.Contains(uiMouse.X, uiMouse.Y))
             {
                 _lootContainer = null;
                 _stealTarget = null;
@@ -2488,7 +2488,7 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
                 HandleInventoryDrag(uiInvMouse, shiftHeld);
             }
             else if (clickPress)
-                TryClickItemPanel(mouse.X, mouse.Y, shiftHeld);
+                TryClickItemPanel(uiMouse.X, uiMouse.Y, shiftHeld);
 
             HandlePanelPaging(keyboard);
 

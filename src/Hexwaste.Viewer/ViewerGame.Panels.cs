@@ -1815,31 +1815,25 @@ public sealed partial class ViewerGame
             return;
         DrawInventoryWindow(); // P67: the INVBOX paperdoll backdrop (behind the list); no-op if the art is absent
         DrawItemWindow();      // P86: the loot/barter/trade FRM backdrop; no-op if the art is absent
-        foreach (ItemPanel panel in CurrentItemPanels())
+        // Stage: Inventory Piece 2 (UI Scale) — every ItemPanel kind now scales the same way (the
+        // Piece 1 if/else split between ItemPanelKind.Inventory and everything else is no longer
+        // needed), so the whole loop body scopes into one scoped, scaled SpriteBatch block.
+        // CurrentItemPanels() returns at most one panel kind's worth of panels per frame (it's an
+        // if/else-if chain), so this loop's iterations never mix scaled and unscaled content.
+        if (CurrentItemPanels() is { Count: > 0 } panels)
         {
-            // Stage: Inventory Piece 1 (UI Scale) — ONLY the dude's-own-inventory panel scopes
-            // into a scaled SpriteBatch block; every other panel kind (barter/trade/loot, Piece 2,
-            // not yet migrated) keeps rendering unscaled. CurrentItemPanels()'s if/else-if
-            // structure guarantees ItemPanelKind.Inventory is never present alongside another
-            // panel kind in the same frame, so this scoping never needs to nest.
-            if (panel.Kind == ItemPanelKind.Inventory)
-            {
-                _spriteBatch.End();
-                _spriteBatch.Begin(samplerState: SamplerState.PointClamp, transformMatrix: UiScaleMatrix());
+            _spriteBatch.End();
+            _spriteBatch.Begin(samplerState: SamplerState.PointClamp, transformMatrix: UiScaleMatrix());
 
-                int scaledBottom = DrawItemList(panel.Title, panel.Items, panel.X, panel.Price);
-                if (ReferenceEquals(panel.Items, _dudeInventory))
-                    DrawWeightReadout(panel.X, scaledBottom);
-
-                _spriteBatch.End();
-                _spriteBatch.Begin(samplerState: SamplerState.PointClamp);
-            }
-            else
+            foreach (ItemPanel panel in panels)
             {
                 int bottom = DrawItemList(panel.Title, panel.Items, panel.X, panel.Price);
                 if (ReferenceEquals(panel.Items, _dudeInventory)) // the dude's side carries the weight readout (P24)
                     DrawWeightReadout(panel.X, bottom);
             }
+
+            _spriteBatch.End();
+            _spriteBatch.Begin(samplerState: SamplerState.PointClamp);
         }
         DrawEquipSlots(); // P47: the weapon/armor equip slots + the dragged-item ghost
         if (_inventoryOpen && _lootContainer is null && _tradePartner is null && _barterNpc is null)
@@ -2024,10 +2018,14 @@ public sealed partial class ViewerGame
 
     /// <summary>The active loot/barter/trade FRM backdrop + its top-left screen placement (and whether it
     /// is a bottom strip), or null when no such panel is up OR the art is absent (headless) — in which case
-    /// the item panels fall back to the dark text boxes and every existing golden stays byte-identical.</summary>
+    /// the item panels fall back to the dark text boxes and every existing golden stays byte-identical.
+    /// Stage: Inventory Piece 2 (UI Scale) — reads the virtual-canvas viewport. Every dependent
+    /// (ItemPanelRegion, PanelPageRows, LootDoneRect, and ItemRowRect/DrawItemList's
+    /// ItemPanelRegion branches) calls this method rather than reading the viewport independently,
+    /// so converting it here is sufficient — there is no second copy to keep in lockstep.</summary>
     private (Texture2D Tex, Point Origin, bool Strip)? ItemWindowArt()
     {
-        int vw = GraphicsDevice.Viewport.Width, vh = GraphicsDevice.Viewport.Height;
+        int vw = VirtualViewport().Width, vh = VirtualViewport().Height;
         if (_lootContainer is not null)
         {
             if (!_lootBoxTried) { _lootBoxTried = true; _lootBox = InterfaceBar.LoadFrm(GraphicsDevice, _vfs, _palette, @"art\intrface\loot.frm"); }
@@ -2359,6 +2357,13 @@ public sealed partial class ViewerGame
     {
         if (ItemWindowArt() is not { } w)
             return;
+
+        // Stage: Inventory Piece 2 (UI Scale) — no separable fallback exists here (the "dark box"
+        // fallback is drawn elsewhere, by DrawItemList's own third branch, not this method), so the
+        // whole method scopes into its own scoped, scaled SpriteBatch block.
+        _spriteBatch.End();
+        _spriteBatch.Begin(samplerState: SamplerState.PointClamp, transformMatrix: UiScaleMatrix());
+
         int wide = w.Strip ? TradeStripW : LootBoxW;
         int high = w.Strip ? TradeStripH : LootBoxH;
         _spriteBatch.Draw(w.Tex, new Rectangle(w.Origin.X, w.Origin.Y, wide, high), Color.White);
@@ -2376,6 +2381,9 @@ public sealed partial class ViewerGame
             if (_lilRedUp is not null)
                 _spriteBatch.Draw(_lilRedUp, new Vector2(w.Origin.X + 476, w.Origin.Y + 331), Color.White);
         }
+
+        _spriteBatch.End();
+        _spriteBatch.Begin(samplerState: SamplerState.PointClamp);
     }
 
     private Texture2D? _lilRedUp;
