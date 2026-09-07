@@ -525,14 +525,21 @@ public sealed partial class ViewerGame
 
         if (_combat.IsGameOver || _debugDeathScreen)
         {
+            // Stage: UI Scale Stage 6 -- the fallback dark overlay and "YOU HAVE DIED" text live
+            // inline here, not in a separable method, so the whole block scopes as one unit,
+            // matching the main-menu-family block later in this same method.
+            _spriteBatch.End();
+            _spriteBatch.Begin(samplerState: SamplerState.PointClamp, transformMatrix: UiScaleMatrix());
+
             _panelPixel ??= CreatePixel();
+            Rectangle vp = VirtualViewport();
             // P83-M4: the authentic death.frm scene behind the options (text-only fallback if the art absent).
             if (!DrawDeathArt())
                 _spriteBatch.Draw(_panelPixel,
-                    new Rectangle(0, 0, GraphicsDevice.Viewport.Width, GraphicsDevice.Viewport.Height),
+                    new Rectangle(0, 0, vp.Width, vp.Height),
                     new Color(0, 0, 0, 170));
             DrawDeathNarration(); // P100 M8: the enddeath.txt-selected narration subtitle
-            var center = new Vector2(GraphicsDevice.Viewport.Width / 2f, GraphicsDevice.Viewport.Height / 2f);
+            var center = new Vector2(vp.Width / 2f, vp.Height / 2f);
             string[] lines =
             [
                 "YOU HAVE DIED",
@@ -550,12 +557,22 @@ public sealed partial class ViewerGame
                     new Vector2(center.X - _fontRenderer.MeasureWidth(line) / 2f, lineY), color);
                 lineY += _fontRenderer.LineHeight * 1.6f;
             }
+
+            _spriteBatch.End();
+            _spriteBatch.Begin(samplerState: SamplerState.PointClamp);
         }
 
         if (_moviePlayer is not null)
         {
+            // Stage: UI Scale Stage 6 -- no separable fallback exists (the movie always draws a
+            // black backdrop + the current frame, or just black while _texture is still null),
+            // so the whole block scopes as one unit.
+            _spriteBatch.End();
+            _spriteBatch.Begin(samplerState: SamplerState.PointClamp, transformMatrix: UiScaleMatrix());
             _panelPixel ??= CreatePixel();
-            _moviePlayer.Draw(_spriteBatch, _panelPixel, GraphicsDevice.Viewport);
+            _moviePlayer.Draw(_spriteBatch, _panelPixel, VirtualViewport());
+            _spriteBatch.End();
+            _spriteBatch.Begin(samplerState: SamplerState.PointClamp);
         }
 
         if (_cutsceneMenuOpen)
@@ -563,22 +580,29 @@ public sealed partial class ViewerGame
 
         if (_movieCard is { } card)
         {
+            // Stage: UI Scale Stage 6 -- plain text-over-black card, no art, no hit-test beyond
+            // button/key state (checked in Update()), so the whole block scopes as one unit.
+            _spriteBatch.End();
+            _spriteBatch.Begin(samplerState: SamplerState.PointClamp, transformMatrix: UiScaleMatrix());
+            Rectangle vp = VirtualViewport();
             _panelPixel ??= CreatePixel();
             _spriteBatch.Draw(_panelPixel,
-                new Rectangle(0, 0, GraphicsDevice.Viewport.Width, GraphicsDevice.Viewport.Height),
+                new Rectangle(0, 0, vp.Width, vp.Height),
                 new Color(0, 0, 0, 235));
-            float cardY = GraphicsDevice.Viewport.Height / 2f - card.Count * _fontRenderer.LineHeight;
+            float cardY = vp.Height / 2f - card.Count * _fontRenderer.LineHeight;
             foreach (string line in card)
             {
                 _fontRenderer.Draw(_spriteBatch, line,
-                    new Vector2(GraphicsDevice.Viewport.Width / 2f - _fontRenderer.MeasureWidth(line) / 2f, cardY),
+                    new Vector2(vp.Width / 2f - _fontRenderer.MeasureWidth(line) / 2f, cardY),
                     line == card[0] ? new Color(252, 252, 84) : new Color(0, 252, 0));
                 cardY += _fontRenderer.LineHeight * 1.5f;
             }
             const string hint = "click or press any key to continue";
             _fontRenderer.Draw(_spriteBatch, hint,
-                new Vector2(GraphicsDevice.Viewport.Width / 2f - _fontRenderer.MeasureWidth(hint) / 2f, cardY + _fontRenderer.LineHeight),
+                new Vector2(vp.Width / 2f - _fontRenderer.MeasureWidth(hint) / 2f, cardY + _fontRenderer.LineHeight),
                 new Color(140, 140, 140));
+            _spriteBatch.End();
+            _spriteBatch.Begin(samplerState: SamplerState.PointClamp);
         }
 
         // P83-M1/M2/M4: the authentic mainmenu.frm / pickchar.frm / credits.txt screens (each with its own
@@ -591,20 +615,31 @@ public sealed partial class ViewerGame
         }
         else if (_menu == MenuState.Credits)
         {
+            // Stage: UI Scale Stage 6 -- DrawCredits/DrawEndgame each scope their own call site,
+            // matching the main-menu-family block below.
+            _spriteBatch.End();
+            _spriteBatch.Begin(samplerState: SamplerState.PointClamp, transformMatrix: UiScaleMatrix());
             DrawCredits();
+            _spriteBatch.End();
+            _spriteBatch.Begin(samplerState: SamplerState.PointClamp);
         }
         else if (_menu == MenuState.Endgame)
         {
+            _spriteBatch.End();
+            _spriteBatch.Begin(samplerState: SamplerState.PointClamp, transformMatrix: UiScaleMatrix());
             DrawEndgame();
+            _spriteBatch.End();
+            _spriteBatch.Begin(samplerState: SamplerState.PointClamp);
         }
         else if (_menu != MenuState.None)
         {
             // Stage 2 (UI Scale): the main-menu family (Title/CharacterPick/CreateStats-Traits-
             // Tags — the only remaining MenuState values reachable here) draws into its own
             // scoped, scaled SpriteBatch block — same technique as DrawDialogPanel — so these
-            // three screens match fo2ce's fullscreen stretch. Credits/Endgame above don't use
-            // MenuOrigin() and stay unscaled; the plain-text fallback below (art missing) also
-            // stays unscaled, matching its pre-existing, already-degraded presentation.
+            // three screens match fo2ce's fullscreen stretch. Stage 6 gave Credits/Endgame their
+            // own matching scoped blocks above; the plain-text fallback below (art missing) is
+            // the one surface here that stays unscaled by design, matching its pre-existing,
+            // already-degraded presentation.
             _spriteBatch.End();
             _spriteBatch.Begin(samplerState: SamplerState.PointClamp, transformMatrix: UiScaleMatrix());
             bool handled = _menu == MenuState.Title ? DrawAuthenticMainMenu()

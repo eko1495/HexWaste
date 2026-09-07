@@ -137,14 +137,17 @@ public sealed class MviePlayer : IDisposable
     }
 
     /// <summary>Draw the current frame centred over a full-viewport black backdrop (native
-    /// 640x320 size, letterboxed — no aspect distortion).</summary>
-    public void Draw(SpriteBatch sb, Texture2D pixel, Viewport vp)
+    /// 640x320 size, letterboxed — no aspect distortion). Stage: UI Scale Stage 6 -- takes a
+    /// Rectangle (only .Width/.Height are ever read) rather than a Viewport, matching
+    /// WorldmapScreen's convention, so the caller can pass VirtualViewport() and draw this
+    /// through a scaled SpriteBatch block.</summary>
+    public void Draw(SpriteBatch sb, Texture2D pixel, Rectangle viewport)
     {
-        sb.Draw(pixel, new Rectangle(0, 0, vp.Width, vp.Height), Color.Black);
+        sb.Draw(pixel, new Rectangle(0, 0, viewport.Width, viewport.Height), Color.Black);
         if (_texture is null)
             return;
-        int ox = (vp.Width - _texture.Width) / 2;
-        int oy = (vp.Height - _texture.Height) / 2;
+        int ox = (viewport.Width - _texture.Width) / 2;
+        int oy = (viewport.Height - _texture.Height) / 2;
         sb.Draw(_texture, new Rectangle(ox, oy, _texture.Width, _texture.Height), Color.White);
     }
 
