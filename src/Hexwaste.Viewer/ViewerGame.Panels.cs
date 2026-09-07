@@ -1601,10 +1601,13 @@ public sealed partial class ViewerGame
     }
 
     /// <summary>The window's top-left in screen space (centered; fo2ce centers X and pins Y=20 at
-    /// 640×480 / centers otherwise, :5492-5496 — we always center, documented).</summary>
+    /// 640×480 / centers otherwise, :5492-5496 — we always center, documented).
+    /// Stage 3c (UI Scale): reads the virtual-canvas viewport — DrawAimDialog's art path draws
+    /// inside its own scoped, scaled SpriteBatch block. AimDialogPanelRect/AimDialogRowRect (the
+    /// text fallback) deliberately do NOT read VirtualViewport() — that fallback stays unscaled.</summary>
     private Point CalledShotWindowPos() => new(
-        (GraphicsDevice.Viewport.Width - CalledShotW) / 2,
-        Math.Max(0, (GraphicsDevice.Viewport.Height - CalledShotH) / 2));
+        (VirtualViewport().Width - CalledShotW) / 2,
+        Math.Max(0, (VirtualViewport().Height - CalledShotH) / 2));
 
     /// <summary>The location button rect for dialog row 0..7 — left column rows 0-3 at window-local
     /// x=33, right column rows 4-7 at x=341, y=_call_ty−90, 128×20 (buttonCreate :5576/5583).</summary>
@@ -1645,10 +1648,15 @@ public sealed partial class ViewerGame
                 SelectAimRow(i);
                 return;
             }
+        // Stage 3c (UI Scale): CalledShotHitAt tests its (mx,my) argument against the SCALED art
+        // rects when art is live, or the UNSCALED fallback rects when it isn't — the art-presence
+        // check must happen here, before the call, so the correct coordinate space is chosen up
+        // front rather than left ambiguous inside CalledShotHitAt.
+        bool artMode = InterfaceFrm(CalledShotBgFrmId) is not null;
+        Point hitPoint = artMode ? UiMouse() : new Point(mouse.X, mouse.Y);
         if (mouse.LeftButton == ButtonState.Pressed && _previousMouse.LeftButton == ButtonState.Released
-            && CalledShotHitAt(mouse.X, mouse.Y) is int clicked && clicked >= 0)
+            && CalledShotHitAt(hitPoint.X, hitPoint.Y) is int clicked && clicked >= 0)
         {
-            bool artMode = InterfaceFrm(CalledShotBgFrmId) is not null;
             if (artMode && clicked == 8)
                 _aimDialogOpen = false; // the cancel button closes without changing the aim
             else
@@ -1685,12 +1693,19 @@ public sealed partial class ViewerGame
             return;
         }
 
+        // Stage 3c (UI Scale): the art path draws into its own scoped, scaled SpriteBatch block —
+        // same technique as Stage 3a's DrawSkilldex/DrawPerkPicker — so the called-shot dialog
+        // matches fo2ce's fullscreen stretch while DrawAimDialogFallback (already returned above
+        // when reached) stays unscaled.
+        _spriteBatch.End();
+        _spriteBatch.Begin(samplerState: SamplerState.PointClamp, transformMatrix: UiScaleMatrix());
+
         Point p = CalledShotWindowPos();
         _spriteBatch.Draw(bg, new Vector2(p.X, p.Y), Color.White);
         if (_aimDialogTarget is { } target && CalledShotPic(target) is { } pic)
             _spriteBatch.Draw(pic, new Vector2(p.X + 168, p.Y + 31), Color.White); // :5530
 
-        MouseState mouse = Mouse.GetState();
+        Point mouse = UiMouse();
         int hovered = CalledShotHitAt(mouse.X, mouse.Y);
         var normal = new Color(0, 252, 0);   // _colorTable[992] (green)
         var hot = new Color(252, 0, 0);      // _colorTable[31744] (red, _draw_loc_on_)
@@ -1709,10 +1724,13 @@ public sealed partial class ViewerGame
             DrawCalledShotToHit(digits, p.X + (i < 4 ? 33 : 453), rowY, pct);
         }
 
-        bool cancelPressed = mouse.LeftButton == ButtonState.Pressed
+        bool cancelPressed = Mouse.GetState().LeftButton == ButtonState.Pressed
             && CalledShotCancelRect().Contains(mouse.X, mouse.Y);
         if (InterfaceFrm(cancelPressed ? CalledShotCancelDownFrmId : CalledShotCancelUpFrmId) is { } cancel)
             _spriteBatch.Draw(cancel, new Vector2(p.X + 210, p.Y + 268), Color.White);
+
+        _spriteBatch.End();
+        _spriteBatch.Begin(samplerState: SamplerState.PointClamp);
     }
 
     /// <summary>The pre-P119 text list, kept as the missing-art residual.</summary>
