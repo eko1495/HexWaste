@@ -527,6 +527,9 @@ public sealed partial class ViewerGame
             if (_combat.Phase != Formats.Combat.CombatPhase.Idle)
                 hud += $"  |  round {_combat.Round}: "
                     + (_combat.Phase == Formats.Combat.CombatPhase.PlayerTurn ? "your turn (F attack, Space end turn)" : "enemy turn");
+            // _hudBarHeight is 0 in the art-absent fallback path (below, still unscaled by
+            // design), so this line and that fallback's log can drift apart vertically at
+            // scale != 1 there -- an accepted, narrow gap in a path that's already degraded.
             int hudBarVirtual = (int)(_hudBarHeight / UiScale());
             int hudY = VirtualViewport().Height - hudBarVirtual - 8 - (Math.Min(_messageLog.Count, MessageLogFallbackLines) + 1) * _fontRenderer.LineHeight - 4;
             _fontRenderer.Draw(_spriteBatch, hud, new Vector2(8, hudY), new Color(252, 252, 84));
