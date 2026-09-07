@@ -65,7 +65,11 @@ public sealed partial class ViewerGame
 
     /// <summary>Renders the FO2 mouse cursor: the red hex ring (msef000) snapped to the hovered
     /// tile over the walkable world, else the standard arrow (STDARROW) at the pointer. Hides the
-    /// OS cursor once the art loads. ported from fallout2-ce src/game_mouse.cc.</summary>
+    /// OS cursor once the art loads. ported from fallout2-ce src/game_mouse.cc.
+    /// UI Scale: stays device-space by design, the one deliberate non-fallback exclusion in the
+    /// whole project -- the hex ring is camera-anchored (world space, via HexToScreen/ToScreenPoint,
+    /// its own zoom transform) and PickHex hit-tests raw device coordinates; scaling the arrow to
+    /// virtual units would desync it from the real OS pointer position.</summary>
     private void DrawMouseCursor()
     {
         if (_screenshotPath is not null && _debugCursorTile < 0)
@@ -116,8 +120,10 @@ public sealed partial class ViewerGame
 
         // UI Scale (HUD bar): _hudBarHeight stays a DEVICE-PIXEL quantity -- the bar's actual
         // rendered height on screen -- not a virtual-canvas one. This is what lets every existing
-        // consumer (DrawMouseCursor, DrawTextOverlay's hudY, SkilldexOrigin, DrawSkilldexTextFallback)
-        // keep reading it exactly as before; only this method's OWN drawing needs to change.
+        // consumer that stays device-space (DrawMouseCursor, DrawSkilldexTextFallback) keep
+        // reading it exactly as before; only this method's OWN drawing needs to change.
+        // SkilldexOrigin and (as of UI Scale Stage 6) DrawTextOverlay's hudY instead convert it
+        // to virtual units via hudBarVirtual = (int)(_hudBarHeight / UiScale()) before use.
         _hudBarHeight = (int)(InterfaceBar.Height * UiScale());
 
         // Everything below draws into its own scoped, scaled SpriteBatch block -- same technique
