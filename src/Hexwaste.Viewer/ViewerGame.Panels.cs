@@ -1817,9 +1817,29 @@ public sealed partial class ViewerGame
         DrawItemWindow();      // P86: the loot/barter/trade FRM backdrop; no-op if the art is absent
         foreach (ItemPanel panel in CurrentItemPanels())
         {
-            int bottom = DrawItemList(panel.Title, panel.Items, panel.X, panel.Price);
-            if (ReferenceEquals(panel.Items, _dudeInventory)) // the dude's side carries the weight readout (P24)
-                DrawWeightReadout(panel.X, bottom);
+            // Stage: Inventory Piece 1 (UI Scale) — ONLY the dude's-own-inventory panel scopes
+            // into a scaled SpriteBatch block; every other panel kind (barter/trade/loot, Piece 2,
+            // not yet migrated) keeps rendering unscaled. CurrentItemPanels()'s if/else-if
+            // structure guarantees ItemPanelKind.Inventory is never present alongside another
+            // panel kind in the same frame, so this scoping never needs to nest.
+            if (panel.Kind == ItemPanelKind.Inventory)
+            {
+                _spriteBatch.End();
+                _spriteBatch.Begin(samplerState: SamplerState.PointClamp, transformMatrix: UiScaleMatrix());
+
+                int scaledBottom = DrawItemList(panel.Title, panel.Items, panel.X, panel.Price);
+                if (ReferenceEquals(panel.Items, _dudeInventory))
+                    DrawWeightReadout(panel.X, scaledBottom);
+
+                _spriteBatch.End();
+                _spriteBatch.Begin(samplerState: SamplerState.PointClamp);
+            }
+            else
+            {
+                int bottom = DrawItemList(panel.Title, panel.Items, panel.X, panel.Price);
+                if (ReferenceEquals(panel.Items, _dudeInventory)) // the dude's side carries the weight readout (P24)
+                    DrawWeightReadout(panel.X, bottom);
+            }
         }
         DrawEquipSlots(); // P47: the weapon/armor equip slots + the dragged-item ghost
         if (_inventoryOpen && _lootContainer is null && _tradePartner is null && _barterNpc is null)
@@ -1841,6 +1861,11 @@ public sealed partial class ViewerGame
         Formats.Combat.CritterState? stats = GetCritterState(_dude.Dude);
         if (stats is null)
             return;
+
+        // Stage: Inventory Piece 1 (UI Scale) — the whole method scopes into its own scoped,
+        // scaled SpriteBatch block, matching the fifteen already-migrated screens.
+        _spriteBatch.End();
+        _spriteBatch.Begin(samplerState: SamplerState.PointClamp, transformMatrix: UiScaleMatrix());
 
         var pale = new Color(252, 252, 252); // the INVBOX readout's pale text (_colorTable[992])
         int x = o.X + 297, y = o.Y + 44;
@@ -1899,6 +1924,9 @@ public sealed partial class ViewerGame
             }
             lineY += lh * 3;
         }
+
+        _spriteBatch.End();
+        _spriteBatch.Begin(samplerState: SamplerState.PointClamp);
     }
 
     // ====================================================================
@@ -1935,11 +1963,16 @@ public sealed partial class ViewerGame
     private static readonly Rectangle InvBoxBodyLocal = new(176, 37, 60, 100);
 
     /// <summary>Top-left of the centred INVBOX window when its art is loaded; null = the fallback
-    /// boxes-beside-the-list layout (headless / art absent).</summary>
+    /// boxes-beside-the-list layout (headless / art absent).
+    /// Stage: Inventory Piece 1 (UI Scale) — reads the virtual-canvas viewport. Every dependent
+    /// helper (InventoryPanelX, WeaponSlotRect, ArmorSlotRect, LeftWeaponSlotRect, InvBoxDoneRect,
+    /// and ItemRowRect/DrawItemList's InvBoxOrigin branches) calls this method rather than reading
+    /// the viewport independently, so converting it here is sufficient — there is no second copy
+    /// to keep in lockstep.</summary>
     private Point? InvBoxOrigin() => _invBox is null
         ? null
-        : new Point(Math.Max(0, (GraphicsDevice.Viewport.Width - InvBoxW) / 2),
-                    Math.Max(0, (GraphicsDevice.Viewport.Height - InvBoxH) / 2));
+        : new Point(Math.Max(0, (VirtualViewport().Width - InvBoxW) / 2),
+                    Math.Max(0, (VirtualViewport().Height - InvBoxH) / 2));
 
     /// <summary>The dude inventory list's X: inside the INVBOX window when its art is up, else x=40
     /// (the boxes layout the harness/goldens use).</summary>
@@ -2190,6 +2223,12 @@ public sealed partial class ViewerGame
         if (_fontRenderer is null || !_inventoryOpen || _lootContainer is not null
             || _tradePartner is not null || _barterNpc is not null)
             return;
+
+        // Stage: Inventory Piece 1 (UI Scale) — the whole method scopes into its own scoped,
+        // scaled SpriteBatch block, matching the fifteen already-migrated screens.
+        _spriteBatch.End();
+        _spriteBatch.Begin(samplerState: SamplerState.PointClamp, transformMatrix: UiScaleMatrix());
+
         _panelPixel ??= CreatePixel();
         bool onWindow = InvBoxOrigin() is not null;
         bool rightActive = _activeHand == MapObject.FlagInRightHand;
@@ -2199,8 +2238,15 @@ public sealed partial class ViewerGame
         DrawEquipSlot(ArmorSlotRect(), "ARMOR", EquippedInSlot(Formats.Combat.EquipSlot.Armor), onWindow);
         // A bright border round the active hand so it's clear which weapon fires.
         DrawRectOutline(rightActive ? WeaponSlotRect() : LeftWeaponSlotRect(), new Color(252, 252, 84));
-        if (_dragItem is { } dragged) // the ghost icon follows the cursor (from the last Update mouse)
-            DrawItemIcon(dragged, new Rectangle(_previousMouse.X - 14, _previousMouse.Y - 11, 28, 22));
+        // Stage: Inventory Piece 1 (UI Scale) — reads a fresh UiMouse() instead of the stored,
+        // raw-device-pixel _previousMouse, matching every other screen's in-Draw position-read
+        // convention (and tracking the CURRENT frame's cursor rather than lagging one frame).
+        Point ghostMouse = UiMouse();
+        if (_dragItem is { } dragged) // the ghost icon follows the cursor
+            DrawItemIcon(dragged, new Rectangle(ghostMouse.X - 14, ghostMouse.Y - 11, 28, 22));
+
+        _spriteBatch.End();
+        _spriteBatch.Begin(samplerState: SamplerState.PointClamp);
     }
 
     /// <summary>P67: the authentic INVBOX.frm window + the dude paperdoll, drawn behind the item list
@@ -2217,6 +2263,14 @@ public sealed partial class ViewerGame
         }
         if (InvBoxOrigin() is not { } o)
             return; // art absent -> the fallback boxes layout (DrawEquipSlots at x=420)
+
+        // Stage: Inventory Piece 1 (UI Scale) — the whole method scopes into its own scoped,
+        // scaled SpriteBatch block, matching the fifteen already-migrated screens. No separable
+        // fallback method exists here (the fallback is the fixed-position rects InvBoxOrigin's
+        // dependents already return when art is absent, drawn by other methods, not this one).
+        _spriteBatch.End();
+        _spriteBatch.Begin(samplerState: SamplerState.PointClamp, transformMatrix: UiScaleMatrix());
+
         _spriteBatch.Draw(_invBox, new Rectangle(o.X, o.Y, InvBoxW, InvBoxH), Color.White);
         // The dude paperdoll (its current art reflects worn armor), scaled into the body view (176,37,60,100).
         if (_dude?.Dude is { } dude)
@@ -2233,6 +2287,9 @@ public sealed partial class ViewerGame
             {
             }
         }
+
+        _spriteBatch.End();
+        _spriteBatch.Begin(samplerState: SamplerState.PointClamp);
     }
 
     // A 1px rectangle border (P81 active-hand marker).

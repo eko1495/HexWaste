@@ -2457,8 +2457,12 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
             // the drag handler, so click-to-equip is preserved.
             bool clickPress = mouse.LeftButton == ButtonState.Pressed && _previousMouse.LeftButton == ButtonState.Released;
             // The INVBOX DONE button closes the pure inventory (the baked-in art button, inventory.cc).
+            // Stage: Inventory Piece 1 (UI Scale) — uiMouse.X/Y here, since InvBoxDoneRect() now
+            // reads VirtualViewport() via InvBoxOrigin(). LootDoneRect (below) and the final
+            // TryClickItemPanel fallback stay on the raw mouse -- Piece 2 (loot/barter/trade)
+            // territory, not yet migrated.
             if (clickPress && _inventoryOpen && _lootContainer is null && _tradePartner is null
-                && InvBoxDoneRect() is { } done && done.Contains(mouse.X, mouse.Y))
+                && InvBoxDoneRect() is { } done && done.Contains(uiMouse.X, uiMouse.Y))
             {
                 _inventoryOpen = false;
                 _stealTarget = null;
@@ -2471,7 +2475,18 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
                 _stealTarget = null;
             }
             else if (_inventoryOpen && _lootContainer is null && _tradePartner is null)
-                HandleInventoryDrag(mouse, shiftHeld);
+            {
+                // Stage: Inventory Piece 1 (UI Scale) — HandleInventoryDrag reads both button
+                // state and position from the SAME MouseState parameter throughout its body
+                // (including the drag-start Point it stores and later compares against the
+                // now-virtual-canvas ItemRowRect), so a synthetic, UI-scaled MouseState carries
+                // uiMouse's position through unchanged, exactly like Stage 3c's Preferences fix —
+                // no changes needed inside HandleInventoryDrag itself.
+                MouseState uiInvMouse = new(uiMouse.X, uiMouse.Y, mouse.ScrollWheelValue,
+                    mouse.LeftButton, mouse.MiddleButton, mouse.RightButton,
+                    mouse.XButton1, mouse.XButton2, mouse.HorizontalScrollWheelValue);
+                HandleInventoryDrag(uiInvMouse, shiftHeld);
+            }
             else if (clickPress)
                 TryClickItemPanel(mouse.X, mouse.Y, shiftHeld);
 
