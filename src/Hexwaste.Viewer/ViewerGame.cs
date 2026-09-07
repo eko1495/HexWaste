@@ -2311,7 +2311,7 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
         // The companion combat-control window (P50): modal while open — cycle the tactics, Esc done.
         if (_tacticsMember is not null)
         {
-            HandleTacticsInput(mouse, keyboard);
+            HandleTacticsInput(mouse, uiMouse, keyboard);
             _previousMouse = mouse;
             _previousKeyboard = keyboard;
             base.Update(gameTime);

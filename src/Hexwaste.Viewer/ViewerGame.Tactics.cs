@@ -92,9 +92,13 @@ public sealed partial class ViewerGame
         return vals[(Array.IndexOf(vals, value) + 1) % vals.Length];
     }
 
+    // Stage 3c (UI Scale): like preferences/Pip-Boy/options/automap, tactics has no separate
+    // fallback method — both the art (_tacticsArt) and text branches below share this function's
+    // viewport-relative math, so DrawTactics scales the whole method, and this reads the
+    // virtual-canvas viewport for both branches.
     private Rectangle TacticsPanelRect()
     {
-        Rectangle vp = GraphicsDevice.Viewport.Bounds;
+        Rectangle vp = VirtualViewport();
         if (_tacticsArt)
         {
             const int w = 640, h = 190; // CONTROL.frm dimensions
@@ -138,7 +142,7 @@ public sealed partial class ViewerGame
             SetCompanionAi(member, CycleTacticsRow(row, CompanionSettings(member)));
     }
 
-    private void HandleTacticsInput(MouseState mouse, KeyboardState keyboard)
+    private void HandleTacticsInput(MouseState mouse, Point uiMouse, KeyboardState keyboard)
     {
         if (IsKeyPressed(keyboard, Keys.Escape))
         {
@@ -152,7 +156,7 @@ public sealed partial class ViewerGame
                 return;
             }
         if (mouse.LeftButton == ButtonState.Pressed && _previousMouse.LeftButton == ButtonState.Released
-            && TacticsRowAt(mouse.X, mouse.Y) is int r && r >= 0)
+            && TacticsRowAt(uiMouse.X, uiMouse.Y) is int r && r >= 0)
             TacticsActivate(r);
     }
 
@@ -165,6 +169,12 @@ public sealed partial class ViewerGame
         _controlFrm ??= InterfaceBar.LoadFrm(GraphicsDevice, _vfs, _palette, @"art\intrface\CONTROL.frm");
         _tacticsArt = _controlFrm is not null;
         _panelPixel ??= CreatePixel();
+
+        // Stage 3c (UI Scale): no separate fallback method here (see TacticsPanelRect's doc
+        // comment) — the whole method scales inside one scoped, scaled SpriteBatch block.
+        _spriteBatch.End();
+        _spriteBatch.Begin(samplerState: SamplerState.PointClamp, transformMatrix: UiScaleMatrix());
+
         Rectangle p = TacticsPanelRect();
         var green = new Color(0, 252, 0);
         var hot = new Color(252, 252, 84);
@@ -183,12 +193,16 @@ public sealed partial class ViewerGame
 
         _fontRenderer.Draw(_spriteBatch, $"COMBAT CONTROL - {ObjectName(member)} (1-6 / click cycles, Esc done)",
             new Vector2(p.X + 12, p.Y + 8), Color.LightGray);
-        int hovered = TacticsRowAt(Mouse.GetState().X, Mouse.GetState().Y);
+        Point tm = UiMouse();
+        int hovered = TacticsRowAt(tm.X, tm.Y);
         for (int i = 0; i < TacticsRowCount; i++)
         {
             Rectangle rr = TacticsRowRect(i);
             _fontRenderer.Draw(_spriteBatch, $"{i + 1}. {TacticsRowLabel(i, ai)}",
                 new Vector2(rr.X + 6, rr.Y + 2), i == hovered ? hot : green);
         }
+
+        _spriteBatch.End();
+        _spriteBatch.Begin(samplerState: SamplerState.PointClamp);
     }
 }
