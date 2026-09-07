@@ -190,8 +190,16 @@ public sealed class WorldmapScreen : IDisposable
     /// <summary>Draw the full chrome window: background, the scissored 1:1 map view (tiles,
     /// fog, city circles + names, destination + hotspot markers), the town tabs, date/time,
     /// the day/night dial, and the globe/car monitor. The sprite batch is restarted around
-    /// the scissored section (the caller's batch must be a plain PointClamp Begin).</summary>
-    public void DrawChrome(SpriteBatch spriteBatch, Rectangle viewport, WorldArea? hovered,
+    /// the scissored section (the caller's batch must be a plain PointClamp Begin).
+    /// Stage: UI Scale Stage 5 -- `scale` is the same factor the caller's own scaled batch was
+    /// opened with (UiScale()). Everything drawn here (backdrop, tabs, date/dial, monitor, and
+    /// everything inside the scissor) is positioned in VIRTUAL units exactly as before -- the
+    /// caller's transform matrix maps that to real screen pixels. GraphicsDevice.ScissorRectangle
+    /// is the one exception: it is a DEVICE-PIXEL API that MonoGame does not run through the
+    /// SpriteBatch transform, so its rectangle must be computed separately by multiplying the
+    /// virtual clip rect by `scale` -- valid with no offset term because VirtualViewport()
+    /// (the `viewport` this method receives) always starts at (0,0).</summary>
+    public void DrawChrome(SpriteBatch spriteBatch, Rectangle viewport, float scale, WorldArea? hovered,
         Formats.Map.WorldmapFog? fog, int partyX, int partyY, int destX, int destY,
         int hourHhmm, int day, int month, int year, bool inCar, int fuel, int fuelMax, int carFrame)
     {
@@ -202,8 +210,11 @@ public sealed class WorldmapScreen : IDisposable
         // ---- the scissored map view (everything positioned by world − scroll) ----
         spriteBatch.End();
         Rectangle oldScissor = _graphicsDevice.ScissorRectangle;
-        spriteBatch.Begin(samplerState: SamplerState.PointClamp, rasterizerState: _scissor);
-        _graphicsDevice.ScissorRectangle = Rectangle.Intersect(view, viewport);
+        Matrix scaleMatrix = Matrix.CreateScale(scale);
+        spriteBatch.Begin(samplerState: SamplerState.PointClamp, rasterizerState: _scissor, transformMatrix: scaleMatrix);
+        Rectangle clip = Rectangle.Intersect(view, viewport);
+        _graphicsDevice.ScissorRectangle = new Rectangle(
+            (int)(clip.X * scale), (int)(clip.Y * scale), (int)(clip.Width * scale), (int)(clip.Height * scale));
 
         // P125: the townmap sub-view replaces the world content inside the same chrome
         // (wmTownMapRefresh :5915 blits the town art at the view spot; hotspot buttons at
@@ -233,7 +244,7 @@ public sealed class WorldmapScreen : IDisposable
 
         spriteBatch.End();
         _graphicsDevice.ScissorRectangle = oldScissor;
-        spriteBatch.Begin(samplerState: SamplerState.PointClamp);
+        spriteBatch.Begin(samplerState: SamplerState.PointClamp, transformMatrix: scaleMatrix);
 
         DrawTabs(spriteBatch, o, fog);
         DrawDate(spriteBatch, o, hourHhmm, day, month, year);

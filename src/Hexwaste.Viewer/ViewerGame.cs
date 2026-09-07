@@ -5811,7 +5811,7 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
                 _spriteBatch.End();
                 _spriteBatch.Begin(samplerState: SamplerState.PointClamp, transformMatrix: UiScaleMatrix());
 
-                wms.DrawChrome(_spriteBatch, VirtualViewport(), _hoveredArea, WorldFog,
+                wms.DrawChrome(_spriteBatch, VirtualViewport(), UiScale(), _hoveredArea, WorldFog,
                     _worldPosX, _worldPosY,
                     _activeTravel?.Dest.WorldX ?? -1, _activeTravel?.Dest.WorldY ?? -1,
                     _clock.Hour, d, m - 1, y,
