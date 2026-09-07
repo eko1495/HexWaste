@@ -1934,9 +1934,10 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
         MouseState mouse = Mouse.GetState();
         // Stage 2 (UI Scale): the dialog panel and the main-menu family hit-test against
         // VirtualViewport()-derived rectangles, so their click position must be the same
-        // transformed point, not the raw device mouse. Every other Update() mouse hit-test in
-        // this method (worldmap, character sheet, inventory, etc.) keeps using `mouse` directly —
-        // only in-scope screens use `uiMouse`.
+        // transformed point, not the raw device mouse. As of UI Scale Stage 5 (worldmap chrome,
+        // the last screen migrated), every screen-space hit-test in this method uses `uiMouse`;
+        // raw `mouse` remains only for button/wheel state and the worldmap's legacy
+        // no-chrome-art fallback (which has its own independent, correct scaling).
         Point uiMouse = UiMouse();
 
         // P129: an armor change re-bases the dude's sprite (deferred one frame so the
