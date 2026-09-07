@@ -754,9 +754,13 @@ public sealed partial class ViewerGame
     /// calendar (a documented simplification, since our GameClock tracks only ticks).</summary>
     // Pip-Boy content origin + line height — shared by DrawPipboy (render) and the
     // PipboyRow* helpers (hit-test) so a row click always lands where it's drawn.
+    // Stage 3b (UI Scale): reads the virtual-canvas viewport — DrawPipboy draws inside its own
+    // scoped, scaled SpriteBatch block, and ViewerGame.Harness.cs's scripted MenuClick action
+    // (a CLI test path) calls PipboyRowRect (which calls this) against the same real,
+    // GraphicsDevice-backed viewport Draw uses, so both stay consistent automatically.
     private void PipboyContentOrigin(out Point po, out int lh)
     {
-        Rectangle vp = GraphicsDevice.Viewport.Bounds;
+        Rectangle vp = VirtualViewport();
         int pw = _pipboyBg?.Width ?? 640, ph = _pipboyBg?.Height ?? 480;
         po = new Point(Math.Max(0, (vp.Width - pw) / 2), Math.Max(0, (vp.Height - ph) / 2));
         lh = (_fontRenderer?.LineHeight ?? 16) + 4;
@@ -835,6 +839,13 @@ public sealed partial class ViewerGame
             return;
         _pipboyBg ??= InterfaceBar.LoadFrm(GraphicsDevice, _vfs, _palette, @"art\intrface\PIP.frm");
 
+        // Stage 3b (UI Scale): unlike Skilldex/perk-picker/character-sheet, Pip-Boy has no
+        // separate fallback method — the art-present and art-absent branches below share this
+        // one function's viewport-relative math (like save/load), so the whole method
+        // scales inside one scoped, scaled SpriteBatch block.
+        _spriteBatch.End();
+        _spriteBatch.Begin(samplerState: SamplerState.PointClamp, transformMatrix: UiScaleMatrix());
+
         PipboyContentOrigin(out Point po, out int lh);
         int pw = _pipboyBg?.Width ?? 640, ph = _pipboyBg?.Height ?? 480;
         var green = new Color(0, 252, 0);
@@ -893,7 +904,8 @@ public sealed partial class ViewerGame
         }
 
         // The clickable action rows (click or the keyboard shortcut). The hovered row lights.
-        int hovered = PipboyRowAt(Mouse.GetState().X, Mouse.GetState().Y);
+        Point pm = UiMouse();
+        int hovered = PipboyRowAt(pm.X, pm.Y);
         var rows = PipboyRows();
         for (int i = 0; i < rows.Count; i++)
         {
@@ -902,6 +914,9 @@ public sealed partial class ViewerGame
         }
         _fontRenderer.Draw(_spriteBatch, _pipboyRestMenu ? "click a duration, Esc back" : "click a row, P / Esc close",
             new Vector2(cx, po.Y + ph - 30), dim);
+
+        _spriteBatch.End();
+        _spriteBatch.Begin(samplerState: SamplerState.PointClamp);
     }
 
     /// <summary>data\quests.txt, lazy-loaded (P88). Empty if absent.</summary>

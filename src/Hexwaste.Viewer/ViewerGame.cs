@@ -2225,11 +2225,11 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
             // A click fires the same action its keyboard shortcut does (P15 M3): the right-side content rows
             // (PipboyRowAt) OR the PIP.frm left-column tabs (PipboyTabAt — Automaps/Close, P82 fix).
             bool pipPress = mouse.LeftButton == ButtonState.Pressed && _previousMouse.LeftButton == ButtonState.Released;
-            if (pipPress && PipboyTabAt(mouse.X, mouse.Y) is { } tabAction)
+            if (pipPress && PipboyTabAt(uiMouse.X, uiMouse.Y) is { } tabAction)
             {
                 tabAction();
             }
-            else if (pipPress && PipboyRowAt(mouse.X, mouse.Y) is var prow && prow >= 0)
+            else if (pipPress && PipboyRowAt(uiMouse.X, uiMouse.Y) is var prow && prow >= 0)
             {
                 PipboyRows()[prow].OnClick();
             }
