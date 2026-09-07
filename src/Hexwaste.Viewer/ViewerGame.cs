@@ -5805,9 +5805,9 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
                 // Stage: UI Scale Stage 5 -- DrawChrome has no separable fallback (the whole
                 // method draws real chrome art), so it scopes into its own scoped, scaled
                 // SpriteBatch block, matching the save/load/Pip-Boy/options shape. The scissored
-                // inner map view (Task 2) is handled INSIDE DrawChrome itself -- it reopens the
-                // batch mid-method for the scissor and must re-pass this same scale, which is
-                // why DrawChrome takes scale as its own parameter rather than only a viewport.
+                // inner map view still renders unscaled inside it until Task 2 lands: Task 2
+                // will give DrawChrome its own `scale` parameter, since it reopens the batch
+                // mid-method for the scissor and must re-pass this same scale itself.
                 _spriteBatch.End();
                 _spriteBatch.Begin(samplerState: SamplerState.PointClamp, transformMatrix: UiScaleMatrix());
 
