@@ -72,11 +72,18 @@ public sealed partial class ViewerGame
         }
         if (_charBg is null) { DrawSkillAllocatorFallback(); return; }
 
+        // Stage 3b (UI Scale): the art path draws into its own scoped, scaled SpriteBatch block —
+        // same technique as Stage 3a's DrawSkilldex/DrawPerkPicker — so the character sheet
+        // matches fo2ce's fullscreen stretch while DrawSkillAllocatorFallback (above) stays
+        // unscaled, matching the established fallback precedent.
+        _spriteBatch.End();
+        _spriteBatch.Begin(samplerState: SamplerState.PointClamp, transformMatrix: UiScaleMatrix());
+
         var green = new Color(0, 252, 0);
         var gold = new Color(252, 252, 84);
         var tan = new Color(180, 156, 96);
 
-        Rectangle vp = GraphicsDevice.Viewport.Bounds;
+        Rectangle vp = VirtualViewport();
         int ox = (vp.Width - 640) / 2, oy = (vp.Height - 480) / 2;
         _spriteBatch.Draw(_charBg, new Rectangle(ox, oy, 640, 480), Color.White);
 
@@ -234,6 +241,9 @@ public sealed partial class ViewerGame
         T(383, 455, EditorMsg(103), tan);   // Print To File (inert)
         T(492, 455, EditorMsg(100), gold);  // Done
         T(585, 455, EditorMsg(102), gold);  // Cancel
+
+        _spriteBatch.End();
+        _spriteBatch.Begin(samplerState: SamplerState.PointClamp);
     }
 
     /// <summary>The bottom-left folder rows: each (display text, card id, isInfo). Trait rows carry
@@ -338,7 +348,10 @@ public sealed partial class ViewerGame
     {
         if (_charBg is null || _fontRenderer is null)
             return -1;
-        Rectangle vp = GraphicsDevice.Viewport.Bounds;
+        // Stage 3b (UI Scale): this hit-test must agree with DrawSkillAllocator's scaled art
+        // path — both read the same virtual-canvas origin, and callers pass the already
+        // UiMouse()-transformed point (see Update()'s uiMouse usage below).
+        Rectangle vp = VirtualViewport();
         int ox = (vp.Width - 640) / 2, oy = (vp.Height - 480) / 2;
         int lx = mx - ox, ly = my - oy;
         int rh = _fontRenderer.LineHeight + 1, rstep = rh + 2;

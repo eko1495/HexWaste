@@ -2166,15 +2166,16 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
             // card updates); clicking a skill also arms it for an Enter-raise.
             if (mouse.LeftButton == ButtonState.Pressed && _previousMouse.LeftButton == ButtonState.Released)
             {
-                if (CharSheetItemAt(mouse.X, mouse.Y) is var sel && sel >= 0)
+                if (CharSheetItemAt(uiMouse.X, uiMouse.Y) is var sel && sel >= 0)
                 {
                     _charSelId = sel;
                     if (sel is >= 61 and < 79)
                         _skillAllocIndex = sel - 61;
                 }
                 // P82-M4: the DONE / CANCEL buttons (the baked red buttons, y~454) close the sheet.
-                Rectangle cvp = GraphicsDevice.Viewport.Bounds;
-                int cbx = mouse.X - (cvp.Width - 640) / 2, cby = mouse.Y - (cvp.Height - 480) / 2;
+                // Stage 3b (UI Scale): matches CharSheetItemAt's virtual-canvas origin above.
+                Rectangle cvp = VirtualViewport();
+                int cbx = uiMouse.X - (cvp.Width - 640) / 2, cby = uiMouse.Y - (cvp.Height - 480) / 2;
                 if (cby is >= 448 and < 476 && cbx is >= 462 and < 640)
                     _skillAllocOpen = false;
             }
