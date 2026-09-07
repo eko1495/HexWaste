@@ -76,6 +76,9 @@ public sealed partial class ViewerGame
         // same technique as Stage 3a's DrawSkilldex/DrawPerkPicker — so the character sheet
         // matches fo2ce's fullscreen stretch while DrawSkillAllocatorFallback (above) stays
         // unscaled, matching the established fallback precedent.
+        // This screen's origin formula is duplicated in THREE places that must stay in lockstep:
+        // this Rectangle vp below, CharSheetItemAt's own copy (the click hit-test), and
+        // ViewerGame.cs's Update() DONE/CANCEL button check — touch all three together.
         _spriteBatch.End();
         _spriteBatch.Begin(samplerState: SamplerState.PointClamp, transformMatrix: UiScaleMatrix());
 
@@ -350,7 +353,7 @@ public sealed partial class ViewerGame
             return -1;
         // Stage 3b (UI Scale): this hit-test must agree with DrawSkillAllocator's scaled art
         // path — both read the same virtual-canvas origin, and callers pass the already
-        // UiMouse()-transformed point (see Update()'s uiMouse usage below).
+        // UiMouse()-transformed point (see ViewerGame.cs's character-sheet Update block).
         Rectangle vp = VirtualViewport();
         int ox = (vp.Width - 640) / 2, oy = (vp.Height - 480) / 2;
         int lx = mx - ox, ly = my - oy;
