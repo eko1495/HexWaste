@@ -2197,7 +2197,7 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
         // P119: it also owns the in-flight gauge ride, which ignores input until the teleport.
         if (_elevatorPicker is not null)
         {
-            UpdateElevatorPicker(keyboard, mouse, gameTime);
+            UpdateElevatorPicker(keyboard, mouse, uiMouse, gameTime);
             _previousMouse = mouse;
             _previousKeyboard = keyboard;
             base.Update(gameTime);

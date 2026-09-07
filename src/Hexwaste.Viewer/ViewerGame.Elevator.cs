@@ -163,10 +163,13 @@ public sealed partial class ViewerGame
     }
 
     /// <summary>The picker window's top-left screen position (the art centered like
-    /// elevatorWindowInit :545, or the text-fallback box).</summary>
+    /// elevatorWindowInit :545, or the text-fallback box).
+    /// Stage 4a (UI Scale): reads the virtual-canvas viewport — DrawElevatorPicker's art path
+    /// draws inside its own scoped, scaled SpriteBatch block. DrawElevatorPickerFallback
+    /// deliberately does NOT read VirtualViewport() — that fallback stays unscaled.</summary>
     private Point ElevatorWindowPos(Texture2D bg) => new(
-        (GraphicsDevice.Viewport.Width - bg.Width) / 2,
-        (GraphicsDevice.Viewport.Height - bg.Height) / 2);
+        (VirtualViewport().Width - bg.Width) / 2,
+        (VirtualViewport().Height - bg.Height) / 2);
 
     /// <summary>The clickable button rects (window-local x=13, y=40+60·level — elevatorWindowInit
     /// :583-602), in screen space.</summary>
@@ -180,7 +183,7 @@ public sealed partial class ViewerGame
     /// hotkeys (gElevatorLevelLabels double as key bindings, elevator.cc:270), plus 1..n; Esc
     /// cancels. While a ride is in flight the modal ignores input and sweeps the gauge
     /// (elevatorSelectLevel :425-464); the teleport fires after the 200 ms hold.</summary>
-    private void UpdateElevatorPicker(KeyboardState keyboard, MouseState mouse, GameTime gameTime)
+    private void UpdateElevatorPicker(KeyboardState keyboard, MouseState mouse, Point uiMouse, GameTime gameTime)
     {
         if (_elevatorRide is { } ride)
         {
@@ -228,7 +231,7 @@ public sealed partial class ViewerGame
             && InterfaceFrm(ElevatorTables.ButtonUpFrmId) is { } btn)
         {
             for (int i = 0; i < picker.Levels && pick < 0; i++)
-                if (ElevatorButtonRect(bg, btn, i).Contains(mouse.X, mouse.Y))
+                if (ElevatorButtonRect(bg, btn, i).Contains(uiMouse.X, uiMouse.Y))
                     pick = i;
         }
         if (pick < 0)
@@ -264,6 +267,13 @@ public sealed partial class ViewerGame
             return;
         }
 
+        // Stage 4a (UI Scale): the art path draws into its own scoped, scaled SpriteBatch block —
+        // same technique as Stage 3a's DrawSkilldex/DrawPerkPicker — so the elevator picker
+        // matches fo2ce's fullscreen stretch while DrawElevatorPickerFallback (above) stays
+        // unscaled, matching the established fallback precedent.
+        _spriteBatch.End();
+        _spriteBatch.Begin(samplerState: SamplerState.PointClamp, transformMatrix: UiScaleMatrix());
+
         Point p = ElevatorWindowPos(bg);
         _spriteBatch.Draw(bg, new Vector2(p.X, p.Y), Color.White);
         // The optional button-column panel sits flush with the window bottom (elevatorWindowInit :574).
@@ -278,13 +288,17 @@ public sealed partial class ViewerGame
         _spriteBatch.Draw(gauge, new Vector2(p.X + 121, p.Y + 41),
             new Rectangle(0, slice * sliceH, gauge.Width, sliceH), Color.White);
 
-        MouseState mouse = Mouse.GetState();
+        MouseState rawMouse = Mouse.GetState();
+        Point mouse = UiMouse();
         for (int i = 0; i < picker.Levels; i++)
         {
             Rectangle r = ElevatorButtonRect(bg, btnUp, i);
-            bool pressed = mouse.LeftButton == ButtonState.Pressed && r.Contains(mouse.X, mouse.Y);
+            bool pressed = rawMouse.LeftButton == ButtonState.Pressed && r.Contains(mouse.X, mouse.Y);
             _spriteBatch.Draw(pressed ? btnDown : btnUp, new Vector2(r.X, r.Y), Color.White);
         }
+
+        _spriteBatch.End();
+        _spriteBatch.Begin(samplerState: SamplerState.PointClamp);
     }
 
     /// <summary>The pre-P119 text list, kept as the missing-art residual.</summary>
