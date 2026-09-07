@@ -190,7 +190,10 @@ public sealed class WorldmapScreen : IDisposable
     /// <summary>Draw the full chrome window: background, the scissored 1:1 map view (tiles,
     /// fog, city circles + names, destination + hotspot markers), the town tabs, date/time,
     /// the day/night dial, and the globe/car monitor. The sprite batch is restarted around
-    /// the scissored section (the caller's batch must be a plain PointClamp Begin).
+    /// the scissored section (the caller's batch must be a PointClamp Begin opened with
+    /// `Matrix.CreateScale(scale)` -- passing a `scale` that disagrees with the caller's own
+    /// matrix desyncs the pre-scissor backdrop, drawn through the caller's batch, from
+    /// everything drawn after it).
     /// Stage: UI Scale Stage 5 -- `scale` is the same factor the caller's own scaled batch was
     /// opened with (UiScale()). Everything drawn here (backdrop, tabs, date/dial, monitor, and
     /// everything inside the scissor) is positioned in VIRTUAL units exactly as before -- the
@@ -213,8 +216,9 @@ public sealed class WorldmapScreen : IDisposable
         Matrix scaleMatrix = Matrix.CreateScale(scale);
         spriteBatch.Begin(samplerState: SamplerState.PointClamp, rasterizerState: _scissor, transformMatrix: scaleMatrix);
         Rectangle clip = Rectangle.Intersect(view, viewport);
-        _graphicsDevice.ScissorRectangle = new Rectangle(
-            (int)(clip.X * scale), (int)(clip.Y * scale), (int)(clip.Width * scale), (int)(clip.Height * scale));
+        int clipX = (int)(clip.X * scale), clipY = (int)(clip.Y * scale);
+        _graphicsDevice.ScissorRectangle = new Rectangle(clipX, clipY,
+            (int)(clip.Right * scale) - clipX, (int)(clip.Bottom * scale) - clipY);
 
         // P125: the townmap sub-view replaces the world content inside the same chrome
         // (wmTownMapRefresh :5915 blits the town art at the view spot; hotspot buttons at

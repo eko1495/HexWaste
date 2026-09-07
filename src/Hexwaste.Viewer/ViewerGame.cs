@@ -2708,7 +2708,7 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
                     // (KEY_CTRL_F1.. handler, worldmap.cc:3232); the tab arrows page the list.
                     // Stage: UI Scale Stage 5 -- uiMouse/VirtualViewport() throughout: the view
                     // rect and every hit-test below live in the same virtual-canvas coordinate
-                    // space DrawChrome's scaled content will render in (Task 2).
+                    // space DrawChrome's scaled content renders in.
                     const int scrollStep = 20; // fo2ce's wheel scroll step (:3260)
                     Rectangle wmView = wms.ViewRect(VirtualViewport());
                     int dx = (keyboard.IsKeyDown(Keys.Right) ? scrollStep : 0) - (keyboard.IsKeyDown(Keys.Left) ? scrollStep : 0);
@@ -5804,10 +5804,9 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
 
                 // Stage: UI Scale Stage 5 -- DrawChrome has no separable fallback (the whole
                 // method draws real chrome art), so it scopes into its own scoped, scaled
-                // SpriteBatch block, matching the save/load/Pip-Boy/options shape. The scissored
-                // inner map view still renders unscaled inside it until Task 2 lands: Task 2
-                // will give DrawChrome its own `scale` parameter, since it reopens the batch
-                // mid-method for the scissor and must re-pass this same scale itself.
+                // SpriteBatch block, matching the save/load/Pip-Boy/options shape. DrawChrome
+                // takes this same scale as its own parameter, since it reopens the batch
+                // mid-method for the scissored inner map view and must re-pass the scale itself.
                 _spriteBatch.End();
                 _spriteBatch.Begin(samplerState: SamplerState.PointClamp, transformMatrix: UiScaleMatrix());
 
