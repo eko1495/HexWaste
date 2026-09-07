@@ -1094,9 +1094,12 @@ public sealed partial class ViewerGame
     /// tiles plot; the embedded Pip-Boy mini-map (needs automap.db RLE) stays out.</summary>
     // The AUTOMAP.frm baked-in button screen rects (automap.cc): the SCANNER (111,454), CANCEL (277,454)
     // and the hi/lo-detail SWITCH (457,340) — shared by DrawAutomap (label hint) + the input hit-test.
+    // Stage 3b (UI Scale): reads the virtual-canvas viewport — this must stay in lockstep with
+    // DrawAutomap's OWN, separate inline copy of the identical formula (see that method); neither
+    // delegates to the other, so both were converted together in this task.
     private (Rectangle Scanner, Rectangle Cancel, Rectangle Detail) AutomapButtons()
     {
-        Rectangle vp = GraphicsDevice.Viewport.Bounds;
+        Rectangle vp = VirtualViewport();
         int w = _automapBg?.Width ?? 519, h = _automapBg?.Height ?? 480;
         var o = new Point(Math.Max(0, (vp.Width - w) / 2), Math.Max(0, (vp.Height - h) / 2));
         return (new Rectangle(o.X + 105, o.Y + 450, 24, 22),
@@ -1110,7 +1113,13 @@ public sealed partial class ViewerGame
             return;
         _automapBg ??= InterfaceBar.LoadFrm(GraphicsDevice, _vfs, _palette, @"art\intrface\AUTOMAP.frm");
 
-        Rectangle vp = GraphicsDevice.Viewport.Bounds;
+        // Stage 3b (UI Scale): like Pip-Boy/Options, Automap has no separate fallback method — the
+        // art-present and art-absent branches share this function's viewport-relative math, so the
+        // whole method scales inside one scoped, scaled SpriteBatch block.
+        _spriteBatch.End();
+        _spriteBatch.Begin(samplerState: SamplerState.PointClamp, transformMatrix: UiScaleMatrix());
+
+        Rectangle vp = VirtualViewport();
         int w = _automapBg?.Width ?? 519, h = _automapBg?.Height ?? 480;
         var o = new Point(Math.Max(0, (vp.Width - w) / 2), Math.Max(0, (vp.Height - h) / 2));
         _panelPixel ??= CreatePixel();
@@ -1169,6 +1178,9 @@ public sealed partial class ViewerGame
             new Vector2(o.X + 20, o.Y + 12), labelGreen);
         _fontRenderer.Draw(_spriteBatch, "SCANNER / CANCEL / hi-lo switch - or Esc/A close, H/L detail, PgUp/Dn elev",
             new Vector2(o.X + 20, o.Y + h - 24), new Color(0, 168, 0));
+
+        _spriteBatch.End();
+        _spriteBatch.Begin(samplerState: SamplerState.PointClamp);
     }
 
     /// <summary>The options / pause menu (P12 M2): the authentic OPBASE.FRM (164x217)

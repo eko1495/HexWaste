@@ -2268,18 +2268,18 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
             (Rectangle scanner, Rectangle cancel, Rectangle detail) = AutomapButtons();
             bool apress = mouse.LeftButton == ButtonState.Pressed && _previousMouse.LeftButton == ButtonState.Released;
             if (IsKeyPressed(keyboard, Keys.Escape) || IsKeyPressed(keyboard, Keys.A)
-                || (apress && cancel.Contains(mouse.X, mouse.Y)))
+                || (apress && cancel.Contains(uiMouse.X, uiMouse.Y)))
             {
                 _automapOpen = false;
                 _automapScanner = false; // the scanner view lasts one automap session (automapShow resets flags)
             }
             else if (IsKeyPressed(keyboard, Keys.H) || IsKeyPressed(keyboard, Keys.L)
-                || (apress && detail.Contains(mouse.X, mouse.Y)))
+                || (apress && detail.Contains(uiMouse.X, uiMouse.Y)))
             {
                 _automapHighDetail = !_automapHighDetail;
                 Log($"Automap detail: {(_automapHighDetail ? "high" : "low")}.");
             }
-            else if (IsKeyPressed(keyboard, Keys.S) || (apress && scanner.Contains(mouse.X, mouse.Y)))
+            else if (IsKeyPressed(keyboard, Keys.S) || (apress && scanner.Contains(uiMouse.X, uiMouse.Y)))
                 TryAutomapScanner(); // P116 (review H): spend a Motion Sensor charge for the scanner view
             if (IsKeyPressed(keyboard, Keys.PageUp))
                 SwitchElevation(+1);
