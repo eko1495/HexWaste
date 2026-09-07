@@ -502,11 +502,19 @@ public sealed partial class ViewerGame
 
         var green = new Color(0, 252, 0);
 
+        // Stage: UI Scale Stage 6 -- these two blocks are unconditional (run every frame during
+        // normal gameplay, not gated by any special-screen state), so they scope as one unit at
+        // the very top of this method. _hudBarHeight stays a device-pixel quantity by convention
+        // (see its own doc comment) -- hudBarVirtual is the same SkilldexOrigin-precedent
+        // conversion (ViewerGame.Panels.cs) applied here.
+        _spriteBatch.End();
+        _spriteBatch.Begin(samplerState: SamplerState.PointClamp, transformMatrix: UiScaleMatrix());
+
         if (_hoveredObject is not null && _hoveredObject != _dude?.Dude)
         {
-            MouseState mouse = Mouse.GetState();
+            Point tipMouse = UiMouse();
             _fontRenderer.Draw(_spriteBatch, ObjectName(_hoveredObject),
-                new Vector2(mouse.X + 14, mouse.Y + 6), green);
+                new Vector2(tipMouse.X + 14, tipMouse.Y + 6), green);
         }
 
         // AP/HP text HUD above the message log.
@@ -519,9 +527,13 @@ public sealed partial class ViewerGame
             if (_combat.Phase != Formats.Combat.CombatPhase.Idle)
                 hud += $"  |  round {_combat.Round}: "
                     + (_combat.Phase == Formats.Combat.CombatPhase.PlayerTurn ? "your turn (F attack, Space end turn)" : "enemy turn");
-            int hudY = GraphicsDevice.Viewport.Height - _hudBarHeight - 8 - (Math.Min(_messageLog.Count, MessageLogFallbackLines) + 1) * _fontRenderer.LineHeight - 4;
+            int hudBarVirtual = (int)(_hudBarHeight / UiScale());
+            int hudY = VirtualViewport().Height - hudBarVirtual - 8 - (Math.Min(_messageLog.Count, MessageLogFallbackLines) + 1) * _fontRenderer.LineHeight - 4;
             _fontRenderer.Draw(_spriteBatch, hud, new Vector2(8, hudY), new Color(252, 252, 84));
         }
+
+        _spriteBatch.End();
+        _spriteBatch.Begin(samplerState: SamplerState.PointClamp);
 
         if (_combat.IsGameOver || _debugDeathScreen)
         {
@@ -718,8 +730,15 @@ public sealed partial class ViewerGame
     /// Update hit-testing via <see cref="CutsceneListLayout"/>.</summary>
     private void DrawCutsceneMenu()
     {
+        // Stage: UI Scale Stage 6 -- no separable fallback exists (this dark backdrop + text
+        // list has no art at all), so the whole method scopes into its own scoped, scaled
+        // SpriteBatch block.
+        _spriteBatch.End();
+        _spriteBatch.Begin(samplerState: SamplerState.PointClamp, transformMatrix: UiScaleMatrix());
+
         _panelPixel ??= CreatePixel();
-        int vw = GraphicsDevice.Viewport.Width, vh = GraphicsDevice.Viewport.Height;
+        Rectangle vp = VirtualViewport();
+        int vw = vp.Width, vh = vp.Height;
         _spriteBatch.Draw(_panelPixel, new Rectangle(0, 0, vw, vh), new Color(0, 0, 0, 235));
 
         List<string> names = CutsceneNames();
@@ -745,5 +764,8 @@ public sealed partial class ViewerGame
         const string hint = "up/down or hover  -  enter/click to play  -  esc to close";
         _fontRenderer.Draw(_spriteBatch, hint,
             new Vector2(vw / 2f - _fontRenderer.MeasureWidth(hint) / 2f, firstRowY + names.Count * rowH + rowH), dim);
+
+        _spriteBatch.End();
+        _spriteBatch.Begin(samplerState: SamplerState.PointClamp);
     }
 }

@@ -2094,11 +2094,11 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
 
                 // Mouse hover selects a row; a click on it plays it.
                 (float firstRowY, float rowH) = CutsceneListLayout(names.Count);
-                int cx = GraphicsDevice.Viewport.Width / 2;
+                int cx = VirtualViewport().Width / 2;
                 int hover = -1;
-                if (Math.Abs(mouse.X - cx) < 220)
+                if (Math.Abs(uiMouse.X - cx) < 220)
                 {
-                    int row = (int)((mouse.Y - firstRowY) / rowH);
+                    int row = (int)((uiMouse.Y - firstRowY) / rowH);
                     if (row >= 0 && row < names.Count)
                         hover = row;
                 }
@@ -7077,11 +7077,13 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
     }
 
     /// <summary>Shared list geometry for the cutscene browser so Update hit-testing and the HUD
-    /// draw agree: the Y of row 0 and the per-row height, centred in the viewport.</summary>
+    /// draw agree: the Y of row 0 and the per-row height, centred in the viewport.
+    /// Stage: UI Scale Stage 6 -- reads VirtualViewport(), the same choke-point shape
+    /// ChromeOrigin()/ItemWindowArt() already proved out for worldmap chrome/inventory.</summary>
     private (float firstRowY, float rowH) CutsceneListLayout(int count)
     {
         float rowH = _fontRenderer.LineHeight * 1.35f;
-        float firstRowY = GraphicsDevice.Viewport.Height / 2f - count * rowH / 2f;
+        float firstRowY = VirtualViewport().Height / 2f - count * rowH / 2f;
         return (firstRowY, rowH);
     }
 
