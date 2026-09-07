@@ -2673,7 +2673,7 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
                                 && town.Entrances[i] is { StartsOn: true, TownmapX: >= 0, TownmapY: >= 0 })
                                 pick = i;
                         if (pick < 0 && click)
-                            pick = tm.TownmapEntranceAt(mouse.X, mouse.Y, GraphicsDevice.Viewport.Bounds);
+                            pick = tm.TownmapEntranceAt(uiMouse.X, uiMouse.Y, VirtualViewport());
                         if (pick >= 0)
                             EnterTownmapEntrance(town, pick);
                     }
@@ -2693,7 +2693,7 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
                     // at a town whose townmap art exists).
                     WorldArea? here = _cities.Areas.FirstOrDefault(a => a.Index == _currentAreaId);
                     bool switchHit = IsKeyPressed(keyboard, Keys.T) || IsKeyPressed(keyboard, Keys.W)
-                        || (click && wms.TownWorldSwitchRect(GraphicsDevice.Viewport.Bounds).Contains(mouse.X, mouse.Y));
+                        || (click && wms.TownWorldSwitchRect(VirtualViewport()).Contains(uiMouse.X, uiMouse.Y));
                     if (switchHit && wms.HasTownmap(here))
                     {
                         _audio?.PlaySfx("ib1p1xx1");
@@ -2706,39 +2706,42 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
                     // P123 chrome input: arrow keys + wheel + view-edge hover scroll the 1:1
                     // map view (wmInterfaceScroll); the town-tab red buttons quick-travel
                     // (KEY_CTRL_F1.. handler, worldmap.cc:3232); the tab arrows page the list.
+                    // Stage: UI Scale Stage 5 -- uiMouse/VirtualViewport() throughout: the view
+                    // rect and every hit-test below live in the same virtual-canvas coordinate
+                    // space DrawChrome's scaled content will render in (Task 2).
                     const int scrollStep = 20; // fo2ce's wheel scroll step (:3260)
-                    Rectangle wmView = wms.ViewRect(GraphicsDevice.Viewport.Bounds);
+                    Rectangle wmView = wms.ViewRect(VirtualViewport());
                     int dx = (keyboard.IsKeyDown(Keys.Right) ? scrollStep : 0) - (keyboard.IsKeyDown(Keys.Left) ? scrollStep : 0);
                     int dy = (keyboard.IsKeyDown(Keys.Down) ? scrollStep : 0) - (keyboard.IsKeyDown(Keys.Up) ? scrollStep : 0);
-                    if (wmView.Contains(mouse.X, mouse.Y))
+                    if (wmView.Contains(uiMouse.X, uiMouse.Y))
                     {
                         dy -= (mouse.ScrollWheelValue - _previousMouse.ScrollWheelValue) / 120 * scrollStep;
                         const int edge = 8; // hover the view edge to scroll (wmMouseBkProc)
-                        if (mouse.X < wmView.X + edge) dx -= scrollStep / 2;
-                        if (mouse.X > wmView.Right - edge) dx += scrollStep / 2;
-                        if (mouse.Y < wmView.Y + edge) dy -= scrollStep / 2;
-                        if (mouse.Y > wmView.Bottom - edge) dy += scrollStep / 2;
+                        if (uiMouse.X < wmView.X + edge) dx -= scrollStep / 2;
+                        if (uiMouse.X > wmView.Right - edge) dx += scrollStep / 2;
+                        if (uiMouse.Y < wmView.Y + edge) dy -= scrollStep / 2;
+                        if (uiMouse.Y > wmView.Bottom - edge) dy += scrollStep / 2;
                     }
                     if (dx != 0 || dy != 0)
                         wms.ScrollBy(dx, dy);
 
-                    _hoveredArea = wms.HitTestChrome(mouse.X, mouse.Y, GraphicsDevice.Viewport.Bounds, WorldFog);
+                    _hoveredArea = wms.HitTestChrome(uiMouse.X, uiMouse.Y, VirtualViewport(), WorldFog);
                     if (click)
                     {
-                        (Rectangle up, Rectangle down) = wms.TabArrowRects(GraphicsDevice.Viewport.Bounds);
+                        (Rectangle up, Rectangle down) = wms.TabArrowRects(VirtualViewport());
                         List<WorldArea> towns = wms.TabTowns(WorldFog);
                         if (_hoveredArea is not null && _hoveredArea.Index == _currentAreaId
                             && wms.HasTownmap(_hoveredArea))
                             wms.TownmapArea = _hoveredArea; // your own circle opens the townmap (:3144)
                         else if (_hoveredArea is not null)
                             TravelTo(_hoveredArea);
-                        else if (up.Contains(mouse.X, mouse.Y))
+                        else if (up.Contains(uiMouse.X, uiMouse.Y))
                             wms.ScrollTabs(-1, WorldFog);
-                        else if (down.Contains(mouse.X, mouse.Y))
+                        else if (down.Contains(uiMouse.X, uiMouse.Y))
                             wms.ScrollTabs(+1, WorldFog);
                         else
                             for (int row = 0; row < 7; row++)
-                                if (wms.TabButtonRect(GraphicsDevice.Viewport.Bounds, row).Contains(mouse.X, mouse.Y)
+                                if (wms.TabButtonRect(VirtualViewport(), row).Contains(uiMouse.X, uiMouse.Y)
                                     && wms.TabsOffset + row < towns.Count)
                                 {
                                     _audio?.PlaySfx("ib1p1xx1");
@@ -5798,11 +5801,24 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
             {
                 Formats.CarState? car = _scriptHost?.Car;
                 (int m, int d, int y) = _clock.Date; // month 1-12; the months strip is 0-based
-                wms.DrawChrome(_spriteBatch, GraphicsDevice.Viewport.Bounds, _hoveredArea, WorldFog,
+
+                // Stage: UI Scale Stage 5 -- DrawChrome has no separable fallback (the whole
+                // method draws real chrome art), so it scopes into its own scoped, scaled
+                // SpriteBatch block, matching the save/load/Pip-Boy/options shape. The scissored
+                // inner map view (Task 2) is handled INSIDE DrawChrome itself -- it reopens the
+                // batch mid-method for the scissor and must re-pass this same scale, which is
+                // why DrawChrome takes scale as its own parameter rather than only a viewport.
+                _spriteBatch.End();
+                _spriteBatch.Begin(samplerState: SamplerState.PointClamp, transformMatrix: UiScaleMatrix());
+
+                wms.DrawChrome(_spriteBatch, VirtualViewport(), _hoveredArea, WorldFog,
                     _worldPosX, _worldPosY,
                     _activeTravel?.Dest.WorldX ?? -1, _activeTravel?.Dest.WorldY ?? -1,
                     _clock.Hour, d, m - 1, y,
                     car?.InCar == true, car?.Fuel ?? 0, Formats.CarState.FuelMax, _carDotFrame);
+
+                _spriteBatch.End();
+                _spriteBatch.Begin(samplerState: SamplerState.PointClamp);
             }
             else
             {

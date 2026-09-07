@@ -1225,7 +1225,14 @@ public sealed partial class ViewerGame
         if (_encounterPrompt is not { } p || _fontRenderer is null)
             return;
         _panelPixel ??= CreatePixel();
-        Rectangle vp = GraphicsDevice.Viewport.Bounds;
+
+        // Stage: UI Scale Stage 5 -- no separable fallback exists here (this box has no art,
+        // just a synthetic dark panel + text), so the whole method scopes into its own scoped,
+        // scaled SpriteBatch block, matching the save/load/Pip-Boy/options shape.
+        _spriteBatch.End();
+        _spriteBatch.Begin(samplerState: SamplerState.PointClamp, transformMatrix: UiScaleMatrix());
+
+        Rectangle vp = VirtualViewport();
         int w = 360, h = 96;
         int x = (vp.Width - w) / 2, y = (vp.Height - h) / 2;
         _spriteBatch.Draw(_panelPixel, new Rectangle(x, y, w, h), new Color(8, 16, 8, 240));
@@ -1243,6 +1250,9 @@ public sealed partial class ViewerGame
             _fontRenderer.Draw(_spriteBatch, line, new Vector2(x + (w - tw) / 2, ty), green);
             ty += _fontRenderer.LineHeight + 6;
         }
+
+        _spriteBatch.End();
+        _spriteBatch.Begin(samplerState: SamplerState.PointClamp);
     }
 
     private void DrawOptions()
