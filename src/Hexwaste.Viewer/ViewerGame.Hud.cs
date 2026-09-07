@@ -114,12 +114,29 @@ public sealed partial class ViewerGame
             return;
         }
 
-        Rectangle viewport = GraphicsDevice.Viewport.Bounds;
-        _hudBarHeight = InterfaceBar.Height;
+        // UI Scale (HUD bar): _hudBarHeight stays a DEVICE-PIXEL quantity -- the bar's actual
+        // rendered height on screen -- not a virtual-canvas one. This is what lets every existing
+        // consumer (DrawMouseCursor, DrawTextOverlay's hudY, SkilldexOrigin, DrawSkilldexTextFallback)
+        // keep reading it exactly as before; only this method's OWN drawing needs to change.
+        _hudBarHeight = (int)(InterfaceBar.Height * UiScale());
+
+        // Everything below draws into its own scoped, scaled SpriteBatch block -- same technique
+        // as the other 14 migrated screens -- so the bar matches fo2ce's fullscreen stretch.
+        _spriteBatch.End();
+        _spriteBatch.Begin(samplerState: SamplerState.PointClamp, transformMatrix: UiScaleMatrix());
+
+        Rectangle viewport = VirtualViewport();
         bar.Draw(_spriteBatch, viewport);
 
         if (_dude is null || GetCritterState(_dude.Dude) is not { } stats)
+        {
+            // UI Scale (HUD bar): this early return sits INSIDE the scoped block above -- it must
+            // resume the unscaled batch before returning, or every screen drawn later this frame
+            // would render at the wrong scale for the rest of the frame.
+            _spriteBatch.End();
+            _spriteBatch.Begin(samplerState: SamplerState.PointClamp);
             return;
+        }
         Point o = bar.Origin(viewport); // bar-local coords (interface.cc) -> screen = o + coord
 
         // --- M2: equipped-weapon slot (centre, bar-local 267,26 188x67; interface.cc:505,315) ---
@@ -246,7 +263,8 @@ public sealed partial class ViewerGame
         // otherwise only on screen mid-click). Falls back to a darken tint if the DN
         // art is missing.
         _panelPixel ??= CreatePixel();
-        MouseState hoverMouse = Mouse.GetState();
+        MouseState rawMouse = Mouse.GetState();
+        Point hoverMouse = UiMouse();
         string? forcePress = Environment.GetEnvironmentVariable("HEXWASTE_HUD_FORCE_PRESS");
         foreach (HudButton b in HudButtons())
         {
@@ -254,7 +272,7 @@ public sealed partial class ViewerGame
                 continue;
             var rect = new Rectangle(o.X + b.Local.X, o.Y + b.Local.Y, b.Local.Width, b.Local.Height);
             bool over = rect.Contains(hoverMouse.X, hoverMouse.Y);
-            bool pressed = (over && hoverMouse.LeftButton == ButtonState.Pressed)
+            bool pressed = (over && rawMouse.LeftButton == ButtonState.Pressed)
                 || string.Equals(forcePress, b.Name, StringComparison.OrdinalIgnoreCase);
             if (pressed && bar.Pressed.TryGetValue(b.Name, out Texture2D? dn) && dn is not null)
                 _spriteBatch.Draw(dn, new Vector2(rect.X, rect.Y), Color.White);
@@ -273,6 +291,9 @@ public sealed partial class ViewerGame
                 _spriteBatch.Draw(_panelPixel, new Rectangle(o.X + b.Local.X, o.Y + b.Local.Y, b.Local.Width, b.Local.Height), new Color(255, 0, 0, 90));
 
         DrawIndicatorPills(o);
+
+        _spriteBatch.End();
+        _spriteBatch.Begin(samplerState: SamplerState.PointClamp);
     }
 
     /// <summary>P129: the indicator bar — the little status boxes plugged in a chain above
@@ -420,7 +441,10 @@ public sealed partial class ViewerGame
     {
         if (_interfaceBar is not { Loaded: true } bar || _worldmapOpen)
             return false;
-        Point o = bar.Origin(GraphicsDevice.Viewport.Bounds);
+        // UI Scale (HUD bar): matches DrawInterfaceBar's scaled-block origin — this hit-test's
+        // caller (ViewerGame.cs) passes an already-UiMouse()-transformed point, and this rect
+        // family must agree with the same virtual-canvas origin the draw uses.
+        Point o = bar.Origin(VirtualViewport());
         // P52-M5: the message monitor's two invisible scroll buttons (display_monitor.cc:382/391 —
         // the top half scrolls toward older history, the bottom half toward the newest).
         // F6 follow-up: source from MonitorLayout (display_monitor.cc:31-34) so the

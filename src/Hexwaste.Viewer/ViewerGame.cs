@@ -2965,7 +2965,7 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
             }
             // A click on a HUD bar button (INV/OPT/MAP/CHA/PIP/SKILLDEX) is consumed
             // there and does not also walk/interact with the map underneath (#15 M4).
-            else if (TryClickInterfaceBar(mouse.X, mouse.Y))
+            else if (TryClickInterfaceBar(uiMouse.X, uiMouse.Y))
             {
                 // handled by the bar
             }
