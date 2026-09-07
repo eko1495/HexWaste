@@ -2014,7 +2014,14 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
         // button), so it too precedes the menu-state return. ClosePreferences restores the prior screen.
         if (_preferencesOpen)
         {
-            UpdatePreferences(keyboard, mouse);
+            // Stage 3c (UI Scale): UpdatePreferences hit-tests against PrefWindowPos()'s
+            // VirtualViewport()-derived rectangles, so it needs the same scaled position the draw
+            // path uses — a synthetic MouseState carries uiMouse's position through unchanged,
+            // exactly like Stage 2's main-menu-family handling (only X/Y differ from `mouse`).
+            MouseState uiPrefMouse = new(uiMouse.X, uiMouse.Y, mouse.ScrollWheelValue,
+                mouse.LeftButton, mouse.MiddleButton, mouse.RightButton,
+                mouse.XButton1, mouse.XButton2, mouse.HorizontalScrollWheelValue);
+            UpdatePreferences(keyboard, uiPrefMouse);
             _previousMouse = mouse;
             _previousKeyboard = keyboard;
             base.Update(gameTime);

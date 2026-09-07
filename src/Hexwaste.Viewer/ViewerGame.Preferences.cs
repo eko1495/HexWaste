@@ -42,9 +42,13 @@ public sealed partial class ViewerGame
     private const int PrefKnobOffFrm = 241;  // prfsldof.frm — the slider knob
     private const int PrefDefaultMsg = 120, PrefDoneMsg = 4, PrefCancelMsg = 121;
 
+    // Stage 3c (UI Scale): reads the virtual-canvas viewport — DrawPreferences draws inside its
+    // own scoped, scaled SpriteBatch block, and UpdatePreferences (the hit-test) receives an
+    // already UiMouse()-transformed synthetic MouseState from its Update() call site, so both
+    // agree on the same coordinate space.
     private Point PrefWindowPos()
     {
-        Viewport vp = GraphicsDevice.Viewport;
+        Rectangle vp = VirtualViewport();
         Texture2D? bg = InterfaceFrm(PrefWindowFrm);
         return new Point((vp.Width - (bg?.Width ?? 640)) / 2, (vp.Height - (bg?.Height ?? 480)) / 2);
     }
@@ -138,6 +142,14 @@ public sealed partial class ViewerGame
     {
         if (!_preferencesOpen || _fontRenderer is null)
             return;
+
+        // Stage 3c (UI Scale): like Pip-Boy/options/automap (Stage 3b), Preferences has no
+        // separate fallback method — the art-present and art-absent branches below share this
+        // function's viewport-relative math, so the whole method scales inside one scoped, scaled
+        // SpriteBatch block.
+        _spriteBatch.End();
+        _spriteBatch.Begin(samplerState: SamplerState.PointClamp, transformMatrix: UiScaleMatrix());
+
         Point o = PrefWindowPos();
         Texture2D? bg = InterfaceFrm(PrefWindowFrm);
         if (bg is not null)
@@ -187,6 +199,9 @@ public sealed partial class ViewerGame
         Btn(43, PrefDefaultMsg);
         Btn(169, PrefDoneMsg);
         Btn(283, PrefCancelMsg);
+
+        _spriteBatch.End();
+        _spriteBatch.Begin(samplerState: SamplerState.PointClamp);
     }
 
     private Formats.Text.MessageFile? _preferencesMsg;
