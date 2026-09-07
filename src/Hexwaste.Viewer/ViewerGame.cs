@@ -2355,7 +2355,7 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
             // A row click fires the same action its keyboard shortcut does (P15 M3):
             // 0 Save, 1 Load, 2 Preferences, 3 Main Menu, 4 Quit, 5 Resume.
             int orow = mouse.LeftButton == ButtonState.Pressed && _previousMouse.LeftButton == ButtonState.Released
-                ? OptionsRowAt(mouse.X, mouse.Y) : -1;
+                ? OptionsRowAt(uiMouse.X, uiMouse.Y) : -1;
             if (IsKeyPressed(keyboard, Keys.S) || orow == 0) { _optionsOpen = false; OpenSaveLoad(SaveLoadMode.Save); }
             else if (IsKeyPressed(keyboard, Keys.L) || orow == 1) { _optionsOpen = false; OpenSaveLoad(SaveLoadMode.Load); }
             else if (IsKeyPressed(keyboard, Keys.P) || orow == 2) { _optionsOpen = false; OpenPreferences(); }

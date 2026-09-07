@@ -1181,9 +1181,13 @@ public sealed partial class ViewerGame
 
     // The clickable rect for the index-th options row — origin + spacing mirror DrawOptions
     // exactly (the FRM-dim fallback keeps it valid before the art loads).
+    // Stage 3b (UI Scale): reads the virtual-canvas viewport — DrawOptions draws inside its own
+    // scoped, scaled SpriteBatch block, and this must stay in lockstep with DrawOptions'
+    // OWN, separate inline origin copy (see that method). ViewerGame.Harness.cs's scripted
+    // MenuClick action calls this same helper against the same real, live viewport Draw uses.
     private Rectangle OptionsRowRect(int index)
     {
-        Rectangle vp = GraphicsDevice.Viewport.Bounds;
+        Rectangle vp = VirtualViewport();
         int ow = _optionsBg?.Width ?? 164, oh = _optionsBg?.Height ?? 217;
         int ox = Math.Max(0, (vp.Width - ow) / 2), oy = Math.Max(0, (vp.Height - oh) / 2);
         int lh = (_fontRenderer?.LineHeight ?? 16) + 10;
@@ -1232,12 +1236,18 @@ public sealed partial class ViewerGame
             return;
         _optionsBg ??= InterfaceBar.LoadFrm(GraphicsDevice, _vfs, _palette, @"art\intrface\OPBASE.frm");
 
+        // Stage 3b (UI Scale): like Pip-Boy, Options has no separate fallback method — the
+        // art-present and art-absent branches below share this function's viewport-relative
+        // math, so the whole method scales inside one scoped, scaled SpriteBatch block.
+        _spriteBatch.End();
+        _spriteBatch.Begin(samplerState: SamplerState.PointClamp, transformMatrix: UiScaleMatrix());
+
         int ow = _optionsBg?.Width ?? 164, oh = _optionsBg?.Height ?? 217;
         var green = new Color(0, 252, 0);
         var hot = new Color(252, 252, 84);
 
         // Top-left of the panel (recompute the same way OptionsRowRect does).
-        Rectangle vp = GraphicsDevice.Viewport.Bounds;
+        Rectangle vp = VirtualViewport();
         int px = Math.Max(0, (vp.Width - ow) / 2), py = Math.Max(0, (vp.Height - oh) / 2);
 
         if (_optionsBg is not null)
@@ -1248,13 +1258,17 @@ public sealed partial class ViewerGame
             _spriteBatch.Draw(_panelPixel, new Rectangle(px, py, ow, oh), new Color(8, 16, 8, 240));
         }
 
-        int hovered = OptionsRowAt(Mouse.GetState().X, Mouse.GetState().Y);
+        Point om = UiMouse();
+        int hovered = OptionsRowAt(om.X, om.Y);
         for (int i = 0; i < OptionsItems.Length; i++)
         {
             Rectangle r = OptionsRowRect(i);
             int tw = _fontRenderer.MeasureWidth(OptionsItems[i]);
             _fontRenderer.Draw(_spriteBatch, OptionsItems[i], new Vector2(px + (ow - tw) / 2, r.Y + 2), i == hovered ? hot : green);
         }
+
+        _spriteBatch.End();
+        _spriteBatch.Begin(samplerState: SamplerState.PointClamp);
     }
 
     // ====================================================================
