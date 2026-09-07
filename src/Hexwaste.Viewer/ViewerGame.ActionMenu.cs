@@ -51,7 +51,11 @@ public sealed partial class ViewerGame
     }
 
     /// <summary>Open the action menu for <paramref name="obj"/> at the cursor — the item list is the
-    /// engine's per-object-type build (Formats.Map.ActionMenu), clamped on screen.</summary>
+    /// engine's per-object-type build (Formats.Map.ActionMenu), clamped on screen.
+    /// Stage 4a (UI Scale): (mx, my) must already be in virtual-canvas coordinates (the caller
+    /// passes UiMouse()'s point, not the raw device mouse) — _actionMenuPos is stored once here and
+    /// simply read, unchanged, by every later DrawActionMenu/ActionMenuRowAt call until the menu
+    /// closes, so there is no later origin-helper conversion point the way every other screen has.</summary>
     private void OpenActionMenu(MapObject obj, int mx, int my)
     {
         if (_dude is null)
@@ -67,7 +71,7 @@ public sealed partial class ViewerGame
         _actionMenuItems = ActionMenu.Build(type, isDude, activeCritter, canTalk, inCombat, sceneryCanUse, isContainer, canPush);
         _actionMenuObj = obj;
 
-        Rectangle vp = GraphicsDevice.Viewport.Bounds;
+        Rectangle vp = VirtualViewport();
         int h = _actionMenuItems.Count * ActionIconSize;
         _actionMenuPos = new Point(
             Math.Clamp(mx, 0, Math.Max(0, vp.Width - ActionIconSize)),
@@ -167,12 +171,20 @@ public sealed partial class ViewerGame
     }
 
     /// <summary>Render the action-menu icon stack (the hovered row uses the H/highlight art), falling
-    /// back to text labels when the icon FRMs are absent (the Skilldex text-then-art pattern).</summary>
+    /// back to text labels when the icon FRMs are absent (the Skilldex text-then-art pattern).
+    /// Stage 4a (UI Scale): unlike Skilldex/perk-picker, the icon-missing fallback here is an
+    /// inline per-row substitution (not a separate whole-method dispatch) that shares the same
+    /// _actionMenuPos-derived pos as the icon-texture path, so the whole method scales inside one
+    /// scoped, scaled SpriteBatch block — there is no separable unscaled branch to carve out.</summary>
     private void DrawActionMenu()
     {
         if (_actionMenuObj is null)
             return;
-        MouseState m = Mouse.GetState();
+
+        _spriteBatch.End();
+        _spriteBatch.Begin(samplerState: SamplerState.PointClamp, transformMatrix: UiScaleMatrix());
+
+        Point m = UiMouse();
         int hover = ActionMenuRowAt(m.X, m.Y);
         for (int i = 0; i < _actionMenuItems.Count; i++)
         {
@@ -190,5 +202,8 @@ public sealed partial class ViewerGame
                     i == hover ? new Color(252, 252, 84) : new Color(0, 252, 0));
             }
         }
+
+        _spriteBatch.End();
+        _spriteBatch.Begin(samplerState: SamplerState.PointClamp);
     }
 }

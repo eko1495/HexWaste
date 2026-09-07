@@ -2944,7 +2944,7 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
             if (_actionMenuObj is not null)
                 CloseActionMenu();
             else if (_hoveredObject is not null)
-                OpenActionMenu(_hoveredObject, mouse.X, mouse.Y);
+                OpenActionMenu(_hoveredObject, uiMouse.X, uiMouse.Y);
         }
         if (!_debugForceActionMenu && _actionMenuObj is not null && IsKeyPressed(keyboard, Keys.Escape))
             CloseActionMenu();
@@ -2957,7 +2957,7 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
             // an item, or close if the click misses the menu.
             if (_actionMenuObj is not null)
             {
-                int amRow = ActionMenuRowAt(mouse.X, mouse.Y);
+                int amRow = ActionMenuRowAt(uiMouse.X, uiMouse.Y);
                 if (amRow >= 0)
                     DispatchActionMenu(amRow);
                 else
