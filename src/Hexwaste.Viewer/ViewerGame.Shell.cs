@@ -83,10 +83,11 @@ public sealed partial class ViewerGame
         _menuBtnDn = InterfaceBar.LoadFrm(GraphicsDevice, _vfs, _palette, @"art\intrface\MENUDOWN.FRM");
     }
 
-    /// <summary>Draw the authentic FO2 main menu: mainmenu.frm (FID 140, 640x480) centred in a black
-    /// letterbox, the six red-glow menuup/menudown buttons (FID 299/300, 26x26) at the engine rects, and
-    /// the misc.msg labels + copyright/version. Returns false when the art is absent (headless / no game
-    /// data) so the caller falls back to the plain-text title. ported from fallout2-ce src/mainmenu.cc.</summary>
+    /// <summary>Draw the authentic FO2 main menu: mainmenu.frm (FID 140, 640x480) stretched to fill
+    /// the virtual viewport (see DrawMenuBackdrop), the six red-glow menuup/menudown buttons (FID
+    /// 299/300, 26x26) at the engine rects, and the misc.msg labels + copyright/version. Returns
+    /// false when the art is absent (headless / no game data) so the caller falls back to the
+    /// plain-text title. ported from fallout2-ce src/mainmenu.cc.</summary>
     private bool DrawAuthenticMainMenu()
     {
         EnsureMenuArt();
@@ -834,7 +835,6 @@ public sealed partial class ViewerGame
         }
         if (_deathBg is null)
             return false;
-        (int ox, int oy) = MenuOrigin();
         DrawMenuBackdrop(_deathBg);
         return true;
     }
