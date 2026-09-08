@@ -237,6 +237,25 @@ have caused some fraction of screenshots and clicks to target inconsistent windo
 verify only one instance is running (`pgrep -f fallout2-ce` should show exactly one PID) before
 trusting a reproduction.
 
+## THE KILL — confirmed live, on camera
+
+A **tenth pass** put the corrected technique together end to end: approach carefully, verify the
+`MOVE`-mode cursor shows a plain blocked `X` directly on the target's own occupied tile (not a
+low-but-nonzero number), arm `CROSSHAIR` via the interface-bar `PUNCH` label, and — the new,
+critical check — watch for a **live hit-chance percentage** rendered directly on the crosshair
+when hovering the target. That percentage only appears when the engine considers the shot
+genuinely valid; its presence is a real-time confirmation of true range, independent of and more
+reliable than any of the walk-cursor's distance indicators. Approaching from one particular angle
+finally produced a crosshair showing **`45%`** — confirmed valid. Click one: *"You missed."* — a
+real attack animation and a real message, the first successful attack dispatch of the entire
+investigation. Click two, same round, AP still available: *"Giant Ant was hit for 10 hit points
+and was killed."* **The kill** — full authentic combat log text, matching the exact
+`"<Name> was hit for <N> hit points and was killed."` phrasing this whole investigation expected
+from the source and from Hexwaste's own already-verified combat log rendering. This closes out
+the comparison with its original goal achieved: a genuine, live, on-camera fo2ce melee kill,
+directly comparable to Hexwaste's own deterministic kill sequence recorded earlier in this same
+document.
+
 ## Theories tested along the way
 
 - **Resolution/coordinate-transform mismatch (refuted, pass five).** Matching the engine's
@@ -278,26 +297,29 @@ which is the correct vanilla Fallout 2 content (the Temple of Trials' second tri
 nest). Visually, Hexwaste's room geometry/art matches fo2ce's corridor precisely. Combat
 presentation — AP costs, hit/miss/damage numbers, and the "Combat begins... You hit the X for
 N damage... The X dies" log phrasing — reads as authentic Fallout 2 combat text in Hexwaste,
-consistent with what fo2ce's own combat log format is known to look like from this project's
-existing fo2ce-fidelity work. The one gap in this run is a live side-by-side melee kill from
-fo2ce itself — not a Hexwaste fidelity concern, but a genuine open question about this specific
-piloting setup, now narrowed considerably: source-code analysis confirms a plain left-click-up
-in `CROSSHAIR` mode over a resolved critter should attack immediately, and live testing
-confirmed combat state, target recognition, and the message log all work correctly for other
-actions — yet the melee-attack click specifically never resolved, across eight independent
-attempts. **The ninth attempt, live with the user, finally solved it: the attack pipeline was
-never broken.** The dude was never actually at true hex-adjacency (`objectGetDistanceBetween()`
-distance ≤ 1) to the target in any earlier attempt, despite looking screen-adjacent and despite
-the walk-mode cursor's own "distance" indicator showing what looked like adjacency — that
-on-screen number is a path-cost estimate, not the same metric combat's real range check uses,
-and the two silently diverge near obstacles (this room is full of pillars). Once genuinely
-hex-adjacent (confirmed the hard way — walking until the move cursor could make no further
-progress at all), an unarmed punch is governed by ordinary, correctly-functioning game logic:
-`weaponGetRange()` returns 1 for an unarmed attacker, `_combat_check_bad_shot()` compares that
-against the real hex distance, and rejects with `"Target out of range."` — a real, working
-message this investigation simply hadn't recognized as *new information* the many earlier times
-it silently recurred, because a repeated identical line doesn't visually announce itself as
-"this happened again" the way a change does.
+consistent with fo2ce's own combat log, and this session finally proved that directly: **a live
+fo2ce melee kill was captured on camera** (see "THE KILL" above) — *"Giant Ant was hit for 10 hit
+points and was killed."* — closing the one gap this comparison originally set out to fill.
+Getting there required source-code analysis confirming a plain left-click-up in `CROSSHAIR`
+mode over a resolved critter should attack immediately, live testing confirming combat state,
+target recognition, and the message log all work correctly for other actions — yet the
+melee-attack click specifically never resolved, across eight independent attempts. **The ninth
+attempt, live with the user, finally solved it: the attack pipeline was never broken.** The dude
+was never actually at true hex-adjacency (`objectGetDistanceBetween()` distance ≤ 1) to the
+target in any earlier attempt, despite looking screen-adjacent and despite the walk-mode
+cursor's own "distance" indicator showing what looked like adjacency — that on-screen number is
+a path-cost estimate, not the same metric combat's real range check uses, and the two silently
+diverge near obstacles (this room is full of pillars). Once genuinely hex-adjacent (confirmed
+the hard way — walking until the move cursor could make no further progress at all), an unarmed
+punch is governed by ordinary, correctly-functioning game logic: `weaponGetRange()` returns 1
+for an unarmed attacker, `_combat_check_bad_shot()` compares that against the real hex distance,
+and rejects with `"Target out of range."` — a real, working message this investigation simply
+hadn't recognized as *new information* the many earlier times it silently recurred, because a
+repeated identical line doesn't visually announce itself as "this happened again" the way a
+change does. The **tenth pass** turned that understanding into a reliable technique — approach,
+verify a blocked `X` directly on the target's own tile, arm `CROSSHAIR`, and specifically watch
+for a live hit-chance **percentage** rendering on the crosshair as confirmation of true range
+before clicking — and landed the kill on the very next attempt.
 
 Four real, reproducible piloting/technique bugs were found and fixed along the way
 (`docs/fo2ce-comparison-playbook.md` updated with all of them): `CROSSHAIR` mode is only

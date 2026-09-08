@@ -123,7 +123,15 @@ Commands (all via `scripts/fo2ce-control.sh`, run from the repo root):
   merely a low number — before arming `CROSSHAIR` and clicking.** If "Target out of range." keeps
   appearing even then, try approaching from a different angle/side of the target, since hex
   adjacency depends on the specific hex-grid neighbor relationship, not just visual closeness.
-  Once truly hex-adjacent, the attack fires exactly as the source code says it should.
+  Once truly hex-adjacent, the attack fires exactly as the source code says it should. **The
+  single most reliable confirmation, found on the run that finally landed a live kill: once
+  `CROSSHAIR` is armed, hover the target and watch for a live hit-chance PERCENTAGE (e.g. `45%`)
+  rendering directly on the crosshair.** That percentage only appears when the engine considers
+  the shot genuinely valid — it is a real-time, unambiguous signal of true range, strictly more
+  reliable than any walk-mode distance indicator. If no percentage appears, the shot will be
+  rejected regardless of how close the target looks; if it does appear, click — the attack will
+  fire. Using exactly this check landed a confirmed kill (*"Giant Ant was hit for 10 hit points
+  and was killed."*) on the very first attempt where a percentage was actually visible.
   **`DEBUGACTIVE=log`** (an env var read at startup by `_debug_register_env()`,
   `debug.cc:83-103`) was the key diagnostic tool that got this far: it routes every `debugPrint()`
   call to `reference/fallout2-ce/run/debug.log`, including `combat.cc`'s `_combat_attack()`'s
