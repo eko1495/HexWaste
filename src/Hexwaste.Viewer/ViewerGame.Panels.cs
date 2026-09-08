@@ -1838,7 +1838,11 @@ public sealed partial class ViewerGame
             foreach (ItemPanel panel in panels)
             {
                 int bottom = DrawItemList(panel.Title, panel.Items, panel.X, panel.Price);
-                if (ReferenceEquals(panel.Items, _dudeInventory)) // the dude's side carries the weight readout (P24)
+                // The plain INV screen draws its own weight readout inside DrawInventorySummary()
+                // instead (matching vanilla's row position) -- this call only fires during
+                // loot/trade/barter, where DrawInventorySummary() never runs.
+                if (ReferenceEquals(panel.Items, _dudeInventory)
+                    && !(_inventoryOpen && _lootContainer is null && _tradePartner is null && _barterNpc is null))
                     DrawWeightReadout(panel.X, bottom);
             }
 
@@ -1871,7 +1875,7 @@ public sealed partial class ViewerGame
         _spriteBatch.End();
         _spriteBatch.Begin(samplerState: SamplerState.PointClamp, transformMatrix: UiScaleMatrix());
 
-        var pale = new Color(252, 252, 252); // the INVBOX readout's pale text (_colorTable[992])
+        var pale = new Color(0, 248, 0); // the INVBOX readout's green text (_colorTable[992])
         int x = o.X + 297, y = o.Y + 44;
         int lh = _fontRenderer.LineHeight;
 
@@ -1929,6 +1933,10 @@ public sealed partial class ViewerGame
             lineY += lh * 3;
         }
 
+        int carried = DudeCarriedWeight(), cap = DudeCarryCapacity();
+        _fontRenderer.Draw(_spriteBatch, $"Total Wt: {carried}/{cap}",
+            new Vector2(x, lineY), WeightReadoutColor(carried, cap));
+
         _spriteBatch.End();
         _spriteBatch.Begin(samplerState: SamplerState.PointClamp);
     }
@@ -1976,7 +1984,7 @@ public sealed partial class ViewerGame
     private Point? InvBoxOrigin() => _invBox is null
         ? null
         : new Point(Math.Max(0, (VirtualViewport().Width - InvBoxW) / 2),
-                    Math.Max(0, (VirtualViewport().Height - InvBoxH) / 2));
+                    Math.Max(0, (VirtualViewport().Height - InterfaceBar.Height - InvBoxH) / 2));
 
     /// <summary>The dude inventory list's X: inside the INVBOX window when its art is up, else x=40
     /// (the boxes layout the harness/goldens use).</summary>
@@ -2328,17 +2336,24 @@ public sealed partial class ViewerGame
             _fontRenderer!.Draw(_spriteBatch, "(empty)", new Vector2(rect.X + 8, rect.Y + rect.Height / 2 - 8), Color.Gray);
     }
 
-    /// <summary>The carried-weight readout, drawn just below the dude's inventory panel (P24;
-    /// inventory.cc:3164 "Total Wt: N/M") — green within capacity, red when over
-    /// (critterIsEncumbered). Below the panel so it never collides with the title/rows.</summary>
+    /// <summary>The carried-weight color: green within capacity, red when encumbered
+    /// (critterIsEncumbered) — matches vanilla's _colorTable[992]/_colorTable[31744].</summary>
+    private static Color WeightReadoutColor(int carried, int cap) =>
+        Formats.Map.InventoryWeight.IsEncumbered(carried, cap)
+            ? new Color(255, 64, 64) : new Color(0, 252, 0);
+
+    /// <summary>The carried-weight readout, drawn just below the dude's inventory panel during
+    /// loot/trade/barter (P24; inventory.cc:3164 "Total Wt: N/M"). On the plain INV screen this
+    /// is drawn instead as the final row of DrawInventorySummary() itself (matching vanilla's own
+    /// position, inventory.cc:3160-3178) — see that method's gate condition and this one's call
+    /// site in DrawItemPanels().</summary>
     private void DrawWeightReadout(int panelX, int panelBottom)
     {
         if (_fontRenderer is null || _dude is null)
             return;
         int carried = DudeCarriedWeight(), cap = DudeCarryCapacity();
-        Color color = Formats.Map.InventoryWeight.IsEncumbered(carried, cap)
-            ? new Color(255, 64, 64) : new Color(0, 252, 0);
-        _fontRenderer.Draw(_spriteBatch, $"Total Wt: {carried}/{cap}", new Vector2(panelX + 10, panelBottom + 4), color);
+        _fontRenderer.Draw(_spriteBatch, $"Total Wt: {carried}/{cap}",
+            new Vector2(panelX + 10, panelBottom + 4), WeightReadoutColor(carried, cap));
     }
 
     // The clickable rect for the displayRow-th row (0..8) of the panel at x. Both the
