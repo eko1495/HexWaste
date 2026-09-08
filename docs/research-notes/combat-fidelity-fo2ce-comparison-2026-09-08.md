@@ -110,22 +110,53 @@ fresh session:
   despite this being the cleanest, most carefully-controlled reproduction attempt of the whole
   investigation.
 
+A **fifth pass** directly tested the leading theory from the fourth pass (below) by creating
+`reference/fallout2-ce/run/f2_res.ini` with `SCR_WIDTH=1920`, `SCR_HEIGHT=1080`,
+`WINDOWED=0` — matching the engine's internal render resolution 1:1 to the real desktop output,
+eliminating the 640×480-to-1920×1080 stretch entirely (`svga.cc:109-124` confirms these
+`f2_res.ini` `[MAIN]` keys are exactly what sets the internal `width`/`height` passed to
+`_GNW95_init_window`/`directDrawInit`, and `mouse.cc:615-627`'s `_mouse_clip()` confirms the
+internal cursor's clip bounds derive from that same configured size). Relaunched fresh,
+reproduced the identical correct sequence a **fourth** time, reached a crosshair confirmed
+precisely centered on the target (**10 — f2res-crosshair-on-target**, independently confirmed by
+the user watching the live screen) — and left-click **still** produced no AP change and no log
+message. **This refutes the resolution-mismatch theory.** The melee-attack failure is not caused
+by a coordinate-transform mismatch between rendering and hit-testing.
+
+A **sixth pass**, at the user's request, specifically tested whether target distance/proximity
+mattered — reverted `f2_res.ini` (back to the default 640×480 internal resolution) and targeted
+the *closest possible* ant: one standing immediately adjacent, directly at the dude's own feet
+(the tightest spatial case possible, as opposed to the one-tile-further ant used in prior
+passes). Crosshair confirmed precisely on this closest ant (**11 — close-ant-armed**, **12 —
+close-ant-crosshair**) — left-click still produced the identical null result. **This rules out
+target distance/proximity as a variable too.**
+
 The approach and full combat-engagement-up-to-crosshair states were captured cleanly across all
-four passes; the actual attack/kill comparison uses Hexwaste's existing `combat-golden.sh`
+six passes; the actual attack/kill comparison uses Hexwaste's existing `combat-golden.sh`
 fixture for the same map instead (see below).
 
-## Leading unverified theory for the melee-attack mystery
+## Theories tested and refuted for the melee-attack mystery
 
-`fallout2.cfg`'s `[screen]` block shows `resolution_x=640 resolution_y=480 scale=1
-windowed=0` — the engine renders internally at 640×480 and fullscreens that to the desktop's
-actual 1920×1080 (confirmed separately by the playbook: no `f2_res.ini` present, so the game
-falls back to desktop resolution with the classic content stretched to fill it). If cursor
-rendering and the click's hit-test both read the same internal `gMouseCursorX/Y` value (as the
-source suggests), a resolution mismatch alone shouldn't explain the failure — the crosshair
-sprite visually being on the target should mean the hit-test resolves the same target. This
-was not fully verified, and remains the most likely place to look next (e.g. by enabling
-`fallout2.cfg`'s `[debug] console_output_path` for verbose per-frame diagnostics, or by testing
-with a matched internal/output resolution via an `f2_res.ini`) if this is revisited.
+- **Resolution/coordinate-transform mismatch (REFUTED, pass five).** Matching the engine's
+  internal render resolution 1:1 to the display via `f2_res.ini` made no difference — the attack
+  still doesn't execute with a correctly-aimed crosshair.
+- **Target distance/proximity (REFUTED, pass six).** The closest possible adjacent target (right
+  at the dude's own feet) fails identically to a target one tile further away.
+- **"The punch keeps missing silently" (REFUTED, pass three).** A parallel action (clicking
+  `TURN`/`CMBT`) produces a real log line when combat state genuinely blocks something,
+  confirming the message log updates correctly for real game actions — no such line ever
+  appears for the attack click, meaning it doesn't reach `_combat_attack_this()`'s validation
+  logic at all, rather than reaching it and failing a check silently.
+- **Wrong cursor mode / not actually in `CROSSHAIR`.** Ruled out by the visually-confirmed red
+  targeting crosshair (distinct from the plain hex-outline walk cursor and the yellow ARROW-mode
+  reach-line) appearing precisely on the target, reproduced across six independent passes via
+  two different arming methods (right-click mode-cycle, and the interface-bar `PUNCH` label).
+
+**Not yet tested**: enabling `fallout2.cfg`'s `[debug] console_output_path` for verbose
+per-frame diagnostics — this remains the most promising next step, since every environmental
+and technique-level theory has now been eliminated and the remaining candidates (a bug specific
+to synthetic/`xdotool`-injected input events not being recognized identically to genuine SDL
+hardware events, or a deeper engine-side issue) would most plausibly show up there.
 
 ## Hexwaste (`scripts/hexwaste-checkpoint.sh`, deterministic CLI actions)
 
@@ -166,8 +197,12 @@ everything, until fo2ce is relaunched**. Missing any of these silently desyncs t
 from where the game thinks the cursor is, or breaks input outright. fo2ce's relative-mouse
 cursor also has no internal clamp (large cumulative deltas can push it far off-canvas with no
 visible sprite to recover a bearing from) — also folded into the playbook. Despite fixing every
-one of these and reproducing a correctly-aimed crosshair on the target across three independent
-fresh sessions (the last one live, with real-time correction from a human watching the actual
-screen), the melee-attack click itself never executes. What remains open is documented above as
-a leading but unverified theory — this is now a well-characterized, thoroughly reproducible
-open problem rather than a piloting-technique gap.
+one of these and reproducing a correctly-aimed crosshair on the target across **six** independent
+sessions (several live, with real-time correction from a human watching the actual screen), the
+melee-attack click itself never executes — not for a far target, not for the closest possible
+adjacent target, and not with the engine's internal resolution matched 1:1 to the display. Three
+concrete theories (resolution mismatch, target distance, and "misses are just silent") are now
+directly refuted by evidence rather than merely undemonstrated; what remains is documented above
+as the next concrete step to try (verbose debug console output), not a vague "keep guessing."
+This is a well-characterized, thoroughly reproducible open problem, isolated about as far as it
+can be from the outside without instrumenting the engine's own input-handling code directly.

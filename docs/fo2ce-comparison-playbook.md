@@ -113,18 +113,23 @@ Commands (all via `scripts/fo2ce-control.sh`, run from the repo root):
   message log genuinely updates for real actions — which rules out "the punch keeps missing
   silently" and narrows the mystery to the left-click-up handler itself never firing (or never
   resolving a target) for this specific input setup.
-  Leading unverified theory: `fallout2.cfg`'s `[screen]` block shows `resolution_x=640
-  resolution_y=480 scale=1 windowed=0` — the engine renders at 640×480 internally and
-  fullscreens that to the desktop's real resolution (no `f2_res.ini` present). If cursor
-  rendering and the click hit-test don't share the exact same coordinate transform, a
-  visually-on-target crosshair could still resolve to nothing at hit-test time. Not verified —
-  the next step to actually confirm this would be enabling `fallout2.cfg`'s `[debug]
-  console_output_path` for verbose diagnostics, or testing with an `f2_res.ini` that matches
-  internal and output resolution 1:1. Anyone attempting a live fo2ce combat-kill comparison
-  should expect to spend real time on this specific step, and should not expect the mouse-hygiene
-  fixes above (edge-avoidance, Home-then-reposition, avoiding atomic clicks) to be sufficient on
-  their own — they get you to a correctly-aimed crosshair reliably, but the attack itself still
-  does not fire.
+  **Three theories have since been directly tested and refuted, not just left unverified:**
+  (1) *Resolution/coordinate-transform mismatch* — creating `f2_res.ini` with `SCR_WIDTH=1920
+  SCR_HEIGHT=1080 WINDOWED=0` (matching the engine's internal render resolution 1:1 to the
+  display, per `svga.cc:109-124`) made no difference; the attack still doesn't fire with a
+  confirmed-precise crosshair. (2) *Target distance/proximity* — the closest possible adjacent
+  target (directly at the dude's own feet) fails identically to a target one tile further away.
+  (3) *"The punch just keeps missing silently"* — a parallel action (clicking `TURN`/`CMBT`)
+  produces a real log line when something genuinely blocks it, proving the message log updates
+  correctly for real game actions; no such line ever appears for the attack click, meaning it
+  never reaches `_combat_attack_this()`'s validation logic at all. Anyone attempting a live fo2ce
+  combat-kill comparison should expect to spend real time on this specific step, and should not
+  expect the mouse-hygiene fixes above (edge-avoidance, Home-then-reposition, avoiding atomic
+  clicks) to be sufficient on their own — they reliably get you to a correctly-aimed crosshair,
+  but the attack itself still does not fire. The next concrete step, not yet tried: enabling
+  `fallout2.cfg`'s `[debug] console_output_path` for verbose per-frame diagnostics, to see
+  whether synthetic/`xdotool`-injected input events are even being recognized as equivalent to
+  genuine SDL hardware events at the point `_gmouse_handle_event()` reads them.
 - **Pause menu / Preferences**: `key Escape` from gameplay reliably opens the pause menu
   (Save Game/Load Game/Preferences/Help/Exit Game/Done). On this machine's 1920x1080 output the
   cursor lands near EXIT GAME (~(980, 555)) when the menu opens; PREFERENCES sits at roughly
