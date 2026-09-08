@@ -58,9 +58,46 @@ disciplined mouse moves throughout, got much further:
   build) was not identified this session, despite trying left-click, the right-click mode-cycle,
   the `F` key, and double-click in combination.
 
-The approach and full combat-engagement-up-to-crosshair states were captured cleanly across
-both passes; the actual attack/kill comparison uses Hexwaste's existing `combat-golden.sh`
+A **third pass** dug into fo2ce's own C++ source (`reference/fallout2-ce/src`) to stop guessing
+and get a grounded answer. The source confirms a single left-click-up in `GAME_MOUSE_MODE_
+CROSSHAIR` over a resolved critter should fire `_combat_attack_this()` immediately — no
+double-click, no special confirm step (`game_mouse.cc:1000-1017`). Right-click cycles
+`gameMouseCycleMode()` through `MOVE(0) → ARROW(1) → CROSSHAIR(2)`, but `CROSSHAIR` is only
+reachable while `isInCombat()` is true (`game_mouse.cc:1422-1440`) — outside combat, right-click
+just bounces between `MOVE`/`ARROW` forever, which is a real trap for a pilot who hasn't
+triggered combat yet. Armed with this, the pass reproduced every step correctly live — reached
+the genuine red crosshair over an adjacent ant (**06 — crosshair-on-target**) — and along the
+way found and fixed a **second real bug in the piloting technique**: pressing **Home** recenters
+the *camera* on the player but does **not** move the *cursor* — after a Home recenter, the
+crosshair sprite is left stranded at its old screen position while the world shifts underneath
+it, so a click made right after Home (without first repositioning the cursor) always misses,
+silently. Once the cursor was manually repositioned back onto the recentered target, the
+crosshair rendered precisely on it — and left-click **still** produced no AP change and no log
+line. A parallel action (clicking the TURN/CMBT button to attempt ending combat) DID produce a
+fresh log line (**07 — combat-cannot-end-confirms-hostile**: *"Combat cannot end with nearby
+hostile creatures."*) confirming combat state is genuinely active, the ant is genuinely
+recognized as hostile, and the message log genuinely does update when a real action dispatches —
+which rules out "the punch keeps missing silently" and narrows the mystery specifically to
+`_gmouse_handle_event()`'s left-click-up handler never resolving a target/never firing at all
+for this input setup. This remains unsolved after combining source-code grounding with live
+testing; see Non-goals below for the leading unverified theory.
+
+The approach and full combat-engagement-up-to-crosshair states were captured cleanly across all
+three passes; the actual attack/kill comparison uses Hexwaste's existing `combat-golden.sh`
 fixture for the same map instead (see below).
+
+## Leading unverified theory for the melee-attack mystery
+
+`fallout2.cfg`'s `[screen]` block shows `resolution_x=640 resolution_y=480 scale=1
+windowed=0` — the engine renders internally at 640×480 and fullscreens that to the desktop's
+actual 1920×1080 (confirmed separately by the playbook: no `f2_res.ini` present, so the game
+falls back to desktop resolution with the classic content stretched to fill it). If cursor
+rendering and the click's hit-test both read the same internal `gMouseCursorX/Y` value (as the
+source suggests), a resolution mismatch alone shouldn't explain the failure — the crosshair
+sprite visually being on the target should mean the hit-test resolves the same target. This
+was not fully verified, and remains the most likely place to look next (e.g. by enabling
+`fallout2.cfg`'s `[debug] console_output_path` for verbose per-frame diagnostics, or by testing
+with a matched internal/output resolution via an `f2_res.ini`) if this is revisited.
 
 ## Hexwaste (`scripts/hexwaste-checkpoint.sh`, deterministic CLI actions)
 
@@ -88,10 +125,14 @@ N damage... The X dies" log phrasing — reads as authentic Fallout 2 combat tex
 consistent with what fo2ce's own combat log format is known to look like from this project's
 existing fo2ce-fidelity work. The one gap in this run is a live side-by-side melee kill from
 fo2ce itself — not a Hexwaste fidelity concern, but a genuine open question about this specific
-piloting setup: the attack-confirm input eluded every combination tried (left-click, the
-right-click mode-cycle, `F`, double-click) even once the crosshair cursor was reached, which is
-new, reproducible information for whoever revisits this control script next. Also newly
-documented for future pilots: fo2ce's relative-mouse cursor has no internal clamp (large
-cumulative deltas can push it far off-canvas with no visible sprite to recover from), and
-**Home recenters the camera on the player** — both worth folding into
-`docs/fo2ce-comparison-playbook.md` if this scenario gets revisited.
+piloting setup, now narrowed considerably: source-code analysis confirms a plain left-click-up
+in `CROSSHAIR` mode over a resolved critter should attack immediately, and live testing
+confirmed combat state, target recognition, and the message log all work correctly for other
+actions — yet the melee-attack click specifically never resolves. Two real, reproducible
+piloting bugs were found and fixed along the way (`docs/fo2ce-comparison-playbook.md` updated
+with both): `CROSSHAIR` mode is only reachable via right-click while already `isInCombat()`, and
+**Home recenters the camera but leaves the cursor stranded at its old screen position** —
+missing either of these silently desyncs the pilot's aim from where the game thinks the cursor
+is. fo2ce's relative-mouse cursor also has no internal clamp (large cumulative deltas can push
+it far off-canvas with no visible sprite to recover a bearing from) — also folded into the
+playbook. What remains open is documented above as a leading but unverified theory.
