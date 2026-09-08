@@ -1,13 +1,20 @@
 namespace Hexwaste.Formats.Rendering;
 
 /// <summary>
-/// Pure math for scaling Hexwaste's UI to fill an arbitrary window, matching fallout2-ce's own
-/// stretched-buffer presentation but WITHOUT its non-uniform (aspect-distorting) stretch: fo2ce
-/// stretches a fixed 640x480 buffer independently on each axis to fill any window shape;
-/// Hexwaste instead picks one UNIFORM scale (the smaller of the two axis ratios) and lets the
-/// "virtual" canvas extend past 640x480 on whichever axis has slack, avoiding pixel distortion.
-/// Zero MonoGame dependency (Hexwaste.Formats is a pure .NET library) so this is directly
-/// unit-testable; Hexwaste.Viewer's ViewerGame.UiScale.cs wraps these with real
+/// Pure math for scaling Hexwaste's UI to fill an arbitrary window. fo2ce's own SDL-based
+/// presentation (SDL_RenderSetLogicalSize + SDL_RenderCopy, reference/fallout2-ce/src/svga.cc)
+/// is actually a fixed low-resolution buffer (1024x768 by default via f2_res.ini, or 640x480
+/// vanilla) UNIFORMLY scaled with letterbox/pillarbox bars on any non-matching aspect ratio —
+/// confirmed against the vendored SDL2 source fo2ce builds against, which is architecturally
+/// incapable of a non-uniform per-axis stretch. (A one-off session observation of fo2ce filling
+/// a 16:9 screen edge-to-edge with no bars was traced to an OS/compositor-level scanout stretch
+/// from SDL_WINDOW_FULLSCREEN mode-switching, happening entirely outside fo2ce's own rendering
+/// code — not something fo2ce's application logic does, and not portable/reproducible behavior.)
+/// Hexwaste deliberately does NOT replicate fo2ce's letterboxing: it picks one UNIFORM scale (the
+/// smaller of the two axis ratios, so no pixel distortion) and lets the "virtual" canvas extend
+/// past 640x480 on whichever axis has slack, filling the window edge-to-edge instead of showing
+/// black bars. Zero MonoGame dependency (Hexwaste.Formats is a pure .NET library) so this is
+/// directly unit-testable; Hexwaste.Viewer's ViewerGame.UiScale.cs wraps these with real
 /// GraphicsDevice.Viewport / Mouse.GetState() values.
 /// </summary>
 public static class UiScale

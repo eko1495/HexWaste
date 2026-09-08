@@ -65,19 +65,50 @@ per-tile size), while fo2ce's camera at 1920x1080 keeps the temple large regardl
 window size, implying a different scaling relationship between window resolution and
 world-camera zoom in the two engines.
 
-**This was not investigated further or fixed this session** — root-causing it would
-mean comparing `tile.cc`'s `gTileWindowWidth`/`gTileWindowHeight` handling (which reads
-the *configured* resolution, per this session's earlier scroll-border-clamp research)
-against `Camera.cs`'s equivalent `_windowWidth`/`_windowHeight` usage, to find where
-the two diverge. Flagging it here as a genuine, verified, reproducible difference
-worth a dedicated investigation — separate from today's two shipped fixes, both of
-which are confirmed working correctly.
+**Root-caused later the same session** (two grounding passes against
+`reference/fallout2-ce/src`, pinned base tree): fo2ce's `src/` code never reads
+`fallout2.cfg`'s `[screen] resolution_x`/`resolution_y` at all. Its actual game
+resolution — world AND UI, one shared 8-bit surface — comes from a fixed low value:
+1024x768 by default in this repo's shipped `f2_res.ini` (`[MAIN] SCR_WIDTH`/
+`SCR_HEIGHT`, `reference/fallout2-ce/run/__support/app/f2_res.ini:28-29`), or 640x480
+truly vanilla. That fixed surface is uploaded to a texture and presented via
+`SDL_RenderSetLogicalSize` + `SDL_RenderCopy(renderer, texture, nullptr, nullptr)`
+(`src/svga.cc:364,410-416`) every frame — architecturally a **uniform**, aspect-ratio
+-preserving scale (confirmed against the vendored SDL2 source fo2ce actually builds
+against: `UpdateLogicalSize()` always computes one `scale` factor for both axes and,
+with no `RENDER_LOGICAL_SIZE_MODE` hint set anywhere in fo2ce's own code, always takes
+the letterbox path). SDL2 is architecturally incapable of the non-uniform per-axis
+stretch this note originally assumed.
+
+So this session's "fills 1920x1080 edge-to-edge, no black bars" fo2ce screenshots were
+never fo2ce's own rendering logic doing that — `_GNW95_init_window()` requests
+`SDL_WINDOW_FULLSCREEN` (exclusive/legacy fullscreen, `src/svga.cc:181`) at the game's
+own small logical size (1024x768), and on this session's Linux/KWin test machine the
+*compositor* silently scanned-out-scaled that small framebuffer to fill the real
+1920x1080 panel — a step that happens entirely after `SDL_RenderPresent`, outside
+fo2ce's code, and would behave differently on a different OS/compositor/monitor. The
+2.3x "zoom" gap this note originally measured is consistent with a 1024/1920 ≈ 1.9x or
+640/1920 = 3.0x upscale of that small frame, not a deliberate fo2ce camera FOV.
+
+**Decision, once this was understood**: keep Hexwaste's current behavior unchanged —
+Hexwaste renders directly at the window's true resolution (crisp, more world visible,
+no upscale blur), which is arguably a straightforward improvement over fo2ce's
+DOS-era-heritage fixed-low-resolution-then-blur limitation, not a bug to fix. No code
+change to the camera. `Hexwaste.Formats.Rendering.UiScale.cs`'s doc comment — which had
+claimed fo2ce does a non-uniform per-axis stretch, the mistaken premise this whole
+investigation started from — was corrected to record the grounded finding, since
+Hexwaste's own no-letterbox design remains a deliberate choice independent of what
+fo2ce actually does (not a replication of it, as the old comment implied).
 
 ## Conclusion
 
 Both of today's fixes (fullscreen-by-default, menu-backdrop-fill) hold up against a
 real side-by-side run of both engines at native fullscreen resolution — menus and
-character selection now visually match fo2ce's own presentation closely. Gameplay
-camera zoom does not match, however: Hexwaste shows substantially more of the game
-world than fo2ce does at the same resolution and camera position, a real discrepancy
-uncovered by this comparison and left open for a future session.
+character selection now visually match fo2ce's own presentation closely. The apparent
+gameplay-camera "zoom" gap turned out not to be a Hexwaste bug at all: fo2ce's real
+in-application behavior is a small, fixed-resolution, letterboxed image, and the
+full-bleed fo2ce screenshots this session captured were an OS-compositor artifact of
+this specific test machine, not reproducible or faithful application behavior worth
+matching. Closed with no further change, after correcting the mistaken "fo2ce
+non-uniform stretch" premise that had been recorded in `UiScale.cs` since earlier
+UI Scale work.
