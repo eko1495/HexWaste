@@ -35,6 +35,15 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
     /// <summary>Starts with critters in the walk cycle (screenshot testing of the T toggle).</summary>
     public bool StartInWalkMode { get; set; }
 
+    /// <summary>Borderless fullscreen at the desktop's native resolution for a plain
+    /// interactive launch, matching vanilla Fallout 2/fo2ce's default presentation.
+    /// Set from Program.cs off the same interactiveLaunch condition that gates
+    /// StartInMenu. See Initialize() and ToggleFullscreen().</summary>
+    public bool StartFullscreen { get; set; }
+
+    private int _windowedWidth = 1280;
+    private int _windowedHeight = 720;
+
     private readonly System.Diagnostics.Stopwatch _frameClock = new();
     private readonly List<double> _updateMs = [];
     private readonly List<double> _drawMs = [];
@@ -1123,11 +1132,32 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
         IsMouseVisible = true;
         Window.AllowUserResizing = true;
         Window.ClientSizeChanged += (_, _) =>
+        {
+            if (!_graphics.IsFullScreen)
+            {
+                _windowedWidth = Window.ClientBounds.Width;
+                _windowedHeight = Window.ClientBounds.Height;
+            }
             _camera.SetWindowSize(Window.ClientBounds.Width, Window.ClientBounds.Height);
+        };
     }
 
     protected override void Initialize()
     {
+        // A plain interactive launch (Program.cs: interactiveLaunch && !windowed)
+        // opens borderless-fullscreen at the desktop's native resolution, matching
+        // vanilla Fallout 2/fo2ce's default presentation. Every CLI-driven
+        // screenshot/test/benchmark path leaves StartFullscreen false.
+        if (StartFullscreen)
+        {
+            DisplayMode mode = GraphicsAdapter.DefaultAdapter.CurrentDisplayMode;
+            _graphics.HardwareModeSwitch = false;
+            _graphics.IsFullScreen = true;
+            _graphics.PreferredBackBufferWidth = mode.Width;
+            _graphics.PreferredBackBufferHeight = mode.Height;
+            _graphics.ApplyChanges();
+        }
+
         // The simulation is wall-time driven (palette cycling, soon animations),
         // so rendering speed never affects game speed. MonoGame's default fixed
         // 60 Hz update is kept for interactive use; benchmarks unlock both the
@@ -1932,6 +1962,18 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
         _frameClock.Restart();
         KeyboardState keyboard = Keyboard.GetState();
         MouseState mouse = Mouse.GetState();
+
+        // Global fullscreen toggle, checked before any state-specific handling so it
+        // works regardless of what screen/dialog/menu is open. Consumes the Enter
+        // press (returns early) so it doesn't also fall through to the many plain-Enter
+        // handlers elsewhere in this method (dialogs, character creation, menu confirm).
+        if ((keyboard.IsKeyDown(Keys.LeftAlt) || keyboard.IsKeyDown(Keys.RightAlt))
+            && IsKeyPressed(keyboard, Keys.Enter))
+        {
+            ToggleFullscreen();
+            return;
+        }
+
         // Stage 2 (UI Scale): the dialog panel and the main-menu family hit-test against
         // VirtualViewport()-derived rectangles, so their click position must be the same
         // transformed point, not the raw device mouse. As of UI Scale Stage 5 (worldmap chrome,
@@ -3025,6 +3067,27 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
         _previousKeyboard = keyboard;
         base.Update(gameTime);
         _updateMs.Add(_frameClock.Elapsed.TotalMilliseconds);
+    }
+
+    /// <summary>Alt+Enter: flips between borderless fullscreen (desktop resolution) and
+    /// windowed, remembering the last windowed size across the toggle.</summary>
+    private void ToggleFullscreen()
+    {
+        if (_graphics.IsFullScreen)
+        {
+            _graphics.IsFullScreen = false;
+            _graphics.PreferredBackBufferWidth = _windowedWidth;
+            _graphics.PreferredBackBufferHeight = _windowedHeight;
+        }
+        else
+        {
+            DisplayMode mode = GraphicsAdapter.DefaultAdapter.CurrentDisplayMode;
+            _graphics.HardwareModeSwitch = false;
+            _graphics.IsFullScreen = true;
+            _graphics.PreferredBackBufferWidth = mode.Width;
+            _graphics.PreferredBackBufferHeight = mode.Height;
+        }
+        _graphics.ApplyChanges();
     }
 
     private bool IsKeyPressed(KeyboardState keyboard, Keys key) =>

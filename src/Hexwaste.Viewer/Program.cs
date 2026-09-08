@@ -35,6 +35,7 @@ bool noAudio = false;
 bool noAmbient = false;
 bool forceMenu = false;
 string? menuStartState = null;
+bool windowed = false;
 
 for (int i = 0; i < args.Length; i++)
 {
@@ -42,6 +43,9 @@ for (int i = 0; i < args.Length; i++)
     {
         case "--no-roofs":
             roofs = false;
+            break;
+        case "--windowed":
+            windowed = true;
             break;
         case "--no-audio":
             noAudio = true;
@@ -892,6 +896,7 @@ bool interactiveLaunch = screenshot is null && actions.Count == 0 && talkHex is 
 using var game = new ViewerGame(gameDir!, mapName, screenshot, roofs)
 {
     StartInMenu = interactiveLaunch || forceMenu,
+    StartFullscreen = interactiveLaunch && !windowed,
     MenuStartState = menuStartState,
     AdvanceCyclingMs = advanceMs,
     BenchFrames = benchFrames,
