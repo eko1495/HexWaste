@@ -126,10 +126,27 @@ Commands (all via `scripts/fo2ce-control.sh`, run from the repo root):
   combat-kill comparison should expect to spend real time on this specific step, and should not
   expect the mouse-hygiene fixes above (edge-avoidance, Home-then-reposition, avoiding atomic
   clicks) to be sufficient on their own — they reliably get you to a correctly-aimed crosshair,
-  but the attack itself still does not fire. The next concrete step, not yet tried: enabling
-  `fallout2.cfg`'s `[debug] console_output_path` for verbose per-frame diagnostics, to see
-  whether synthetic/`xdotool`-injected input events are even being recognized as equivalent to
-  genuine SDL hardware events at the point `_gmouse_handle_event()` reads them.
+  but the attack itself still does not fire.
+  **Conclusive mechanism-level diagnosis (2026-09-08, pass seven):** set `DEBUGACTIVE=log` as an
+  env var before launching (`_debug_register_env()`, `debug.cc:83-103`) to route every
+  `debugPrint()` call to `reference/fallout2-ce/run/debug.log`. Confirmed the mechanism works
+  (other `debugPrint()` lines like `OVERRIDE_MAP_START`/`MAP LOAD` appear correctly), then
+  reproduced the correct crosshair-on-target sequence and clicked: `debug.log` contains **zero**
+  occurrences of `"computing attack..."` / `"sequencing attack..."` / `"running attack..."` —
+  the three lines `combat.cc`'s `_combat_attack()` unconditionally prints every time it runs
+  (`combat.cc:3499/3536/3559`). **`_combat_attack()` is never called.** Combined with the
+  on-screen log never showing any of `_combat_attack_this()`'s other failure messages (out of
+  ammo/range/AP, aim blocked, arm(s) crippled — `combat.cc:5715-5805`, each of which calls
+  `displayMonitorAddMessage()`), the failure is narrowed to one of exactly two silent
+  early-return lines at the top of `_combat_attack_this()` (`combat.cc:5715-5721`): either
+  `gameMouseGetObjectUnderCursor()` resolves to no object despite the visible crosshair, or
+  `gCombatState & 0x02` (the "dude's turn, input enabled" flag, set in `_combat_turn()` at
+  `combat.cc:3273`) reads as unset at click time. Distinguishing the two would need a temporary
+  print statement added directly to the engine's own source and a rebuild — a materially bigger
+  step than any input-scripting fix tried so far, not attempted as of this writing. (A
+  `ddraw.ini` `[Misc] ConsoleOutputPath` was also tried, to mirror the on-screen log to a file;
+  the target file was never created, so that sfall mechanism doesn't appear wired up in this
+  build — not pursued further since `debug.log` alone gave the answer above.)
 - **Pause menu / Preferences**: `key Escape` from gameplay reliably opens the pause menu
   (Save Game/Load Game/Preferences/Help/Exit Game/Done). On this machine's 1920x1080 output the
   cursor lands near EXIT GAME (~(980, 555)) when the menu opens; PREFERENCES sits at roughly

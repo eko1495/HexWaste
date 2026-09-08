@@ -131,8 +131,59 @@ passes). Crosshair confirmed precisely on this closest ant (**11 — close-ant-a
 close-ant-crosshair**) — left-click still produced the identical null result. **This rules out
 target distance/proximity as a variable too.**
 
+A **seventh pass** finally got a conclusive, mechanism-level answer by instrumenting the engine's
+own debug output rather than only observing the screen. Set `DEBUGACTIVE=log` (an environment
+variable `_debug_register_env()` reads at startup, `debug.cc:83-103`) to route every
+`debugPrint()` call in the engine to `reference/fallout2-ce/run/debug.log`. (A `ddraw.ini`
+`[Misc] ConsoleOutputPath` was also tried, to mirror the on-screen message log to a file, but the
+target file was never created — that sfall mechanism doesn't appear to be wired up in this build/
+session, and wasn't investigated further since `debug.log` alone answered the question.)
+Reproduced the correct sequence an eighth time, reached a crosshair precisely on target
+(**13 — debug-crosshair-on-target**) — the on-screen result was, again, no visible change
+(**14 — debug-post-click-no-change**). But `debug.log` (saved as `debug.log.txt` alongside the
+screenshots) is the real payoff:
+
+- It correctly captured *other* `debugPrint()` calls throughout the session (`OVERRIDE_MAP_START`,
+  `MAP LOAD`, `Giant Ant is using Rat packet...`, etc. — confirmed each is a genuine `debugPrint()`
+  call by reading its call site, e.g. `interpreter_extra.cc:531-532` for `OVERRIDE_MAP_START`),
+  proving the capture mechanism genuinely works.
+- It contains **zero** occurrences of `"computing attack..."`, `"sequencing attack..."`, or
+  `"running attack..."` — the three `debugPrint()` lines `combat.cc`'s `_combat_attack()`
+  **unconditionally** prints every single time it runs (`combat.cc:3499`, `:3536`, `:3559`).
+  **This proves `_combat_attack()` is never called by our click.**
+
+Combined with the on-screen log never once showing any of `_combat_attack_this()`'s other
+failure-branch messages — out of ammo, out of range, not enough AP, aim blocked, arm crippled,
+both arms crippled (`combat.cc:5715-5805`; each of these branches calls
+`displayMonitorAddMessage(...)`, so any of them firing would have shown up on screen) — the
+failure is narrowed to **exactly one of two silent, message-free early-return branches** at the
+very top of `_combat_attack_this()` itself (`combat.cc:5715-5721`):
+
+```cpp
+void _combat_attack_this(Object* target)
+{
+    if (target == nullptr) {
+        return;
+    }
+
+    if ((gCombatState & 0x02) == 0) {
+        return;
+    }
+    ...
+```
+
+Either `gameMouseGetObjectUnderCursor()` resolves to no object at all despite the crosshair
+sprite visually rendering right on the target, or `gCombatState`'s bit `0x02` — the "it's the
+dude's turn, input is enabled" flag, set once per turn in `_combat_turn()` (`combat.cc:3273`)
+right before entering the `_combat_input()` polling loop (`combat.cc:3134-3199`) that reads
+`inputGetInput()` each frame — is unexpectedly unset at the moment our click is processed, even
+though every other observable signal (movement working, the TURN/CMBT indicator, the AP display)
+suggested we were mid-turn with input enabled. This is the most precise diagnosis reached this
+session: the mystery is now isolated to the first four lines of one function, not a vague
+"somewhere in the input pipeline."
+
 The approach and full combat-engagement-up-to-crosshair states were captured cleanly across all
-six passes; the actual attack/kill comparison uses Hexwaste's existing `combat-golden.sh`
+seven passes; the actual attack/kill comparison uses Hexwaste's existing `combat-golden.sh`
 fixture for the same map instead (see below).
 
 ## Theories tested and refuted for the melee-attack mystery
@@ -142,21 +193,22 @@ fixture for the same map instead (see below).
   still doesn't execute with a correctly-aimed crosshair.
 - **Target distance/proximity (REFUTED, pass six).** The closest possible adjacent target (right
   at the dude's own feet) fails identically to a target one tile further away.
-- **"The punch keeps missing silently" (REFUTED, pass three).** A parallel action (clicking
-  `TURN`/`CMBT`) produces a real log line when combat state genuinely blocks something,
-  confirming the message log updates correctly for real game actions — no such line ever
-  appears for the attack click, meaning it doesn't reach `_combat_attack_this()`'s validation
-  logic at all, rather than reaching it and failing a check silently.
+- **"The punch keeps missing silently" / reaching `_combat_check_bad_shot()` and failing a
+  real validation (REFUTED, pass seven).** None of that function's message-producing failure
+  branches ever fire (confirmed both by the on-screen log and, now, `debug.log`'s absence of the
+  attack-path debug lines) — the code never gets that far.
 - **Wrong cursor mode / not actually in `CROSSHAIR`.** Ruled out by the visually-confirmed red
   targeting crosshair (distinct from the plain hex-outline walk cursor and the yellow ARROW-mode
-  reach-line) appearing precisely on the target, reproduced across six independent passes via
+  reach-line) appearing precisely on the target, reproduced across eight independent attempts via
   two different arming methods (right-click mode-cycle, and the interface-bar `PUNCH` label).
 
-**Not yet tested**: enabling `fallout2.cfg`'s `[debug] console_output_path` for verbose
-per-frame diagnostics — this remains the most promising next step, since every environmental
-and technique-level theory has now been eliminated and the remaining candidates (a bug specific
-to synthetic/`xdotool`-injected input events not being recognized identically to genuine SDL
-hardware events, or a deeper engine-side issue) would most plausibly show up there.
+**What remains, narrowed to two candidates**: (1) target resolution — `gameMouseGetObjectUnderCursor(OBJ_TYPE_CRITTER, false, gElevation)`
+(`game_mouse.cc:1000-ish`) returns null for this click despite the crosshair rendering on the
+target, or (2) turn-state — `gCombatState & 0x02` reads as unset at click time despite every
+external signal suggesting it's the dude's turn. Distinguishing between these two would need a
+temporary source-level print statement directly inside `_combat_attack_this()` (or right before
+its call site in `game_mouse.cc`) and a rebuild of the reference engine binary — a meaningfully
+bigger step (compiling C++) than anything tried so far, not attempted this session.
 
 ## Hexwaste (`scripts/hexwaste-checkpoint.sh`, deterministic CLI actions)
 
@@ -197,12 +249,17 @@ everything, until fo2ce is relaunched**. Missing any of these silently desyncs t
 from where the game thinks the cursor is, or breaks input outright. fo2ce's relative-mouse
 cursor also has no internal clamp (large cumulative deltas can push it far off-canvas with no
 visible sprite to recover a bearing from) — also folded into the playbook. Despite fixing every
-one of these and reproducing a correctly-aimed crosshair on the target across **six** independent
-sessions (several live, with real-time correction from a human watching the actual screen), the
-melee-attack click itself never executes — not for a far target, not for the closest possible
-adjacent target, and not with the engine's internal resolution matched 1:1 to the display. Three
-concrete theories (resolution mismatch, target distance, and "misses are just silent") are now
-directly refuted by evidence rather than merely undemonstrated; what remains is documented above
-as the next concrete step to try (verbose debug console output), not a vague "keep guessing."
-This is a well-characterized, thoroughly reproducible open problem, isolated about as far as it
-can be from the outside without instrumenting the engine's own input-handling code directly.
+one of these and reproducing a correctly-aimed crosshair on the target across **eight**
+independent attempts (several live, with real-time correction from a human watching the actual
+screen), the melee-attack click itself never executes — not for a far target, not for the
+closest possible adjacent target, and not with the engine's internal resolution matched 1:1 to
+the display. Instrumenting the engine's own `debugPrint()` output (`DEBUGACTIVE=log`) gave the
+conclusive mechanism-level answer external observation alone couldn't: `_combat_attack()` is
+**never called** by the click (its three unconditional debug lines never appear), and none of
+`_combat_attack_this()`'s message-producing failure branches fire either (confirmed both on
+screen and in the debug log) — which together pin the failure to one of exactly two silent
+early-return lines at the very top of `_combat_attack_this()`: either the target fails to
+resolve under the cursor, or the "dude's turn, input enabled" flag reads as unset at the moment
+of the click. This is a well-characterized, precisely isolated open problem — as far as it can
+be narrowed from the outside without adding a temporary print statement directly in the engine's
+own source and rebuilding it, which is the natural next step if this is pursued further.
