@@ -49,6 +49,20 @@ Commands (all via `scripts/fo2ce-control.sh`, run from the repo root):
   confirm you're over the right tile, then `click`. Getting somewhere non-adjacent (e.g. through
   a doorway) often takes several small `move`+`shot` corrections rather than one big jump, and a
   destination close to a wall/threshold may need two shorter click-to-walk hops instead of one.
+  **The in-game cursor has no clamp to the visible canvas** — large cumulative relative moves
+  (e.g. repeated `move -800 -800`) can push it far off-screen with no sprite ever rendering to
+  recover a bearing from, even after a correct absolute `mousemove --sync` or a large positive
+  correction. If a screenshot ever looks static across several different `move`+`shot` attempts
+  with the cursor never appearing, suspect this rather than a render freeze — the cleanest fix is
+  `kill` + `launch` fresh and keep all subsequent `move` deltas small (roughly ≤150px) with a
+  `shot` after every single one.
+- **Turn-based combat locks the camera.** The moment combat auto-triggers, the view freezes at
+  whatever position it happened to be at — arrow-key panning (otherwise reliable pre-combat,
+  see above) stops responding entirely for the rest of the encounter, on both your turn and the
+  enemy's. If that freeze position doesn't include the dude, press **`key Home`** —
+  fo2ce's camera-recenter-on-player hotkey — to snap the view back. Re-press it (after first
+  nudging the cursor away from any screen edge with `move`, since a cursor pinned at the edge
+  re-triggers edge-scroll and fights the recenter) any time the view drifts again mid-combat.
 - **Right-click ("look"/examine)**: `fo2ce-control.sh` has no built-in right-click command —
   after `move`ing the cursor over a target, run the same down/sleep/up pattern directly with
   button 3: `DISPLAY=:0 xdotool mousedown 3; sleep 0.15; DISPLAY=:0 xdotool mouseup 3`. This
@@ -57,6 +71,16 @@ Commands (all via `scripts/fo2ce-control.sh`, run from the repo root):
   (no new right-click) also prints a fresh `You see: <Name>.` line for it. `Escape` while in
   this state opens the pause/options menu, not a look-cursor cancel — press it again or click
   Done to get back to gameplay.
+- **Melee attack execution in combat is an OPEN PROBLEM as of 2026-09-08.** In turn-based combat,
+  standing adjacent to a hostile shows a yellow reach/aim-line; right-clicking there cycles the
+  cursor through modes (walk → look, printing `You see: <Name>.` → a red attack-targeting
+  crosshair). With the crosshair showing, neither a plain `click` nor a genuine rapid
+  down/up-down/up double-click (nor the `F` key) produced any AP change or combat-log message —
+  the ant/target survived every attempt across many tries. The correct `xdotool` input sequence
+  to actually confirm a melee attack against this SDL build was not found. Anyone attempting a
+  live fo2ce combat-kill comparison should expect to spend real time on this specific step, or
+  budget for using an alternate confirmation method (a physical test session, or instrumenting
+  fo2ce's own input handling) rather than assuming click-to-attack works like click-to-walk.
 - **Pause menu / Preferences**: `key Escape` from gameplay reliably opens the pause menu
   (Save Game/Load Game/Preferences/Help/Exit Game/Done). On this machine's 1920x1080 output the
   cursor lands near EXIT GAME (~(980, 555)) when the menu opens; PREFERENCES sits at roughly
