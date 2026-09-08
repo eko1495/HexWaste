@@ -79,6 +79,9 @@ if ((keyboard.IsKeyDown(Keys.LeftAlt) || keyboard.IsKeyDown(Keys.RightAlt))
     && IsKeyPressed(keyboard, Keys.Enter))
 {
     ToggleFullscreen();
+    _previousMouse = mouse;
+    _previousKeyboard = keyboard;
+    base.Update(gameTime);
     return; // consume the Enter press: don't also fall through to the many
             // plain-Enter handlers elsewhere in this method (dialogs, character
             // creation, menu confirm, etc.)

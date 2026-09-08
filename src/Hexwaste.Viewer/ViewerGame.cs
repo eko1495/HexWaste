@@ -1971,6 +1971,9 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
             && IsKeyPressed(keyboard, Keys.Enter))
         {
             ToggleFullscreen();
+            _previousMouse = mouse;
+            _previousKeyboard = keyboard;
+            base.Update(gameTime);
             return;
         }
 

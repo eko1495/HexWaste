@@ -20,7 +20,8 @@ dotnet run --project src/Hexwaste.Viewer -- --game-dir "/path/to/Fallout 2"
 The game directory is the install folder containing `master.dat`,
 `critter.dat` and `patch000.dat`. Without `--game-dir`, Hexwaste probes the
 usual GOG/Steam install paths and a `game-data/` folder next to the
-executable.
+executable. A plain interactive launch opens fullscreen at the desktop's native
+resolution by default; use `--windowed` to play in a 1280x720 window instead.
 
 **Latest release: [v0.14.0 — Interplay MVE video support](https://github.com/eko1495/HexWaste/releases/tag/v0.14.0)** —
 the engine's cutscenes now decode and play in-engine. Prebuilt self-contained
@@ -249,6 +250,7 @@ builds (Linux x64 / Windows x64) are on the
 | F4 / T / PgUp / PgDn | roofs / walk-cycle / elevation (PgUp/PgDn page an open item panel) |
 | [ / ] | ambient light (night ↔ day) |
 | M | worldmap |
+| Alt+Enter | toggle fullscreen / windowed |
 | Esc | options / pause menu (save / load → a 10-slot picker / main menu / quit / resume) |
 
 A large set of `--flags` exists for headless testing (screenshots, scripted
