@@ -25,6 +25,12 @@ public sealed class Camera
     private int _windowWidth;
     private int _windowHeight;
 
+    private bool _borderInitialized;
+    private int _borderMinX;
+    private int _borderMaxX;
+    private int _borderMinY;
+    private int _borderMaxY;
+
     public int CenterHexTile { get; private set; }
 
     /// <summary>User pan offset in screen pixels, added on top of the centered view.</summary>
@@ -33,9 +39,16 @@ public sealed class Camera
 
     public void SetWindowSize(int width, int height)
     {
+        int realCenterHexTile = CenterHexTile;
+
         _windowWidth = width;
         _windowHeight = height;
-        SetCenter(CenterHexTile);
+        if (!_borderInitialized)
+        {
+            InitializeBorder();
+        }
+
+        SetCenter(realCenterHexTile);
     }
 
     /// <summary>ported from fallout2-ce src/tile.cc tileSetCenter().</summary>
@@ -67,6 +80,66 @@ public sealed class Camera
             _squareOffY -= 12;
             _squareOffX -= 16;
         }
+    }
+
+    /// <summary>ported from fallout2-ce src/tile.cc tileSetBorder(): computed
+    /// once, using the original 640x380 iso view size regardless of actual
+    /// window size (comment at tile.cc:437-439,464-467 — border margins are
+    /// resolution-independent since the grid is always 200x200).</summary>
+    private void InitializeBorder()
+    {
+        // Temporarily pretend we're at the original resolution and center
+        // on the grid-middle tile (mirrors tile.cc:437-444), probe two
+        // points the same way tileSetBorder does, then restore the real
+        // window size. The caller restores the real center tile afterward.
+        int savedWidth = _windowWidth;
+        int savedHeight = _windowHeight;
+        _windowWidth = 640;
+        _windowHeight = 380;
+
+        SetCenter(HexGridWidth * (HexGridHeight / 2) + HexGridWidth / 2);
+
+        int v1 = ScreenToHex(-320, -240);
+        int v2 = ScreenToHex(-320, 380 + 240);
+
+        int v1TileY = v1 / HexGridWidth;
+        int v2TileX = HexGridWidth - 1 - v2 % HexGridWidth;
+
+        _borderMinX = System.Math.Abs(HexGridWidth - 1 - v2TileX - _tileX) + 6;
+        _borderMinY = System.Math.Abs(_tileY - v1TileY) + 7;
+        _borderMaxX = HexGridWidth - _borderMinX - 1;
+        _borderMaxY = HexGridHeight - _borderMinY - 1;
+
+        if ((_borderMinX & 1) == 0)
+        {
+            _borderMinX++;
+        }
+
+        if ((_borderMaxX & 1) == 0)
+        {
+            _borderMinX--;
+        }
+
+        _windowWidth = savedWidth;
+        _windowHeight = savedHeight;
+        _borderInitialized = true;
+    }
+
+    /// <summary>ported from fallout2-ce src/tile.cc tileSetCenter()'s border
+    /// check (tile.cc:574-578): true if the given hex tile falls within the
+    /// scroll border margin (i.e. panning to center on it is allowed).</summary>
+    public bool IsWithinScrollBorder(int hexTile)
+    {
+        if (hexTile < 0)
+        {
+            return false;
+        }
+
+        int tileX = HexGridWidth - 1 - hexTile % HexGridWidth;
+        int tileY = hexTile / HexGridWidth;
+
+        return tileX > _borderMinX && tileX < _borderMaxX
+            && tileY > _borderMinY && tileY < _borderMaxY;
     }
 
     /// <summary>ported from fallout2-ce src/tile.cc tileToScreenXY().</summary>

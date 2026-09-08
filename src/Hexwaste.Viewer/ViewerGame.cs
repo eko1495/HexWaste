@@ -2795,9 +2795,11 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
         }
 
         // Scroll clamp (the engine's border check in tileSetCenter): revert
-        // pans that push the view center off the hex grid.
+        // pans that push the view center outside the vanilla scroll border
+        // margin (this is what keeps undefined/black-void tiles near a map
+        // edge from ever coming into view — see Camera.IsWithinScrollBorder).
         if ((_camera.PanX != panBeforeX || _camera.PanY != panBeforeY)
-            && _camera.ScreenToHex(GraphicsDevice.Viewport.Width / 2, GraphicsDevice.Viewport.Height / 2) < 0)
+            && !_camera.IsWithinScrollBorder(_camera.ScreenToHex(GraphicsDevice.Viewport.Width / 2, GraphicsDevice.Viewport.Height / 2)))
         {
             _camera.PanX = panBeforeX;
             _camera.PanY = panBeforeY;
