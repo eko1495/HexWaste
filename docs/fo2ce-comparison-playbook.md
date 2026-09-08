@@ -175,6 +175,18 @@ Gotchas:
 - Reaching the character-selection/creation screen and picking the premade character has worked
   via keyboard mnemonics: `key n` at the main menu (NEW GAME), `key t` at character selection
   (TAKE the premade), `key Return` to skip the character-intro cutscene straight into gameplay.
+  **Prefer these mnemonics over mouse clicks at the main menu** — a 2026-09-08 session spent
+  ~15 minutes fighting `NEW GAME` clicks that never registered, even with the cursor visibly
+  sitting on the button (confirmed via `shot`) and using the documented `move` (small,
+  `≤150px` steps) → `click` (`mousedown`/`sleep`/`mouseup`) pattern from a fresh `launch`. Root
+  cause was never confirmed — it may be the same click flake noted elsewhere in this doc, or
+  something specific to the main menu's widget hit-testing — but the keyboard mnemonics avoid
+  it entirely and cost nothing extra.
+- The main menu has its own **idle timeout**: leaving it alone too long (a few `shot` calls'
+  worth of thinking time is enough) logs `"Main menu timed-out"` in `/tmp/fo2ce-control.log`
+  and silently loops back into the intro movies. If a `shot` shows an unexpected movie frame
+  after you thought you were on the menu, check the log for that line before assuming your
+  last input broke something — send a `key Return` to skip the replayed movie and retry.
 - This binary is the `fallout2-ce/fallout2-ce` **community** continuous build, not strictly
   vanilla — it may carry `// CE:` quality-of-life changes. If something looks different from
   what you'd expect of vanilla Fallout 2, note it, but don't assume it's a Hexwaste bug — that

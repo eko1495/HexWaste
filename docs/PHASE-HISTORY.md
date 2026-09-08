@@ -1133,3 +1133,21 @@ tiers, one commit per tier:
   null-fallback → lone-dude fights unchanged; byte-identical. DEFERRED (higher golden-risk, documented): item
   10 terrain travel-time (whole-suite regen), grenade scatter, NPC-attacker overshoot, roofs per-block,
   map_var −1 OOR, the unconditional-override help-shout variant. 820 Formats tests + all four golden suites pass.
+
+MAINTENANCE (2026-09-08, "scroll border clamp" — found while eyeballing the Temple of Trials entrance against
+fo2ce, not part of a phase): Hexwaste's camera had zero scroll-limit logic, so panning near a map edge could
+expose undefined floor tiles as a black checkerboard void (artemple.map only defines 7,456/10,000 square-grid
+tiles). First suspect was fo2ce's own visible clamp there, but that turned out to be HRP's `.EDG` file support
+— a third-party mod format ported into the `community` fork only (`src/map_edge.cc`, PR #450), absent from
+both vanilla Fallout 2 data and this project's pinned `alexbatalov e97087b` base tree — so it was explicitly
+NOT ported (CLAUDE.md: never port a fork addition just because the fork made it). The real fix ports the
+border clamp that vanilla fo2ce DOES carry unconditionally in `tileSetCenter()`/`tileSetBorder()`
+(`tile.cc:462-484,537-608`): a fixed margin from the 200x200 hex grid's edge, computed once, independent of
+window size or which tiles are actually defined. Landed as `Camera.InitializeBorder()` +
+`Camera.IsWithinScrollBorder(int)` in `src/Hexwaste.Viewer/Camera.cs`, replacing the old coarse
+"is the screen-center tile off the raw grid at all" check at `ViewerGame.cs:2797`. Verified through real
+gameplay (NEW GAME → TAKE → arrow-key panning), not just a CLI probe: held Left 30s straight from the temple
+entrance, camera settles on defined terrain well short of the void and stays settled; reversing direction
+still pans normally. Spec/plan/comparison: `docs/superpowers/specs/2026-09-08-camera-scroll-border-clamp-design.md`,
+`docs/superpowers/plans/2026-09-08-camera-scroll-border-clamp.md`,
+`docs/research-notes/scroll-border-clamp-fo2ce-comparison-2026-09-08.md`.
