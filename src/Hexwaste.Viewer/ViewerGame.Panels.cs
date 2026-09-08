@@ -1839,10 +1839,11 @@ public sealed partial class ViewerGame
             {
                 int bottom = DrawItemList(panel.Title, panel.Items, panel.X, panel.Price);
                 // The plain INV screen draws its own weight readout inside DrawInventorySummary()
-                // instead (matching vanilla's row position) -- this call only fires during
-                // loot/trade/barter, where DrawInventorySummary() never runs.
+                // instead (matching vanilla's row position) -- but only when that method will
+                // actually draw (InvBoxOrigin() non-null); on the art-absent/headless fallback
+                // layout, DrawInventorySummary() never runs, so this call must still fire there.
                 if (ReferenceEquals(panel.Items, _dudeInventory)
-                    && !(_inventoryOpen && _lootContainer is null && _tradePartner is null && _barterNpc is null))
+                    && !(PlainInventoryScreen && InvBoxOrigin() is not null))
                     DrawWeightReadout(panel.X, bottom);
             }
 
@@ -1850,9 +1851,15 @@ public sealed partial class ViewerGame
             _spriteBatch.Begin(samplerState: SamplerState.PointClamp);
         }
         DrawEquipSlots(); // P47: the weapon/armor equip slots + the dragged-item ghost
-        if (_inventoryOpen && _lootContainer is null && _tradePartner is null && _barterNpc is null)
+        if (PlainInventoryScreen)
             DrawInventorySummary(); // the dude's own plain INV screen only, matching DrawEquipSlots' gate
     }
+
+    /// <summary>True on the dude's own plain INV screen (not loot/trade/barter) -- the single
+    /// source of truth DrawInventorySummary()'s own gate and the weight-readout call-site gate
+    /// both derive from, so they can never silently diverge again.</summary>
+    private bool PlainInventoryScreen =>
+        _inventoryOpen && _lootContainer is null && _tradePartner is null && _barterNpc is null;
 
     /// <summary>The character-summary panel beside the paperdoll — name, SPECIAL, HP, AC, the five
     /// damage-resistance rows, and a per-hand weapon/unarmed-damage readout. ported from fallout2-ce
