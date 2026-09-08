@@ -45,7 +45,7 @@ public sealed class AafFontRenderer : IDisposable
                         continue;
                     int pixel = ((cellY + top + y) * atlasWidth + cellX + x) * 4;
                     byte alpha = (byte)Math.Min(level * 255 / font.MaxLevel, 255);
-                    rgba[pixel] = rgba[pixel + 1] = rgba[pixel + 2] = 255;
+                    rgba[pixel] = rgba[pixel + 1] = rgba[pixel + 2] = alpha;
                     rgba[pixel + 3] = alpha;
                 }
             }
