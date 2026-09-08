@@ -162,7 +162,7 @@ public sealed partial class ViewerGame
             // Art 327 (DP.FRM) is the wide panning-desert scene, referenced only by commented endgame.txt
             // rows → dead in vanilla; we blit its left 640 px statically (a full pan is a deferred layer).
             int srcW = slide.Panning ? Math.Min(tex.Width, 640) : Math.Min(tex.Width, 640);
-            _spriteBatch.Draw(tex, new Rectangle(ox, oy, 640, 480),
+            _spriteBatch.Draw(tex, new Rectangle(0, 0, vp.Width, vp.Height),
                 new Rectangle(0, 0, srcW, tex.Height), Color.White);
         }
 

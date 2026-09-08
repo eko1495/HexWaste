@@ -49,6 +49,16 @@ public sealed partial class ViewerGame
         return ((vp.Width - 640) / 2, (vp.Height - 480) / 2);
     }
 
+    /// <summary>Draws a menu-family backdrop stretched to fill the full virtual viewport —
+    /// matching fo2ce's own non-uniform stretch, but scoped to this decorative art only.
+    /// Buttons/labels/portraits drawn afterward keep using MenuOrigin()'s centered,
+    /// undistorted position — only the backdrop itself is stretched.</summary>
+    private void DrawMenuBackdrop(Texture2D bg)
+    {
+        Rectangle vp = VirtualViewport();
+        _spriteBatch.Draw(bg, new Rectangle(0, 0, vp.Width, vp.Height), Color.White);
+    }
+
     // The 26x26 button at window-local x=30, y=19+index*41 (mainmenu.cc:180-200, "19 + index*42 - index").
     private static Rectangle MenuButtonRect(int ox, int oy, int i) => new(ox + 30, oy + 19 + i * 41, 26, 26);
 
@@ -83,11 +93,8 @@ public sealed partial class ViewerGame
         if (_mainMenuBg is null || _fontRenderer is null)
             return false;
 
-        Rectangle vp = VirtualViewport();
-        _panelPixel ??= CreatePixel();
-        _spriteBatch.Draw(_panelPixel, new Rectangle(0, 0, vp.Width, vp.Height), Color.Black);
         (int ox, int oy) = MenuOrigin();
-        _spriteBatch.Draw(_mainMenuBg, new Rectangle(ox, oy, 640, 480), Color.White);
+        DrawMenuBackdrop(_mainMenuBg);
 
         bool mouseDown = Mouse.GetState().LeftButton == ButtonState.Pressed;
         // ported from fallout2-ce src/mainmenu.cc:130,205 — button label color is _colorTable[21091],
@@ -256,11 +263,8 @@ public sealed partial class ViewerGame
         if (_pickCharBg is null || _fontRenderer is null || _premadeGcds.Count == 0)
             return false;
 
-        Rectangle vp = VirtualViewport();
-        _panelPixel ??= CreatePixel();
-        _spriteBatch.Draw(_panelPixel, new Rectangle(0, 0, vp.Width, vp.Height), Color.Black);
         (int ox, int oy) = MenuOrigin();
-        _spriteBatch.Draw(_pickCharBg, new Rectangle(ox, oy, 640, 480), Color.White);
+        DrawMenuBackdrop(_pickCharBg);
 
         _premadeSel = Math.Clamp(_premadeSel, 0, _premadeGcds.Count - 1);
         (string label, string path) = _premadeGcds[_premadeSel];
@@ -427,11 +431,8 @@ public sealed partial class ViewerGame
         if (_createBg is null || _fontRenderer is null)
             return false;
 
-        Rectangle vp = VirtualViewport();
-        _panelPixel ??= CreatePixel();
-        _spriteBatch.Draw(_panelPixel, new Rectangle(0, 0, vp.Width, vp.Height), Color.Black);
         (int ox, int oy) = MenuOrigin();
-        _spriteBatch.Draw(_createBg, new Rectangle(ox, oy, 640, 480), Color.White);
+        DrawMenuBackdrop(_createBg);
 
         var gold = new Color(252, 252, 84);
         var green = new Color(0, 252, 0);
@@ -833,11 +834,8 @@ public sealed partial class ViewerGame
         }
         if (_deathBg is null)
             return false;
-        Rectangle vp = VirtualViewport();
-        _panelPixel ??= CreatePixel();
-        _spriteBatch.Draw(_panelPixel, new Rectangle(0, 0, vp.Width, vp.Height), Color.Black);
         (int ox, int oy) = MenuOrigin();
-        _spriteBatch.Draw(_deathBg, new Rectangle(ox, oy, 640, 480), Color.White);
+        DrawMenuBackdrop(_deathBg);
         return true;
     }
 
