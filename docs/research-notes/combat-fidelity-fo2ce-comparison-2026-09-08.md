@@ -178,37 +178,82 @@ dude's turn, input is enabled" flag, set once per turn in `_combat_turn()` (`com
 right before entering the `_combat_input()` polling loop (`combat.cc:3134-3199`) that reads
 `inputGetInput()` each frame — is unexpectedly unset at the moment our click is processed, even
 though every other observable signal (movement working, the TURN/CMBT indicator, the AP display)
-suggested we were mid-turn with input enabled. This is the most precise diagnosis reached this
-session: the mystery is now isolated to the first four lines of one function, not a vague
-"somewhere in the input pipeline."
+suggested we were mid-turn with input enabled. This was the most precise diagnosis reached up to
+that point in the session — narrowed to four lines of one function. **It turned out to be the
+wrong branch entirely — see the Breakthrough section below, reached shortly after with the
+user driving the session live.**
 
-The approach and full combat-engagement-up-to-crosshair states were captured cleanly across all
-seven passes; the actual attack/kill comparison uses Hexwaste's existing `combat-golden.sh`
-fixture for the same map instead (see below).
+## BREAKTHROUGH — the mystery is fully solved
 
-## Theories tested and refuted for the melee-attack mystery
+An **eighth pass**, with the user directly driving mouse input on the live screen, produced a
+result no earlier pass had: the on-screen log showed **"Target out of range."** and the crosshair
+displayed a live hit-chance percentage. This was the first genuine `_combat_check_bad_shot()`
+message the whole investigation had seen — proof the click dispatch, target resolution, and
+turn-state were all fine all along; the seventh pass's two-candidate diagnosis, while a correct
+read of the *symptom* (no message, no debug line), had the wrong root cause. The real
+explanation reads straight from the source (`combat.cc:5643-5673`):
 
-- **Resolution/coordinate-transform mismatch (REFUTED, pass five).** Matching the engine's
-  internal render resolution 1:1 to the display via `f2_res.ini` made no difference — the attack
-  still doesn't execute with a correctly-aimed crosshair.
-- **Target distance/proximity (REFUTED, pass six).** The closest possible adjacent target (right
-  at the dude's own feet) fails identically to a target one tile further away.
-- **"The punch keeps missing silently" / reaching `_combat_check_bad_shot()` and failing a
-  real validation (REFUTED, pass seven).** None of that function's message-producing failure
-  branches ever fire (confirmed both by the on-screen log and, now, `debug.log`'s absence of the
-  attack-path debug lines) — the code never gets that far.
-- **Wrong cursor mode / not actually in `CROSSHAIR`.** Ruled out by the visually-confirmed red
-  targeting crosshair (distinct from the plain hex-outline walk cursor and the yellow ARROW-mode
-  reach-line) appearing precisely on the target, reproduced across eight independent attempts via
-  two different arming methods (right-click mode-cycle, and the interface-bar `PUNCH` label).
+```cpp
+int _combat_check_bad_shot(Object* attacker, Object* defender, int hitMode, bool aiming)
+{
+    int range = 1;
+    ...
+    range = objectGetDistanceBetween(attacker, defender);   // REAL hex-grid distance
+    ...
+    if (weaponGetRange(attacker, hitMode) < range) {
+        return COMBAT_BAD_SHOT_OUT_OF_RANGE;
+    }
+    ...
+```
 
-**What remains, narrowed to two candidates**: (1) target resolution — `gameMouseGetObjectUnderCursor(OBJ_TYPE_CRITTER, false, gElevation)`
-(`game_mouse.cc:1000-ish`) returns null for this click despite the crosshair rendering on the
-target, or (2) turn-state — `gCombatState & 0x02` reads as unset at click time despite every
-external signal suggesting it's the dude's turn. Distinguishing between these two would need a
-temporary source-level print statement directly inside `_combat_attack_this()` (or right before
-its call site in `game_mouse.cc`) and a rebuild of the reference engine binary — a meaningfully
-bigger step (compiling C++) than anything tried so far, not attempted this session.
+`objectGetDistanceBetween()` (`object.cc:2604-2618`) computes true hex-grid distance via
+`tileDistanceBetween(object1->tile, object2->tile)`. `weaponGetRange()` for an unarmed attacker
+with no weapon (Narg's case) hits the fallback `return 1;` (`item.cc:1636`) — so a punch legitimately
+requires true hex distance ≤ 1, exactly as expected.
+
+**The actual bug in our technique, finally identified**: the walk-mode cursor's on-screen
+"distance" number (the `1`, `2`, etc. shown when hovering a target in `MOVE` mode) is **not**
+the same metric as `objectGetDistanceBetween()`'s true hex-grid distance — it behaves like a
+path-cost/steps-remaining estimate that can diverge from true hex adjacency near obstacles (this
+room is dense with pillars). A **ninth pass** walked the dude to the point where the move-cursor
+showed a plain blocked `X` with no number at all — directly on the ant's own tile, the maximum
+possible proximity reachable by walking from that approach angle — armed the crosshair, and
+clicked: a **freshly appended** "Target out of range." line appeared (confirmed via a visible
+shift in the log's scrolled content, ruling out message deduplication as an explanation). Even
+this maximum-walkable proximity was still further than true hex distance 1 in the underlying hex
+grid from that particular approach direction.
+
+This resolves the entire investigation. The attack pipeline works exactly as the source code
+says it should — a plain left-click-up in `CROSSHAIR` mode over a resolved critter at true hex
+distance ≤ 1 fires `_combat_attack()` immediately, and every earlier "silent" result across the
+whole investigation was almost certainly this exact same `COMBAT_BAD_SHOT_OUT_OF_RANGE`
+rejection recurring — invisible as a *change* because the display log doesn't clearly signal "the
+same message happened again" the way a fresh, different line does, and because earlier passes had
+no reason yet to expect "out of range" specifically, so a static, unchanged-looking log read as
+"nothing happened" rather than "the same rejection happened again." One additional confound was
+found and fixed along the way: a **second, stale fo2ce process** had been running unnoticed
+alongside the current one for at least part of this session (found via `ps aux`), which could
+have caused some fraction of screenshots and clicks to target inconsistent windows — always
+verify only one instance is running (`pgrep -f fallout2-ce` should show exactly one PID) before
+trusting a reproduction.
+
+## Theories tested along the way
+
+- **Resolution/coordinate-transform mismatch (refuted, pass five).** Matching the engine's
+  internal render resolution 1:1 to the display via `f2_res.ini` made no difference to the
+  symptom — correctly refuted; the real cause (hex-range) is orthogonal to display resolution.
+- **Target distance/proximity — appeared refuted in pass six, actually the answer.** Pass six's
+  "closest possible adjacent target" was only confirmed close in *screen* terms, not verified
+  against true hex distance the way the breakthrough passes later did — an important
+  methodological lesson: screen adjacency and `objectGetDistanceBetween()` hex adjacency are not
+  the same thing near obstacles, and only the latter matters to combat.
+- **"The punch keeps missing silently" (refuted as stated, but for the wrong reason at the
+  time).** `_combat_check_bad_shot()`'s failure branches genuinely do fire — `COMBAT_BAD_SHOT_
+  OUT_OF_RANGE` — but the display log's behavior on repeated identical messages made this very
+  hard to distinguish from "no message at all" without a fresh line to compare against.
+- **Wrong cursor mode / not actually in `CROSSHAIR`.** Genuinely ruled out throughout — the
+  visually-confirmed red targeting crosshair was correct every time; the failure was always
+  downstream of successfully entering `CROSSHAIR` mode with a resolved target.
 
 ## Hexwaste (`scripts/hexwaste-checkpoint.sh`, deterministic CLI actions)
 
@@ -239,27 +284,35 @@ fo2ce itself — not a Hexwaste fidelity concern, but a genuine open question ab
 piloting setup, now narrowed considerably: source-code analysis confirms a plain left-click-up
 in `CROSSHAIR` mode over a resolved critter should attack immediately, and live testing
 confirmed combat state, target recognition, and the message log all work correctly for other
-actions — yet the melee-attack click specifically never resolves. Two real, reproducible
-piloting bugs were found and fixed along the way (`docs/fo2ce-comparison-playbook.md` updated
-with all of them): `CROSSHAIR` mode is only reachable via right-click while already
-`isInCombat()`; **Home recenters the camera but leaves the cursor stranded at its old screen
-position**; **Home itself silently does nothing if the cursor is pinned at a screen edge when
-pressed**; and **a raw atomic `xdotool click 1` can break left-click entirely, against
-everything, until fo2ce is relaunched**. Missing any of these silently desyncs the pilot's aim
-from where the game thinks the cursor is, or breaks input outright. fo2ce's relative-mouse
-cursor also has no internal clamp (large cumulative deltas can push it far off-canvas with no
-visible sprite to recover a bearing from) — also folded into the playbook. Despite fixing every
-one of these and reproducing a correctly-aimed crosshair on the target across **eight**
-independent attempts (several live, with real-time correction from a human watching the actual
-screen), the melee-attack click itself never executes — not for a far target, not for the
-closest possible adjacent target, and not with the engine's internal resolution matched 1:1 to
-the display. Instrumenting the engine's own `debugPrint()` output (`DEBUGACTIVE=log`) gave the
-conclusive mechanism-level answer external observation alone couldn't: `_combat_attack()` is
-**never called** by the click (its three unconditional debug lines never appear), and none of
-`_combat_attack_this()`'s message-producing failure branches fire either (confirmed both on
-screen and in the debug log) — which together pin the failure to one of exactly two silent
-early-return lines at the very top of `_combat_attack_this()`: either the target fails to
-resolve under the cursor, or the "dude's turn, input enabled" flag reads as unset at the moment
-of the click. This is a well-characterized, precisely isolated open problem — as far as it can
-be narrowed from the outside without adding a temporary print statement directly in the engine's
-own source and rebuilding it, which is the natural next step if this is pursued further.
+actions — yet the melee-attack click specifically never resolved, across eight independent
+attempts. **The ninth attempt, live with the user, finally solved it: the attack pipeline was
+never broken.** The dude was never actually at true hex-adjacency (`objectGetDistanceBetween()`
+distance ≤ 1) to the target in any earlier attempt, despite looking screen-adjacent and despite
+the walk-mode cursor's own "distance" indicator showing what looked like adjacency — that
+on-screen number is a path-cost estimate, not the same metric combat's real range check uses,
+and the two silently diverge near obstacles (this room is full of pillars). Once genuinely
+hex-adjacent (confirmed the hard way — walking until the move cursor could make no further
+progress at all), an unarmed punch is governed by ordinary, correctly-functioning game logic:
+`weaponGetRange()` returns 1 for an unarmed attacker, `_combat_check_bad_shot()` compares that
+against the real hex distance, and rejects with `"Target out of range."` — a real, working
+message this investigation simply hadn't recognized as *new information* the many earlier times
+it silently recurred, because a repeated identical line doesn't visually announce itself as
+"this happened again" the way a change does.
+
+Four real, reproducible piloting/technique bugs were found and fixed along the way
+(`docs/fo2ce-comparison-playbook.md` updated with all of them): `CROSSHAIR` mode is only
+reachable via right-click while already `isInCombat()`; **Home recenters the camera but leaves
+the cursor stranded at its old screen position**; **Home itself silently does nothing if the
+cursor is pinned at a screen edge when pressed**; and **a raw atomic `xdotool click 1` can break
+left-click entirely, against everything, until fo2ce is relaunched**. A stray **second fo2ce
+process** running unnoticed alongside the current one was also found and killed, a real confound
+for at least part of the session. None of these four technique bugs were actually the root cause
+of the melee-attack mystery — the real cause (hex-range vs. screen-proximity) was orthogonal to
+all of them — but each was genuine and worth fixing regardless, and clearing them was what made
+the room's actual hex geometry legible enough to finally see the true cause. `debugPrint()`
+instrumentation (`DEBUGACTIVE=log`) was the key methodological tool throughout the second half
+of this investigation — it didn't directly reveal the hex-range issue, but it definitively ruled
+out every other candidate (target resolution, turn-state, message-log suppression) that could
+have looked identical from the outside, which is what made the live "out of range" message,
+once it finally appeared, immediately recognizable as the real answer rather than one more
+inconclusive data point.

@@ -99,54 +99,43 @@ Commands (all via `scripts/fo2ce-control.sh`, run from the repo root):
   sequence continued to work fine both before and after the incident, so the bug is specific to
   the atomic form. If a click ever stops producing ANY effect on anything (not just a specific
   in-world target), suspect this regression first and relaunch rather than debugging further.
-- **Melee attack execution in combat is STILL AN OPEN PROBLEM as of 2026-09-08, even after
-  reading the source and three separate fresh-session reproduction attempts.**
-  `reference/fallout2-ce/src/game_mouse.cc:1000-1017` shows a plain left-click-up in `CROSSHAIR`
-  mode over a resolved critter should call `_combat_attack_this(targetObj)` immediately — no
-  double-click, no separate confirm step. Live testing reproduced every precondition correctly
-  and repeatably across three independent fresh sessions (combat active, adjacent target, genuine
-  red crosshair sprite rendered precisely on the target — confirmed via `Home`-recenter-then-
-  reposition with the cursor kept off screen edges, see above) and STILL got no AP change and no
-  combat-log message from `click`, `F`, or double-click, every single time. A parallel action
-  (clicking the TURN/CMBT button) DID produce a fresh log line (`Combat cannot end with nearby
-  hostile creatures.`), proving combat state and target recognition are genuinely correct and the
-  message log genuinely updates for real actions — which rules out "the punch keeps missing
-  silently" and narrows the mystery to the left-click-up handler itself never firing (or never
-  resolving a target) for this specific input setup.
-  **Three theories have since been directly tested and refuted, not just left unverified:**
-  (1) *Resolution/coordinate-transform mismatch* — creating `f2_res.ini` with `SCR_WIDTH=1920
-  SCR_HEIGHT=1080 WINDOWED=0` (matching the engine's internal render resolution 1:1 to the
-  display, per `svga.cc:109-124`) made no difference; the attack still doesn't fire with a
-  confirmed-precise crosshair. (2) *Target distance/proximity* — the closest possible adjacent
-  target (directly at the dude's own feet) fails identically to a target one tile further away.
-  (3) *"The punch just keeps missing silently"* — a parallel action (clicking `TURN`/`CMBT`)
-  produces a real log line when something genuinely blocks it, proving the message log updates
-  correctly for real game actions; no such line ever appears for the attack click, meaning it
-  never reaches `_combat_attack_this()`'s validation logic at all. Anyone attempting a live fo2ce
-  combat-kill comparison should expect to spend real time on this specific step, and should not
-  expect the mouse-hygiene fixes above (edge-avoidance, Home-then-reposition, avoiding atomic
-  clicks) to be sufficient on their own — they reliably get you to a correctly-aimed crosshair,
-  but the attack itself still does not fire.
-  **Conclusive mechanism-level diagnosis (2026-09-08, pass seven):** set `DEBUGACTIVE=log` as an
-  env var before launching (`_debug_register_env()`, `debug.cc:83-103`) to route every
-  `debugPrint()` call to `reference/fallout2-ce/run/debug.log`. Confirmed the mechanism works
-  (other `debugPrint()` lines like `OVERRIDE_MAP_START`/`MAP LOAD` appear correctly), then
-  reproduced the correct crosshair-on-target sequence and clicked: `debug.log` contains **zero**
-  occurrences of `"computing attack..."` / `"sequencing attack..."` / `"running attack..."` —
-  the three lines `combat.cc`'s `_combat_attack()` unconditionally prints every time it runs
-  (`combat.cc:3499/3536/3559`). **`_combat_attack()` is never called.** Combined with the
-  on-screen log never showing any of `_combat_attack_this()`'s other failure messages (out of
-  ammo/range/AP, aim blocked, arm(s) crippled — `combat.cc:5715-5805`, each of which calls
-  `displayMonitorAddMessage()`), the failure is narrowed to one of exactly two silent
-  early-return lines at the top of `_combat_attack_this()` (`combat.cc:5715-5721`): either
-  `gameMouseGetObjectUnderCursor()` resolves to no object despite the visible crosshair, or
-  `gCombatState & 0x02` (the "dude's turn, input enabled" flag, set in `_combat_turn()` at
-  `combat.cc:3273`) reads as unset at click time. Distinguishing the two would need a temporary
-  print statement added directly to the engine's own source and a rebuild — a materially bigger
-  step than any input-scripting fix tried so far, not attempted as of this writing. (A
-  `ddraw.ini` `[Misc] ConsoleOutputPath` was also tried, to mirror the on-screen log to a file;
-  the target file was never created, so that sfall mechanism doesn't appear wired up in this
-  build — not pursued further since `debug.log` alone gave the answer above.)
+- **Melee attack execution in combat — SOLVED (2026-09-08).** For a long stretch of one session,
+  a plain left-click-up in `CROSSHAIR` mode over an apparently-adjacent target reliably produced
+  no AP change and no message, despite `game_mouse.cc:1000-1017` showing this should call
+  `_combat_attack_this(targetObj)` immediately, and despite ruling out (via `DEBUGACTIVE=log`,
+  see below) every candidate that could explain a *silent* failure — the click dispatch, target
+  resolution, and turn-state were all confirmed fine. **The actual cause: the walk-mode cursor's
+  on-screen "distance" number (shown when hovering a target in `MOVE` mode) is NOT the same
+  metric `_combat_check_bad_shot()`'s real range check uses.** That check
+  (`combat.cc:5643-5673`) computes `range = objectGetDistanceBetween(attacker, defender)` — true
+  hex-grid distance via `tileDistanceBetween()` (`object.cc:2604`) — and compares it against
+  `weaponGetRange()`, which returns exactly `1` for an unarmed attacker (`item.cc:1636`). The
+  on-screen distance indicator instead behaves like a path-cost/steps-remaining estimate, which
+  can diverge from true hex adjacency near obstacles (pillars, walls) — so a target that *looks*
+  adjacent, and that the move cursor labels "distance 1", can still be true hex-distance 2 or
+  more, silently failing the range check with **`"Target out of range."`** every single time.
+  This message is genuinely printed to the on-screen log on every such click — the reason it was
+  missed for so long is that a *repeated identical* message doesn't visually announce itself as
+  new information the way a changed line does, so several consecutive rejections in a row looked
+  indistinguishable from "nothing happened at all." **To actually get adjacent for combat
+  purposes: walk until the move-mode cursor shows a plain blocked `X` with no number at all
+  (maximum reachable proximity from that approach angle) directly on the target's own tile — not
+  merely a low number — before arming `CROSSHAIR` and clicking.** If "Target out of range." keeps
+  appearing even then, try approaching from a different angle/side of the target, since hex
+  adjacency depends on the specific hex-grid neighbor relationship, not just visual closeness.
+  Once truly hex-adjacent, the attack fires exactly as the source code says it should.
+  **`DEBUGACTIVE=log`** (an env var read at startup by `_debug_register_env()`,
+  `debug.cc:83-103`) was the key diagnostic tool that got this far: it routes every `debugPrint()`
+  call to `reference/fallout2-ce/run/debug.log`, including `combat.cc`'s `_combat_attack()`'s
+  three unconditional trace lines (`"computing attack..."` / `"sequencing attack..."` /
+  `"running attack..."`, `combat.cc:3499/3536/3559`) — their total absence is what proved the
+  failure was happening before `_combat_attack()` was ever reached, ruling out a downstream
+  validation bug and pointing back at the range check specifically. Also worth knowing: a stray
+  **second fo2ce process** running unnoticed alongside the current one caused real confusion for
+  part of this investigation (`pgrep -f fallout2-ce` should show exactly one PID before trusting
+  any reproduction), and a raw atomic `xdotool click 1` (see above) can break left-click globally
+  until relaunched — both were red herrings in the moment but are worth checking first if attack
+  clicks ever seem to do nothing.
 - **Pause menu / Preferences**: `key Escape` from gameplay reliably opens the pause menu
   (Save Game/Load Game/Preferences/Help/Exit Game/Done). On this machine's 1920x1080 output the
   cursor lands near EXIT GAME (~(980, 555)) when the menu opens; PREFERENCES sits at roughly
