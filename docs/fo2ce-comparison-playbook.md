@@ -86,18 +86,33 @@ Commands (all via `scripts/fo2ce-control.sh`, run from the repo root):
   (no new right-click) also prints a fresh `You see: <Name>.` line for it. `Escape` while in
   this state opens the pause/options menu, not a look-cursor cancel — press it again or click
   Done to get back to gameplay.
+- **A SECOND way to arm the attack crosshair**: left-clicking directly on (or immediately beside)
+  the yellow attack-mode label in the interface bar (reads `PUNCH` when unarmed) also arms
+  `CROSSHAIR` mode — a small red reticle icon appears next to the label when it takes effect.
+  This is a useful alternative to the right-click mode-cycle, and was the method used in the
+  reproduction below.
+- **Never use a raw `xdotool click 1` (atomic click) against this build.** Confirmed live on
+  2026-09-08: a single atomic `xdotool click 1`, used once outside `fo2ce-control.sh`'s own
+  `click` command, left left-click completely non-functional afterward — against EVERYTHING
+  (menu buttons, `INV`, `MAP`, `TURN`/`CMBT`), not just combat — until fo2ce was killed and
+  relaunched. `fo2ce-control.sh click`'s own tested `mousedown` → `sleep 0.15` → `mouseup`
+  sequence continued to work fine both before and after the incident, so the bug is specific to
+  the atomic form. If a click ever stops producing ANY effect on anything (not just a specific
+  in-world target), suspect this regression first and relaunch rather than debugging further.
 - **Melee attack execution in combat is STILL AN OPEN PROBLEM as of 2026-09-08, even after
-  reading the source.** `reference/fallout2-ce/src/game_mouse.cc:1000-1017` shows a plain
-  left-click-up in `CROSSHAIR` mode over a resolved critter should call
-  `_combat_attack_this(targetObj)` immediately — no double-click, no separate confirm step.
-  Live testing reproduced every precondition correctly (combat active, adjacent target, genuine
+  reading the source and three separate fresh-session reproduction attempts.**
+  `reference/fallout2-ce/src/game_mouse.cc:1000-1017` shows a plain left-click-up in `CROSSHAIR`
+  mode over a resolved critter should call `_combat_attack_this(targetObj)` immediately — no
+  double-click, no separate confirm step. Live testing reproduced every precondition correctly
+  and repeatably across three independent fresh sessions (combat active, adjacent target, genuine
   red crosshair sprite rendered precisely on the target — confirmed via `Home`-recenter-then-
-  reposition, see above) and STILL got no AP change and no combat-log message from `click`,
-  `F`, or double-click. A parallel action (clicking the TURN/CMBT button) DID produce a fresh
-  log line (`Combat cannot end with nearby hostile creatures.`), proving combat state and target
-  recognition are genuinely correct and the message log genuinely updates for real actions —
-  which rules out "the punch keeps missing silently" and narrows the mystery to the left-click-up
-  handler itself never firing (or never resolving a target) for this specific input setup.
+  reposition with the cursor kept off screen edges, see above) and STILL got no AP change and no
+  combat-log message from `click`, `F`, or double-click, every single time. A parallel action
+  (clicking the TURN/CMBT button) DID produce a fresh log line (`Combat cannot end with nearby
+  hostile creatures.`), proving combat state and target recognition are genuinely correct and the
+  message log genuinely updates for real actions — which rules out "the punch keeps missing
+  silently" and narrows the mystery to the left-click-up handler itself never firing (or never
+  resolving a target) for this specific input setup.
   Leading unverified theory: `fallout2.cfg`'s `[screen]` block shows `resolution_x=640
   resolution_y=480 scale=1 windowed=0` — the engine renders at 640×480 internally and
   fullscreens that to the desktop's real resolution (no `f2_res.ini` present). If cursor
@@ -106,7 +121,10 @@ Commands (all via `scripts/fo2ce-control.sh`, run from the repo root):
   the next step to actually confirm this would be enabling `fallout2.cfg`'s `[debug]
   console_output_path` for verbose diagnostics, or testing with an `f2_res.ini` that matches
   internal and output resolution 1:1. Anyone attempting a live fo2ce combat-kill comparison
-  should expect to spend real time on this specific step.
+  should expect to spend real time on this specific step, and should not expect the mouse-hygiene
+  fixes above (edge-avoidance, Home-then-reposition, avoiding atomic clicks) to be sufficient on
+  their own — they get you to a correctly-aimed crosshair reliably, but the attack itself still
+  does not fire.
 - **Pause menu / Preferences**: `key Escape` from gameplay reliably opens the pause menu
   (Save Game/Load Game/Preferences/Help/Exit Game/Done). On this machine's 1920x1080 output the
   cursor lands near EXIT GAME (~(980, 555)) when the menu opens; PREFERENCES sits at roughly

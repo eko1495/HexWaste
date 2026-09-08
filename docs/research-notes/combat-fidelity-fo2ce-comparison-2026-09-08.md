@@ -82,8 +82,36 @@ which rules out "the punch keeps missing silently" and narrows the mystery speci
 for this input setup. This remains unsolved after combining source-code grounding with live
 testing; see Non-goals below for the leading unverified theory.
 
+A **fourth pass** (live, with the user watching and correcting technique in real time) confirmed
+two more concrete findings and reproduced the same end state a third time from a completely
+fresh session:
+- **Never use a raw, atomic `xdotool click 1`** against this build. Doing so once (as a quick
+  experiment) left left-click completely non-functional afterward — against everything, not just
+  combat: menu buttons (`DONE` in the pause menu), `INV`, `MAP`, and even `TURN`/`CMBT` all
+  stopped registering clicks entirely, confirmed by the absence of `Combat cannot end...`
+  reappearing on a repeat click. `fo2ce-control.sh`'s own tested `mousedown` → `sleep 0.15` →
+  `mouseup` pattern kept working fine both before and after this incident on a fresh relaunch, so
+  the regression is specific to the atomic form, not clicking in general.
+- **The cursor must be moved away from any screen edge *before* pressing Home**, not just before
+  clicking. With the cursor pinned at an edge, `Home` silently does nothing (an identical frame
+  before and after the press) — this is distinct from, and in addition to, "`Home` doesn't move
+  the cursor" from the third pass. Once the cursor was nudged to a safe, non-edge position first,
+  `Home` reliably recentered the camera on the dude every time.
+- A second, independent way to arm `CROSSHAIR` mode was found: left-clicking on (or immediately
+  beside) the yellow attack-mode label in the interface bar (`PUNCH` when unarmed) also arms it,
+  confirmed by a small red reticle icon appearing next to the label — an alternative to the
+  right-click mode-cycle.
+- Combining all of the above, the full correct sequence (walk adjacent → arm `CROSSHAIR` via the
+  interface-bar label → keep the cursor off-edge → `Home` to recenter → reposition cursor onto
+  the now-recentered target) was reproduced cleanly on a **third independent fresh session** —
+  crosshair precisely on the ant (**08 — home-recenter-after-edge-fix**, **09 —
+  crosshair-on-target-final**) — and left-click **still** produced no AP change and no log
+  message, identically to passes two and three. The melee-attack execution mystery persists
+  despite this being the cleanest, most carefully-controlled reproduction attempt of the whole
+  investigation.
+
 The approach and full combat-engagement-up-to-crosshair states were captured cleanly across all
-three passes; the actual attack/kill comparison uses Hexwaste's existing `combat-golden.sh`
+four passes; the actual attack/kill comparison uses Hexwaste's existing `combat-golden.sh`
 fixture for the same map instead (see below).
 
 ## Leading unverified theory for the melee-attack mystery
@@ -130,9 +158,16 @@ in `CROSSHAIR` mode over a resolved critter should attack immediately, and live 
 confirmed combat state, target recognition, and the message log all work correctly for other
 actions — yet the melee-attack click specifically never resolves. Two real, reproducible
 piloting bugs were found and fixed along the way (`docs/fo2ce-comparison-playbook.md` updated
-with both): `CROSSHAIR` mode is only reachable via right-click while already `isInCombat()`, and
-**Home recenters the camera but leaves the cursor stranded at its old screen position** —
-missing either of these silently desyncs the pilot's aim from where the game thinks the cursor
-is. fo2ce's relative-mouse cursor also has no internal clamp (large cumulative deltas can push
-it far off-canvas with no visible sprite to recover a bearing from) — also folded into the
-playbook. What remains open is documented above as a leading but unverified theory.
+with all of them): `CROSSHAIR` mode is only reachable via right-click while already
+`isInCombat()`; **Home recenters the camera but leaves the cursor stranded at its old screen
+position**; **Home itself silently does nothing if the cursor is pinned at a screen edge when
+pressed**; and **a raw atomic `xdotool click 1` can break left-click entirely, against
+everything, until fo2ce is relaunched**. Missing any of these silently desyncs the pilot's aim
+from where the game thinks the cursor is, or breaks input outright. fo2ce's relative-mouse
+cursor also has no internal clamp (large cumulative deltas can push it far off-canvas with no
+visible sprite to recover a bearing from) — also folded into the playbook. Despite fixing every
+one of these and reproducing a correctly-aimed crosshair on the target across three independent
+fresh sessions (the last one live, with real-time correction from a human watching the actual
+screen), the melee-attack click itself never executes. What remains open is documented above as
+a leading but unverified theory — this is now a well-characterized, thoroughly reproducible
+open problem rather than a piloting-technique gap.
