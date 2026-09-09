@@ -49,14 +49,17 @@ public sealed partial class ViewerGame
         return ((vp.Width - 640) / 2, (vp.Height - 480) / 2);
     }
 
-    /// <summary>Draws a menu-family backdrop stretched to fill the full virtual viewport —
-    /// matching fo2ce's own non-uniform stretch, but scoped to this decorative art only.
-    /// Buttons/labels/portraits drawn afterward keep using MenuOrigin()'s centered,
-    /// undistorted position — only the backdrop itself is stretched.</summary>
+    /// <summary>Draws a menu-family backdrop the way vanilla does (mainmenu.cc:97-118,
+    /// character_selector.cc:264-266): the 640x480 art 1:1 at MenuOrigin()'s centred box,
+    /// black-filled elsewhere. Never stretched — the plates/labels/click bands drawn afterwards
+    /// share MenuOrigin(), so art and overlays stay aligned only if the art is not moved.</summary>
     private void DrawMenuBackdrop(Texture2D bg)
     {
         Rectangle vp = VirtualViewport();
-        _spriteBatch.Draw(bg, new Rectangle(0, 0, vp.Width, vp.Height), Color.White);
+        _panelPixel ??= CreatePixel();
+        _spriteBatch.Draw(_panelPixel, new Rectangle(0, 0, vp.Width, vp.Height), Color.Black);
+        (int ox, int oy) = MenuOrigin();
+        _spriteBatch.Draw(bg, new Rectangle(ox, oy, 640, 480), Color.White);
     }
 
     // The 26x26 button at window-local x=30, y=19+index*41 (mainmenu.cc:180-200, "19 + index*42 - index").
@@ -83,8 +86,8 @@ public sealed partial class ViewerGame
         _menuBtnDn = InterfaceBar.LoadFrm(GraphicsDevice, _vfs, _palette, @"art\intrface\MENUDOWN.FRM");
     }
 
-    /// <summary>Draw the authentic FO2 main menu: mainmenu.frm (FID 140, 640x480) stretched to fill
-    /// the virtual viewport (see DrawMenuBackdrop), the six red-glow menuup/menudown buttons (FID
+    /// <summary>Draw the authentic FO2 main menu: mainmenu.frm (FID 140, 640x480) centred 1:1
+    /// (see DrawMenuBackdrop), the six red-glow menuup/menudown buttons (FID
     /// 299/300, 26x26) at the engine rects, and the misc.msg labels + copyright/version. Returns
     /// false when the art is absent (headless / no game data) so the caller falls back to the
     /// plain-text title. ported from fallout2-ce src/mainmenu.cc.</summary>

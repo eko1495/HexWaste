@@ -1,5 +1,10 @@
 # Menu backdrop fill — design
 
+> **Superseded 2026-09-09** by `2026-09-09-menu-backdrop-unstretch-design.md`: stretching
+> the art moved the painted button slots away from the `MenuOrigin()`-anchored overlays
+> (96 virtual px at 1280x720). Vanilla centres the 640x480 window unstretched; Hexwaste
+> does again.
+
 ## Problem
 
 The main menu (and every other "menu-family" screen: character pick, character

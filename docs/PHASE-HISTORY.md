@@ -1151,3 +1151,17 @@ entrance, camera settles on defined terrain well short of the void and stays set
 still pans normally. Spec/plan/comparison: `docs/superpowers/specs/2026-09-08-camera-scroll-border-clamp-design.md`,
 `docs/superpowers/plans/2026-09-08-camera-scroll-border-clamp.md`,
 `docs/research-notes/scroll-border-clamp-fo2ce-comparison-2026-09-08.md`.
+
+MAINTENANCE (2026-09-09, "menu backdrop un-stretch" — the main-menu icon/plate misalignment): the 2026-09-08
+"menu backdrop fill" change stretched mainmenu.frm (and the pick/create/death/endgame backdrops) non-uniformly
+to the full virtual viewport in `DrawMenuBackdrop()`, while the plates, labels, and click bands stayed at
+`MenuOrigin()`'s centred 640x480 box. The painted button slots moved with the stretch; the overlays did not.
+At the default 1280x720 window (UI scale 1.5, virtual 853x480, ox=106) the slot painted at art x=30 lands
+at virtual x≈40 while the plate is drawn at 136 — 96 virtual px (144 screen px) off. Vanilla never stretches
+this art: `mainmenu.cc:97-118`, `character_selector.cc:264-266`, `endgame.cc:574-581` each centre a fixed
+640x480 window and blit the FRM 1:1, black elsewhere. Fix = `DrawMenuBackdrop()` back to black-fill + 1:1 draw
+at `MenuOrigin()` (`ViewerGame.Shell.cs`), same destination rect for the endgame slide
+(`ViewerGame.Endgame.cs`); overlays untouched. The project is back to zero non-uniform stretch anywhere.
+Verified with `--menu`/`--menu pick`/`--menu create` screenshots and a live hover pass (menudown swap fires
+exactly over the painted slot). Spec/plan: `docs/superpowers/specs/2026-09-09-menu-backdrop-unstretch-design.md`,
+`docs/superpowers/plans/2026-09-09-menu-backdrop-unstretch.md`. The 2026-09-08 spec carries a superseded note.
