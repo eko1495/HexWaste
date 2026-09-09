@@ -116,7 +116,7 @@ public sealed partial class ViewerGame
 
             string label = MiscMsg(MainMenuButtons[i].MsgId);
             Color c = enabled ? gold : dimGold;
-            AafFontRenderer buttonFont = _menuButtonFontRenderer ?? _fontRenderer;
+            AafFontRenderer buttonFont = Font(104);
             // Vertically centre the label on the button (vanilla pins to its baked
             // y=41*i+20; centring instead is a small presentation divergence).
             float ly = r.Y + (26 - buttonFont.LineHeight) / 2f;
@@ -125,7 +125,7 @@ public sealed partial class ViewerGame
         }
 
         // Copyright (misc.msg {20}) bottom-left + version bottom-right (mainmenu.cc:141-155).
-        AafFontRenderer captionFont = _menuCaptionFontRenderer ?? _fontRenderer;
+        AafFontRenderer captionFont = Font(100);
         captionFont.Draw(_spriteBatch, MiscMsg(20), new Vector2(ox + 15, oy + 459), tan);
         captionFont.Draw(_spriteBatch, MenuVersionString,
             new Vector2(ox + 615 - captionFont.MeasureWidth(MenuVersionString), oy + 459), tan);

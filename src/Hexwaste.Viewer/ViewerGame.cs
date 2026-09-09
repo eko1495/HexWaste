@@ -595,11 +595,16 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
     public int? TravelToArea { get; set; }
     private AafFontRenderer? _fontRenderer;
 
-    /// <summary>The main menu's distinct fonts (vanilla fontSetCurrent(100)/fontSetCurrent(104),
-    /// mainmenu.cc:123,202) -- separate from _fontRenderer (font1.aaf), the general interface
-    /// font used everywhere else. Loaded in LoadContent(); see DrawAuthenticMainMenu().</summary>
-    private AafFontRenderer? _menuCaptionFontRenderer; // font0.aaf: copyright/version
-    private AafFontRenderer? _menuButtonFontRenderer;  // font4.aaf: the six button labels
+    /// <summary>Vanilla's interface fonts keyed by their fontSetCurrent() id (100..104 →
+    /// font{id-100}.aaf, font_manager.cc:122,214). font1.aaf (id 101) is NOT stored here —
+    /// it stays in _fontRenderer, the fallback every other id degrades to when its file is
+    /// missing. Loaded in LoadContent(), disposed in UnloadContent().</summary>
+    private readonly Dictionary<int, AafFontRenderer> _fonts = new();
+
+    /// <summary>The renderer for vanilla's fontSetCurrent(<paramref name="id"/>); falls back
+    /// to font1.aaf when that id's file is missing. Callers must already have guarded
+    /// `_fontRenderer is null` (every draw method does), so the fallback is non-null here.</summary>
+    private AafFontRenderer Font(int id) => _fonts.TryGetValue(id, out var f) ? f : _fontRenderer!;
 
     /// <summary>Ambient light as a fraction of full brightness (CLI --ambient).</summary>
     public double InitialAmbient { get; set; } = 1.0;
@@ -1530,13 +1535,14 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
         else
             Console.Error.WriteLine("font1.aaf not found — text overlay disabled");  // ascii-ok: stderr diagnostic, not font-rendered
 
-        // font0.aaf / font4.aaf: the main menu's caption and button-label fonts
-        // (vanilla fontSetCurrent(100)/fontSetCurrent(104), mainmenu.cc:123,202) --
-        // distinct from font1.aaf, the general interface font used everywhere else.
-        if (_vfs.Exists("font0.aaf"))
-            _menuCaptionFontRenderer = new AafFontRenderer(GraphicsDevice, AafFont.Load(_vfs.ReadAllBytes("font0.aaf")));
-        if (_vfs.Exists("font4.aaf"))
-            _menuButtonFontRenderer = new AafFontRenderer(GraphicsDevice, AafFont.Load(_vfs.ReadAllBytes("font4.aaf")));
+        // Vanilla's other interface fonts, keyed by fontSetCurrent() id (font_manager.cc:
+        // id-100 → font{N}.aaf). font1.aaf (101) is _fontRenderer itself, the fallback.
+        foreach (int id in new[] { 100, 102, 103, 104 })
+        {
+            string file = $"font{id - 100}.aaf";
+            if (_vfs.Exists(file))
+                _fonts[id] = new AafFontRenderer(GraphicsDevice, AafFont.Load(_vfs.ReadAllBytes(file)));
+        }
 
         LoadMap(_mapName, spawnAt: null);
 
@@ -7430,8 +7436,8 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
         _optionsBg?.Dispose();
         _automapBg?.Dispose();
         _fontRenderer?.Dispose();
-        _menuCaptionFontRenderer?.Dispose();
-        _menuButtonFontRenderer?.Dispose();
+        foreach (AafFontRenderer f in _fonts.Values)
+            f.Dispose();
         _frmCache.Dispose();
         _vfs.Dispose();
         base.UnloadContent();
