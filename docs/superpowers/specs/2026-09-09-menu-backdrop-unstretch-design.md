@@ -30,10 +30,12 @@ centred on the screen and blits its FRM 1:1 into it; the rest of the screen is
 `_colorTable[0]` black:
 
 - Main menu — `src/mainmenu.cc:97-105` (`(screenGetWidth() - 640) / 2`, …),
-  backdrop blit `:113-118`, buttons at window-local `(30, 19 + index*42 - index)` `:183-200`.
+  backdrop blit `:119`, buttons at window-local `(30, 19 + index*42 - index)` `:183-200`.
 - Character selector — `src/character_selector.cc:264-266`.
 - Endgame slideshow — `src/endgame.cc:574-581` (with a full-screen black overlay window
   behind it, `:569`).
+- Character creation — `src/character_editor.cc:1369-1374`.
+- Death screen — `src/main.cc:373-378`.
 
 So the vanilla-faithful presentation is exactly what Hexwaste drew before 2026-09-08:
 the 640x480 art at the centred origin, black elsewhere. Overlays then align by
@@ -65,7 +67,7 @@ Rejected alternatives, recorded for the next reader:
 Replace the body and doc comment:
 
 ```csharp
-    /// <summary>Draws a menu-family backdrop the way vanilla does (mainmenu.cc:97-118,
+    /// <summary>Draws a menu-family backdrop the way vanilla does (mainmenu.cc:97-105,119,
     /// character_selector.cc:264-266): the 640x480 art 1:1 at MenuOrigin()'s centred box,
     /// black-filled elsewhere. Never stretched — the plates/labels/click bands drawn afterwards
     /// share MenuOrigin(), so art and overlays stay aligned only if the art is not moved.</summary>

@@ -1158,7 +1158,7 @@ to the full virtual viewport in `DrawMenuBackdrop()`, while the plates, labels, 
 `MenuOrigin()`'s centred 640x480 box. The painted button slots moved with the stretch; the overlays did not.
 At the default 1280x720 window (UI scale 1.5, virtual 853x480, ox=106) the slot painted at art x=30 lands
 at virtual x≈40 while the plate is drawn at 136 — 96 virtual px (144 screen px) off. Vanilla never stretches
-this art: `mainmenu.cc:97-118`, `character_selector.cc:264-266`, `endgame.cc:574-581` each centre a fixed
+this art: `mainmenu.cc:97-105,119`, `character_selector.cc:264-266`, `endgame.cc:574-581` each centre a fixed
 640x480 window and blit the FRM 1:1, black elsewhere. Fix = `DrawMenuBackdrop()` back to black-fill + 1:1 draw
 at `MenuOrigin()` (`ViewerGame.Shell.cs`), same destination rect for the endgame slide
 (`ViewerGame.Endgame.cs`); overlays untouched. The project is back to zero non-uniform stretch anywhere.

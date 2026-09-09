@@ -49,7 +49,7 @@ public sealed partial class ViewerGame
         return ((vp.Width - 640) / 2, (vp.Height - 480) / 2);
     }
 
-    /// <summary>Draws a menu-family backdrop the way vanilla does (mainmenu.cc:97-118,
+    /// <summary>Draws a menu-family backdrop the way vanilla does (mainmenu.cc:97-105,119,
     /// character_selector.cc:264-266): the 640x480 art 1:1 at MenuOrigin()'s centred box,
     /// black-filled elsewhere. Never stretched — the plates/labels/click bands drawn afterwards
     /// share MenuOrigin(), so art and overlays stay aligned only if the art is not moved.</summary>

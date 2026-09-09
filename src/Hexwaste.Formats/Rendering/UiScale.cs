@@ -13,7 +13,11 @@ namespace Hexwaste.Formats.Rendering;
 /// Hexwaste deliberately does NOT replicate fo2ce's letterboxing: it picks one UNIFORM scale (the
 /// smaller of the two axis ratios, so no pixel distortion) and lets the "virtual" canvas extend
 /// past 640x480 on whichever axis has slack, filling the window edge-to-edge instead of showing
-/// black bars. Zero MonoGame dependency (Hexwaste.Formats is a pure .NET library) so this is
+/// black bars. The one deliberate exception is the menu-family backdrop art (main menu, character
+/// pick/creation, death, endgame slides): vanilla centres those as a fixed 640x480 window
+/// (mainmenu.cc:97-105,119), and Hexwaste draws them 1:1 at the centred origin with black around
+/// them, because the plates/labels/click bands are anchored to that origin and must not drift
+/// from the painted slots. Zero MonoGame dependency (Hexwaste.Formats is a pure .NET library) so this is
 /// directly unit-testable; Hexwaste.Viewer's ViewerGame.UiScale.cs wraps these with real
 /// GraphicsDevice.Viewport / Mouse.GetState() values.
 /// </summary>
