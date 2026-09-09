@@ -595,6 +595,12 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
     public int? TravelToArea { get; set; }
     private AafFontRenderer? _fontRenderer;
 
+    /// <summary>The main menu's distinct fonts (vanilla fontSetCurrent(100)/fontSetCurrent(104),
+    /// mainmenu.cc:123,202) -- separate from _fontRenderer (font1.aaf), the general interface
+    /// font used everywhere else. Loaded in LoadContent(); see DrawAuthenticMainMenu().</summary>
+    private AafFontRenderer? _menuCaptionFontRenderer; // font0.aaf: copyright/version
+    private AafFontRenderer? _menuButtonFontRenderer;  // font4.aaf: the six button labels
+
     /// <summary>Ambient light as a fraction of full brightness (CLI --ambient).</summary>
     public double InitialAmbient { get; set; } = 1.0;
 
@@ -1523,6 +1529,14 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
             _fontRenderer = new AafFontRenderer(GraphicsDevice, AafFont.Load(_vfs.ReadAllBytes("font1.aaf")));
         else
             Console.Error.WriteLine("font1.aaf not found — text overlay disabled");  // ascii-ok: stderr diagnostic, not font-rendered
+
+        // font0.aaf / font4.aaf: the main menu's caption and button-label fonts
+        // (vanilla fontSetCurrent(100)/fontSetCurrent(104), mainmenu.cc:123,202) --
+        // distinct from font1.aaf, the general interface font used everywhere else.
+        if (_vfs.Exists("font0.aaf"))
+            _menuCaptionFontRenderer = new AafFontRenderer(GraphicsDevice, AafFont.Load(_vfs.ReadAllBytes("font0.aaf")));
+        if (_vfs.Exists("font4.aaf"))
+            _menuButtonFontRenderer = new AafFontRenderer(GraphicsDevice, AafFont.Load(_vfs.ReadAllBytes("font4.aaf")));
 
         LoadMap(_mapName, spawnAt: null);
 

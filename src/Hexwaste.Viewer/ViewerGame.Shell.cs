@@ -116,17 +116,19 @@ public sealed partial class ViewerGame
 
             string label = MiscMsg(MainMenuButtons[i].MsgId);
             Color c = enabled ? gold : dimGold;
-            // Vertically centre the label on the button (the engine's font 104 is taller than ours, so we
-            // centre rather than pin to its baked y=41*i+20 — a small presentation divergence).
-            float ly = r.Y + (26 - _fontRenderer.LineHeight) / 2f;
-            _fontRenderer.Draw(_spriteBatch, label,
-                new Vector2(ox + 126 - _fontRenderer.MeasureWidth(label) / 2f, ly), c);
+            AafFontRenderer buttonFont = _menuButtonFontRenderer ?? _fontRenderer;
+            // Vertically centre the label on the button (vanilla pins to its baked
+            // y=41*i+20; centring instead is a small presentation divergence).
+            float ly = r.Y + (26 - buttonFont.LineHeight) / 2f;
+            buttonFont.Draw(_spriteBatch, label,
+                new Vector2(ox + 126 - buttonFont.MeasureWidth(label) / 2f, ly), c);
         }
 
         // Copyright (misc.msg {20}) bottom-left + version bottom-right (mainmenu.cc:141-155).
-        _fontRenderer.Draw(_spriteBatch, MiscMsg(20), new Vector2(ox + 15, oy + 459), tan);
-        _fontRenderer.Draw(_spriteBatch, MenuVersionString,
-            new Vector2(ox + 615 - _fontRenderer.MeasureWidth(MenuVersionString), oy + 459), tan);
+        AafFontRenderer captionFont = _menuCaptionFontRenderer ?? _fontRenderer;
+        captionFont.Draw(_spriteBatch, MiscMsg(20), new Vector2(ox + 15, oy + 459), tan);
+        captionFont.Draw(_spriteBatch, MenuVersionString,
+            new Vector2(ox + 615 - captionFont.MeasureWidth(MenuVersionString), oy + 459), tan);
         return true;
     }
 
