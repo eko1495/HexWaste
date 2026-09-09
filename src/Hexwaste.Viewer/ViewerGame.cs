@@ -1144,10 +1144,10 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
 
     protected override void Initialize()
     {
-        // A plain interactive launch (Program.cs: interactiveLaunch && !windowed)
-        // opens borderless-fullscreen at the desktop's native resolution, matching
-        // vanilla Fallout 2/fo2ce's default presentation. Every CLI-driven
-        // screenshot/test/benchmark path leaves StartFullscreen false.
+        // An interactive launch with --fullscreen (Program.cs: interactiveLaunch &&
+        // fullscreen) opens borderless-fullscreen at the desktop's native resolution;
+        // a plain launch stays windowed. Every CLI-driven screenshot/test/benchmark
+        // path leaves StartFullscreen false.
         if (StartFullscreen)
         {
             DisplayMode mode = GraphicsAdapter.DefaultAdapter.CurrentDisplayMode;
