@@ -7430,6 +7430,8 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
         _optionsBg?.Dispose();
         _automapBg?.Dispose();
         _fontRenderer?.Dispose();
+        _menuCaptionFontRenderer?.Dispose();
+        _menuButtonFontRenderer?.Dispose();
         _frmCache.Dispose();
         _vfs.Dispose();
         base.UnloadContent();
