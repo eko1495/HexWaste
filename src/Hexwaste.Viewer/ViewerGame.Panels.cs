@@ -692,7 +692,10 @@ public sealed partial class ViewerGame
         var dim = new Color(0, 168, 0);
 
         _spriteBatch.Draw(_skilldexBox, new Vector2(o.X, o.Y), Color.White);
-        _fontRenderer.Draw(_spriteBatch, "SKILLDEX", new Vector2(o.X + 55, o.Y + 14), titleColor);
+        // skilldex.cc:257 fontSetCurrent(103): the title and the 8 skill-name labels. The
+        // {N}% values below stay on _fontRenderer -- vanilla blits FRM digit strips there.
+        AafFontRenderer font = Font(103);
+        font.Draw(_spriteBatch, "SKILLDEX", new Vector2(o.X + 55, o.Y + 14), titleColor);
 
         Point m = UiMouse();
         int hovered = SkilldexRowAt(m.X, m.Y);
@@ -705,9 +708,9 @@ public sealed partial class ViewerGame
                 _spriteBatch.Draw(btn, btnPos, Color.White);
 
             string name = SkillName(skill);
-            int nameX = Math.Max(0, (btnW - _fontRenderer.MeasureWidth(name)) / 2);
-            int nameY = Math.Max(0, (btnH - _fontRenderer.LineHeight) / 2);
-            _fontRenderer.Draw(_spriteBatch, name, new Vector2(btnPos.X + nameX, btnPos.Y + nameY), nameColor);
+            int nameX = Math.Max(0, (btnW - font.MeasureWidth(name)) / 2);
+            int nameY = Math.Max(0, (btnH - font.LineHeight) / 2);
+            font.Draw(_spriteBatch, name, new Vector2(btnPos.X + nameX, btnPos.Y + nameY), nameColor);
 
             // The box bakes placeholder "223 %%" digits in each readout (like iface.frm);
             // field-blank them to the recess colour (32,32,32) and draw the real value
@@ -1205,7 +1208,9 @@ public sealed partial class ViewerGame
         Rectangle vp = VirtualViewport();
         int ow = _optionsBg?.Width ?? 164, oh = _optionsBg?.Height ?? 217;
         int ox = Math.Max(0, (vp.Width - ow) / 2), oy = Math.Max(0, (vp.Height - oh) / 2);
-        int lh = (_fontRenderer?.LineHeight ?? 16) + 10;
+        // options.cc:254 fontSetCurrent(103). Same renderer as DrawOptions, or rows and
+        // hit-testing desync; the ?? 16 keeps the headless (no font1.aaf) default.
+        int lh = (_fontRenderer is null ? 16 : Font(103).LineHeight) + 10;
         int ty0 = oy + (oh - OptionsItems.Length * lh) / 2;
         return new Rectangle(ox, ty0 + index * lh - 2, ow, lh);
     }
@@ -1288,8 +1293,9 @@ public sealed partial class ViewerGame
         for (int i = 0; i < OptionsItems.Length; i++)
         {
             Rectangle r = OptionsRowRect(i);
-            int tw = _fontRenderer.MeasureWidth(OptionsItems[i]);
-            _fontRenderer.Draw(_spriteBatch, OptionsItems[i], new Vector2(px + (ow - tw) / 2, r.Y + 2), i == hovered ? hot : green);
+            AafFontRenderer font = Font(103); // options.cc:254 fontSetCurrent(103)
+            int tw = font.MeasureWidth(OptionsItems[i]);
+            font.Draw(_spriteBatch, OptionsItems[i], new Vector2(px + (ow - tw) / 2, r.Y + 2), i == hovered ? hot : green);
         }
 
         _spriteBatch.End();

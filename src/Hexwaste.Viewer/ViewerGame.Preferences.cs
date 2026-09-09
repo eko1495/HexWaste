@@ -164,14 +164,20 @@ public sealed partial class ViewerGame
         var knob = new Color(0, 252, 0);
         Texture2D? knobArt = InterfaceFrm(PrefKnobOffFrm);
 
+        // Title (options.msg {100}, preferences.cc:1016-1019 -- fontSetCurrent(104) at (74,10)).
+        Font(104).Draw(_spriteBatch, PrefMsg(100), new Vector2(o.X + 74, o.Y + 10), value);
+        // preferences.cc:1021 fontSetCurrent(103): the 19 section titles + DEFAULT/DONE/CANCEL.
+        // Value labels stay on _fontRenderer (preferences.cc:1053, font 101).
+        AafFontRenderer titleFont = Font(103);
+
         for (int i = 0; i < Formats.GamePreferences.Settings.Length; i++)
         {
             Formats.GamePreferences.Setting s = Formats.GamePreferences.Settings[i];
             PrefSlot slot = PrefLayout[i];
             // Title at its own label position (centered for col1, left-anchored for col2/3).
             string title = PrefMsg(s.TitleMsg);
-            int titleX = slot.TitleCentered ? slot.TitleX - _fontRenderer.MeasureWidth(title) / 2 : slot.TitleX;
-            _fontRenderer.Draw(_spriteBatch, title, new Vector2(o.X + titleX, o.Y + slot.TitleY), value);
+            int titleX = slot.TitleCentered ? slot.TitleX - titleFont.MeasureWidth(title) / 2 : slot.TitleX;
+            titleFont.Draw(_spriteBatch, title, new Vector2(o.X + titleX, o.Y + slot.TitleY), value);
 
             double fraction;
             if (s.Continuous)
@@ -195,7 +201,7 @@ public sealed partial class ViewerGame
 
         // DEFAULT / DONE / CANCEL.
         var gold = new Color(252, 252, 84);
-        void Btn(int lx, int msg) => _fontRenderer.Draw(_spriteBatch, PrefMsg(msg), new Vector2(o.X + lx, o.Y + 449), gold);
+        void Btn(int lx, int msg) => titleFont.Draw(_spriteBatch, PrefMsg(msg), new Vector2(o.X + lx, o.Y + 449), gold);
         Btn(43, PrefDefaultMsg);
         Btn(169, PrefDoneMsg);
         Btn(283, PrefCancelMsg);
