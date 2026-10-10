@@ -21,6 +21,28 @@ index 5e039418..3a7c3f05 100644
  target_include_directories(${EXECUTABLE_NAME} PRIVATE ${SDL2_INCLUDE_DIRS})
  
  if(APPLE)
+diff --git a/src/animation.cc b/src/animation.cc
+index 0884eb28..38cb3e47 100644
+--- a/src/animation.cc
++++ b/src/animation.cc
+@@ -3068,7 +3068,7 @@ void _dude_fidget()
+ 
+     int delayInSeconds;
+     if (candidatesLength != 0) {
+-        int index = randomBetween(0, candidatesLength - 1);
++        int index = randomBetweenCosmetic(0, candidatesLength - 1);
+         Object* object = candidates[index];
+ 
+         reg_anim_begin(ANIMATION_REQUEST_UNRESERVED | ANIMATION_REQUEST_INSIGNIFICANT);
+@@ -3106,7 +3106,7 @@ void _dude_fidget()
+         delayInSeconds = 7;
+     }
+ 
+-    nextTime = randomBetween(0, 3000) + 1000 * delayInSeconds;
++    nextTime = randomBetweenCosmetic(0, 3000) + 1000 * delayInSeconds;
+ }
+ 
+ // 0x418378
 diff --git a/src/delay.cc b/src/delay.cc
 index dd9fa685..d780ae81 100644
 --- a/src/delay.cc
@@ -111,6 +133,28 @@ index 978a3859..e08bd28b 100644
  
      gIsMapper = isMapper;
  
+diff --git a/src/game_dialog.cc b/src/game_dialog.cc
+index ff988147..d39b302b 100644
+--- a/src/game_dialog.cc
++++ b/src/game_dialog.cc
+@@ -2502,7 +2502,7 @@ void _gdSetupFidget(int headFrmId, int reaction)
+         return;
+     }
+ 
+-    int chance = randomBetween(1, 100) + _dialogue_seconds_since_last_input / 2;
++    int chance = randomBetweenCosmetic(1, 100) + _dialogue_seconds_since_last_input / 2;
+ 
+     int fidget = fidgetCount;
+     switch (fidgetCount) {
+@@ -2862,7 +2862,7 @@ void gameDialogTicker()
+         if (getTicksSince(gGameDialogFidgetLastUpdateTimestamp) >= _tocksWaiting) {
+             _can_start_new_fidget = false;
+             _dialogue_seconds_since_last_input += _tocksWaiting / 1000;
+-            _tocksWaiting = 1000 * (randomBetween(0, 3) + 4);
++            _tocksWaiting = 1000 * (randomBetweenCosmetic(0, 3) + 4);
+             _gdSetupFidget(gGameDialogFidgetFid & 0xFFF, (gGameDialogFidgetFid & 0xFF0000) >> 16);
+         }
+         return;
 diff --git a/src/input.cc b/src/input.cc
 index 33acd6e4..a5aef1ef 100644
 --- a/src/input.cc
@@ -155,24 +199,59 @@ index 33acd6e4..a5aef1ef 100644
  
      // NOTE: Uninline.
      return getTicksBetween(end, start);
+diff --git a/src/main.cc b/src/main.cc
+index ee67a0a4..5b911491 100644
+--- a/src/main.cc
++++ b/src/main.cc
+@@ -1,6 +1,7 @@
+ #include "main.h"
+ 
+ #include <limits.h>
++#include <stdlib.h>
+ #include <string.h>
+ 
+ #include "art.h"
+@@ -24,6 +25,7 @@
+ #include "map.h"
+ #include "mouse.h"
+ #include "object.h"
++#include "oracle.h"
+ #include "palette.h"
+ #include "platform_compat.h"
+ #include "preferences.h"
+@@ -81,6 +83,11 @@ int falloutMain(int argc, char** argv)
+         return 1;
+     }
+ 
++    if (oracleEnabled() && oracleRngDumpPath()[0] != '\0') {
++        oracleWriteRngVectors(oracleRngDumpPath(), oracleSeed());
++        exit(0);
++    }
++
+     // SFALL: Allow to skip intro movies
+     int skipOpeningMovies;
+     configGetInt(&gSfallConfig, SFALL_CONFIG_MISC_KEY, SFALL_CONFIG_SKIP_OPENING_MOVIES_KEY, &skipOpeningMovies);
 diff --git a/src/oracle.cc b/src/oracle.cc
 new file mode 100644
-index 00000000..d3123c7d
+index 00000000..145773e2
 --- /dev/null
 +++ b/src/oracle.cc
-@@ -0,0 +1,54 @@
+@@ -0,0 +1,88 @@
 +#include "oracle.h"
 +
 +#include <stdio.h>
 +#include <stdlib.h>
 +
 +#include "game_config.h"
++#include "random.h"
 +
 +namespace fallout {
 +
 +static bool gOracleEnabled = false;
 +static unsigned int gOracleClock = 0;
 +static long long gOracleExitAfterMs = -1;
++static char gOracleRngDumpPath[1024] = "";
++static int gOracleSeed = 12345;
 +
 +static constexpr unsigned int kOracleStepMs = 10;
 +
@@ -193,6 +272,37 @@ index 00000000..d3123c7d
 +    if (configGetInt(&gGameConfig, "oracle", "exit_after_ms", &exitAfterMs) && exitAfterMs >= 0) {
 +        gOracleExitAfterMs = exitAfterMs;
 +    }
++    char* dumpPath = nullptr;
++    if (configGetString(&gGameConfig, "oracle", "rng_dump", &dumpPath) && dumpPath != nullptr) {
++        snprintf(gOracleRngDumpPath, sizeof(gOracleRngDumpPath), "%s", dumpPath);
++    }
++    configGetInt(&gGameConfig, "oracle", "seed", &gOracleSeed);
++}
++
++const char* oracleRngDumpPath()
++{
++    return gOracleRngDumpPath;
++}
++
++int oracleSeed()
++{
++    return gOracleSeed;
++}
++
++void oracleWriteRngVectors(const char* path, int seed)
++{
++    FILE* out = fopen(path, "wt");
++    if (out == nullptr) {
++        exit(2);
++    }
++    static const int kRanges[][2] = { { 1, 100 }, { 1, 6 }, { 0, 0 }, { 0, 1 }, { 5, 1 }, { -10, 10 }, { 1, 25 } };
++    oracleRandomSeed(seed);
++    for (int i = 0; i < 1000; i++) {
++        const int* r = kRanges[i % 7];
++        int v = randomBetweenAt(r[0], r[1], "dump", "dump");
++        fprintf(out, "seed=%d min=%d max=%d -> %d\n", seed, r[0], r[1], v);
++    }
++    fclose(out);
 +}
 +
 +unsigned int oracleTicks()
@@ -217,10 +327,10 @@ index 00000000..d3123c7d
 +} // namespace fallout
 diff --git a/src/oracle.h b/src/oracle.h
 new file mode 100644
-index 00000000..2ff99502
+index 00000000..f94b8845
 --- /dev/null
 +++ b/src/oracle.h
-@@ -0,0 +1,15 @@
+@@ -0,0 +1,18 @@
 +#ifndef FALLOUT_ORACLE_H_
 +#define FALLOUT_ORACLE_H_
 +
@@ -232,6 +342,9 @@ index 00000000..2ff99502
 +unsigned int oracleTicks();
 +void oracleAdvanceClock(unsigned int ms);
 +void oracleTick();
++const char* oracleRngDumpPath();
++int oracleSeed();
++void oracleWriteRngVectors(const char* path, int seed);
 +
 +} // namespace fallout
 +
@@ -260,6 +373,124 @@ index 51ba5323..7d28c957 100644
  
      // Calculate fade steps needed to perform fading in about 700 ms.
      gPaletteFadeSteps = 60 * 700 / actualFadeDuration;
+diff --git a/src/pipboy.cc b/src/pipboy.cc
+index 93278941..151d6d66 100644
+--- a/src/pipboy.cc
++++ b/src/pipboy.cc
+@@ -2271,7 +2271,7 @@ static int pipboyRenderScreensaver()
+             break;
+         }
+ 
+-        double random = randomBetween(0, PIPBOY_RAND_MAX);
++        double random = randomBetweenCosmetic(0, PIPBOY_RAND_MAX);
+ 
+         // TODO: Figure out what this constant means. Probably somehow related
+         // to PIPBOY_RAND_MAX.
+@@ -2286,7 +2286,7 @@ static int pipboyRenderScreensaver()
+             if (index < PIPBOY_BOMB_COUNT) {
+                 PipboyBomb* bomb = &(bombs[index]);
+                 int v27 = (350 - _pipboyFrmImages[PIPBOY_FRM_BOMB].getWidth() / 4) + (406 - _pipboyFrmImages[PIPBOY_FRM_BOMB].getHeight() / 4);
+-                int v5 = (int)((double)randomBetween(0, PIPBOY_RAND_MAX) / (double)PIPBOY_RAND_MAX * (double)v27);
++                int v5 = (int)((double)randomBetweenCosmetic(0, PIPBOY_RAND_MAX) / (double)PIPBOY_RAND_MAX * (double)v27);
+                 int v6 = _pipboyFrmImages[PIPBOY_FRM_BOMB].getHeight() / 4;
+                 if (PIPBOY_WINDOW_CONTENT_VIEW_HEIGHT - v6 >= v5) {
+                     bomb->x = 602;
+@@ -2297,7 +2297,7 @@ static int pipboyRenderScreensaver()
+                 }
+ 
+                 bomb->field_10 = 1;
+-                bomb->field_8 = (float)((double)randomBetween(0, PIPBOY_RAND_MAX) * (2.75 / PIPBOY_RAND_MAX) + 0.15);
++                bomb->field_8 = (float)((double)randomBetweenCosmetic(0, PIPBOY_RAND_MAX) * (2.75 / PIPBOY_RAND_MAX) + 0.15);
+                 bomb->field_C = 0;
+             }
+         }
+diff --git a/src/random.cc b/src/random.cc
+index ee9f0ea5..2da4bf4c 100644
+--- a/src/random.cc
++++ b/src/random.cc
+@@ -2,6 +2,7 @@
+ 
+ #include <limits.h>
+ #include <stdlib.h>
++#include <string.h>
+ 
+ #include <random>
+ 
+@@ -12,6 +13,9 @@
+ 
+ namespace fallout {
+ 
++// ORACLE: replaced by the real trace hook in a later task.
++static inline void oracleTraceRng(int, int, int, const char*, const char*) {}
++
+ static int _roll_reset_();
+ static int randomTranslateRoll(int delta, int criticalSuccessModifier);
+ static int getRandom(int max);
+@@ -131,7 +135,7 @@ static int randomTranslateRoll(int delta, int criticalSuccessModifier)
+ }
+ 
+ // 0x4A30C0
+-int randomBetween(int min, int max)
++int randomBetweenAt(int min, int max, const char* file, const char* func)
+ {
+     int result;
+ 
+@@ -146,9 +150,39 @@ int randomBetween(int min, int max)
+         result = min;
+     }
+ 
++    oracleTraceRng(min, max, result, file, func);
+     return result;
+ }
+ 
++// ORACLE: deterministic reseed. randomSeedPrerandomInternal() never writes _iv[0] (its loop runs
++// 40..1), so a plain reseed inherits _iv[0] from the wall-clock-seeded randomInit() +
++// randomValidatePrerandom(). Zero the whole table first so the stream is a pure function of seed.
++void oracleRandomSeed(int seed)
++{
++    memset(_iv, 0, sizeof(_iv));
++    _iy = 0;
++    _idum = 0;
++    randomSeedPrerandomInternal(seed);
++}
++
++// ORACLE: wall-clock-timed cosmetic draws use their own Park-Miller stream so they cannot shift
++// the logic stream (see docs/research-notes/fo2ce-rng-callsite-audit-2026-10.md).
++static int gCosmeticSeed = 1;
++
++int randomBetweenCosmetic(int min, int max)
++{
++    if (min > max) {
++        int t = min;
++        min = max;
++        max = t;
++    }
++    gCosmeticSeed = 16807 * (gCosmeticSeed % 127773) - 2836 * (gCosmeticSeed / 127773);
++    if (gCosmeticSeed <= 0) {
++        gCosmeticSeed += 0x7FFFFFFF;
++    }
++    return min + gCosmeticSeed % (max - min + 1);
++}
++
+ // 0x4A30FC
+ static int getRandom(int max)
+ {
+diff --git a/src/random.h b/src/random.h
+index 5a984dc5..66ffc371 100644
+--- a/src/random.h
++++ b/src/random.h
+@@ -18,7 +18,10 @@ void randomExit();
+ int randomSave(File* stream);
+ int randomLoad(File* stream);
+ int randomRoll(int difficulty, int criticalSuccessModifier, int* howMuchPtr);
+-int randomBetween(int min, int max);
++int randomBetweenAt(int min, int max, const char* file, const char* func);
++int randomBetweenCosmetic(int min, int max);
++void oracleRandomSeed(int seed);
++#define randomBetween(min, max) randomBetweenAt((min), (max), __FILE__, __func__)
+ void randomSeedPrerandom(int seed);
+ 
+ } // namespace fallout
 diff --git a/src/svga.cc b/src/svga.cc
 index 8acca966..0d658a5f 100644
 --- a/src/svga.cc
