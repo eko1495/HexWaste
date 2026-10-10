@@ -44,7 +44,7 @@ index 0884eb28..38cb3e47 100644
  
  // 0x418378
 diff --git a/src/combat.cc b/src/combat.cc
-index 825a5734..4fa50142 100644
+index 825a5734..196d68ae 100644
 --- a/src/combat.cc
 +++ b/src/combat.cc
 @@ -33,6 +33,7 @@
@@ -55,7 +55,15 @@ index 825a5734..4fa50142 100644
  #include "random.h"
  #include "scripts.h"
  #include "settings.h"
-@@ -3225,6 +3226,7 @@ static void _combat_set_move_all()
+@@ -2562,6 +2563,7 @@ static int _combatAIInfoSetLastMove(Object* object, int move)
+ // 0x421A34
+ static void _combat_begin(Object* attacker)
+ {
++    oracleRecipeCombatAbort(); // ORACLE: a make_save recipe must not enter combat
+     _combat_turn_running = 0;
+     animationStop();
+     tickersRemove(_dude_fidget);
+@@ -3225,6 +3227,7 @@ static void _combat_set_move_all()
  static int _combat_turn(Object* obj, bool a2)
  {
      _combat_turn_obj = obj;
@@ -63,7 +71,7 @@ index 825a5734..4fa50142 100644
  
      attackInit(&_main_ctd, obj, nullptr, HIT_MODE_PUNCH, HIT_LOCATION_TORSO);
  
-@@ -3979,6 +3981,9 @@ static int attackCompute(Attack* attack)
+@@ -3979,6 +3982,9 @@ static int attackCompute(Attack* attack)
  
      attackComputeDeathFlags(attack);
  
@@ -307,7 +315,7 @@ index 567548e4..3600151a 100644
  void lsgInit();
  int MapDirErase(const char* path, const char* extension);
 diff --git a/src/main.cc b/src/main.cc
-index ee67a0a4..505c7fd8 100644
+index ee67a0a4..7848c2c8 100644
 --- a/src/main.cc
 +++ b/src/main.cc
 @@ -1,6 +1,7 @@
@@ -362,7 +370,21 @@ index ee67a0a4..505c7fd8 100644
  {
      _game_user_wants_to_quit = 0;
      _main_show_death_scene = 0;
-@@ -286,7 +297,7 @@ static int _main_load_new(char* mapFileName)
+@@ -274,19 +285,19 @@ static int _main_load_new(char* mapFileName)
+     _map_init();
+     gameMouseSetCursor(MOUSE_CURSOR_NONE);
+     mouseShowCursor();
+-    mapLoadByName(mapFileName);
++    int oracleMapRc = mapLoadByName(mapFileName);
+     wmMapMusicStart();
+     paletteFadeTo(gPaletteWhite);
+     windowDestroy(win);
+     colorPaletteLoad("color.pal");
+     paletteFadeTo(_cmap);
+-    return 0;
++    return oracleMapRc; // ORACLE: propagate the load result
+ }
+ 
  // NOTE: Inlined.
  //
  // 0x480DF8
@@ -452,10 +474,10 @@ index 20b7aeff..f5262706 100644
  
 diff --git a/src/oracle.cc b/src/oracle.cc
 new file mode 100644
-index 00000000..6dcafdc9
+index 00000000..dc383664
 --- /dev/null
 +++ b/src/oracle.cc
-@@ -0,0 +1,271 @@
+@@ -0,0 +1,294 @@
 +#include "oracle.h"
 +
 +#include <stdio.h>
@@ -473,6 +495,7 @@ index 00000000..6dcafdc9
 +#include "input.h"
 +#include "loadsave.h"
 +#include "main.h"
++#include "combat.h"
 +#include "map.h"
 +
 +namespace fallout {
@@ -482,6 +505,7 @@ index 00000000..6dcafdc9
 +static long long gOracleExitAfterMs = -1;
 +static char gOracleRngDumpPath[1024] = "";
 +static int gOracleSeed = 12345;
++static bool gOracleRecipeRunning = false;
 +static char gOracleMakeSavePath[1024] = "";
 +
 +static constexpr unsigned int kOracleStepMs = 10;
@@ -538,12 +562,23 @@ index 00000000..6dcafdc9
 +    scriptsDisable();
 +}
 +
++static int oracleRunRecipeLines(FILE* in);
++
 +int oracleRunRecipe(const char* path)
 +{
 +    FILE* in = fopen(path, "rt");
 +    if (in == nullptr) {
 +        return oracleFail("open", path);
 +    }
++    gOracleRecipeRunning = true;
++    int rc = oracleRunRecipeLines(in);
++    gOracleRecipeRunning = false;
++    fclose(in);
++    return rc;
++}
++
++static int oracleRunRecipeLines(FILE* in)
++{
 +    char line[256];
 +    while (fgets(line, sizeof(line), in) != nullptr) {
 +        char* hash = strchr(line, '#');
@@ -556,7 +591,7 @@ index 00000000..6dcafdc9
 +            snprintf(gcd, sizeof(gcd), "premade\\%s.gcd", a);
 +            if (_proto_dude_init(gcd) == -1) return oracleFail("premade", a);
 +        } else if (strcmp(cmd, "map") == 0 && sscanf(line, "%*s %127s", a) == 1) {
-+            _main_load_new(a);
++            if (_main_load_new(a) != 0) return oracleFail("map", a);
 +        } else if (strcmp(cmd, "place") == 0 && sscanf(line, "%*s %d %d %d", &n1, &n2, &n3) == 3) {
 +            objectSetLocation(gDude, n1, n2, nullptr);
 +            objectSetRotation(gDude, n3, nullptr);
@@ -576,7 +611,6 @@ index 00000000..6dcafdc9
 +            return oracleFail("unknown recipe command", cmd);
 +        }
 +    }
-+    fclose(in);
 +    return 0;
 +}
 +
@@ -616,8 +650,19 @@ index 00000000..6dcafdc9
 +    gOracleClock += ms;
 +}
 +
++void oracleRecipeCombatAbort()
++{
++    if (gOracleRecipeRunning) {
++        fprintf(stderr, "oracle: recipe entered combat\n");
++        exit(3);
++    }
++}
++
 +void oracleTick()
 +{
++    if (gOracleRecipeRunning && isInCombat()) {
++        oracleRecipeCombatAbort();
++    }
 +    gOracleClock += kOracleStepMs;
 +    if (gOracleExitAfterMs >= 0 && (long long)gOracleClock >= gOracleExitAfterMs) {
 +        fprintf(stderr, "oracle: exit_after_ms=%lld reached at clock %u\n", gOracleExitAfterMs, gOracleClock);
@@ -729,10 +774,10 @@ index 00000000..6dcafdc9
 +} // namespace fallout
 diff --git a/src/oracle.h b/src/oracle.h
 new file mode 100644
-index 00000000..c43c7393
+index 00000000..1aa85ad7
 --- /dev/null
 +++ b/src/oracle.h
-@@ -0,0 +1,35 @@
+@@ -0,0 +1,36 @@
 +#ifndef FALLOUT_ORACLE_H_
 +#define FALLOUT_ORACLE_H_
 +
@@ -750,6 +795,7 @@ index 00000000..c43c7393
 +int oracleSeed();
 +const char* oracleMakeSavePath();
 +int oracleRunRecipe(const char* path);
++void oracleRecipeCombatAbort();
 +void oracleWriteRngVectors(const char* path, int seed);
 +
 +void oracleTraceOpen(const char* path, const char* header);

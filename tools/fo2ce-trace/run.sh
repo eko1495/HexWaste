@@ -8,4 +8,4 @@ RUN=reference/fallout2-ce/run
 args=("[oracle]enabled=1" "[misc]SkipOpeningMovies=2")
 for kv in "$@"; do args+=("[oracle]$kv"); done
 cd "$RUN"
-SDL_VIDEODRIVER=offscreen SDL_AUDIODRIVER=dummy timeout 1800 "$BIN" "${args[@]}"
+SDL_VIDEODRIVER=offscreen SDL_AUDIODRIVER=dummy timeout "${ORACLE_TIMEOUT:-1800}" "$BIN" "${args[@]}"

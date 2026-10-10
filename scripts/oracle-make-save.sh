@@ -10,7 +10,7 @@ RUN=reference/fallout2-ce/run
 SLOT=$(find "$RUN" -maxdepth 3 -type d -iname SAVEGAME | head -1)
 [ -n "$SLOT" ] || SLOT="$RUN/data/SAVEGAME"
 rm -rf "$SLOT/SLOT10"
-bash tools/fo2ce-trace/run.sh make_save="$RECIPE"
+ORACLE_TIMEOUT=120 bash tools/fo2ce-trace/run.sh make_save="$RECIPE"
 SLOT=$(find "$RUN" -maxdepth 3 -type d -iname SAVEGAME | head -1)
 [ -f "$SLOT/SLOT10/SAVE.DAT" ] || { echo "no SAVE.DAT produced in $SLOT/SLOT10" >&2; exit 1; }
 DEST=game-data/oracle-saves/$FIX
