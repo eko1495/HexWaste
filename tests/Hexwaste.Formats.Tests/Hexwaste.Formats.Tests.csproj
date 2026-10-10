@@ -22,4 +22,8 @@
     <ProjectReference Include="..\..\src\Hexwaste.Formats\Hexwaste.Formats.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <None Include="Data\**" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
 </Project>
