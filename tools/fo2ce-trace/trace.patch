@@ -44,7 +44,7 @@ index 0884eb28..38cb3e47 100644
  
  // 0x418378
 diff --git a/src/combat.cc b/src/combat.cc
-index 825a5734..196d68ae 100644
+index 825a5734..b175d455 100644
 --- a/src/combat.cc
 +++ b/src/combat.cc
 @@ -33,6 +33,7 @@
@@ -63,7 +63,17 @@ index 825a5734..196d68ae 100644
      _combat_turn_running = 0;
      animationStop();
      tickersRemove(_dude_fidget);
-@@ -3225,6 +3227,7 @@ static void _combat_set_move_all()
+@@ -3154,7 +3156,9 @@ static int _combat_input()
+             break;
+         }
+ 
++        oracleSetDudeAwaitingInput(true); // ORACLE: scenario end-turn seeks this
+         int keyCode = inputGetInput();
++        oracleSetDudeAwaitingInput(false);
+ 
+         // SFALL: CombatLoopHook.
+         sfall_gl_scr_process_main();
+@@ -3225,6 +3229,7 @@ static void _combat_set_move_all()
  static int _combat_turn(Object* obj, bool a2)
  {
      _combat_turn_obj = obj;
@@ -71,7 +81,7 @@ index 825a5734..196d68ae 100644
  
      attackInit(&_main_ctd, obj, nullptr, HIT_MODE_PUNCH, HIT_LOCATION_TORSO);
  
-@@ -3979,6 +3982,9 @@ static int attackCompute(Attack* attack)
+@@ -3979,6 +3984,9 @@ static int attackCompute(Attack* attack)
  
      attackComputeDeathFlags(attack);
  
@@ -315,18 +325,19 @@ index 567548e4..3600151a 100644
  void lsgInit();
  int MapDirErase(const char* path, const char* extension);
 diff --git a/src/main.cc b/src/main.cc
-index ee67a0a4..7848c2c8 100644
+index ee67a0a4..9db3aacb 100644
 --- a/src/main.cc
 +++ b/src/main.cc
-@@ -1,6 +1,7 @@
+@@ -1,6 +1,8 @@
  #include "main.h"
  
  #include <limits.h>
++#include <stdio.h>
 +#include <stdlib.h>
  #include <string.h>
  
  #include "art.h"
-@@ -24,6 +25,7 @@
+@@ -24,6 +26,7 @@
  #include "map.h"
  #include "mouse.h"
  #include "object.h"
@@ -334,7 +345,7 @@ index ee67a0a4..7848c2c8 100644
  #include "palette.h"
  #include "platform_compat.h"
  #include "preferences.h"
-@@ -49,8 +51,6 @@ namespace fallout {
+@@ -49,8 +52,6 @@ namespace fallout {
  static bool falloutInit(int argc, char** argv);
  static int main_reset_system();
  static void main_exit_system();
@@ -343,7 +354,7 @@ index ee67a0a4..7848c2c8 100644
  static void main_unload_new();
  static void mainLoop();
  static void showDeath();
-@@ -81,6 +81,17 @@ int falloutMain(int argc, char** argv)
+@@ -81,6 +82,33 @@ int falloutMain(int argc, char** argv)
          return 1;
      }
  
@@ -358,10 +369,26 @@ index ee67a0a4..7848c2c8 100644
 +        exit(rc == 0 ? 0 : 3);
 +    }
 +
++    if (oracleEnabled() && oracleScenarioPath()[0] != '\0') {
++        main_loadgame_new();
++        if (lsgLoadGameHeadless(9) == -1) {
++            fprintf(stderr, "oracle: cannot load SLOT10\n");
++            exit(4);
++        }
++        char header[256];
++        snprintf(header, sizeof(header), "oracle v1 fixture=%s engine=fo2ce@e97087b+trace.patch@%s",
++            oracleFixtureName(), ORACLE_PATCH_SHA);
++        oracleTraceOpen(oracleTracePath(), header);
++        oracleScenarioBegin(oracleScenarioPath()); // parses, seeds, arms the step machine
++        mainLoop(); // the step machine exits from oracleTick when the scenario is done
++        fprintf(stderr, "oracle: mainLoop returned before the scenario finished (dude dead/quit?)\n");
++        exit(5);
++    }
++
      // SFALL: Allow to skip intro movies
      int skipOpeningMovies;
      configGetInt(&gSfallConfig, SFALL_CONFIG_MISC_KEY, SFALL_CONFIG_SKIP_OPENING_MOVIES_KEY, &skipOpeningMovies);
-@@ -258,7 +269,7 @@ static void main_exit_system()
+@@ -258,7 +286,7 @@ static void main_exit_system()
  }
  
  // 0x480D4C
@@ -370,7 +397,7 @@ index ee67a0a4..7848c2c8 100644
  {
      _game_user_wants_to_quit = 0;
      _main_show_death_scene = 0;
-@@ -274,19 +285,19 @@ static int _main_load_new(char* mapFileName)
+@@ -274,19 +302,19 @@ static int _main_load_new(char* mapFileName)
      _map_init();
      gameMouseSetCursor(MOUSE_CURSOR_NONE);
      mouseShowCursor();
@@ -474,10 +501,10 @@ index 20b7aeff..f5262706 100644
  
 diff --git a/src/oracle.cc b/src/oracle.cc
 new file mode 100644
-index 00000000..dc383664
+index 00000000..ddeecf6b
 --- /dev/null
 +++ b/src/oracle.cc
-@@ -0,0 +1,294 @@
+@@ -0,0 +1,495 @@
 +#include "oracle.h"
 +
 +#include <stdio.h>
@@ -493,6 +520,7 @@ index 00000000..dc383664
 +#include "random.h"
 +#include "game.h"
 +#include "input.h"
++#include "kb.h"
 +#include "loadsave.h"
 +#include "main.h"
 +#include "combat.h"
@@ -507,6 +535,11 @@ index 00000000..dc383664
 +static int gOracleSeed = 12345;
 +static bool gOracleRecipeRunning = false;
 +static char gOracleMakeSavePath[1024] = "";
++static char gOracleScenarioPath[1024] = "";
++static char gOracleTracePath[1024] = "";
++static char gOracleFixtureName[128] = "";
++static bool gOracleDudeAwaitingInput = false;
++static bool gOracleClockMoved = false; // a tick/delay advanced the clock since the last renderPresent
 +
 +static constexpr unsigned int kOracleStepMs = 10;
 +
@@ -536,12 +569,32 @@ index 00000000..dc383664
 +    if (configGetString(&gGameConfig, "oracle", "make_save", &savePath) && savePath != nullptr) {
 +        snprintf(gOracleMakeSavePath, sizeof(gOracleMakeSavePath), "%s", savePath);
 +    }
++    char* str = nullptr;
++    if (configGetString(&gGameConfig, "oracle", "scenario", &str) && str != nullptr) {
++        snprintf(gOracleScenarioPath, sizeof(gOracleScenarioPath), "%s", str);
++    }
++    str = nullptr;
++    if (configGetString(&gGameConfig, "oracle", "trace", &str) && str != nullptr) {
++        snprintf(gOracleTracePath, sizeof(gOracleTracePath), "%s", str);
++    }
++    str = nullptr;
++    if (configGetString(&gGameConfig, "oracle", "fixture", &str) && str != nullptr) {
++        snprintf(gOracleFixtureName, sizeof(gOracleFixtureName), "%s", str);
++    }
 +}
++
++const char* oracleScenarioPath() { return gOracleScenarioPath; }
++const char* oracleTracePath() { return gOracleTracePath; }
++const char* oracleFixtureName() { return gOracleFixtureName; }
++bool oracleDudeAwaitingInput() { return gOracleDudeAwaitingInput; }
++void oracleSetDudeAwaitingInput(bool on) { gOracleDudeAwaitingInput = on; }
 +
 +const char* oracleMakeSavePath()
 +{
 +    return gOracleMakeSavePath;
 +}
++
++static void oracleScenarioStep();
 +
 +static int oracleFail(const char* what, const char* arg)
 +{
@@ -648,6 +701,20 @@ index 00000000..dc383664
 +void oracleAdvanceClock(unsigned int ms)
 +{
 +    gOracleClock += ms;
++    gOracleClockMoved = true;
++}
++
++// Render-only-loop guard, called from renderPresent. Some engine wait loops are gated on
++// getTicksSince() but only render (gameMouseRefresh/renderPresent/throttle) - they never reach
++// tickersExecute or delay_ms, so under the virtual clock they would spin forever (e.g.
++// interfaceBarEndButtonsShow at every _combat_begin). If no tick/delay advanced the clock since
++// the previous present, advance it by one step. Loops that do tick keep exactly 10 ms per tick.
++void oracleRenderGuard()
++{
++    if (!gOracleClockMoved) {
++        gOracleClock += kOracleStepMs;
++    }
++    gOracleClockMoved = false;
 +}
 +
 +void oracleRecipeCombatAbort()
@@ -664,6 +731,8 @@ index 00000000..dc383664
 +        oracleRecipeCombatAbort();
 +    }
 +    gOracleClock += kOracleStepMs;
++    gOracleClockMoved = true;
++    oracleScenarioStep();
 +    if (gOracleExitAfterMs >= 0 && (long long)gOracleClock >= gOracleExitAfterMs) {
 +        fprintf(stderr, "oracle: exit_after_ms=%lld reached at clock %u\n", gOracleExitAfterMs, gOracleClock);
 +        exit(0);
@@ -771,15 +840,178 @@ index 00000000..dc383664
 +    oracleLine("SPAWN obj#%d pid=0x%08X tile=%d", obj->id, obj->pid, obj->tile);
 +}
 +
++// ---- scenario runner -------------------------------------------------------------------
++// Grammar (shared with Hexwaste): `seed <int>` (first), `wait <ms>`, `end-turn [count]`.
++// Once combat starts, control lives inside fo2ce's own combat loops, so the runner is a step
++// machine driven from oracleTick() (every tickersExecute pass) rather than a sequential loop.
++// The sequential specification is:
++//   wait ms     -> run the engine for ms virtual ms
++//   end-turn n  -> n times: run until dude awaits combat input (or no combat -> action ends);
++//                  enqueue KEY_SPACE (_combat_input breaks on it, combat.cc); run 10 ms; run
++//                  until dude awaits input again or combat ended. Each seek capped at 600000 ms.
++
++enum OracleScenarioState {
++    ORACLE_SCN_IDLE, // not armed
++    ORACLE_SCN_NEXT, // fetch the next command
++    ORACLE_SCN_WAIT_UNTIL,
++    ORACLE_SCN_ENDTURN_SEEK_INPUT,
++    ORACLE_SCN_ENDTURN_PRESSED,
++    ORACLE_SCN_ENDTURN_SEEK_NEXT,
++};
++
++struct OracleScenarioCmd {
++    int kind; // 0 = wait, 1 = end-turn
++    int arg;
++};
++
++static constexpr unsigned int kOracleEndTurnCapMs = 600000;
++static constexpr int kOracleScenarioMaxCmds = 256;
++
++static OracleScenarioCmd gOracleScnCmds[kOracleScenarioMaxCmds];
++static int gOracleScnCount = 0;
++static int gOracleScnIndex = 0;
++static OracleScenarioState gOracleScnState = ORACLE_SCN_IDLE;
++static unsigned int gOracleScnUntil = 0; // WAIT_UNTIL / PRESSED target, or seek deadline
++static int gOracleScnTurnsLeft = 0;
++static bool gOracleScnInStep = false;
++
++[[noreturn]] static void oracleScenarioFailExit(const char* what, int code)
++{
++    fprintf(stderr, "oracle: scenario failed: %s (cmd %d, clock %u)\n", what, gOracleScnIndex, gOracleClock);
++    exit(code); // atexit closes the (partial) trace
++}
++
++void oracleScenarioBegin(const char* path)
++{
++    FILE* in = fopen(path, "rt");
++    if (in == nullptr) {
++        fprintf(stderr, "oracle: cannot open scenario %s\n", path);
++        exit(6);
++    }
++    char line[128];
++    bool seeded = false;
++    while (fgets(line, sizeof(line), in) != nullptr) {
++        char* hash = strchr(line, '#');
++        if (hash != nullptr) *hash = '\0';
++        char cmd[32] = { 0 };
++        int n = 0;
++        if (sscanf(line, "%31s", cmd) != 1) continue;
++        if (!seeded) {
++            if (strcmp(cmd, "seed") != 0 || sscanf(line, "%*s %d", &n) != 1) {
++                fprintf(stderr, "oracle: scenario must start with seed (got %s)\n", cmd);
++                exit(6);
++            }
++            oracleRandomSeed(n);
++            seeded = true;
++            continue;
++        }
++        if (gOracleScnCount >= kOracleScenarioMaxCmds) {
++            fprintf(stderr, "oracle: scenario too long\n");
++            exit(6);
++        }
++        OracleScenarioCmd* c = &(gOracleScnCmds[gOracleScnCount]);
++        if (strcmp(cmd, "wait") == 0 && sscanf(line, "%*s %d", &n) == 1 && n >= 0) {
++            c->kind = 0;
++            c->arg = n;
++        } else if (strcmp(cmd, "end-turn") == 0) {
++            c->kind = 1;
++            c->arg = sscanf(line, "%*s %d", &n) == 1 ? n : 1;
++        } else {
++            fprintf(stderr, "oracle: unknown scenario command %s\n", cmd);
++            exit(6);
++        }
++        gOracleScnCount++;
++    }
++    fclose(in);
++    if (!seeded) {
++        fprintf(stderr, "oracle: scenario must start with seed\n");
++        exit(6);
++    }
++    gOracleScnIndex = 0;
++    gOracleScnState = ORACLE_SCN_NEXT;
++    // Instantaneous commands (wait 0, end-turn 0) complete before the first tick.
++    oracleScenarioStep();
++}
++
++static void oracleScenarioStep()
++{
++    if (gOracleScnState == ORACLE_SCN_IDLE || gOracleScnInStep) {
++        return;
++    }
++    gOracleScnInStep = true;
++    // Loop over instantaneous transitions; return as soon as a state must wait for the engine.
++    for (;;) {
++        switch (gOracleScnState) {
++        case ORACLE_SCN_IDLE:
++            break;
++        case ORACLE_SCN_NEXT:
++            if (gOracleScnIndex >= gOracleScnCount) {
++                fprintf(stderr, "oracle: scenario done at clock %u\n", gOracleClock);
++                gOracleScnState = ORACLE_SCN_IDLE;
++                exit(0); // atexit closes the trace
++            }
++            if (gOracleScnCmds[gOracleScnIndex].kind == 0) {
++                gOracleScnUntil = gOracleClock + (unsigned int)gOracleScnCmds[gOracleScnIndex].arg;
++                gOracleScnState = ORACLE_SCN_WAIT_UNTIL;
++            } else {
++                gOracleScnTurnsLeft = gOracleScnCmds[gOracleScnIndex].arg;
++                gOracleScnUntil = gOracleClock + kOracleEndTurnCapMs;
++                gOracleScnState = ORACLE_SCN_ENDTURN_SEEK_INPUT;
++            }
++            continue;
++        case ORACLE_SCN_WAIT_UNTIL:
++            if (gOracleClock < gOracleScnUntil) break;
++            gOracleScnIndex++;
++            gOracleScnState = ORACLE_SCN_NEXT;
++            continue;
++        case ORACLE_SCN_ENDTURN_SEEK_INPUT:
++            if (gOracleScnTurnsLeft <= 0 || !isInCombat()) {
++                // count exhausted, or combat not active -> the action ends
++                gOracleScnIndex++;
++                gOracleScnState = ORACLE_SCN_NEXT;
++                continue;
++            }
++            if (gOracleDudeAwaitingInput) {
++                enqueueInputEvent(KEY_SPACE); // _combat_input: space ends the turn
++                gOracleScnUntil = gOracleClock + kOracleStepMs;
++                gOracleScnState = ORACLE_SCN_ENDTURN_PRESSED;
++                break;
++            }
++            if (gOracleClock >= gOracleScnUntil) oracleScenarioFailExit("end-turn cap reached seeking dude input", 7);
++            break;
++        case ORACLE_SCN_ENDTURN_PRESSED:
++            if (gOracleClock < gOracleScnUntil) break;
++            gOracleScnUntil = gOracleClock + kOracleEndTurnCapMs;
++            gOracleScnState = ORACLE_SCN_ENDTURN_SEEK_NEXT;
++            continue;
++        case ORACLE_SCN_ENDTURN_SEEK_NEXT:
++            if (!isInCombat() || gOracleDudeAwaitingInput) {
++                gOracleScnTurnsLeft--;
++                gOracleScnUntil = gOracleClock + kOracleEndTurnCapMs;
++                gOracleScnState = ORACLE_SCN_ENDTURN_SEEK_INPUT;
++                continue;
++            }
++            if (gOracleClock >= gOracleScnUntil) oracleScenarioFailExit("end-turn cap reached seeking next dude turn", 7);
++            break;
++        }
++        break;
++    }
++    gOracleScnInStep = false;
++}
++
 +} // namespace fallout
 diff --git a/src/oracle.h b/src/oracle.h
 new file mode 100644
-index 00000000..1aa85ad7
+index 00000000..b88dc4c2
 --- /dev/null
 +++ b/src/oracle.h
-@@ -0,0 +1,36 @@
+@@ -0,0 +1,48 @@
 +#ifndef FALLOUT_ORACLE_H_
 +#define FALLOUT_ORACLE_H_
++
++#ifndef ORACLE_PATCH_SHA
++#define ORACLE_PATCH_SHA "unknown"
++#endif
 +
 +// Hexwaste trace oracle (tools/fo2ce-trace). Everything here is inert unless [oracle]enabled=1.
 +namespace fallout {
@@ -797,6 +1029,14 @@ index 00000000..1aa85ad7
 +int oracleRunRecipe(const char* path);
 +void oracleRecipeCombatAbort();
 +void oracleWriteRngVectors(const char* path, int seed);
++void oracleRenderGuard();
++
++const char* oracleScenarioPath();
++const char* oracleTracePath();
++const char* oracleFixtureName();
++bool oracleDudeAwaitingInput();
++void oracleSetDudeAwaitingInput(bool on);
++void oracleScenarioBegin(const char* path);
 +
 +void oracleTraceOpen(const char* path, const char* header);
 +bool oracleTracing();
@@ -996,7 +1236,7 @@ index 573b3f58..ba5e4be1 100644
  
      return 0;
 diff --git a/src/svga.cc b/src/svga.cc
-index 8acca966..0d658a5f 100644
+index 8acca966..5e7bb738 100644
 --- a/src/svga.cc
 +++ b/src/svga.cc
 @@ -1,6 +1,7 @@
@@ -1007,7 +1247,15 @@ index 8acca966..0d658a5f 100644
  #include <string.h>
  
  #include <SDL.h>
-@@ -173,9 +174,16 @@ int _init_vesa_mode(int width, int height)
+@@ -10,6 +11,7 @@
+ #include "interface.h"
+ #include "memory.h"
+ #include "mouse.h"
++#include "oracle.h"
+ #include "win32.h"
+ #include "window_manager.h"
+ #include "window_manager_private.h"
+@@ -173,9 +175,16 @@ int _init_vesa_mode(int width, int height)
  int _GNW95_init_window(int width, int height, bool fullscreen, int scale)
  {
      if (gSdlWindow == nullptr) {
@@ -1026,3 +1274,14 @@ index 8acca966..0d658a5f 100644
  
          if (fullscreen) {
              windowFlags |= SDL_WINDOW_FULLSCREEN;
+@@ -409,6 +418,10 @@ void handleWindowSizeChanged()
+ 
+ void renderPresent()
+ {
++    // ORACLE: render-only wait loops must still advance the virtual clock (see oracleRenderGuard).
++    if (oracleEnabled()) {
++        oracleRenderGuard();
++    }
+     SDL_UpdateTexture(gSdlTexture, nullptr, gSdlTextureSurface->pixels, gSdlTextureSurface->pitch);
+     SDL_RenderClear(gSdlRenderer);
+     SDL_RenderCopy(gSdlRenderer, gSdlTexture, nullptr, nullptr);
