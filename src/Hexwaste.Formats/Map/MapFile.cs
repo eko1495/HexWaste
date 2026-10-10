@@ -35,7 +35,7 @@ public sealed class MapElevation
 /// <summary>A static object placed on the 200x200 hex grid.</summary>
 public sealed class MapObject
 {
-    public required int Id { get; init; }
+    public required int Id { get; set; } // settable: the trace-oracle vanilla import restores the saved dude id
 
     /// <summary>Hex grid tile number (0..39999), or -1 for inventory items.</summary>
     public required int HexTile { get; set; }

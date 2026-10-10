@@ -1544,7 +1544,11 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
                 _fonts[id] = new AafFontRenderer(GraphicsDevice, AafFont.Load(_vfs.ReadAllBytes(file)));
         }
 
-        LoadMap(_mapName, spawnAt: null);
+        // Trace oracle: a vanilla SAVE.DAT slot replaces the default map load (and the JSON load below).
+        if (VanillaSaveDir is not null)
+            LoadVanillaSaveAtStartup();
+        else
+            LoadMap(_mapName, spawnAt: null);
 
         _worldmapScreen = new WorldmapScreen(GraphicsDevice, _vfs, _palette, _cities, _fontRenderer, _frmCache)
         {
@@ -1594,7 +1598,7 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
                 Console.Error.WriteLine($"no area {areaIndex} in city.txt");
         }
 
-        if (LoadOnStart)
+        if (LoadOnStart && VanillaSaveDir is null)
             LoadGame();
 
         // Dialog hooks run first so --choose can open barter for the
@@ -1675,7 +1679,7 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
     private Formats.Map.EncounterResult? _pendingEncounter;
 
     private void LoadMap(string mapName, MapDestination? spawnAt, bool captureOutgoing = true,
-        bool transient = false)
+        bool transient = false, MapFile? preloadedMap = null)
     {
         // Remember what the player changed on the map being left, so a
         // revisit can replay it over the pristine file (engine: SAVE.DAT
@@ -1722,8 +1726,14 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
         // player just stays put). No shippable map trips this; it hardens against bad data.
         try
         {
-            using Stream stream = _vfs.OpenRead($@"maps\{mapName}");
-            _map = MapFile.Load(stream, _protos);
+            // Trace oracle: a vanilla slot's in-game-saved map (.SAV) is handed in already parsed.
+            if (preloadedMap is not null)
+                _map = preloadedMap;
+            else
+            {
+                using Stream stream = _vfs.OpenRead($@"maps\{mapName}");
+                _map = MapFile.Load(stream, _protos);
+            }
 
             // P114: a FRESH map's MAP_GLOBAL_VARS come from maps\<name>.gam, which OVERRIDES the count +
             // values baked into the .map stream (map.cc:932-947 — the .map array is only the saved seed).
