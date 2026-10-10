@@ -65,7 +65,7 @@ index 171d5291..6798e24a 100644
  
  // 0x4E078C
 diff --git a/src/fps_limiter.cc b/src/fps_limiter.cc
-index 7b621376..9f845faa 100644
+index 7b621376..fb464744 100644
 --- a/src/fps_limiter.cc
 +++ b/src/fps_limiter.cc
 @@ -2,6 +2,8 @@
@@ -77,7 +77,7 @@ index 7b621376..9f845faa 100644
  namespace fallout {
  
  FpsLimiter::FpsLimiter(unsigned int fps)
-@@ -12,11 +14,17 @@ FpsLimiter::FpsLimiter(unsigned int fps)
+@@ -12,11 +14,13 @@ FpsLimiter::FpsLimiter(unsigned int fps)
  
  void FpsLimiter::mark()
  {
@@ -87,11 +87,7 @@ index 7b621376..9f845faa 100644
  
  void FpsLimiter::throttle() const
  {
-+    // ORACLE: no sleeping; model a full frame budget on the virtual clock (keeps fades from taking 0 ms).
-+    if (oracleEnabled()) {
-+        oracleAdvanceClock(10); // one virtual step, same as a ticker pass
-+        return;
-+    }
++    if (oracleEnabled()) return;
      if (1000 / _fps > SDL_GetTicks() - _ticks) {
          SDL_Delay(1000 / _fps - (SDL_GetTicks() - _ticks));
      }
@@ -161,10 +157,10 @@ index 33acd6e4..a5aef1ef 100644
      return getTicksBetween(end, start);
 diff --git a/src/oracle.cc b/src/oracle.cc
 new file mode 100644
-index 00000000..ed837b71
+index 00000000..d3123c7d
 --- /dev/null
 +++ b/src/oracle.cc
-@@ -0,0 +1,51 @@
+@@ -0,0 +1,54 @@
 +#include "oracle.h"
 +
 +#include <stdio.h>
@@ -176,7 +172,7 @@ index 00000000..ed837b71
 +
 +static bool gOracleEnabled = false;
 +static unsigned int gOracleClock = 0;
-+static int gOracleExitAfterMs = -1;
++static long long gOracleExitAfterMs = -1;
 +
 +static constexpr unsigned int kOracleStepMs = 10;
 +
@@ -193,7 +189,10 @@ index 00000000..ed837b71
 +    if (!gOracleEnabled) {
 +        return;
 +    }
-+    configGetInt(&gGameConfig, "oracle", "exit_after_ms", &gOracleExitAfterMs);
++    int exitAfterMs = -1;
++    if (configGetInt(&gGameConfig, "oracle", "exit_after_ms", &exitAfterMs) && exitAfterMs >= 0) {
++        gOracleExitAfterMs = exitAfterMs;
++    }
 +}
 +
 +unsigned int oracleTicks()
@@ -209,8 +208,8 @@ index 00000000..ed837b71
 +void oracleTick()
 +{
 +    gOracleClock += kOracleStepMs;
-+    if (gOracleExitAfterMs >= 0 && gOracleClock >= (unsigned int)gOracleExitAfterMs) {
-+        fprintf(stderr, "oracle: exit_after_ms reached at %d\n", gOracleExitAfterMs);
++    if (gOracleExitAfterMs >= 0 && (long long)gOracleClock >= gOracleExitAfterMs) {
++        fprintf(stderr, "oracle: exit_after_ms=%lld reached at clock %u\n", gOracleExitAfterMs, gOracleClock);
 +        exit(0);
 +    }
 +}
@@ -237,6 +236,30 @@ index 00000000..2ff99502
 +} // namespace fallout
 +
 +#endif
+diff --git a/src/palette.cc b/src/palette.cc
+index 51ba5323..7d28c957 100644
+--- a/src/palette.cc
++++ b/src/palette.cc
+@@ -7,6 +7,7 @@
+ #include "debug.h"
+ #include "game_sound.h"
+ #include "input.h"
++#include "oracle.h"
+ #include "svga.h"
+ 
+ namespace fallout {
+@@ -44,6 +45,11 @@ void paletteInit()
+     // Actual fade duration will never be 0 since |colorPaletteFadeBetween| uses
+     // frame rate throttling.
+     unsigned int actualFadeDuration = getTicksSince(tick);
++    // ORACLE: the virtual clock does not advance during the fade (throttle is a no-op), so the
++    // duration is 0; avoid the divide by zero (src/palette.cc paletteInit). Vanilla is unchanged.
++    if (oracleEnabled() && actualFadeDuration == 0) {
++        actualFadeDuration = 700;
++    }
+ 
+     // Calculate fade steps needed to perform fading in about 700 ms.
+     gPaletteFadeSteps = 60 * 700 / actualFadeDuration;
 diff --git a/src/svga.cc b/src/svga.cc
 index 8acca966..0d658a5f 100644
 --- a/src/svga.cc

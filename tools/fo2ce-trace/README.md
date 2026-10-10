@@ -22,4 +22,9 @@ cmake 4.x in `~/.local/bin`, gcc/g++/make (no ninja), the `reference/fallout2-ce
 - Dependency sources are reused offline: `FETCHCONTENT_SOURCE_DIR_SDL2`, `_ZLIB`, `_FPATTERN` (declare names `sdl2`, `zlib`, `fpattern`) are honoured, together with `FETCHCONTENT_FULLY_DISCONNECTED=ON`.
 - gcc defaults to C23, which breaks vendored SDL 2.26.1 (`bool` typedef); `build.sh` passes `-DCMAKE_C_FLAGS=-std=gnu11`.
 - Headless needs `SDL_VIDEODRIVER=offscreen` (software renderer; svga.cc skips the GL hint/flag) and the oracle tolerating the offscreen driver's lack of relative-mouse mode (dinput.cc).
-- Virtual clock details: `delay_ms` advances it without sleeping; `FpsLimiter::throttle` advances it one 10 ms step (otherwise `paletteInit` divides by a 0 ms fade).
+
+## Clock model
+
+Virtual time advances only by 10 ms per `tickersExecute` pass, plus `delay_ms(ms)` adding `ms` (it replaces a
+real-time block). Nothing else advances time: `FpsLimiter` mark/throttle are no-ops, so time per tick does not
+depend on how many frames are presented. `paletteInit` guards its fade-duration division (0 ms on the virtual clock).
