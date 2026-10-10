@@ -43,6 +43,36 @@ index 0884eb28..38cb3e47 100644
  }
  
  // 0x418378
+diff --git a/src/combat.cc b/src/combat.cc
+index 825a5734..4fa50142 100644
+--- a/src/combat.cc
++++ b/src/combat.cc
+@@ -33,6 +33,7 @@
+ #include "platform_compat.h"
+ #include "proto.h"
+ #include "queue.h"
++#include "oracle.h"
+ #include "random.h"
+ #include "scripts.h"
+ #include "settings.h"
+@@ -3225,6 +3226,7 @@ static void _combat_set_move_all()
+ static int _combat_turn(Object* obj, bool a2)
+ {
+     _combat_turn_obj = obj;
++    oracleTraceTurn(obj);
+ 
+     attackInit(&_main_ctd, obj, nullptr, HIT_MODE_PUNCH, HIT_LOCATION_TORSO);
+ 
+@@ -3979,6 +3981,9 @@ static int attackCompute(Attack* attack)
+ 
+     attackComputeDeathFlags(attack);
+ 
++    oracleTraceAttack(attack->attacker, attack->defender, accuracy,
++        (attack->attackerFlags & DAM_HIT) != 0, attack->defenderDamage, attack->defenderFlags);
++
+     return 0;
+ }
+ 
 diff --git a/src/delay.cc b/src/delay.cc
 index dd9fa685..d780ae81 100644
 --- a/src/delay.cc
@@ -114,7 +144,7 @@ index 7b621376..fb464744 100644
          SDL_Delay(1000 / _fps - (SDL_GetTicks() - _ticks));
      }
 diff --git a/src/game.cc b/src/game.cc
-index 978a3859..e08bd28b 100644
+index 978a3859..0631c190 100644
 --- a/src/game.cc
 +++ b/src/game.cc
 @@ -38,6 +38,7 @@
@@ -133,11 +163,35 @@ index 978a3859..e08bd28b 100644
  
      gIsMapper = isMapper;
  
+@@ -1017,6 +1019,7 @@ int gameSetGlobalVar(int var, int value)
+         }
+     }
+ 
++    oracleTraceGvar(var, gGameGlobalVars[var], value);
+     gGameGlobalVars[var] = value;
+ 
+     return 0;
 diff --git a/src/game_dialog.cc b/src/game_dialog.cc
-index ff988147..d39b302b 100644
+index ff988147..459b2a75 100644
 --- a/src/game_dialog.cc
 +++ b/src/game_dialog.cc
-@@ -2502,7 +2502,7 @@ void _gdSetupFidget(int headFrmId, int reaction)
+@@ -32,6 +32,7 @@
+ #include "perk.h"
+ #include "proto.h"
+ #include "random.h"
++#include "oracle.h"
+ #include "scripts.h"
+ #include "sfall_config.h"
+ #include "skill.h"
+@@ -2078,6 +2079,7 @@ int _gdProcessChoice(int a1)
+ 
+     if (_gdReenterLevel < 2) {
+         if (dialogOptionEntry->proc != 0) {
++            oracleTraceProc(gGameDialogSpeaker, gDialogReplyProgram->name, "<reply>");
+             _executeProcedure(gDialogReplyProgram, dialogOptionEntry->proc);
+         }
+     }
+@@ -2502,7 +2504,7 @@ void _gdSetupFidget(int headFrmId, int reaction)
          return;
      }
  
@@ -146,7 +200,7 @@ index ff988147..d39b302b 100644
  
      int fidget = fidgetCount;
      switch (fidgetCount) {
-@@ -2862,7 +2862,7 @@ void gameDialogTicker()
+@@ -2862,7 +2864,7 @@ void gameDialogTicker()
          if (getTicksSince(gGameDialogFidgetLastUpdateTimestamp) >= _tocksWaiting) {
              _can_start_new_fidget = false;
              _dialogue_seconds_since_last_input += _tocksWaiting / 1000;
@@ -231,18 +285,90 @@ index ee67a0a4..5b911491 100644
      // SFALL: Allow to skip intro movies
      int skipOpeningMovies;
      configGetInt(&gSfallConfig, SFALL_CONFIG_MISC_KEY, SFALL_CONFIG_SKIP_OPENING_MOVIES_KEY, &skipOpeningMovies);
+diff --git a/src/map.cc b/src/map.cc
+index e73109f0..39ea7564 100644
+--- a/src/map.cc
++++ b/src/map.cc
+@@ -34,6 +34,7 @@
+ #include "proto_instance.h"
+ #include "queue.h"
+ #include "random.h"
++#include "oracle.h"
+ #include "scripts.h"
+ #include "settings.h"
+ #include "svga.h"
+@@ -401,6 +402,7 @@ int mapSetGlobalVar(int var, ProgramValue& value)
+         return -1;
+     }
+ 
++    oracleTraceMvar(var, gMapGlobalVars[var], value.opcode == VALUE_TYPE_PTR ? 0 : value.integerValue);
+     if (value.opcode == VALUE_TYPE_PTR) {
+         gMapGlobalVars[var] = 0;
+         gMapGlobalPointers[var] = value.pointerValue;
+diff --git a/src/object.cc b/src/object.cc
+index 20b7aeff..f5262706 100644
+--- a/src/object.cc
++++ b/src/object.cc
+@@ -23,6 +23,7 @@
+ #include "proto_instance.h"
+ #include "scripts.h"
+ #include "settings.h"
++#include "oracle.h"
+ #include "svga.h"
+ #include "text_object.h"
+ #include "tile.h"
+@@ -911,6 +912,7 @@ int objectCreateWithFidPid(Object** objectPtr, int fid, int pid)
+ 
+     objectListNode->obj->pid = pid;
+     objectListNode->obj->id = scriptsNewObjectId();
++    oracleTraceSpawn(objectListNode->obj);
+ 
+     if (pid == -1 || PID_TYPE(pid) == OBJ_TYPE_TILE) {
+         Inventory* inventory = &(objectListNode->obj->data.inventory);
+@@ -1022,6 +1024,7 @@ int _obj_copy(Object** a1, Object* a2)
+     _obj_insert(objectListNode);
+ 
+     objectListNode->obj->id = scriptsNewObjectId();
++    oracleTraceSpawn(objectListNode->obj);
+ 
+     if (objectListNode->obj->sid != -1) {
+         objectListNode->obj->sid = -1;
+@@ -1357,6 +1360,8 @@ int objectSetLocation(Object* obj, int tile, int elevation, Rect* rect)
+         return -1;
+     }
+ 
++    int oracleOldTile = obj->tile;
++
+     if (!hexGridTileIsValid(tile)) {
+         return -1;
+     }
+@@ -1497,6 +1502,8 @@ int objectSetLocation(Object* obj, int tile, int elevation, Rect* rect)
+         }
+     }
+ 
++    oracleTraceMove(obj, oracleOldTile, tile);
++
+     return 0;
+ }
+ 
 diff --git a/src/oracle.cc b/src/oracle.cc
 new file mode 100644
-index 00000000..145773e2
+index 00000000..acc81dc2
 --- /dev/null
 +++ b/src/oracle.cc
-@@ -0,0 +1,88 @@
+@@ -0,0 +1,195 @@
 +#include "oracle.h"
 +
 +#include <stdio.h>
++#include <ctype.h>
++#include <stdarg.h>
 +#include <stdlib.h>
++#include <string.h>
 +
 +#include "game_config.h"
++#include "object.h"
++#include "proto.h"
++#include "scripts.h"
 +#include "random.h"
 +
 +namespace fallout {
@@ -324,18 +450,121 @@ index 00000000..145773e2
 +    }
 +}
 +
++static FILE* gOracleTrace = nullptr;
++static int gOracleSuppress = 0; // >0 while the scenario runner itself draws/acts
++
++bool oracleTracing()
++{
++    return gOracleTrace != nullptr && gOracleSuppress == 0;
++}
++
++void oracleSuppress(bool on)
++{
++    gOracleSuppress += on ? 1 : -1;
++}
++
++static void oracleTraceClose()
++{
++    if (gOracleTrace != nullptr) {
++        fflush(gOracleTrace);
++        fclose(gOracleTrace);
++        gOracleTrace = nullptr;
++    }
++}
++
++void oracleTraceOpen(const char* path, const char* header)
++{
++    if (path == nullptr || path[0] == '\0') {
++        return;
++    }
++    gOracleTrace = fopen(path, "wt");
++    if (gOracleTrace == nullptr) {
++        fprintf(stderr, "oracle: cannot open trace %s\n", path);
++        exit(2);
++    }
++    fprintf(gOracleTrace, "# %s\n", header);
++    atexit(oracleTraceClose);
++}
++
++static void oracleLine(const char* fmt, ...)
++{
++    if (!oracleTracing()) {
++        return;
++    }
++    fprintf(gOracleTrace, "t=%u ", gameTimeGetTime());
++    va_list args;
++    va_start(args, fmt);
++    vfprintf(gOracleTrace, fmt, args);
++    va_end(args);
++    fputc('\n', gOracleTrace);
++}
++
++static int oracleObjId(Object* obj)
++{
++    return obj != nullptr ? obj->id : -1;
++}
++
++void oracleTraceRng(int min, int max, int result, const char* file, const char* func)
++{
++    const char* base = strrchr(file, '/');
++    oracleLine("RNG %d..%d -> %d site=%s:%s", min, max, result, base != nullptr ? base + 1 : file, func);
++}
++
++void oracleTraceProc(Object* self, const char* programName, const char* procName)
++{
++    char name[64];
++    const char* base = programName;
++    for (const char* p = programName; *p != '\0'; p++) {
++        if (*p == '\\' || *p == '/') {
++            base = p + 1;
++        }
++    }
++    size_t i = 0;
++    for (; base[i] != '\0' && i < sizeof(name) - 1; i++) {
++        name[i] = (char)tolower((unsigned char)base[i]);
++    }
++    name[i] = '\0';
++    oracleLine("PROC %s %s self=obj#%d", name, procName, oracleObjId(self));
++}
++
++void oracleTraceGvar(int index, int oldValue, int newValue) { oracleLine("GVAR %d %d->%d", index, oldValue, newValue); }
++void oracleTraceMvar(int index, int oldValue, int newValue) { oracleLine("MVAR %d %d->%d", index, oldValue, newValue); }
++void oracleTraceLvar(int sid, int index, int oldValue, int newValue) { oracleLine("LVAR sid=0x%08X %d %d->%d", sid, index, oldValue, newValue); }
++void oracleTraceTurn(Object* obj) { oracleLine("TURN obj#%d ap=%d", oracleObjId(obj), obj->data.critter.combat.ap); }
++
++void oracleTraceAttack(Object* attacker, Object* defender, int chance, bool hit, int damage, int defenderFlags)
++{
++    oracleLine("ATTACK obj#%d->obj#%d chance=%d hit=%d dmg=%d dflags=0x%X",
++        oracleObjId(attacker), oracleObjId(defender), chance, hit ? 1 : 0, damage, defenderFlags);
++}
++
++void oracleTraceMove(Object* obj, int fromTile, int toTile)
++{
++    if (fromTile == toTile || PID_TYPE(obj->pid) != OBJ_TYPE_CRITTER) {
++        return;
++    }
++    oracleLine("MOVE obj#%d %d->%d", obj->id, fromTile, toTile);
++}
++
++void oracleTraceSpawn(Object* obj)
++{
++    oracleLine("SPAWN obj#%d pid=0x%08X tile=%d", obj->id, obj->pid, obj->tile);
++}
++
 +} // namespace fallout
 diff --git a/src/oracle.h b/src/oracle.h
 new file mode 100644
-index 00000000..f94b8845
+index 00000000..d45a3bfb
 --- /dev/null
 +++ b/src/oracle.h
-@@ -0,0 +1,18 @@
+@@ -0,0 +1,33 @@
 +#ifndef FALLOUT_ORACLE_H_
 +#define FALLOUT_ORACLE_H_
 +
 +// Hexwaste trace oracle (tools/fo2ce-trace). Everything here is inert unless [oracle]enabled=1.
 +namespace fallout {
++
++struct Object;
 +
 +bool oracleEnabled();
 +void oracleInit();
@@ -345,6 +574,19 @@ index 00000000..f94b8845
 +const char* oracleRngDumpPath();
 +int oracleSeed();
 +void oracleWriteRngVectors(const char* path, int seed);
++
++void oracleTraceOpen(const char* path, const char* header);
++bool oracleTracing();
++void oracleSuppress(bool on);
++void oracleTraceRng(int min, int max, int result, const char* file, const char* func);
++void oracleTraceProc(Object* self, const char* programName, const char* procName);
++void oracleTraceGvar(int index, int oldValue, int newValue);
++void oracleTraceMvar(int index, int oldValue, int newValue);
++void oracleTraceLvar(int sid, int index, int oldValue, int newValue);
++void oracleTraceTurn(Object* obj);
++void oracleTraceAttack(Object* attacker, Object* defender, int chance, bool hit, int damage, int defenderFlags);
++void oracleTraceMove(Object* obj, int fromTile, int toTile);
++void oracleTraceSpawn(Object* obj);
 +
 +} // namespace fallout
 +
@@ -405,10 +647,10 @@ index 93278941..151d6d66 100644
              }
          }
 diff --git a/src/random.cc b/src/random.cc
-index ee9f0ea5..dd6e5e16 100644
+index ee9f0ea5..dafa1679 100644
 --- a/src/random.cc
 +++ b/src/random.cc
-@@ -2,16 +2,21 @@
+@@ -2,10 +2,12 @@
  
  #include <limits.h>
  #include <stdlib.h>
@@ -421,16 +663,7 @@ index ee9f0ea5..dd6e5e16 100644
  #include "platform_compat.h"
  #include "scripts.h"
  #include "sfall_config.h"
- 
- namespace fallout {
- 
-+// ORACLE: replaced by the real trace hook in a later task.
-+static inline void oracleTraceRng(int, int, int, const char*, const char*) {}
-+
- static int _roll_reset_();
- static int randomTranslateRoll(int delta, int criticalSuccessModifier);
- static int getRandom(int max);
-@@ -131,7 +136,8 @@ static int randomTranslateRoll(int delta, int criticalSuccessModifier)
+@@ -131,7 +133,8 @@ static int randomTranslateRoll(int delta, int criticalSuccessModifier)
  }
  
  // 0x4A30C0
@@ -440,7 +673,7 @@ index ee9f0ea5..dd6e5e16 100644
  {
      int result;
  
-@@ -149,6 +155,46 @@ int randomBetween(int min, int max)
+@@ -149,6 +152,46 @@ int randomBetween(int min, int max)
      return result;
  }
  
@@ -503,6 +736,42 @@ index 5a984dc5..66ffc371 100644
  void randomSeedPrerandom(int seed);
  
  } // namespace fallout
+diff --git a/src/scripts.cc b/src/scripts.cc
+index 573b3f58..ba5e4be1 100644
+--- a/src/scripts.cc
++++ b/src/scripts.cc
+@@ -25,6 +25,7 @@
+ #include "message.h"
+ #include "object.h"
+ #include "party_member.h"
++#include "oracle.h"
+ #include "platform_compat.h"
+ #include "proto.h"
+ #include "proto_instance.h"
+@@ -1335,6 +1336,7 @@ int scriptExecProc(int sid, int proc)
+ 
+     script->action = proc;
+ 
++    oracleTraceProc(script->owner, program->name, gScriptProcNames[proc]);
+     _executeProcedure(program, v9);
+ 
+     script->source = nullptr;
+@@ -2836,6 +2838,15 @@ int scriptSetLocalVar(int sid, int variable, ProgramValue& value)
+         script->localVarsOffset = _map_malloc_local_var(script->localVarsCount);
+     }
+ 
++    // ORACLE: trace script-relative index + sid, only when the store will be accepted.
++    {
++        ProgramValue oracleOld;
++        if (mapGetLocalVar(script->localVarsOffset + variable, oracleOld) == 0) {
++            oracleTraceLvar(sid, variable, oracleOld.opcode == VALUE_TYPE_PTR ? 0 : oracleOld.integerValue,
++                value.opcode == VALUE_TYPE_PTR ? 0 : value.integerValue);
++        }
++    }
++
+     mapSetLocalVar(script->localVarsOffset + variable, value);
+ 
+     return 0;
 diff --git a/src/svga.cc b/src/svga.cc
 index 8acca966..0d658a5f 100644
 --- a/src/svga.cc
