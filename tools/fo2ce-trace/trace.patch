@@ -253,8 +253,61 @@ index 33acd6e4..a5aef1ef 100644
  
      // NOTE: Uninline.
      return getTicksBetween(end, start);
+diff --git a/src/loadsave.cc b/src/loadsave.cc
+index f352c35f..2628b9bb 100644
+--- a/src/loadsave.cc
++++ b/src/loadsave.cc
+@@ -1695,6 +1695,35 @@ bool _isLoadingGame()
+     return _loadingGame;
+ }
+ 
++static int lsgLoadGameInSlot(int slot);
++
++// ORACLE: no-UI save/load into a fixed slot (tools/fo2ce-trace).
++int lsgSaveGameHeadless(int slot, const char* description)
++{
++    _slot_cursor = slot;
++    _quick_done = true;
++    strncpy(_LSData[slot].description, description, LOAD_SAVE_DESCRIPTION_LENGTH - 1);
++    _LSData[slot].description[LOAD_SAVE_DESCRIPTION_LENGTH - 1] = '\0';
++
++    // lsgPerformSaveGame writes _snapshotBuf into the header, so take the thumbnail first.
++    _snapshotBuf = nullptr;
++    int rc = _QuickSnapShot();
++    if (rc != 1) {
++        return -1;
++    }
++    rc = lsgPerformSaveGame();
++    internal_free(_snapshot);
++    _snapshotBuf = nullptr;
++    return rc;
++}
++
++int lsgLoadGameHeadless(int slot)
++{
++    _slot_cursor = slot;
++    _quick_done = true;
++    return lsgLoadGameInSlot(slot);
++}
++
+ // 0x47DC68
+ static int lsgLoadGameInSlot(int slot)
+ {
+diff --git a/src/loadsave.h b/src/loadsave.h
+index 567548e4..3600151a 100644
+--- a/src/loadsave.h
++++ b/src/loadsave.h
+@@ -18,6 +18,8 @@ void _InitLoadSave();
+ void _ResetLoadSave();
+ int lsgSaveGame(int mode);
+ int lsgLoadGame(int mode);
++int lsgSaveGameHeadless(int slot, const char* description);
++int lsgLoadGameHeadless(int slot);
+ bool _isLoadingGame();
+ void lsgInit();
+ int MapDirErase(const char* path, const char* extension);
 diff --git a/src/main.cc b/src/main.cc
-index ee67a0a4..5b911491 100644
+index ee67a0a4..505c7fd8 100644
 --- a/src/main.cc
 +++ b/src/main.cc
 @@ -1,6 +1,7 @@
@@ -273,7 +326,16 @@ index ee67a0a4..5b911491 100644
  #include "palette.h"
  #include "platform_compat.h"
  #include "preferences.h"
-@@ -81,6 +83,11 @@ int falloutMain(int argc, char** argv)
+@@ -49,8 +51,6 @@ namespace fallout {
+ static bool falloutInit(int argc, char** argv);
+ static int main_reset_system();
+ static void main_exit_system();
+-static int _main_load_new(char* fname);
+-static int main_loadgame_new();
+ static void main_unload_new();
+ static void mainLoop();
+ static void showDeath();
+@@ -81,6 +81,17 @@ int falloutMain(int argc, char** argv)
          return 1;
      }
  
@@ -282,9 +344,46 @@ index ee67a0a4..5b911491 100644
 +        exit(0);
 +    }
 +
++    if (oracleEnabled() && oracleMakeSavePath()[0] != '\0') {
++        randomSeedPrerandom(1); // fixed (vanilla new-game reseed is wall-clock)
++        int rc = oracleRunRecipe(oracleMakeSavePath());
++        exit(rc == 0 ? 0 : 3);
++    }
++
      // SFALL: Allow to skip intro movies
      int skipOpeningMovies;
      configGetInt(&gSfallConfig, SFALL_CONFIG_MISC_KEY, SFALL_CONFIG_SKIP_OPENING_MOVIES_KEY, &skipOpeningMovies);
+@@ -258,7 +269,7 @@ static void main_exit_system()
+ }
+ 
+ // 0x480D4C
+-static int _main_load_new(char* mapFileName)
++int _main_load_new(char* mapFileName)
+ {
+     _game_user_wants_to_quit = 0;
+     _main_show_death_scene = 0;
+@@ -286,7 +297,7 @@ static int _main_load_new(char* mapFileName)
+ // NOTE: Inlined.
+ //
+ // 0x480DF8
+-static int main_loadgame_new()
++int main_loadgame_new()
+ {
+     _game_user_wants_to_quit = 0;
+     _main_show_death_scene = 0;
+diff --git a/src/main.h b/src/main.h
+index bd63c8e9..d0976ae0 100644
+--- a/src/main.h
++++ b/src/main.h
+@@ -4,6 +4,8 @@
+ namespace fallout {
+ 
+ int falloutMain(int argc, char** argv);
++int _main_load_new(char* mapFileName);
++int main_loadgame_new();
+ 
+ } // namespace fallout
+ 
 diff --git a/src/map.cc b/src/map.cc
 index e73109f0..39ea7564 100644
 --- a/src/map.cc
@@ -353,10 +452,10 @@ index 20b7aeff..f5262706 100644
  
 diff --git a/src/oracle.cc b/src/oracle.cc
 new file mode 100644
-index 00000000..acc81dc2
+index 00000000..6dcafdc9
 --- /dev/null
 +++ b/src/oracle.cc
-@@ -0,0 +1,195 @@
+@@ -0,0 +1,271 @@
 +#include "oracle.h"
 +
 +#include <stdio.h>
@@ -370,6 +469,11 @@ index 00000000..acc81dc2
 +#include "proto.h"
 +#include "scripts.h"
 +#include "random.h"
++#include "game.h"
++#include "input.h"
++#include "loadsave.h"
++#include "main.h"
++#include "map.h"
 +
 +namespace fallout {
 +
@@ -378,6 +482,7 @@ index 00000000..acc81dc2
 +static long long gOracleExitAfterMs = -1;
 +static char gOracleRngDumpPath[1024] = "";
 +static int gOracleSeed = 12345;
++static char gOracleMakeSavePath[1024] = "";
 +
 +static constexpr unsigned int kOracleStepMs = 10;
 +
@@ -403,6 +508,76 @@ index 00000000..acc81dc2
 +        snprintf(gOracleRngDumpPath, sizeof(gOracleRngDumpPath), "%s", dumpPath);
 +    }
 +    configGetInt(&gGameConfig, "oracle", "seed", &gOracleSeed);
++    char* savePath = nullptr;
++    if (configGetString(&gGameConfig, "oracle", "make_save", &savePath) && savePath != nullptr) {
++        snprintf(gOracleMakeSavePath, sizeof(gOracleMakeSavePath), "%s", savePath);
++    }
++}
++
++const char* oracleMakeSavePath()
++{
++    return gOracleMakeSavePath;
++}
++
++static int oracleFail(const char* what, const char* arg)
++{
++    fprintf(stderr, "oracle: recipe failed at %s %s\n", what, arg);
++    return -1;
++}
++
++// the body of main.cc mainLoop minus rendering/key handling
++static void oracleRunFor(unsigned int ms)
++{
++    scriptsEnable();
++    unsigned int end = oracleTicks() + ms;
++    while (oracleTicks() < end) {
++        inputGetInput();
++        scriptsHandleRequests();
++        mapHandleTransition();
++    }
++    scriptsDisable();
++}
++
++int oracleRunRecipe(const char* path)
++{
++    FILE* in = fopen(path, "rt");
++    if (in == nullptr) {
++        return oracleFail("open", path);
++    }
++    char line[256];
++    while (fgets(line, sizeof(line), in) != nullptr) {
++        char* hash = strchr(line, '#');
++        if (hash != nullptr) *hash = '\0';
++        char cmd[32] = { 0 }, a[128] = { 0 };
++        int n1 = 0, n2 = 0, n3 = 0;
++        if (sscanf(line, "%31s", cmd) != 1) continue;
++        if (strcmp(cmd, "premade") == 0 && sscanf(line, "%*s %127s", a) == 1) {
++            char gcd[160];
++            snprintf(gcd, sizeof(gcd), "premade\\%s.gcd", a);
++            if (_proto_dude_init(gcd) == -1) return oracleFail("premade", a);
++        } else if (strcmp(cmd, "map") == 0 && sscanf(line, "%*s %127s", a) == 1) {
++            _main_load_new(a);
++        } else if (strcmp(cmd, "place") == 0 && sscanf(line, "%*s %d %d %d", &n1, &n2, &n3) == 3) {
++            objectSetLocation(gDude, n1, n2, nullptr);
++            objectSetRotation(gDude, n3, nullptr);
++        } else if (strcmp(cmd, "gvar") == 0 && sscanf(line, "%*s %d %d", &n1, &n2) == 2) {
++            gameSetGlobalVar(n1, n2);
++        } else if (strcmp(cmd, "run-ms") == 0 && sscanf(line, "%*s %d", &n1) == 1) {
++            oracleRunFor((unsigned int)n1);
++        } else if (strcmp(cmd, "save") == 0) {
++            const char* desc = line + 4;
++            while (*desc == ' ') desc++;
++            char d[64];
++            snprintf(d, sizeof(d), "%s", desc);
++            size_t len = strlen(d);
++            while (len > 0 && (d[len - 1] == '\n' || d[len - 1] == '\r' || d[len - 1] == ' ')) d[--len] = '\0';
++            if (lsgSaveGameHeadless(9, d) == -1) return oracleFail("save", d);
++        } else {
++            return oracleFail("unknown recipe command", cmd);
++        }
++    }
++    fclose(in);
++    return 0;
 +}
 +
 +const char* oracleRngDumpPath()
@@ -554,10 +729,10 @@ index 00000000..acc81dc2
 +} // namespace fallout
 diff --git a/src/oracle.h b/src/oracle.h
 new file mode 100644
-index 00000000..d45a3bfb
+index 00000000..c43c7393
 --- /dev/null
 +++ b/src/oracle.h
-@@ -0,0 +1,33 @@
+@@ -0,0 +1,35 @@
 +#ifndef FALLOUT_ORACLE_H_
 +#define FALLOUT_ORACLE_H_
 +
@@ -573,6 +748,8 @@ index 00000000..d45a3bfb
 +void oracleTick();
 +const char* oracleRngDumpPath();
 +int oracleSeed();
++const char* oracleMakeSavePath();
++int oracleRunRecipe(const char* path);
 +void oracleWriteRngVectors(const char* path, int seed);
 +
 +void oracleTraceOpen(const char* path, const char* header);

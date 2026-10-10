@@ -1,0 +1,6 @@
+# Radscorpions at 20529 perceive the dude and open combat on their own; the dude only ends turns.
+premade combat
+map arcaves.map
+place 20523 0 0
+run-ms 10    # NOT longer: by ~100 ms the scorpions open combat and the headless run blocks waiting for the dude turn
+save oracle arcaves-ambush
