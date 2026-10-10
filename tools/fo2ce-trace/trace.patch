@@ -1,0 +1,270 @@
+diff --git a/CMakeLists.txt b/CMakeLists.txt
+index 5e039418..3a7c3f05 100644
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -168,6 +168,8 @@ target_sources(${EXECUTABLE_NAME} PUBLIC
+     "src/nevs.h"
+     "src/obj_types.h"
+     "src/object.cc"
++    "src/oracle.cc"
++    "src/oracle.h"
+     "src/object.h"
+     "src/options.cc"
+     "src/options.h"
+@@ -373,6 +375,9 @@ target_link_libraries(${EXECUTABLE_NAME} ${ZLIB_LIBRARIES})
+ target_include_directories(${EXECUTABLE_NAME} PRIVATE ${ZLIB_INCLUDE_DIRS})
+ 
+ target_link_libraries(${EXECUTABLE_NAME} ${SDL2_LIBRARIES})
++if(DEFINED ORACLE_PATCH_SHA)
++    target_compile_definitions(${EXECUTABLE_NAME} PRIVATE ORACLE_PATCH_SHA="${ORACLE_PATCH_SHA}")
++endif()
+ target_include_directories(${EXECUTABLE_NAME} PRIVATE ${SDL2_INCLUDE_DIRS})
+ 
+ if(APPLE)
+diff --git a/src/delay.cc b/src/delay.cc
+index dd9fa685..d780ae81 100644
+--- a/src/delay.cc
++++ b/src/delay.cc
+@@ -2,8 +2,16 @@
+ 
+ #include <SDL.h>
+ 
++#include "oracle.h"
++
+ void delay_ms(int ms)
+ {
++    if (fallout::oracleEnabled()) {
++        if (ms > 0) {
++            fallout::oracleAdvanceClock(ms);
++        }
++        return;
++    }
+     if (ms <= 0) {
+         return;
+     }
+diff --git a/src/dinput.cc b/src/dinput.cc
+index 171d5291..6798e24a 100644
+--- a/src/dinput.cc
++++ b/src/dinput.cc
+@@ -1,5 +1,7 @@
+ #include "dinput.h"
+ 
++#include "oracle.h"
++
+ namespace fallout {
+ 
+ static int gMouseWheelDeltaX = 0;
+@@ -93,7 +95,8 @@ bool keyboardDeviceGetData(KeyboardData* keyboardData)
+ // 0x4E070C
+ bool mouseDeviceInit()
+ {
+-    return SDL_SetRelativeMouseMode(SDL_TRUE) == 0;
++    // ORACLE: headless video drivers cannot do relative mouse mode; do not fail input init over it.
++    return SDL_SetRelativeMouseMode(SDL_TRUE) == 0 || oracleEnabled();
+ }
+ 
+ // 0x4E078C
+diff --git a/src/fps_limiter.cc b/src/fps_limiter.cc
+index 7b621376..9f845faa 100644
+--- a/src/fps_limiter.cc
++++ b/src/fps_limiter.cc
+@@ -2,6 +2,8 @@
+ 
+ #include <SDL.h>
+ 
++#include "oracle.h"
++
+ namespace fallout {
+ 
+ FpsLimiter::FpsLimiter(unsigned int fps)
+@@ -12,11 +14,17 @@ FpsLimiter::FpsLimiter(unsigned int fps)
+ 
+ void FpsLimiter::mark()
+ {
++    if (oracleEnabled()) return;
+     _ticks = SDL_GetTicks();
+ }
+ 
+ void FpsLimiter::throttle() const
+ {
++    // ORACLE: no sleeping; model a full frame budget on the virtual clock (keeps fades from taking 0 ms).
++    if (oracleEnabled()) {
++        oracleAdvanceClock(10); // one virtual step, same as a ticker pass
++        return;
++    }
+     if (1000 / _fps > SDL_GetTicks() - _ticks) {
+         SDL_Delay(1000 / _fps - (SDL_GetTicks() - _ticks));
+     }
+diff --git a/src/game.cc b/src/game.cc
+index 978a3859..e08bd28b 100644
+--- a/src/game.cc
++++ b/src/game.cc
+@@ -38,6 +38,7 @@
+ #include "movie.h"
+ #include "movie_effect.h"
+ #include "object.h"
++#include "oracle.h"
+ #include "options.h"
+ #include "palette.h"
+ #include "party_member.h"
+@@ -133,6 +134,7 @@ int gameInitWithOptions(const char* windowTitle, bool isMapper, int font, int a4
+     sfallConfigInit(argc, argv);
+ 
+     settingsInit(isMapper, argc, argv);
++    oracleInit();
+ 
+     gIsMapper = isMapper;
+ 
+diff --git a/src/input.cc b/src/input.cc
+index 33acd6e4..a5aef1ef 100644
+--- a/src/input.cc
++++ b/src/input.cc
+@@ -10,6 +10,7 @@
+ #include "kb.h"
+ #include "memory.h"
+ #include "mouse.h"
++#include "oracle.h"
+ #include "svga.h"
+ #include "text_font.h"
+ #include "touch.h"
+@@ -275,7 +276,11 @@ void tickersExecute()
+         return;
+     }
+ 
+-    gTickerLastTimestamp = SDL_GetTicks();
++    // ORACLE: one virtual 10 ms step per ticker pass - every input/bk loop goes through here.
++    if (oracleEnabled()) {
++        oracleTick();
++    }
++    gTickerLastTimestamp = getTicks();
+ 
+     TickerListNode* curr = gTickerListHead;
+     TickerListNode** currPtr = &(gTickerListHead);
+@@ -511,6 +516,9 @@ void screenshotHandlerConfigure(int keyCode, ScreenshotHandler* handler)
+ // 0x4C9370
+ unsigned int getTicks()
+ {
++    if (oracleEnabled()) {
++        return oracleTicks();
++    }
+     return SDL_GetTicks();
+ }
+ 
+@@ -542,7 +550,7 @@ void inputBlockForTocks(unsigned int ms)
+ // 0x4C93E0
+ unsigned int getTicksSince(unsigned int start)
+ {
+-    unsigned int end = SDL_GetTicks();
++    unsigned int end = getTicks();
+ 
+     // NOTE: Uninline.
+     return getTicksBetween(end, start);
+diff --git a/src/oracle.cc b/src/oracle.cc
+new file mode 100644
+index 00000000..ed837b71
+--- /dev/null
++++ b/src/oracle.cc
+@@ -0,0 +1,51 @@
++#include "oracle.h"
++
++#include <stdio.h>
++#include <stdlib.h>
++
++#include "game_config.h"
++
++namespace fallout {
++
++static bool gOracleEnabled = false;
++static unsigned int gOracleClock = 0;
++static int gOracleExitAfterMs = -1;
++
++static constexpr unsigned int kOracleStepMs = 10;
++
++bool oracleEnabled()
++{
++    return gOracleEnabled;
++}
++
++void oracleInit()
++{
++    int enabled = 0;
++    configGetInt(&gGameConfig, "oracle", "enabled", &enabled);
++    gOracleEnabled = enabled != 0;
++    if (!gOracleEnabled) {
++        return;
++    }
++    configGetInt(&gGameConfig, "oracle", "exit_after_ms", &gOracleExitAfterMs);
++}
++
++unsigned int oracleTicks()
++{
++    return gOracleClock;
++}
++
++void oracleAdvanceClock(unsigned int ms)
++{
++    gOracleClock += ms;
++}
++
++void oracleTick()
++{
++    gOracleClock += kOracleStepMs;
++    if (gOracleExitAfterMs >= 0 && gOracleClock >= (unsigned int)gOracleExitAfterMs) {
++        fprintf(stderr, "oracle: exit_after_ms reached at %d\n", gOracleExitAfterMs);
++        exit(0);
++    }
++}
++
++} // namespace fallout
+diff --git a/src/oracle.h b/src/oracle.h
+new file mode 100644
+index 00000000..2ff99502
+--- /dev/null
++++ b/src/oracle.h
+@@ -0,0 +1,15 @@
++#ifndef FALLOUT_ORACLE_H_
++#define FALLOUT_ORACLE_H_
++
++// Hexwaste trace oracle (tools/fo2ce-trace). Everything here is inert unless [oracle]enabled=1.
++namespace fallout {
++
++bool oracleEnabled();
++void oracleInit();
++unsigned int oracleTicks();
++void oracleAdvanceClock(unsigned int ms);
++void oracleTick();
++
++} // namespace fallout
++
++#endif
+diff --git a/src/svga.cc b/src/svga.cc
+index 8acca966..0d658a5f 100644
+--- a/src/svga.cc
++++ b/src/svga.cc
+@@ -1,6 +1,7 @@
+ #include "svga.h"
+ 
+ #include <limits.h>
++#include <stdlib.h>
+ #include <string.h>
+ 
+ #include <SDL.h>
+@@ -173,9 +174,16 @@ int _init_vesa_mode(int width, int height)
+ int _GNW95_init_window(int width, int height, bool fullscreen, int scale)
+ {
+     if (gSdlWindow == nullptr) {
+-        SDL_SetHint(SDL_HINT_RENDER_DRIVER, "opengl");
++        // ORACLE: headless (offscreen video driver) has no GL; use the software renderer.
++        const char* oracleVideoDriver = getenv("SDL_VIDEODRIVER");
++        bool oracleHeadless = oracleVideoDriver != nullptr && strcmp(oracleVideoDriver, "offscreen") == 0;
+ 
+-        Uint32 windowFlags = SDL_WINDOW_OPENGL | SDL_WINDOW_ALLOW_HIGHDPI;
++        SDL_SetHint(SDL_HINT_RENDER_DRIVER, oracleHeadless ? "software" : "opengl");
++
++        Uint32 windowFlags = SDL_WINDOW_ALLOW_HIGHDPI;
++        if (!oracleHeadless) {
++            windowFlags |= SDL_WINDOW_OPENGL;
++        }
+ 
+         if (fullscreen) {
+             windowFlags |= SDL_WINDOW_FULLSCREEN;
