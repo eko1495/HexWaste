@@ -405,10 +405,10 @@ index 93278941..151d6d66 100644
              }
          }
 diff --git a/src/random.cc b/src/random.cc
-index ee9f0ea5..2da4bf4c 100644
+index ee9f0ea5..dd6e5e16 100644
 --- a/src/random.cc
 +++ b/src/random.cc
-@@ -2,6 +2,7 @@
+@@ -2,16 +2,21 @@
  
  #include <limits.h>
  #include <stdlib.h>
@@ -416,7 +416,11 @@ index ee9f0ea5..2da4bf4c 100644
  
  #include <random>
  
-@@ -12,6 +13,9 @@
+ #include "debug.h"
++#include "oracle.h"
+ #include "platform_compat.h"
+ #include "scripts.h"
+ #include "sfall_config.h"
  
  namespace fallout {
  
@@ -426,23 +430,27 @@ index ee9f0ea5..2da4bf4c 100644
  static int _roll_reset_();
  static int randomTranslateRoll(int delta, int criticalSuccessModifier);
  static int getRandom(int max);
-@@ -131,7 +135,7 @@ static int randomTranslateRoll(int delta, int criticalSuccessModifier)
+@@ -131,7 +136,8 @@ static int randomTranslateRoll(int delta, int criticalSuccessModifier)
  }
  
  // 0x4A30C0
 -int randomBetween(int min, int max)
-+int randomBetweenAt(int min, int max, const char* file, const char* func)
++// Vanilla randomBetween() body (untraced); shared by randomBetweenAt and the disabled cosmetic path.
++static int randomBetweenVanilla(int min, int max)
  {
      int result;
  
-@@ -146,9 +150,39 @@ int randomBetween(int min, int max)
-         result = min;
-     }
- 
-+    oracleTraceRng(min, max, result, file, func);
+@@ -149,6 +155,46 @@ int randomBetween(int min, int max)
      return result;
  }
  
++int randomBetweenAt(int min, int max, const char* file, const char* func)
++{
++    int result = randomBetweenVanilla(min, max);
++    oracleTraceRng(min, max, result, file, func);
++    return result;
++}
++
 +// ORACLE: deterministic reseed. randomSeedPrerandomInternal() never writes _iv[0] (its loop runs
 +// 40..1), so a plain reseed inherits _iv[0] from the wall-clock-seeded randomInit() +
 +// randomValidatePrerandom(). Zero the whole table first so the stream is a pure function of seed.
@@ -460,6 +468,10 @@ index ee9f0ea5..2da4bf4c 100644
 +
 +int randomBetweenCosmetic(int min, int max)
 +{
++    // A patched-but-disabled build must equal vanilla: only use the separate stream when the oracle is on.
++    if (!oracleEnabled()) {
++        return randomBetweenVanilla(min, max);
++    }
 +    if (min > max) {
 +        int t = min;
 +        min = max;
