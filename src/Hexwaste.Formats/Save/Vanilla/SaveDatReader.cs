@@ -189,6 +189,10 @@ public static class SaveDatReader
             uint time = r.ReadUInt32();
             int type = r.ReadInt32();
             int owner = r.ReadInt32();
+            // Valid types are 0..13 (queue.h EventType, EVENT_TYPE_COUNT=14); only drug/withdrawal/script/
+            // radiation carry a readProc (queue.cc gEventTypeDescriptions :54-67), all others serialize 0 bytes.
+            if (type < 0 || type > 13)
+                throw new InvalidDataException($"SAVE.DAT queue event {i} has unknown type {type}");
             int dataInts = type switch
             {
                 0 => 6, // drug: drugEffectEventRead (item.cc:2886)

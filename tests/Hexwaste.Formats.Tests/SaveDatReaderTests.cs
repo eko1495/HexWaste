@@ -91,6 +91,20 @@ public class SaveDatReaderTests
     }
 
     [Fact]
+    public void RejectsUnknownQueueEventType()
+    {
+        byte[] bytes = MinimalSave();
+        // queue section: count(4) + 4 interface ints (16) at the tail; swap in one event with type 99
+        var w = new MemoryStream();
+        w.Write(bytes, 0, bytes.Length - 16 - 4);
+        var q = new Be { };
+        q.I32(1).I32(0).I32(99).I32(0);
+        w.Write(q.S.ToArray());
+        w.Write(bytes, bytes.Length - 16, 16);
+        Assert.Throws<InvalidDataException>(() => SaveDatReader.Read(new MemoryStream(w.ToArray()), Ctx));
+    }
+
+    [Fact]
     public void RejectsBadSignature()
     {
         byte[] bytes = MinimalSave();
@@ -108,21 +122,37 @@ public class SaveDatReaderTests
         Assert.Throws<InvalidDataException>(() => SaveDatReader.Read(new MemoryStream(bytes), Ctx));
     }
 
-    [GameDataFact]
+    [OracleSavesFact]
     public void ReadsEveryOracleFixtureSaveCompletely()
     {
         string root = Path.Combine(GameData.RequiredDir, "oracle-saves");
-        if (!Directory.Exists(root))
-            return; // fixtures not generated on this machine (scripts/oracle-make-save.sh)
         var vfs = GameFileSystem.Open(GameData.RequiredDir);
         var protos = new Proto.ProtoDatabase(vfs);
         VanillaSaveContext ctx = VanillaSaveContext.FromGameData(vfs, protos);
-        foreach (string dir in Directory.GetDirectories(root))
+        string[] dirs = Directory.GetDirectories(root);
+        Assert.NotEmpty(dirs);
+        foreach (string dir in dirs)
         {
             using Stream s = SlotFiles.OpenMaybeGzip(Path.Combine(dir, "SAVE.DAT"));
             VanillaSave save = SaveDatReader.Read(s, ctx);
             Assert.Equal(s.Length, save.TotalLength);
+            Assert.Equal(0x01000000, save.Dude.Pid);
+            Assert.True(save.PcStats.Level > 0);
+            Assert.True(save.Header.GameTime > 0);
+            Assert.Equal(ctx.GlobalVarCount, save.GlobalVars.Length);
             Assert.Contains(save.Header.MapFileName, save.MapFiles, StringComparer.OrdinalIgnoreCase);
         }
+    }
+}
+
+/// <summary>Needs FALLOUT2_DIR and game-data/oracle-saves; otherwise reported as skipped, never vacuously passed.</summary>
+public sealed class OracleSavesFactAttribute : FactAttribute
+{
+    public OracleSavesFactAttribute()
+    {
+        if (string.IsNullOrEmpty(GameData.Dir))
+            Skip = "FALLOUT2_DIR is not set; skipping test that needs real game data.";
+        else if (!Directory.Exists(Path.Combine(GameData.Dir, "oracle-saves")))
+            Skip = "oracle-saves fixtures not generated (scripts/oracle-make-save.sh).";
     }
 }

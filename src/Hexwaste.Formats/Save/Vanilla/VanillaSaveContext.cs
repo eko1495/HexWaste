@@ -23,6 +23,8 @@ public sealed record VanillaSaveContext(int GlobalVarCount, int PartyDescription
             // The dude pid 0x1000000 resolves to the in-memory gDudeProto (proto.cc protoGetProto :2133),
             // initialised by proto_critter_init (proto.cc:502) with aiPacket = 1 — not a critters.lst row.
             int packet = pid == 0x1000000 ? 1 : protos.Get(pid).Critter?.AiPacket ?? -1;
+            // Divergence: aiGetPacketByNum falls back to packet[0] when missing (combat_ai.cc:741-753); we treat
+            // missing as non-custom. Unreachable in vanilla: every party pid's packet exists in ai.txt.
             return ai.Get(packet) is { } p && p.Disposition.Equals("custom", StringComparison.OrdinalIgnoreCase);
         }
         return new VanillaSaveContext(gvars, pids.Count, pids, Custom, protos);
