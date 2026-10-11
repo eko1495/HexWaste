@@ -389,6 +389,7 @@ public sealed partial class ViewerGame
         if (RebuildObject(typePid, 1) is { } box)
         {
             box.AmmoQuantity = ejected;
+            Formats.Trace.OracleTrace.SpawnPlaced(box.Id, box.Pid, -1); // fo2ce item.cc:1893 objectCreateWithPid(ammo)
             _dudeInventory.Add(box); // discrete — a partial box must not merge into a full stack
         }
         wi.AmmoQuantity = loaded - ejected;
@@ -534,7 +535,7 @@ public sealed partial class ViewerGame
     /// non-dude critter that isn't a "wait here" companion (phase-10 M4). The single
     /// source of truth for both the heartbeat pump and the --companion diagnostic.</summary>
     private bool IsHeartbeatEligible(MapObject o) =>
-        Fid.Type(o.Fid) is ObjectType.Critter && o != _dude?.Dude
+        Fid.Type(o.Fid) is ObjectType.Critter
         && !o.IsDead && o.Sid != -1 && !_waitingCompanions.Contains(o);
 
     /// <summary>One critter_p_proc per game tick, round-robin — the flattened
@@ -576,12 +577,22 @@ public sealed partial class ViewerGame
     /// every scripted object, then reschedule. This is what lets quests that POLL state in map_update_p_proc
     /// (klagraz KCTorr's brahmin defense, the Den gang-war escalation) re-evaluate over time instead of only
     /// once on load. Gated to normal map play (same as PumpCritterProcs): not during combat, dialog, loot,
-    /// the companion hub, the worldmap, or game-over.</summary>
+    /// the companion hub, the worldmap, or game-over. The 30 s bk-time source (<see cref="_bkMapUpdateMs"/>)
+    /// runs first, as in _script_chk_timed_events, and keeps running in combat.</summary>
     private void PumpMapUpdate(double elapsedMs)
     {
-        if (_scriptHost is null || _map is null || _combat.Phase != Formats.Combat.CombatPhase.Idle
-            || _combat.IsGameOver || _dialog is not null || _companionHub is not null
-            || _lootContainer is not null || _worldmapOpen)
+        if (_scriptHost is null || _map is null || _combat.IsGameOver || _dialog is not null
+            || _companionHub is not null || _worldmapOpen)
+            return;
+
+        _bkMapUpdateMs += elapsedMs;
+        if (_bkMapUpdateMs >= BkMapUpdateIntervalMs)
+        {
+            _bkMapUpdateMs = 0; // _last_light_time = now: the excess is dropped
+            RunMapUpdateRound();
+        }
+
+        if (_combat.Phase != Formats.Combat.CombatPhase.Idle || _lootContainer is not null)
             return;
 
         _mapUpdateClockMs += elapsedMs;
@@ -589,12 +600,18 @@ public sealed partial class ViewerGame
             return;
         _mapUpdateClockMs -= MapUpdateIntervalMs;
         _mapUpdateFires++;
+        RunMapUpdateRound();
+    }
 
+    private void RunMapUpdateRound()
+    {
+        if (_scriptHost is null || _map is null)
+            return;
         // Re-evaluate the scripted set each fire (map_enter/earlier updates may have created objects).
-        IEnumerable<MapObject> scripted = _map.Elevations
+        IEnumerable<MapObject> scripted = WithDudeScript(_map.Elevations
             .Where(e => e is not null)
             .SelectMany(e => e!.Objects)
-            .Where(o => o.Sid != -1 && o != _dude?.Dude);
+            .Where(o => o.Sid != -1 && o != _dude?.Dude));
         _scriptHost.RunMapUpdate(_map, scripted, _dude?.Dude);
     }
 
@@ -1028,6 +1045,7 @@ public sealed partial class ViewerGame
             Id = -7, HexTile = tile, X = 0, Y = 0, Frame = 0, Rotation = 0,
             Fid = Fid.Build(ObjectType.Misc, 10, 0, 0), Flags = 0x08 | 0x10, Pid = 0x05000010, Sid = -1,
         };
+        Formats.Trace.OracleTrace.SpawnPlaced(marker.Id, marker.Pid, tile); // fo2ce actions.cc objectCreateWithFidPid(explosion)
         foreach (MapObject obj in _solidObjects[_elevation]
             .Where(o => o.Sid != -1 && Formats.Hex.HexGrid.Distance(o.HexTile, tile) <= 3).ToList())
         {

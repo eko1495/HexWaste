@@ -35,10 +35,27 @@ public sealed class MapElevation
 /// <summary>A static object placed on the 200x200 hex grid.</summary>
 public sealed class MapObject
 {
-    public required int Id { get; init; }
+    public required int Id { get; set; } // settable: the trace-oracle vanilla import restores the saved dude id
 
-    /// <summary>Hex grid tile number (0..39999), or -1 for inventory items.</summary>
-    public required int HexTile { get; set; }
+    /// <summary>Hex grid tile number (0..39999), or -1 for inventory items. After construction the
+    /// setter reports critter moves to the trace oracle (fo2ce object.cc objectSetLocation →
+    /// oracleTraceMove: critters only, valid destination tile only, from != to).</summary>
+    public required int HexTile
+    {
+        get;
+        set
+        {
+            if (_hexTileAssigned && Trace.OracleTrace.Active && value is >= 0 and < 40000
+                && Formats.Fid.PidType(Pid) == (int)ObjectType.Critter)
+                Trace.OracleTrace.Move(Id, field, value);
+            field = value;
+            _hexTileAssigned = true;
+        }
+    }
+
+    // The object-initializer store is construction, not a move (fo2ce traces a spawned critter's
+    // placement explicitly at the spawn site — see OracleTrace.SpawnPlaced).
+    private bool _hexTileAssigned;
 
     /// <summary>Pixel offset from the hex tile center (objects can be nudged off-grid).</summary>
     public required int X { get; init; }
@@ -60,6 +77,13 @@ public sealed class MapObject
     /// obj_set_light_level (P21) re-lights an object at runtime.</summary>
     public int LightDistance { get; set; }
     public int LightIntensity { get; set; }
+
+    /// <summary>Object record elevation (object.cc objectRead); maps also imply it by section.</summary>
+    public int Elevation { get; set; }
+    public int Cid { get; set; } = -1;
+    public int ScriptIndex { get; set; } = -1;
+    /// <summary>Critter field_0 (proto.cc objectDataRead).</summary>
+    public int CritterFlags { get; set; }
 
     /// <summary>Script id (type in the high byte), or -1; key into MapFile.ScriptsBySid.</summary>
     public int Sid { get; set; } // settable: engine removes a critter's script on death (combat.cc:4876)
@@ -387,7 +411,7 @@ public sealed class MapFile
     }
 
     /// <summary>ported from fallout2-ce src/object.cc objectRead().</summary>
-    private static MapObject ReadObject(BigEndianReader reader, ProtoDatabase protos, int mapVersion)
+    internal static MapObject ReadObject(BigEndianReader reader, ProtoDatabase protos, int mapVersion)
     {
         int id = reader.ReadInt32();
         int tile = reader.ReadInt32();
@@ -398,14 +422,14 @@ public sealed class MapFile
         int rotation = reader.ReadInt32();
         int fid = reader.ReadInt32();
         int flags = reader.ReadInt32();
-        reader.Skip(4); // elevation — implied by the section being read
+        int elevation = reader.ReadInt32(); // also implied by the section being read on maps
         int pid = reader.ReadInt32();
-        reader.Skip(4); // cid
+        int cid = reader.ReadInt32();
         int lightDistance = reader.ReadInt32();
         int lightIntensity = reader.ReadInt32();
         reader.Skip(4); // field_74
         int sid = reader.ReadInt32();
-        reader.Skip(4); // scriptIndex — resolved at runtime via the scripts section
+        int scriptIndex = reader.ReadInt32(); // resolved at runtime via the scripts section
 
         var obj = new MapObject
         {
@@ -421,6 +445,9 @@ public sealed class MapFile
             LightDistance = lightDistance,
             LightIntensity = lightIntensity,
             Sid = sid,
+            Elevation = elevation,
+            Cid = cid,
+            ScriptIndex = scriptIndex,
         };
 
         int inventoryLength = ReadObjectData(reader, obj, protos, mapVersion);
@@ -466,7 +493,7 @@ public sealed class MapFile
         {
             // ported from fallout2-ce src/proto.cc objectDataRead() +
             // objectCritterCombatDataRead()
-            reader.Skip(4); // field_0 (reaction_to_pc)
+            obj.CritterFlags = reader.ReadInt32(); // field_0 (reaction_to_pc / data->flags)
             obj.DamageLastTurn = reader.ReadInt32();
             obj.Maneuver = reader.ReadInt32();
             obj.ActionPoints = reader.ReadInt32();

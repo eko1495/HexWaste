@@ -20,6 +20,8 @@ public sealed class BigEndianReader(Stream stream)
 
     public uint ReadUInt32() => (uint)ReadInt32();
 
+    public float ReadSingle() => BitConverter.Int32BitsToSingle(ReadInt32());
+
     public short ReadInt16()
     {
         BaseStream.ReadExactly(_buffer, 0, 2);

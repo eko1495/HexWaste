@@ -1165,3 +1165,28 @@ at `MenuOrigin()` (`ViewerGame.Shell.cs`), same destination rect for the endgame
 Verified with `--menu`/`--menu pick`/`--menu create` screenshots and a live hover pass (menudown swap fires
 exactly over the painted slot). Spec/plan: `docs/superpowers/specs/2026-09-09-menu-backdrop-unstretch-design.md`,
 `docs/superpowers/plans/2026-09-09-menu-backdrop-unstretch.md`. The 2026-09-08 spec carries a superseded note.
+
+MAINTENANCE (2026-10-11, "trace oracle M1" — a differential-testing harness against vanilla fo2ce, not a
+phase): a trace-patched, headless copy of `alexbatalov e97087b` (`tools/fo2ce-trace/`, `trace.patch` is the
+source of truth, applied to a gitignored worktree) and Hexwaste load the same vanilla `SAVE.DAT` slot
+(recipe-made by fo2ce itself, `scripts/oracle-make-save.sh`; Hexwaste reads all 27 handler sections and
+imports via `--load-vanilla-save`), share one seeded RNG stream (`--rng fo2ce`: `Fo2ceRng` handed to combat,
+travel and the VM, per-proc VM reseed off), run the same scenario (`seed` / `wait <ms>` / `end-turn [n]`)
+and write one-line-per-event traces (PROC, GVAR/LVAR/MVAR, RNG with `site=` context, SPAWN, MOVE, TURN,
+ATTACK); `tools/TraceDiff` reports the first divergence and `scripts/oracle-run.sh <fixture>` drives the
+whole thing. Determinism decisions: a virtual clock in the patch (10 ms per `tickersExecute`, `delay_ms`
+adds its argument, a render-only-loop guard adds 10 ms per present that nothing else advanced); the seed
+zeroes `_iv`/`_iy`/`_idum` before `randomSeedPrerandomInternal` (which never writes `_iv[0]`, so a plain
+reseed inherited wall-clock state); every `randomBetween` site audited logic-vs-cosmetic, cosmetic
+(wall-clock-timed) draws moved to a second untraced stream on both sides; sound off in fo2ce (the audio
+thread made same-seed runs diverge). Gate: `scripts/oracle-selfcheck.sh` (two fo2ce runs byte-identical) —
+OK on all three M1 fixtures (artemple-idle, klamath-hour, arcaves-ambush). Result: all three diverge at
+trace line 2, in the PROC stream; 15 findings recorded, all open, ranked — top: `create_object_sid` binds
+scripts.lst index `sid` instead of `sid - 1` (every scripted runtime spawn runs the next script), the
+game clock (60x and running in combat), obj_dude.int never attached, combat joiners without AP/immediate
+turn, critter_p_proc cadence/order. A planted +1 to-hit drift is caught exactly at the first ATTACK line
+when diffing two Hexwaste traces, but cannot be the first fo2ce-vs-Hexwaste divergence until the earlier
+PROC-stream differences are fixed. No engine behavior changed; goldens byte-identical. Spec/plan/findings:
+`docs/superpowers/specs/2026-10-10-fo2ce-trace-oracle-design.md`,
+`docs/superpowers/plans/2026-10-10-fo2ce-trace-oracle.md`,
+`docs/research-notes/oracle-m1-findings-2026-10.md`.

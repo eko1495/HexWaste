@@ -56,3 +56,6 @@ docs/qa-sweep/harvest-recipes.txt
 
 # Ad hoc comparison runs (never commit)
 scratch/compare-runs/
+
+# fo2ce trace oracle run output (never commit)
+scratch/oracle-runs/

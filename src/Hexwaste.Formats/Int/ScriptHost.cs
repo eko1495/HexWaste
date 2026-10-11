@@ -1,6 +1,7 @@
 using Hexwaste.Formats.Combat;
 using Hexwaste.Formats.Map;
 using Hexwaste.Formats.Text;
+using Hexwaste.Formats.Trace;
 
 namespace Hexwaste.Formats.Int;
 
@@ -388,6 +389,21 @@ public sealed class ScriptHost(GameFileSystem vfs, ScriptList scripts, Hexwaste.
         Car.TrunkMaxSize = size;
     }
 
+    /// <summary>The dude's script sid: obj_dude.int (scripts.lst index 0) gets a fixed synthetic sid,
+    /// clear of map and AllocateSid ranges, so its local vars can live outside any one map.</summary>
+    public const int DudeSid = 0x04800000;
+
+    /// <summary>ported from fallout2-ce src/scripts.cc scriptsSetDudeScript(): the dude carries
+    /// obj_dude.int (proto sid 0x4000000). Call on every map load, after the dude is spawned.</summary>
+    public void BindDudeScript(MapFile map, MapObject dude)
+    {
+        map.ScriptsBySid[DudeSid] = new MapScriptRecord(0, -1, 0);
+        dude.Sid = DudeSid;
+    }
+
+    // The dude's script survives map changes (SCRIPT_FLAG_0x10), so its LVARs are not keyed by map.
+    private static (string Map, int Sid) LvarKey(MapFile map, int sid) => (sid == DudeSid ? "" : map.Header.Name, sid);
+
     /// <summary>Runtime sid for a script-created object (engine scr_new): a
     /// fresh type-3 sid registered into the map's script table.</summary>
     public int AllocateSid(MapFile map, int scriptIndex)
@@ -502,7 +518,9 @@ public sealed class ScriptHost(GameFileSystem vfs, ScriptList scripts, Hexwaste.
     {
         foreach (MapFile.SpatialScript spatial in map.SpatialScripts)
         {
-            MapObject self = GetSpatialSelf(map, spatial);
+            MapObject self = GetSpatialSelf(map, spatial); // also registers the sid, so keep it unconditional
+            if (!DefinesProc(spatial.ScriptListIndex, procName))
+                continue;
             ScriptRunResult? result = RunProc(spatial.ScriptListIndex, map, spatial.Sid,
                 map.ScriptsBySid[spatial.Sid], self, dude, fixedParam, -1, [procName]);
             if (result is not null)
@@ -552,6 +570,10 @@ public sealed class ScriptHost(GameFileSystem vfs, ScriptList scripts, Hexwaste.
 
     /// <summary>Rolls for do_check/statRoll (seedable by the host).</summary>
     public Random Rng { get; set; } = new();
+
+    /// <summary>Trace oracle: the shared fo2ce stream every script VM's random() draws from
+    /// (stamped onto each VM <see cref="GetOrCreateVm"/> returns). Null = per-VM seeded streams.</summary>
+    public Random? SharedVmRandom { get; set; }
 
     /// <summary>Effective stat, ported from fallout2-ce src/stat.cc
     /// critterGetStat(): base + bonus; pseudostats 35/36/37 read the instance.</summary>
@@ -667,6 +689,7 @@ public sealed class ScriptHost(GameFileSystem vfs, ScriptList scripts, Hexwaste.
                     Sid = -1,
                 };
                 money.StackCount = amount;
+                OracleTrace.SpawnPlaced(money.Id, money.Pid, -1); // fo2ce item.cc:3236 objectCreateWithPid(MONEY)
                 obj.Inventory.Add(money);
                 return 0;
             }
@@ -718,6 +741,17 @@ public sealed class ScriptHost(GameFileSystem vfs, ScriptList scripts, Hexwaste.
     /// <summary>Session GVARs, exposed for save/load.</summary>
     public Dictionary<int, int> GlobalVars => _globalVars;
 
+    /// <summary>A game-global write that fo2ce routes through gameSetGlobalVar (scripts' set_global_var
+    /// and engine writes such as dudeSetAddiction) — traced as GVAR old->new (game.cc gameSetGlobalVar →
+    /// oracleTraceGvar). Hexwaste has no gvar-count bound here, so only negative indices are rejected
+    /// from the trace (fo2ce rejects var &lt; 0 || var &gt;= count without tracing).</summary>
+    public void SetGlobalVarTraced(int index, int value)
+    {
+        if (OracleTrace.Active && index >= 0)
+            OracleTrace.Gvar(index, _globalVars.TryGetValue(index, out int old) ? old : 0, value);
+        _globalVars[index] = value;
+    }
+
     /// <summary>P100 (Point 4): the Highwayman car fuel/state, driven by the metarule car externals
     /// (give_car_to_party/give_car_gas/car_current_town) + metarule3 110 (out of gas). Exposed for save/load.</summary>
     public CarState Car { get; } = new();
@@ -755,15 +789,16 @@ public sealed class ScriptHost(GameFileSystem vfs, ScriptList scripts, Hexwaste.
         if (_vmCache.TryGetValue(key, out IntVm? cached))
         {
             if (cached.IsRunning)
-                return new IntVm(program, externals, OnStubbedExternal, ExternalVars);
+                return new IntVm(program, externals, OnStubbedExternal, ExternalVars) { SharedRandom = SharedVmRandom };
             if (ReferenceEquals(cached.Program, program))
             {
                 cached.Rebind(externals);
+                cached.SharedRandom = SharedVmRandom;
                 return cached;
             }
         }
 
-        var vm = new IntVm(program, externals, OnStubbedExternal, ExternalVars);
+        var vm = new IntVm(program, externals, OnStubbedExternal, ExternalVars) { SharedRandom = SharedVmRandom };
         _vmCache[key] = vm;
         return vm;
     }
@@ -798,6 +833,18 @@ public sealed class ScriptHost(GameFileSystem vfs, ScriptList scripts, Hexwaste.
             fixedParam, actionBeingUsed, procedureNames);
     }
 
+    /// <summary>Trace oracle PROC line, emitted immediately before each named-proc run — the fo2ce
+    /// counterpart is scripts.cc scriptExecProc → oracleTraceProc just before _executeProcedure, which
+    /// fires even when the script lacks the proc (procs[proc]==0 → runs proc 1), so this traces every
+    /// ATTEMPT, found or not. Program name = basename of the .int path, lowercased (oracle.cc).</summary>
+    internal static void TraceProc(MapObject? self, string scriptPath, string procName)
+    {
+        if (!OracleTrace.Active)
+            return;
+        int slash = scriptPath.LastIndexOfAny(['\\', '/']);
+        OracleTrace.Proc(self?.Id ?? -1, scriptPath[(slash + 1)..], procName);
+    }
+
     /// <summary>Run a scenery/door's damage_p_proc for a nearby explosion — ported from fallout2-ce
     /// src/scripts.cc _scr_explode_scenery (:2879): fixedParam = 20, and the script's TARGET is the misc-10
     /// explosion marker. A door reads target_obj → metarule(METARULE_WEAPON_DAMAGE_TYPE) → EXPLOSION and
@@ -822,6 +869,7 @@ public sealed class ScriptHost(GameFileSystem vfs, ScriptList scripts, Hexwaste.
                 Target = marker,          // script->target = the explosion marker (read via target_obj)
             };
             IntVm vm = GetOrCreateVm(map, scenery.Sid, program, externals);
+            TraceProc(scenery, path, "damage_p_proc");
             return vm.TryRunProcedure("damage_p_proc")
                 ? new ScriptRunResult(externals.Overridden, externals.Messages)
                 : null;
@@ -859,6 +907,7 @@ public sealed class ScriptHost(GameFileSystem vfs, ScriptList scripts, Hexwaste.
                 Target = target,
             };
             IntVm vm = GetOrCreateVm(map, self.Sid, program, externals);
+            TraceProc(self, path, "combat_p_proc");
             return vm.TryRunProcedure("combat_p_proc")
                 ? new ScriptRunResult(externals.Overridden, externals.Messages)
                 : null;
@@ -911,8 +960,16 @@ public sealed class ScriptHost(GameFileSystem vfs, ScriptList scripts, Hexwaste.
         return ranAny ? new ScriptRunResult(overridden, messages) : null;
     }
 
+    /// <summary>ported from fallout2-ce src/proto_instance.cc _obj_drop() step 1: the dropper's
+    /// is_dropping_p_proc (source = the item); an override cancels the drop.</summary>
+    public ScriptRunResult? RunIsDropping(MapObject dropper, MapObject item, MapFile map, MapObject? dude) =>
+        dropper.Sid != -1 && map.ScriptsBySid.TryGetValue(dropper.Sid, out MapScriptRecord? record)
+            ? RunProcWith(record.ScriptListIndex, map, dropper.Sid, record, dropper, dude, usedWith: null,
+                "is_dropping_p_proc", source: item)
+            : null;
+
     private ScriptRunResult? RunProcWith(int scriptListIndex, MapFile map, int sid, MapScriptRecord record,
-        MapObject self, MapObject? dude, MapObject usedWith, string procedureName)
+        MapObject self, MapObject? dude, MapObject? usedWith, string procedureName, MapObject? source = null)
     {
         string? path = scripts.GetScriptPath(scriptListIndex);
         if (path is null)
@@ -922,11 +979,12 @@ public sealed class ScriptHost(GameFileSystem vfs, ScriptList scripts, Hexwaste.
             IntProgram? program = GetProgram(path);
             if (program is null)
                 return null;
-            var externals = new ScriptContext(this, map, sid, record, self, source: dude, dude: dude)
+            var externals = new ScriptContext(this, map, sid, record, self, source: source ?? dude, dude: dude)
             {
                 UsedWith = usedWith,
             };
             IntVm vm = GetOrCreateVm(map, sid, program, externals);
+            TraceProc(self, path, procedureName);
             return vm.TryRunProcedure(procedureName)
                 ? new ScriptRunResult(externals.Overridden, externals.Messages)
                 : null;
@@ -1086,10 +1144,32 @@ public sealed class ScriptHost(GameFileSystem vfs, ScriptList scripts, Hexwaste.
                 fixedParam: 0, -1, ["map_update_p_proc"]);
         }
 
-        foreach (MapObject obj in objects.ToList())
-            RunObjectProc(obj, map, dude, 0, -1, "map_update_p_proc");
-
+        // ported from fallout2-ce src/scripts.cc scriptsExecMapUpdateScripts(): the type lists run in
+        // enum order (system, SPATIAL, timed, item, critter), so spatials come before object scripts,
+        // and only scripts with procs[proc] > 0 (the proc exists) are called.
         RunSpatialMapProc(map, dude, 0, "map_update_p_proc"); // P113 (item 7e)
+
+        foreach (MapObject obj in objects.ToList())
+            if (map.ScriptsBySid.TryGetValue(obj.Sid, out MapScriptRecord? record)
+                && DefinesProc(record.ScriptListIndex, "map_update_p_proc"))
+                RunObjectProc(obj, map, dude, 0, -1, "map_update_p_proc");
+    }
+
+    /// <summary>Whether the script defines the proc (fallout2-ce procs[proc] > 0). A load failure counts
+    /// as defined so RunProc reports it as before.</summary>
+    private bool DefinesProc(int scriptListIndex, string procName)
+    {
+        string? path = scripts.GetScriptPath(scriptListIndex);
+        if (path is null)
+            return false;
+        try
+        {
+            return GetProgram(path) is not { } program || program.FindProcedure(procName) >= 0;
+        }
+        catch (Exception ex) when (ex is InvalidDataException or FileNotFoundException or NotSupportedException)
+        {
+            return true;
+        }
     }
 
     /// <summary>
@@ -1163,6 +1243,7 @@ public sealed class ScriptHost(GameFileSystem vfs, ScriptList scripts, Hexwaste.
             IntVm vm = GetOrCreateVm(map, sid, program, externals);
             foreach (string name in procedureNames)
             {
+                TraceProc(self, path, name);
                 if (vm.TryRunProcedure(name))
                     return new ScriptRunResult(externals.Overridden, externals.Messages);
             }
@@ -1248,7 +1329,7 @@ public sealed class ScriptHost(GameFileSystem vfs, ScriptList scripts, Hexwaste.
 
     private int[] GetLocalVarSlice(MapFile map, int sid, MapScriptRecord record)
     {
-        if (_localVarSlices.TryGetValue((map.Header.Name, sid), out int[]? slice))
+        if (_localVarSlices.TryGetValue(LvarKey(map, sid), out int[]? slice))
             return slice;
 
         int count = record.LocalVarsCount > 0
@@ -1264,7 +1345,7 @@ public sealed class ScriptHost(GameFileSystem vfs, ScriptList scripts, Hexwaste.
                 slice[i] = map.LocalVariables[record.LocalVarsOffset + i];
         }
 
-        _localVarSlices[(map.Header.Name, sid)] = slice;
+        _localVarSlices[LvarKey(map, sid)] = slice;
         return slice;
     }
 
@@ -1361,11 +1442,14 @@ public sealed class ScriptHost(GameFileSystem vfs, ScriptList scripts, Hexwaste.
             return t;
         }
 
-        internal DialogSession(IntVm vm, ScriptContext context, string npcName)
+        private readonly string _scriptPath;
+
+        internal DialogSession(IntVm vm, ScriptContext context, string npcName, string scriptPath)
         {
             _vm = vm;
             _context = context;
             NpcName = npcName;
+            _scriptPath = scriptPath;
         }
 
         /// <summary>A picked option called gdialog_barter: the host should open
@@ -1386,6 +1470,10 @@ public sealed class ScriptHost(GameFileSystem vfs, ScriptList scripts, Hexwaste.
 
             try
             {
+                // fo2ce game_dialog.cc _gdProcessChoice: `if (dialogOptionEntry->proc != 0)` →
+                // oracleTraceProc(gGameDialogSpeaker, gDialogReplyProgram->name, "<reply>").
+                if (procedureIndex != 0)
+                    TraceProc(_context.Self, _scriptPath, "<reply>");
                 _vm.TryRunProcedureByIndex(procedureIndex);
             }
             catch (Exception ex) when (ex is InvalidDataException or NotSupportedException)
@@ -1434,6 +1522,7 @@ public sealed class ScriptHost(GameFileSystem vfs, ScriptList scripts, Hexwaste.
             // dialog-modal — see GetOrCreateVm.
             var context = new ScriptContext(this, map, obj.Sid, record, self: obj, source: dude, dude: dude);
             IntVm vm = GetOrCreateVm(map, obj.Sid, program, context);
+            TraceProc(obj, path, "talk_p_proc");
             if (!vm.TryRunProcedure("talk_p_proc"))
                 return null;
 
@@ -1449,7 +1538,7 @@ public sealed class ScriptHost(GameFileSystem vfs, ScriptList scripts, Hexwaste.
                 ? _critterNames.GetName(record.ScriptListIndex)
                 : null;
             npcName ??= NameResolver?.Invoke(obj) ?? "stranger";
-            return new DialogSession(vm, context, npcName);
+            return new DialogSession(vm, context, npcName, path);
         }
         catch (Exception ex) when (ex is InvalidDataException or FileNotFoundException or NotSupportedException)
         {
@@ -1471,6 +1560,7 @@ public sealed class ScriptHost(GameFileSystem vfs, ScriptList scripts, Hexwaste.
         private readonly int _sid;
         private readonly MapScriptRecord _record;
         private readonly MapObject _self;
+        internal MapObject Self => _self;
         private readonly MapObject? _source;
         private readonly MapObject? _dude;
 
@@ -1537,7 +1627,7 @@ public sealed class ScriptHost(GameFileSystem vfs, ScriptList scripts, Hexwaste.
         public int GetGlobalVar(int index) =>
             _host._globalVars.TryGetValue(index, out int value) ? value : 0;
 
-        public void SetGlobalVar(int index, int value) => _host._globalVars[index] = value;
+        public void SetGlobalVar(int index, int value) => _host.SetGlobalVarTraced(index, value);
 
         public int GetLocalVar(int index)
         {
@@ -1549,7 +1639,13 @@ public sealed class ScriptHost(GameFileSystem vfs, ScriptList scripts, Hexwaste.
         {
             int[] slice = _host.GetLocalVarSlice(_map, _sid, _record);
             if (index >= 0 && index < slice.Length)
+            {
+                // fo2ce scripts.cc scriptSetLocalVar: oracleTraceLvar(sid, script-relative index, old, new),
+                // accepted stores only.
+                if (OracleTrace.Active)
+                    OracleTrace.Lvar(_sid, index, slice[index], value);
                 slice[index] = value;
+            }
         }
 
         public int GetMapVar(int index) =>
@@ -1558,7 +1654,12 @@ public sealed class ScriptHost(GameFileSystem vfs, ScriptList scripts, Hexwaste.
         public void SetMapVar(int index, int value)
         {
             if (index >= 0 && index < _map.GlobalVariables.Length)
+            {
+                // fo2ce map.cc mapSetGlobalVar: oracleTraceMvar after the range check.
+                if (OracleTrace.Active)
+                    OracleTrace.Mvar(index, _map.GlobalVariables[index], value);
                 _map.GlobalVariables[index] = value;
+            }
         }
 
         // metarule: 14 FIRST_RUN (host tracks revisits); 16 PARTY_COUNT; 22
@@ -2428,6 +2529,8 @@ public sealed class ScriptHost(GameFileSystem vfs, ScriptList scripts, Hexwaste.
                 Pid = pid,
                 Sid = -1,
             };
+            // fo2ce opCreateObject: objectCreateWithFidPid (SPAWN) then objectSetLocation (critter MOVE).
+            OracleTrace.SpawnPlaced(obj.Id, obj.Pid, obj.HexTile);
 
             // Script binding (engine scr_new + scriptSetScriptIndex): allocate
             // a fresh sid so the new object's procs (use_skill_on disarm,

@@ -224,6 +224,13 @@ builds (Linux x64 / Windows x64) are on the
   elevators open their authentic per-location panel art with the animated floor
   gauge sweeping during the ride. With the Empathy perk your dialogue options are
   tinted by the NPC's reaction. Maps fade in from black as you travel between them.
+- **Trace oracle M1** (fo2ce lockstep traces from vanilla saves) ✔ — a trace-patched,
+  headless vanilla fallout2-ce and Hexwaste load the same original-engine save, share one
+  seeded RNG stream, run the same scenario, and `scripts/oracle-run.sh <fixture>` reports
+  the first line where their event traces (procs, vars, RNG draws, moves, turns, attacks)
+  disagree. Three fixtures; findings in
+  [`docs/research-notes/oracle-m1-findings-2026-10.md`](docs/research-notes/oracle-m1-findings-2026-10.md),
+  workflow in [`tools/fo2ce-trace/README.md`](tools/fo2ce-trace/README.md).
 
 ## Controls
 

@@ -11,5 +11,6 @@
     <Project Path="tools/DatDump/DatDump.csproj" />
     <Project Path="tools/FrmDump/FrmDump.csproj" />
     <Project Path="tools/MapDump/MapDump.csproj" />
+    <Project Path="tools/TraceDiff/TraceDiff.csproj" />
   </Folder>
 </Solution>

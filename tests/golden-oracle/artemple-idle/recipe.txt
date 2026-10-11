@@ -1,0 +1,5 @@
+# Smallest end-to-end fixture: the Temple of Trials entrance, nothing hostile in view.
+premade combat
+map artemple.map
+run-ms 2000
+save oracle artemple-idle

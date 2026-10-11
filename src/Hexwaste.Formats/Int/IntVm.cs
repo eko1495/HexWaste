@@ -630,6 +630,11 @@ public sealed class IntVm
 
     private const int RandomSeed = 20260612;
 
+    /// <summary>Trace oracle: when set, every random() draw comes from this shared stream and the
+    /// per-proc reseed in <see cref="TryRunProcedure"/> is skipped (fallout2-ce has ONE RNG —
+    /// interpreter_extra.cc opRandom :782 calls randomBetween).</summary>
+    public Random? SharedRandom { get; set; }
+
     /// <summary>Dialog text: literal string, or a message-list lookup for int ids.</summary>
     private string ResolveDialogText(int messageListId, Value msg) =>
         msg.Tag == TypeInt ? _externals.GetMessage(messageListId, msg.Raw) : AsString(msg);
@@ -714,7 +719,8 @@ public sealed class IntVm
         // the old one-VM-per-proc lifetime gave for free. Keeps all goldens byte-identical
         // now that the VM persists per (map, sid). Dialog nodes go through
         // TryRunProcedureByIndex directly and continue the stream within a conversation.
-        _random = new Random(RandomSeed);
+        if (SharedRandom is null)
+            _random = new Random(RandomSeed);
         return TryRunProcedureByIndex(index);
     }
 
@@ -1334,7 +1340,7 @@ public sealed class IntVm
             {
                 int max = PopInt();
                 int min = PopInt();
-                PushInt(min >= max ? min : _random.Next(min, max + 1));
+                PushInt(min >= max ? min : (SharedRandom ?? _random).Next(min, max + 1));
                 break;
             }
             case 0x80F2: // game_ticks: seconds * 10
@@ -1576,7 +1582,10 @@ public sealed class IntVm
             // ---- world mutation (pop orders from interpreter_extra.cc handlers)
             case 0x80B7: // create_object_sid (pops sid, elevation, tile, pid)
             {
-                int scriptIndex = PopInt(); // scripts.lst index, -1 = unscripted
+                // script sid is 1-based; -1 = unscripted.
+                // ported from fallout2-ce src/interpreter_extra.cc opCreateObject() (script->index = sid - 1)
+                int sid = PopInt();
+                int scriptIndex = sid == -1 ? -1 : sid - 1;
                 int elevation = PopInt();
                 int tile = PopInt();
                 int pid = PopInt();

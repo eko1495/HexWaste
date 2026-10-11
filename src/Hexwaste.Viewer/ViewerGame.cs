@@ -159,6 +159,12 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
     private double _mapUpdateClockMs;
     private const double MapUpdateIntervalMs = 600 * 100.0; // 600 game ticks
 
+    /// <summary>The second map_update source, ported from fallout2-ce src/scripts.cc _script_chk_timed_events():
+    /// every 30000 ms of real (bk) time, in or out of combat. `_last_light_time` is never reset, so this window
+    /// carries over map loads.</summary>
+    private double _bkMapUpdateMs;
+    private const double BkMapUpdateIntervalMs = 30000;
+
     /// <summary>Main-menu front door (v0.6): Title → character pick → play.
     /// Headless/test flags skip it entirely.</summary>
     public bool StartInMenu { get; set; }
@@ -836,6 +842,8 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
         /// map_update) for Ms simulated milliseconds in 10 ms steps, MID action sequence — lets a
         /// script-driven cutscene (the Modoc shotgun wedding) play out between probes. STATE-only.</summary>
         public sealed record PumpMs(int Ms) : StartupAction;
+        /// <summary>Trace oracle scenario `end-turn N` (same semantics as the fo2ce patch's runner).</summary>
+        public sealed record OracleEndTurn(int Count) : StartupAction;
         /// <summary>P119 QA: open the elevator level picker UI directly (art verification —
         /// no gameplay effect until a button is picked).</summary>
         public sealed record ElevatorOpen(int Type, int Level) : StartupAction;
@@ -1192,6 +1200,7 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
         if (RngSeed is { } seed)
             _combatRng = new Formats.Combat.SystemCombatRng(seed);
         _calledShotRng = new Formats.Combat.SystemCombatRng(RngSeed ?? Environment.TickCount); // P75-M4 isolated
+        PrepareOracleCombatRng(); // trace oracle: the engine captures its streams — hand it a retargetable slot
         _combat = new Formats.Combat.CombatEngine(this, _combatRng, _calledShotRng);
 
         _protos = new ProtoDatabase(_vfs);
@@ -1544,7 +1553,14 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
                 _fonts[id] = new AafFontRenderer(GraphicsDevice, AafFont.Load(_vfs.ReadAllBytes(file)));
         }
 
-        LoadMap(_mapName, spawnAt: null);
+        // Trace oracle: a vanilla SAVE.DAT slot replaces the default map load (and the JSON load below).
+        if (VanillaSaveDir is not null)
+            LoadVanillaSaveAtStartup();
+        else
+            LoadMap(_mapName, spawnAt: null);
+        // Trace oracle: seed the ONE shared stream AFTER the load, like the fo2ce scenario runner
+        // (oracleRandomSeed right after lsgLoadGameHeadless) and before any scenario action.
+        InitOracle();
 
         _worldmapScreen = new WorldmapScreen(GraphicsDevice, _vfs, _palette, _cities, _fontRenderer, _frmCache)
         {
@@ -1594,7 +1610,7 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
                 Console.Error.WriteLine($"no area {areaIndex} in city.txt");
         }
 
-        if (LoadOnStart)
+        if (LoadOnStart && VanillaSaveDir is null)
             LoadGame();
 
         // Dialog hooks run first so --choose can open barter for the
@@ -1675,7 +1691,7 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
     private Formats.Map.EncounterResult? _pendingEncounter;
 
     private void LoadMap(string mapName, MapDestination? spawnAt, bool captureOutgoing = true,
-        bool transient = false)
+        bool transient = false, MapFile? preloadedMap = null)
     {
         // Remember what the player changed on the map being left, so a
         // revisit can replay it over the pristine file (engine: SAVE.DAT
@@ -1689,9 +1705,9 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
             // map_exit_p_proc never fires; their objects stay on the map at their followed positions.
             // ported from fallout2-ce scripts.cc scriptsExecMapExitProc →
             // scriptsExecMapUpdateScripts(SCRIPT_PROC_MAP_EXIT).
-            IEnumerable<MapObject> exitScripted = _map.Elevations.Where(e => e is not null)
+            IEnumerable<MapObject> exitScripted = WithDudeScript(_map.Elevations.Where(e => e is not null)
                 .SelectMany(e => e!.Objects).Where(o => o.Sid != -1 && o != _dude?.Dude
-                    && _scriptHost?.PartyMembers.Contains(o) != true);
+                    && _scriptHost?.PartyMembers.Contains(o) != true));
             _scriptHost?.RunMapExit(_map, exitScripted, _dude?.Dude);
 
             // Guard #2 (transient persistence): a transient map being LEFT writes no delta —
@@ -1722,8 +1738,14 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
         // player just stays put). No shippable map trips this; it hardens against bad data.
         try
         {
-            using Stream stream = _vfs.OpenRead($@"maps\{mapName}");
-            _map = MapFile.Load(stream, _protos);
+            // Trace oracle: a vanilla slot's in-game-saved map (.SAV) is handed in already parsed.
+            if (preloadedMap is not null)
+                _map = preloadedMap;
+            else
+            {
+                using Stream stream = _vfs.OpenRead($@"maps\{mapName}");
+                _map = MapFile.Load(stream, _protos);
+            }
 
             // P114: a FRESH map's MAP_GLOBAL_VARS come from maps\<name>.gam, which OVERRIDES the count +
             // values baked into the .map stream (map.cc:932-947 — the .map array is only the saved seed).
@@ -1857,10 +1879,12 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
             // boxes are invisible items whose map_enter stocks the store and
             // store_external()s the box (the engine runs scripts regardless
             // of visibility).
-            IEnumerable<MapObject> scripted = _map.Elevations
+            if (_dude is not null)
+                _scriptHost.BindDudeScript(_map, _dude.Dude);
+            IEnumerable<MapObject> scripted = WithDudeScript(_map.Elevations
                 .Where(e => e is not null)
                 .SelectMany(e => e!.Objects)
-                .Where(o => o.Sid != -1 && o != _dude?.Dude);
+                .Where(o => o.Sid != -1 && o != _dude?.Dude));
             _scriptHost.SpatialsEnabled = false; // _scr_SpatialsEnabled gate (map.cc:973)
             // P1: the engine's start pass (map.cc:1006 scriptsExecStartProc) runs BEFORE map_enter so
             // every script's first execution (its global-init prologue) publishes its exported variables —
@@ -3196,16 +3220,8 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
             LightIntensity = Formats.Light.LightGrid.IntensityMax,
             LightDistance = 4,
             Pid = 0x01000001,
-            // Task 1/Task 2 hardening (F29): explicit, not the C# int default (0). The reference gives
-            // the dude a real, live sid in play (scriptsSetDudeScript, scripts.cc:1460-1489) so its
-            // damage_p_proc/etc. CAN fire — Hexwaste models no dude script at all, so -1 ("no script") is
-            // the honest value, matching every other unscripted MapObject's Sid convention. Before this,
-            // the dude's Sid silently defaulted to 0, which every `Sid != -1` guard in the codebase
-            // treated as "has a script" — harmless only because map format type-0 sids are never
-            // object-bound (Task 1's 146-map survey), so ScriptsBySid[0] never resolves. Verified safe
-            // codebase-wide (Task 2's Sid != -1 survey): every other such guard either already excludes
-            // `!= dude` explicitly, never receives the dude object, or is immediately followed by (or
-            // wraps) a ScriptsBySid.TryGetValue lookup that fails identically for Sid 0 and Sid -1.
+            // Explicit, not the C# int default (0): unscripted until the map load binds obj_dude.int
+            // (ScriptHost.BindDudeScript, scriptsSetDudeScript).
             Sid = -1,
         };
 
@@ -3512,8 +3528,11 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
             }
         }
 
+        // Trace oracle: wandering is a Hexwaste-only "honest fake" (no fo2ce counterpart — the original
+        // drives critter movement from scripts), so it would move critters the reference never moves and
+        // poison the comparison. Gate ONLY the wander; fidget (above) and reg_anim dispatch are untouched.
         _wanderTimerMs -= elapsedMs;
-        if (_wanderTimerMs <= 0)
+        if (_wanderTimerMs <= 0 && !OracleRngMode)
         {
             _wanderTimerMs = _ambientRandom.Next(3000, 9000);
             if (candidates.Count > 0)
@@ -4033,9 +4052,14 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
         // self = the item; script_overrides keeps the item in the bag (proto_instance.cc:693-708).
         // fo2ce sets no action_being_used for DROP. Inert for vanilla map data today (only
         // proto-attached scripts define it — aibroc/aixander — and proto-sid instantiation isn't
-        // modelled), but the hook is where the engine has it. Note: _obj_drop's step 1,
-        // is_dropping_p_proc on the DROPPER (proto_instance.cc:680, source = item), is INERT here —
-        // only obj_dude.int defines it and the dude carries no script.
+        // modelled), but the hook is where the engine has it. Step 1, is_dropping_p_proc on the
+        // DROPPER (proto_instance.cc:680, source = item), runs first — only obj_dude.int defines it.
+        var dropping = _scriptHost?.RunIsDropping(_dude.Dude, item, _map, _dude.Dude);
+        if (dropping is not null)
+            foreach (string line in dropping.Messages)
+                Log(line);
+        if (dropping is { Overridden: true })
+            return;
         var dropScripted = _scriptHost?.RunObjectProc(item, _map, _dude.Dude, "drop_p_proc");
         if (dropScripted is not null)
             foreach (string line in dropScripted.Messages)
@@ -4920,6 +4944,7 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
                 Pid = item.Pid,
                 Sid = -1,
             };
+            Formats.Trace.OracleTrace.SpawnPlaced(unit.Id, unit.Pid, -1);
             to.Add(unit);
             return;
         }
@@ -5545,6 +5570,10 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
                 ? _scriptHost.AllocateSid(_map, si.ScriptIndex)
                 : -1,
         };
+        // Trace oracle: fo2ce worldmap.cc wmSetupCritterObjs — objectCreateWithPid (SPAWN, tile -1), then
+        // each inventory item's objectCreateWithPid (SPAWN), then objectSetLocation (critter MOVE) below.
+        if (Formats.Trace.OracleTrace.Active)
+            Formats.Trace.OracleTrace.Spawn(obj.Id, obj.Pid, -1);
 
         if (Fid.Type(obj.Fid) is ObjectType.Critter)
         {
@@ -5566,7 +5595,11 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
             if (it.Worn)
                 item.Flags |= MapObject.FlagWorn;
             obj.Inventory.Add(item);
+            if (Formats.Trace.OracleTrace.Active)
+                Formats.Trace.OracleTrace.Spawn(item.Id, item.Pid, -1);
         }
+        if (Formats.Trace.OracleTrace.Active && Fid.PidType(obj.Pid) == (int)ObjectType.Critter)
+            Formats.Trace.OracleTrace.Move(obj.Id, -1, obj.HexTile);
         return obj;
     }
 
@@ -6833,10 +6866,15 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
         }
     }
 
+    /// <summary>A map-wide script pass plus the dude: he is not in the map's object lists, but fo2ce
+    /// keeps his obj_dude.int in the critter script list (scriptsSetDudeScript), first.</summary>
+    private IEnumerable<MapObject> WithDudeScript(IEnumerable<MapObject> scripted) =>
+        _dude is { Dude: { Sid: not -1 } d } ? scripted.Prepend(d) : scripted;
+
     /// <summary>Idle clock + hour-driven ambient (skipped when --ambient fixed it).</summary>
     private void UpdateClock(double elapsedMs)
     {
-        _clock.AdvanceRealTime(elapsedMs);
+        _clock.AdvanceRealTime(elapsedMs, _combat.Phase != Formats.Combat.CombatPhase.Idle);
         ProcessPoison(); // P35-M3: poison damage ticks on game time (also catches up after rest/travel jumps)
         ProcessDrugs(); // P37: scheduled drug stat reversals fire on game time (same catch-up after jumps)
         ProcessWithdrawals(); // P38: withdrawal onset/recovery fire on game time (drain-loop for clock jumps)

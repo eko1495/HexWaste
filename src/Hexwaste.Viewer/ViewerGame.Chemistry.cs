@@ -27,7 +27,7 @@ public sealed partial class ViewerGame
                 _jetWithdrawalActive = false;
             }
             _pendingWithdrawalEvents.RemoveAll(e => e.Perk == Formats.Perks.PerkId.JetAddiction); // _queue_clear_type
-            sh.GlobalVars[jetGvar] = 0; // dudeClearAddiction(PROTO_ID_JET)
+            sh.SetGlobalVarTraced(jetGvar, 0); // dudeClearAddiction(PROTO_ID_JET)
             Log("The Jet antidote purges the addiction from your system.");
             Console.WriteLine("drug: Jet antidote cleared Jet addiction");
             item.StackCount--;
@@ -249,7 +249,7 @@ public sealed partial class ViewerGame
 
         if (Formats.Item.DrugAddiction.Roll(drug.AddictionChance, reliant, resistant, flowerChild, roll))
         {
-            _scriptHost.GlobalVars[gvar] = 1; // dudeSetAddiction (item.cc:3106)
+            _scriptHost.SetGlobalVarTraced(gvar, 1); // dudeSetAddiction (item.cc:3106)
             ScheduleWithdrawal(isStart: true, drug.WithdrawalOnset, drug.WithdrawalEffect, item.Pid);
         }
     }
@@ -299,7 +299,7 @@ public sealed partial class ViewerGame
                 ApplyWithdrawalPerk(perk, -1);
                 int gvar = Formats.Item.DrugAddiction.GvarForPid(pid); // dudeClearAddiction
                 if (gvar >= 0 && _scriptHost is not null)
-                    _scriptHost.GlobalVars[gvar] = 0;
+                    _scriptHost.SetGlobalVarTraced(gvar, 0);
             }
         }
     }

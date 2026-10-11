@@ -1,0 +1,5 @@
+# Klamath downtown: NPC wander + timed events + map_update over one game hour.
+premade combat
+map kladwtwn.map
+run-ms 2000
+save oracle klamath-hour

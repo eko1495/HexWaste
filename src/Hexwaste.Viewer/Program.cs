@@ -29,6 +29,7 @@ string? savePath = null;
 string? saveDir = null;
 bool saveOnExit = false;
 bool loadOnStart = false;
+string? vanillaSaveDir = null; // trace oracle: --load-vanilla-save <slot dir>
 bool worldmap = false;
 int? travelArea = null;
 bool noAudio = false;
@@ -36,6 +37,10 @@ bool noAmbient = false;
 bool forceMenu = false;
 string? menuStartState = null;
 bool fullscreen = false;
+string? rngMode = null;      // trace oracle: --rng fo2ce
+string? scenarioPath = null; // trace oracle: --scenario <path>
+string? tracePath = null;    // trace oracle: --trace <path>
+string? fixtureName = null;  // trace oracle: --fixture <name>
 
 for (int i = 0; i < args.Length; i++)
 {
@@ -52,6 +57,18 @@ for (int i = 0; i < args.Length; i++)
             break;
         case "--no-ambient":
             noAmbient = true;
+            break;
+        case "--rng" when i + 1 < args.Length:
+            rngMode = args[++i];                       // "fo2ce" or default
+            break;
+        case "--scenario" when i + 1 < args.Length:
+            scenarioPath = args[++i];
+            break;
+        case "--trace" when i + 1 < args.Length:
+            tracePath = args[++i];
+            break;
+        case "--fixture" when i + 1 < args.Length:
+            fixtureName = args[++i];
             break;
         case "--advance-ms" when i + 1 < args.Length:
             advanceMs = double.Parse(args[++i]);
@@ -122,6 +139,9 @@ for (int i = 0; i < args.Length; i++)
         case "--load-from" when i + 1 < args.Length:
             savePath = args[++i];
             loadOnStart = true;
+            break;
+        case "--load-vanilla-save" when i + 1 < args.Length:
+            vanillaSaveDir = args[++i];
             break;
         case "--pick" when i + 1 < args.Length:
         {
@@ -844,6 +864,46 @@ for (int i = 0; i < args.Length; i++)
     }
 }
 
+// Trace oracle: the scenario's seed drives the shared fo2ce stream; its actions run after any
+// other startup actions (wait -> the 10 ms PumpMs pump, end-turn -> OracleEndTurn).
+if (rngMode is not null && rngMode != "fo2ce")
+{
+    Console.Error.WriteLine($"--rng: unknown mode '{rngMode}' (only 'fo2ce')");
+    return 2;
+}
+if (scenarioPath is not null && rngMode != "fo2ce")
+{
+    Console.Error.WriteLine("--scenario needs --rng fo2ce");
+    return 2;
+}
+if (tracePath is not null && rngMode != "fo2ce")
+{
+    Console.Error.WriteLine("--trace needs --rng fo2ce");
+    return 2;
+}
+if (scenarioPath is not null)
+{
+    Hexwaste.Formats.Trace.OracleScenario scenario;
+    try
+    {
+        scenario = Hexwaste.Formats.Trace.OracleScenario.Parse(File.ReadAllText(scenarioPath));
+    }
+    catch (Exception ex) when (ex is FormatException or IOException or UnauthorizedAccessException)
+    {
+        // Exit 6 = bad scenario, the same code the fo2ce runner uses (oracle.cc oracleScenarioBegin).
+        Console.Error.WriteLine($"oracle: bad scenario {scenarioPath}: {ex.Message}");
+        return 6;
+    }
+    rngSeed = scenario.Seed;
+    foreach (var action in scenario.Actions)
+        actions.Add(action switch
+        {
+            Hexwaste.Formats.Trace.ScenarioAction.Wait w => new ViewerGame.StartupAction.PumpMs(w.Ms),
+            Hexwaste.Formats.Trace.ScenarioAction.EndTurn e => new ViewerGame.StartupAction.OracleEndTurn(e.Count),
+            _ => throw new InvalidDataException($"unknown scenario action {action}"),
+        });
+}
+
 // A game directory must contain master.dat. When --game-dir is omitted, probe
 // the usual install locations (GOG, Steam) plus a game-data folder next to
 // the executable / working directory.
@@ -890,7 +950,7 @@ if (!LooksLikeGameDir(gameDir))
 // any test/headless flag boots straight into the world like before.
 bool interactiveLaunch = screenshot is null && actions.Count == 0 && talkHex is null
     && talk is null && pick is null && examine is null && benchFrames == 0
-    && !loadOnStart && !worldmap && travelArea is null && gotoTile is null
+    && !loadOnStart && vanillaSaveDir is null && !worldmap && travelArea is null && gotoTile is null
     && doorTile is null && advanceMs == 0 && !walk;
 
 using var game = new ViewerGame(gameDir!, mapName, screenshot, roofs)
@@ -921,12 +981,33 @@ using var game = new ViewerGame(gameDir!, mapName, screenshot, roofs)
     AmbientFixed = ambientFixed,
     SaveOnExit = saveOnExit,
     LoadOnStart = loadOnStart,
+    VanillaSaveDir = vanillaSaveDir,
     SavePath = savePath ?? "hexwaste-save.json",
     SaveDir = saveDir ?? "",
     StartOnWorldmap = worldmap,
     TravelToArea = travelArea,
     DisableAudio = noAudio,
     DisableAmbientLife = noAmbient,
+    OracleRngMode = rngMode == "fo2ce",
+    OracleTracePath = tracePath,
+    OracleFixture = fixtureName,
 };
-game.Run();
+if (!game.OracleRngMode)
+{
+    game.Run();
+    return 0;
+}
+
+// Trace oracle: every run ends through OracleShutdown (which flushes and closes the trace) — success
+// here, cap/dead exits from inside the scenario, and any unhandled exception.
+try
+{
+    game.Run();
+}
+catch (Exception ex)
+{
+    Console.Error.WriteLine($"oracle: unhandled exception: {ex}");
+    game.OracleShutdown(8);
+}
+game.OracleShutdown(0);
 return 0;
