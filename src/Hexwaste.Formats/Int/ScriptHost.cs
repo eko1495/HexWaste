@@ -399,16 +399,56 @@ public sealed class ScriptHost(GameFileSystem vfs, ScriptList scripts, Hexwaste.
     {
         map.ScriptsBySid[DudeSid] = new MapScriptRecord(0, -1, 0);
         dude.Sid = DudeSid;
+        // fo2ce scriptsSetDudeScript -> _obj_new_sid -> scriptAdd: appended after the map's critters.
+        // Unverified for a map change (scriptLoadAll replaces the list head; no oracle fixture changes
+        // maps yet), verified for a save load by the oracle traces.
+        CritterScripts.Add(DudeSid);
+        _scriptOwners[DudeSid] = dude;
+    }
+
+    /// <summary>The critter heartbeat's list (oracle F6). Session-scoped like fo2ce's _count_.</summary>
+    public CritterScriptList CritterScripts { get; } = new();
+
+    // sid -> owner for the critter heartbeat (all elevations); kept in step with CritterScripts.
+    private readonly Dictionary<int, MapObject> _scriptOwners = [];
+
+    /// <summary>Map load: the list becomes the map's critter section in file order (fo2ce scriptLoadAll),
+    /// minus sids no object on the map still holds (killed critters clear their sid; a .MAP corpse that
+    /// still carries a script keeps it, as in fo2ce).</summary>
+    public void RebuildCritterScripts(MapFile map)
+    {
+        CritterScripts.Clear();
+        _scriptOwners.Clear();
+        foreach (MapElevation? elev in map.Elevations)
+            foreach (MapObject obj in elev?.Objects ?? [])
+                if (obj.Sid != -1)
+                    _scriptOwners[obj.Sid] = obj;
+        foreach (int sid in map.CritterSids)
+            if (_scriptOwners.ContainsKey(sid))
+                CritterScripts.Add(sid);
+    }
+
+    public bool TryGetScriptOwner(int sid, out MapObject owner) => _scriptOwners.TryGetValue(sid, out owner!);
+
+    /// <summary>ported from fallout2-ce src/scripts.cc scriptRemove(): drop a script from the critter list
+    /// (tail moves into its slot) and the owner index. -1 and unknown sids are no-ops.</summary>
+    public void RemoveScript(int sid)
+    {
+        if (sid == -1)
+            return;
+        CritterScripts.Remove(sid);
+        _scriptOwners.Remove(sid);
     }
 
     // The dude's script survives map changes (SCRIPT_FLAG_0x10), so its LVARs are not keyed by map.
     private static (string Map, int Sid) LvarKey(MapFile map, int sid) => (sid == DudeSid ? "" : map.Header.Name, sid);
 
-    /// <summary>Runtime sid for a script-created object (engine scr_new): a
-    /// fresh type-3 sid registered into the map's script table.</summary>
-    public int AllocateSid(MapFile map, int scriptIndex)
+    /// <summary>Runtime sid for a script-created object (engine scr_new): a fresh sid of the owner's
+    /// script type, registered into the map's script table. Critters (type 4) join the critter list.</summary>
+    public int AllocateSid(MapFile map, int scriptIndex, MapObject owner)
     {
-        int sid = 0x03000000 | 0x00800000; // synthetic range, clear of map sids
+        bool critter = Fid.Type(owner.Fid) is ObjectType.Critter;
+        int sid = critter ? DudeSid + 1 : 0x03000000 | 0x00800000; // synthetic ranges, clear of map sids
         while (map.ScriptsBySid.ContainsKey(sid))
             sid++;
         map.ScriptsBySid[sid] = new MapScriptRecord(scriptIndex, -1, 0);
@@ -417,6 +457,11 @@ public sealed class ScriptHost(GameFileSystem vfs, ScriptList scripts, Hexwaste.
         // NAME. Clear any stale slice a previous visit left under this key, or the new holder
         // inherits another object's local vars (fo2ce frees LVAR blocks on scriptRemove).
         _localVarSlices.Remove((map.Header.Name, sid));
+        if (critter)
+        {
+            CritterScripts.Add(sid);
+            _scriptOwners[sid] = owner;
+        }
         return sid;
     }
 
@@ -441,7 +486,7 @@ public sealed class ScriptHost(GameFileSystem vfs, ScriptList scripts, Hexwaste.
     /// their latched state (hired/mood/follow flags) across transitions like fo2ce.</summary>
     public int BindPartyScript(MapFile map, MapObject member, int scriptIndex)
     {
-        int sid = AllocateSid(map, scriptIndex);
+        int sid = AllocateSid(map, scriptIndex, member);
         if (_partyLocalVars.TryGetValue(member, out int[]? vars))
             _localVarSlices[(map.Header.Name, sid)] = vars;
         return sid;
@@ -2537,7 +2582,7 @@ public sealed class ScriptHost(GameFileSystem vfs, ScriptList scripts, Hexwaste.
             // examine) actually run.
             if (scriptIndex >= 0)
             {
-                int sid = _host.AllocateSid(_map, scriptIndex);
+                int sid = _host.AllocateSid(_map, scriptIndex, obj);
                 obj.Sid = sid;
             }
 
@@ -2561,6 +2606,7 @@ public sealed class ScriptHost(GameFileSystem vfs, ScriptList scripts, Hexwaste.
                 if (elev is not null)
                     foreach (MapObject holder in elev.Objects)
                         holder.Inventory.Remove(obj);
+            _host.RemoveScript(obj.Sid); // fo2ce _obj_remove -> scriptRemove (object.cc:3905)
             _host.ObjectRemoved?.Invoke(obj);
         }
 

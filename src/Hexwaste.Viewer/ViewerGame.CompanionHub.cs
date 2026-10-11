@@ -145,7 +145,7 @@ public sealed partial class ViewerGame
         int scriptIndex = _dismissedCompanions.GetValueOrDefault(member, -1);
         _dismissedCompanions.Remove(member);
         if (scriptIndex >= 0)
-            member.Sid = _scriptHost.AllocateSid(_map, scriptIndex); // rebind before OnPartyChanged reads it
+            member.Sid = _scriptHost.AllocateSid(_map, scriptIndex, member); // rebind before OnPartyChanged reads it
         _scriptHost.PartyMembers.Add(member);
         OnPartyChanged(member, joined: true);
         Console.WriteLine($"companion: {ObjectName(member)} rejoined count={Formats.Int.ScriptHost.PartyMemberCount(_scriptHost.PartyMembers)}");

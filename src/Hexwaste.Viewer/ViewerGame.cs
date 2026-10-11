@@ -4283,7 +4283,7 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
         {
             if (protoIndex == -1)
                 return null;
-            item.Sid = _scriptHost.AllocateSid(_map, protoIndex);
+            item.Sid = _scriptHost.AllocateSid(_map, protoIndex, item);
         }
         var result = _scriptHost.RunObjectProc(item, _map, _dude?.Dude, "use_p_proc");
         if (result is not null)
@@ -5566,10 +5566,10 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
             // target (the +15 to-hit + the knockback immunity actually apply). P36.
             Flags = proto.Flags & 0x800,
             Pid = si.Pid,
-            Sid = si.ScriptIndex >= 0 && _scriptHost is not null
-                ? _scriptHost.AllocateSid(_map, si.ScriptIndex)
-                : -1,
+            Sid = -1,
         };
+        if (si.ScriptIndex >= 0 && _scriptHost is not null)
+            obj.Sid = _scriptHost.AllocateSid(_map, si.ScriptIndex, obj);
         // Trace oracle: fo2ce worldmap.cc wmSetupCritterObjs — objectCreateWithPid (SPAWN, tile -1), then
         // each inventory item's objectCreateWithPid (SPAWN), then objectSetLocation (critter MOVE) below.
         if (Formats.Trace.OracleTrace.Active)
