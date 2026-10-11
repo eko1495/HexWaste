@@ -308,8 +308,9 @@ ms rather than reading the game clock (the map-update heartbeat probe feeds it m
 1. Fix F1 (one line, `sid - 1`), re-record the goldens it moves, re-run the oracle.
 2. Decide the clock model (F2): an oracle-only switch to the authentic 1 tick per 100 ms, frozen in combat,
    is enough to make traces comparable; the gameplay rate is a separate design question.
-3. Done: attach obj_dude.int (F3) and port critter-list order + cadence (F6). To do: the map_update
-   sources/filter (F7) — after these the first divergence should move off the PROC stream onto RNG/combat lines.
+3. Done: attach obj_dude.int (F3), the map_update sources/filter (F7) and critter-list order + cadence
+   (F6). The first divergence is now off the critter order (artemple line 3, klamath line 66, arcaves
+   line 9); next is the stale obj_dude slot's own state (F16).
 4. Then the combat joiner path (F5) and re-check F4.
 5. F8–F13 are small, independent ports; F12/F14 first need trace-alignment decisions. Each fix should be
    validated by a fresh `oracle-run.sh` showing the first divergence moving later.
