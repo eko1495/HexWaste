@@ -52,35 +52,67 @@ A small ordered list of critter sids with fo2ce's semantics, independent of Mono
 
 Ported with `// ported from fallout2-ce src/scripts.cc _script_chk_critters() / scriptAdd() / scriptRemove()`.
 
+**Owner: `ScriptHost`.** `ScriptHost` already owns script ids (`ScriptsBySid`, `AllocateSid`,
+`BindDudeScript`) and lives for the whole session, which the never-reset counter needs. It holds one
+`CritterScriptList` plus a sid-to-object index (section 4), and keeps both in sync itself:
+
+- `AllocateSid` appends runtime critters.
+- `BindDudeScript` places the dude.
+- One method, `ScriptHost.RemoveScript(int sid)`, takes a sid out of the list and the index. Every kill and
+  destroy site calls it, so no viewer call site has to maintain the list by hand.
+
 ### 2. Building the list
 
 - `MapFile.ReadScripts` records the critter-type (type 4) sids in file order in a new
   `MapFile.CritterSids` list, alongside `ScriptsBySid`.
-- On map load the viewer clears the list and adds `MapFile.CritterSids` in order. It then appends the dude's
-  sid when `BindDudeScript` runs, as fo2ce's `scriptsSetDudeScript` appends after the map scripts.
-- Runtime spawns: `ScriptHost.AllocateSid` takes the script type. A critter gets a type-4 sid (`0x04800000`
-  range, clear of map sids and of `DudeSid`) and is appended. Items keep type 3. The callers in the
-  create-object paths pass the type from the object's fid type.
+- On map load `ScriptHost` clears the list and adds `MapFile.CritterSids` in order, skipping any sid whose
+  owner is dead or no longer on the map. This matters on a revisit: Hexwaste reloads the original `.MAP` and
+  applies the visit's saved changes (deaths included), so the file still lists critters that died last
+  visit. fo2ce's revisit loads its own `.SAV`, whose script section never had them.
+- Then the dude and the party, in fo2ce's load order:
+  - **Save load (verified by the oracle traces):** the dude's script is appended after the map's critters.
+    It ends up last (klamath: both dude entries close the 41-entry round).
+  - **Party members:** `_partyMemberRecoverLoad` (`map.cc:997`, after `map_enter`) re-adds each party
+    member's script as a critter script, so companions come after the map's critters. Hexwaste re-binds
+    companions in `ViewerGame.CompanionHub.cs:148` via `AllocateSid`, which appends them.
+  - **Map change (unverified):** fo2ce's map load runs `_scr_remove_all` (`object.cc:2108`), which keeps
+    flagged scripts such as the dude's, then `scriptLoadAll` (`map.cc:904`). `scriptLoadAll` replaces the
+    list head instead of appending whenever the new map has critter scripts. So where, or whether, the
+    dude's entry sits after a map change is not settled by reading the code. Until a fo2ce trace with a map
+    change settles it, Hexwaste uses: map critters, then the dude, then the party. A code comment marks this
+    assumption.
+  - fo2ce's `scriptSaveAll` writes flagged scripts (the dude, the map script) out of order: it fills their
+    slots from the tail. So a revisited map's critter order can differ from the pristine file's. Hexwaste
+    does not model this (out of scope, revisits are not oracle-covered).
+- Runtime spawns: `ScriptHost.AllocateSid` takes the object (for the index) and derives the script type from
+  its fid type. A critter gets a type-4 sid (`0x04800000` range, clear of map sids and of `DudeSid`) and is
+  appended. Items keep type 3. All five callers pass the object: `ScriptHost.cs:444` and `:2540`,
+  `ViewerGame.CompanionHub.cs:148`, `ViewerGame.cs:4286` and `:5570`.
 - Deaths: fo2ce removes the script at the moment of death (`critterKill`, `critter.cc:898`), so the list
   order after a fight depends on the order of deaths. Removing lazily when the round-robin reaches a dead
   critter would break the oracle match after any combat, so every kill site removes the sid immediately
-  through one viewer helper, `RemoveCritterScript(MapObject)`. The five sites that set `DAM_DEAD` (0x80):
+  through `ScriptHost.RemoveScript(sid)`. The five sites that set `DAM_DEAD` (0x80):
   - `CombatEngine.KillCritter` (`src/Hexwaste.Formats/Combat/CombatEngine.cs:2271`). It lives in
     Formats and cannot call the viewer, so it calls a new `ICombatHost.RemoveCritterScript(MapObject)`
     (default no-op, like `RecordKill`) right after `destroy_p_proc`, matching the engine's "then the
-    script is removed" order (`combat.cc:4850-4876`). The viewer's host forwards it to the helper.
+    script is removed" order (`combat.cc:4850-4876`). The viewer's host forwards it to
+    `ScriptHost.RemoveScript`.
   - `KillCrittersByType` (`src/Hexwaste.Viewer/ViewerGame.CombatHost.cs:509`).
   - `KillCritterObject` (`ViewerGame.CombatHost.cs:529`).
   - `ViewerGame.cs:5516`.
   - Save load (`ViewerGame.SaveLoad.cs:165`) marks restored corpses dead. The list is rebuilt after it,
     so it calls nothing and must not re-add dead critters' sids.
 - Destroys: fo2ce also removes the script when its object is destroyed (`object.cc:3905`). About 14 viewer
-  sites take an object off the map; each one that can remove a scripted critter calls the same helper.
+  sites take an object off the map; each one that can remove a scripted critter calls
+  `ScriptHost.RemoveScript`. The plan lists each site and whether it can remove a critter.
   The list is rebuilt from the map on load, so only in-session removals matter.
-- Vanilla save import (the dude twice): the first implementation step checks whether the imported `.SAV`
-  script section carries a critter record for the dude. If it does, `--load-vanilla-save` keeps that entry
-  in the list, so the dude appears twice as in fo2ce. If it does not, find the real source of the second
-  entry in `_obj_load_dude` / `mapLoadSaved` before porting anything. Hexwaste's own save/load is unchanged.
+- Vanilla save import (the dude twice): the `.SAV` cannot be the source, because `scriptSaveAll` skips
+  flagged scripts such as the dude's. The likely cause is `_obj_load_dude` (`object.cc:3629-3660`), which
+  calls `scriptsSetDudeScript` twice around a `memcpy` of the loaded dude. The first implementation step
+  confirms this with a temporary debug dump of the critter list in the oracle worktree (not committed to
+  `trace.patch`). Once confirmed, `--load-vanilla-save` appends the dude twice. Hexwaste's own save/load
+  appends him once and does not store the list order, so after a Hexwaste reload the order is rebuilt from
+  the map (an accepted deviation; the oracle loads only vanilla saves).
 
 ### 3. `PumpCritterProcs`: one script per frame
 
@@ -88,14 +120,23 @@ Ported with `// ported from fallout2-ce src/scripts.cc _script_chk_critters() / 
   owner's `critter_p_proc`.
 - The sneak re-check (`RollSneak`, `sneakEventProcess`) is game-time driven, so it moves to its own 100 ms
   accumulator with unchanged behavior.
-- The owner lookup covers all elevations (sid to object). A sid whose owner cannot be found is skipped for
-  that frame; the counter still advances, as in fo2ce.
+- The owner lookup covers all elevations through `ScriptHost`'s sid-to-object index (section 4). A sid
+  whose owner cannot be found is skipped for that frame; the counter still advances, as in fo2ce.
 - The gates stay as they are: no runs in combat, dialog, the companion hub, loot, the worldmap or game-over.
 - Kept Hexwaste deviations, each with a code comment:
   - Waiting companions (`_waitingCompanions`) are skipped: their slot is consumed but nothing runs.
   - A script without `critter_p_proc` runs nothing (fo2ce runs procedure 1, F8, out of scope).
 - `IsHeartbeatEligible` stays only where other code still uses it (the harness probes and the
   `companion-lifecycle` diagnostics). The pump itself uses the list.
+
+### 4. Sid-to-object index
+
+Nothing in Hexwaste looks up an object by sid today. Scanning every object on every frame would cost
+hundreds of millions of checks in klamath-hour (360 000 frames), so `ScriptHost` keeps a
+`Dictionary<int, MapObject>`:
+- rebuilt on map load from all elevations;
+- added to by `AllocateSid` (which then needs the object) and `BindDudeScript`;
+- removed from by `RemoveScript`.
 
 ## Testing
 
@@ -107,6 +148,10 @@ Ported with `// ported from fallout2-ce src/scripts.cc _script_chk_critters() / 
   - an empty list returns null;
   - `Clear()` keeps the counter;
   - duplicate sids are allowed.
+- **Unit (hermetic, `ScriptHost`):** with a hand-built `MapFile` (the 12-byte empty DAT2 trick from P115):
+  - a map change puts map critters first, then the dude, then a re-bound companion;
+  - `RemoveScript` keeps the list and the index in sync;
+  - a dead critter on a reloaded map is not re-added.
 - **Oracle:** rerun all three fixtures. This also checks the list order against fo2ce. Success means:
   - the `critter_p_proc` sequence matches fo2ce's;
   - the first divergence moves past line 2;
@@ -117,6 +162,9 @@ Ported with `// ported from fallout2-ce src/scripts.cc _script_chk_critters() / 
   - review each changed fixture's diff for plausibility (more NPC movement or float lines, no crashes or
     missing sections);
   - summarize the moved fixtures in the commit message.
+- **Golden runtime:** record the full golden run time before the change (the parallel harness baseline
+  is about 116 s) and after. Report the ratio. If it grows past 2x, profile the critter-proc path before
+  merging.
 - **Full unit suite and CI steps** (ascii-lint, harness self-test, Release build, data-free tests) pass.
 
 ## Out of scope
