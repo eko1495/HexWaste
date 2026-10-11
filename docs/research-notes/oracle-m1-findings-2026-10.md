@@ -155,6 +155,14 @@ reading where the fixtures do not exercise it.
   `gScriptLists[SCRIPT_TYPE_CRITTER]`); Hexwaste `PumpCritterProcs` at the 10 Hz game tick
   (`ViewerGame.CombatHost.cs:544`). Note vanilla's cadence is frame-rate-bound; the oracle's 100 Hz is a model choice
   (F15), so match *order* first and make the rate a parameter.
+- Checked (F6 Task 1): after `--load-vanilla-save` (artemple-idle) fo2ce's critter list is three slots:
+  `0 sid=0x04000001 flags=0x5`, `1 sid=0x04004650 flags=0x18`, `2 sid=0x04000005 flags=0x18`.
+  `scriptsSetDudeScript` ran five times (sids 0x04000000, 01, 02, 04, 05; no `_obj_load_dude` double-call
+  proof, just five calls in the run), the last giving gDude->sid=0x04000005 (slot 2). Slot 0 (sid 0x04000001,
+  flags 0x5, not the 0x18 pair) survives although each call's `scriptsClearDudeScript` removes the previous
+  gDude->sid; it is most likely the dude's entry restored from the save's script list, i.e. the "second dude
+  entry" is slot 0 + slot 2, not two same-sid entries. Not proven beyond the log. Golden baseline before F6:
+  91.55 s (combat 8.06, opening 7.14, endgame 3.77, quest 15.41, encounter 57.17).
 
 ### F7 — map_update cadence and the "has the proc" filter
 
