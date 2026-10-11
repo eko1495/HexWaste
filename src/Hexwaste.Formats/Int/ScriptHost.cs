@@ -874,12 +874,20 @@ public sealed class ScriptHost(GameFileSystem vfs, ScriptList scripts, Hexwaste.
         RunObjectProc(obj, map, dude, 0, -1, procedureNames);
 
     public ScriptRunResult? RunObjectProc(MapObject obj, MapFile map, MapObject? dude,
+        int fixedParam, int actionBeingUsed, params string[] procedureNames) =>
+        RunScriptProc(obj.Sid, obj, map, dude, fixedParam, actionBeingUsed, procedureNames);
+
+    /// <summary>Runs <paramref name="sid"/>'s script (its LVARs, its VM) with <paramref name="self"/> as
+    /// self. Differs from <see cref="RunObjectProc(MapObject, MapFile, MapObject?, int, int, string[])"/>
+    /// only when self does not hold the sid: the vanilla import's stale obj_dude slot, which fo2ce runs as
+    /// its own Script with self = the dude (oracle F16).</summary>
+    public ScriptRunResult? RunScriptProc(int sid, MapObject self, MapFile map, MapObject? dude,
         int fixedParam, int actionBeingUsed, params string[] procedureNames)
     {
-        if (obj.Sid == -1 || !map.ScriptsBySid.TryGetValue(obj.Sid, out MapScriptRecord? record))
+        if (sid == -1 || !map.ScriptsBySid.TryGetValue(sid, out MapScriptRecord? record))
             return null;
 
-        return RunProc(record.ScriptListIndex, map, obj.Sid, record, obj, dude,
+        return RunProc(record.ScriptListIndex, map, sid, record, self, dude,
             fixedParam, actionBeingUsed, procedureNames);
     }
 

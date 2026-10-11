@@ -76,7 +76,9 @@ public sealed partial class ViewerGame
         map.CritterSids.AddRange(saved.CritterSids);
         // Oracle F6: the .SAV keeps the dude's previous-session script record (obj_dude, owner = the dude)
         // in the critter section, so fo2ce runs obj_dude twice per round after a save load (findings F6).
-        // fo2ce runs it as its own Script struct; Hexwaste runs the dude's obj_dude (owner.Sid = DudeSid).
+        // fo2ce runs it as its own Script (own LVARs, self = the dude); so does Hexwaste, by sid (F16).
+        // Deviation: fo2ce saves it back into the map's .SAV, so it returns on a revisit; Hexwaste drops it
+        // on a map change and after a Hexwaste save/reload (no oracle fixture covers either).
         var heldSids = saved.Elevations.Where(e => e is not null).SelectMany(e => e!.Objects)
             .Select(o => o.Sid).ToHashSet();
         _vanillaStaleDudeSid = saved.CritterSids.FirstOrDefault(sid => !heldSids.Contains(sid)

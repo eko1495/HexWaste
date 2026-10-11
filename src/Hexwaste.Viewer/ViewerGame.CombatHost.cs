@@ -568,7 +568,8 @@ public sealed partial class ViewerGame
         if (_waitingCompanions.Contains(critter))
             return;
         // Hexwaste deviation: a script without critter_p_proc runs nothing (fo2ce runs procedure 1, F8).
-        var result = _scriptHost.RunObjectProc(critter, _map, _dude?.Dude, "critter_p_proc");
+        // The slot's sid, not critter.Sid: the stale obj_dude slot runs its own state (oracle F16).
+        var result = _scriptHost.RunScriptProc(sid, critter, _map, _dude?.Dude, 0, -1, "critter_p_proc");
         // Only the dude's floor reaches the log: the heartbeat now also runs critters on other
         // elevations, whose float lines the dude could never see (they would flood the log).
         if (result is not null && ElevationOfObject(critter) == _elevation)
