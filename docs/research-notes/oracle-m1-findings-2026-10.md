@@ -219,8 +219,8 @@ ms rather than reading the game clock (the map-update heartbeat probe feeds it m
   The extra Hexwaste lines are trace-only: `kcitizen`, `ksbboard`, `stuff`, `trespass` and the other
   extras define no `map_update_p_proc`, but `ScriptHost.TraceProc` logs before `TryRunProcedure` finds
   the proc missing (fo2ce returns before its PROC line). fo2ce also runs `obj_dude.int map_update_p_proc`
-  twice per round (the stale slot, F16 - fixed), and puts spatial scripts before object scripts (script-type list order); Hexwaste runs
-  the dude once and spatials last.
+  twice per round (the stale slot, F16 - fixed), and puts spatial scripts before object scripts (script-type list order); Hexwaste now runs
+  obj_dude's map_update twice after a vanilla load (stale slot, then the dude), matching fo2ce, with spatials first.
 
 ### F8 — Missing proc → fo2ce runs procedure 1; Hexwaste runs nothing
 
@@ -301,7 +301,13 @@ ms rather than reading the game clock (the map-update heartbeat probe feeds it m
 - Hypothesis: fo2ce keeps the .SAV record as a separate `Script` with its own LVAR block (the .SAV record has 5
   locals) that runs obj_dude.int against `self=obj#18000`; Hexwaste reuses the dude's script state.
   Porting it means giving the stale slot its own script instance. Also F15's "two obj_dude scripts".
-- Status: FIXED (see below). Still open: the critter list order after a map change (F6).
+- Status: FIXED (see below). Settled: on a map change the dude is last, which is
+  faithful. fo2ce `_scr_remove_all` keeps scripts flagged 0x10 (`scripts.cc:2382`; `scriptsSetDudeScript` sets
+  0x08|0x10 at `scripts.cc:1487`), `scriptLoadAll` replaces the lists (`map.cc:904`), and
+  `_partyMemberRecoverLoad` (`map.cc:997`, `party_member.cc:629`) -> `_partyMemberRecoverLoadInstance`
+  (`party_member.cc:667`, `scriptAdd` at :680) re-adds party member 0 = the dude (`party_member.cc:725`), then the
+  other members, after the map's critter section. Still open: party members miss map_enter in Hexwaste
+  (`InjectPartyMembers` runs after map_enter, while fo2ce has them on the list during it).
 - **Fixed:** (1) `ScriptHost.RunScriptProc(sid, self, ...)`: the critter heartbeat runs the sid it took from the
   critter list, so a slot whose owner holds a different sid runs its own LVARs/VM. (2) map_enter/map_update
   (`ScriptHost.RunObjectScriptsInListOrder`): non-critter-list object scripts first, then the critter list in
@@ -317,6 +323,11 @@ ms rather than reading the game clock (the map-update heartbeat probe feeds it m
   obj#16 vs obj#-2 differs = F12). Accepted deviations: the stale slot is dropped on a map change and after a
   Hexwaste save/reload (fo2ce saves it into the map .SAV and it returns on revisit); no fixture covers either.
 
+Follow-ups (F16):
+- `RunMapExit` (`ScriptHost.cs` ~1308) still runs map_exit in object order with the dude first; fo2ce runs map_exit
+  through `scriptsExecMapUpdateScripts` (`scripts.cc` ~2673, list order, dude last, stale slot included).
+- map_enter is now gated by `DefinesProc`, which counts imported-only procs as defined (pre-existing for map_update).
+
 ### F17 — Dude script sid label
 
 - Fixtures: artemple-idle (line 6), klamath-hour (line 69).
@@ -325,6 +336,9 @@ ms rather than reading the game clock (the map-update heartbeat probe feeds it m
 - Cause: fo2ce allocates the dude's script sid from the critter list's id counter at `scriptsSetDudeScript`
   (0x04000005 artemple, 0x04000028 klamath after load); Hexwaste uses a fixed `DudeSid` 0x04800000. Values
   match; only the trace label differs. Scripts cannot observe a sid, so this is trace alignment (like F12).
+- Also: after a map change the dude's sid is pid-derived in fo2ce, `(scriptType << 24) | ((pid & 0xFFFFFF) + 18000)`
+  (`party_member.cc:693`, `_partyMemberRecoverLoadInstance`) = 0x04004650 for the dude; after a save load it is
+  counter-allocated (0x04000005 / 0x04000028).
 - Status: open. Options: a label mapping in the trace, or allocate the dude sid like fo2ce.
 
 ## Recommended next steps

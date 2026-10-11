@@ -100,6 +100,10 @@ public class StaleDudeScriptTests : IDisposable
         host.BindDudeScript(map, dude);
         host.ReplaceDudeScriptAfterVanillaLoad(map, dude, StaleSid); // list: critter, stale, dude
 
+        // LVAR0 := 99 on the dude's fresh slot only; map_update copies LVAR0 into GVAR777 on each obj_dude run,
+        // so 99 survives only if the dude runs after the stale slot (stale is fresh 0).
+        host.RunScriptProc(ScriptHost.DudeSid, dude, map, dude, 0, -1, "critter_p_proc");
+
         var sw = new StringWriter();
         try
         {
@@ -116,7 +120,7 @@ public class StaleDudeScriptTests : IDisposable
         string[] selves = sw.ToString().Split('\n')
             .Where(l => l.Contains(" PROC ")).Select(l => l[(l.LastIndexOf('#') + 1)..].Trim()).ToArray();
         Assert.Equal(["14", "24", "18000", "18000"], selves);
-        Assert.Equal(0, host.GlobalVars[777]); // both fresh after Replace
+        Assert.Equal(99, host.GlobalVars[777]); // dude ran last (a stale-last order would leave 0)
     }
 
     [Fact]

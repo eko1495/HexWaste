@@ -418,6 +418,9 @@ public sealed class ScriptHost(GameFileSystem vfs, ScriptList scripts, Hexwaste.
         // stale record back at its section position, then BindDudeScript appends the fresh dude script last.
         List<int> sids = [.. CritterScripts.Sids];
         sids.Remove(DudeSid);
+        sids.Remove(staleSid); // no duplicate slot
+        // Hexwaste removes entries in order while fo2ce's scriptRemove moves the tail into the gap: equivalent on the
+        // oracle fixtures (fo2ce dump), would differ only if a spawned critter followed the dude during the load passes.
         int pos = 0;
         foreach (int sid in map.CritterSids)
         {
