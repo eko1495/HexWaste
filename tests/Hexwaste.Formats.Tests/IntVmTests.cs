@@ -53,6 +53,9 @@ internal sealed class FakeExternals : IVmExternals
     public List<(int Attacker, int Defender)> AttackSetups { get; } = [];
     public void AttackSetup(int attackerHandle, int defenderHandle) => AttackSetups.Add((attackerHandle, defenderHandle));
 
+    public List<(int Pid, int Tile, int Elevation, int ScriptIndex)> Creates { get; } = [];
+    public int CreateObject(int pid, int tile, int elevation, int scriptIndex = -1) { Creates.Add((pid, tile, elevation, scriptIndex)); return 0; }
+
     public List<(int Tile, int Elevation, int MaxDamage)> Explosions { get; } = [];
     public void Explosion(int tile, int elevation, int maxDamage) => Explosions.Add((tile, elevation, maxDamage));
 }
@@ -292,7 +295,8 @@ public class IntVmTests
         Int32H(code, value);
     }
 
-    private static byte[] BuildRandomScript()
+    // Hand-assembled one-proc (critter_p_proc) script; body emits between push_base and the epilogue.
+    private static byte[] BuildScript(Action<List<byte>> body)
     {
         string[] names = ["critter_p_proc"];
         var idBytes = new List<byte>();
@@ -315,12 +319,7 @@ public class IntVmTests
 
         var proc = new List<byte>();
         OpH(proc, 0x802B);     // push_base
-        PushIntH(proc, 1);     // critter handle
-        PushIntH(proc, 1);     // random min
-        PushIntH(proc, 6);     // random max
-        OpH(proc, 0x80B4);     // random(1, 6)
-        OpH(proc, 0x80E8);     // critter_heal(1, <draw>) -> recorded by FakeExternals
-        OpH(proc, 0x801A);     // pop the critter_heal result
+        body(proc);
         PushIntH(proc, 0);     // epilogue
         OpH(proc, 0x800D);     // d_to_a
         OpH(proc, 0x8019);     // swapa
@@ -362,7 +361,15 @@ public class IntVmTests
     public void SharedRandomDrawsOneStreamAcrossProcs()
     {
         var externals = new FakeExternals();
-        var vm = new IntVm(IntProgram.Load(BuildRandomScript()), externals)
+        var vm = new IntVm(IntProgram.Load(BuildScript(proc =>
+        {
+            PushIntH(proc, 1);     // critter handle
+            PushIntH(proc, 1);     // random min
+            PushIntH(proc, 6);     // random max
+            OpH(proc, 0x80B4);     // random(1, 6)
+            OpH(proc, 0x80E8);     // critter_heal(1, <draw>) -> recorded by FakeExternals
+            OpH(proc, 0x801A);     // pop the critter_heal result
+        })), externals)
         {
             SharedRandom = new Hexwaste.Formats.Combat.Fo2ceRandomAdapter(new Hexwaste.Formats.Combat.Fo2ceRng(5)),
         };
@@ -374,5 +381,25 @@ public class IntVmTests
         int first = expected.Between(1, 6);
         int second = expected.Between(1, 6);
         Assert.Equal([(1, first), (1, second)], externals.Heals);
+    }
+
+    [Theory]
+    [InlineData(5, 4)]   // script sid is 1-based: scripts.lst index = sid - 1
+    [InlineData(-1, -1)] // unscripted
+    public void CreateObjectSidIsOneBased(int sid, int expectedIndex)
+    {
+        var externals = new FakeExternals();
+        var vm = new IntVm(IntProgram.Load(BuildScript(proc =>
+        {
+            PushIntH(proc, 0x05000001); // pid
+            PushIntH(proc, 12345);      // tile
+            PushIntH(proc, 0);          // elevation
+            PushIntH(proc, sid);
+            OpH(proc, 0x80B7);          // create_object_sid
+            OpH(proc, 0x801A);          // pop the new handle
+        })), externals);
+
+        Assert.True(vm.TryRunProcedure("critter_p_proc"));
+        Assert.Equal([(0x05000001, 12345, 0, expectedIndex)], externals.Creates);
     }
 }

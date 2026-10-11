@@ -75,7 +75,12 @@ only by projection, not as the lockstep first divergence.
 Status of every entry: **open**. "Evidence" is a trace pair/statistic where the M1 traces show it, or a code
 reading where the fixtures do not exercise it.
 
-### F1 — `create_object_sid` binds the wrong script (off by one)
+### F1 — `create_object_sid` binds the wrong script (off by one) — FIXED
+
+- **Fixed:** `IntVm` 0x80B7 now maps sid → `sid - 1` (-1 stays unscripted). klamath-hour re-run:
+  `scwesgrd.int` 0 calls (was 52 558); the dung now runs `zibrapoo.int`. Its call count is still
+  inflated by F2. No golden fixture moved (combat/opening/endgame/quest pass; encounter only shows
+  the pre-existing nondeterminism).
 
 - Fixture: klamath-hour.
 - Evidence: Hexwaste runs `scwesgrd.int map_update_p_proc self=obj#-3` 52 558 times; fo2ce never runs

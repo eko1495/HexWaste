@@ -1582,7 +1582,10 @@ public sealed class IntVm
             // ---- world mutation (pop orders from interpreter_extra.cc handlers)
             case 0x80B7: // create_object_sid (pops sid, elevation, tile, pid)
             {
-                int scriptIndex = PopInt(); // scripts.lst index, -1 = unscripted
+                // script sid is 1-based; -1 = unscripted.
+                // ported from fallout2-ce src/interpreter_extra.cc opCreateObject() (script->index = sid - 1)
+                int sid = PopInt();
+                int scriptIndex = sid == -1 ? -1 : sid - 1;
                 int elevation = PopInt();
                 int tile = PopInt();
                 int pid = PopInt();
