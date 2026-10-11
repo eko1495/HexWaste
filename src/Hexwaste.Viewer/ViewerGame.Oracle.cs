@@ -147,7 +147,11 @@ public sealed partial class ViewerGame
     /// mirrors Update()'s game-logic order instead (ViewerGame.cs Update: animator, combat, dude,
     /// interaction, walkers, ambient life/sfx, critter procs, elevator, map_update, transition, clock);
     /// render-only steps (projectiles, float text, palette cycling, HUD roll) and worldmap travel are
-    /// omitted. Then the fo2ce mainLoop dead/KO check (exit 5).</summary>
+    /// omitted. Then the fo2ce mainLoop dead/KO check (exit 5).
+    /// Unlike Update(), it does NOT replicate the modal early-returns (dialog / barter / loot / elevator
+    /// picker / game-over screens freeze the world there). Acceptable for M1: the oracle scenarios are
+    /// wait + end-turn only and the player never opens a modal; a script-opened modal would keep ticking
+    /// here — revisit when scenarios gain interaction actions.</summary>
     private void OracleFrame()
     {
         const int ms = OracleStepMs;
@@ -183,10 +187,18 @@ public sealed partial class ViewerGame
             OracleFail("dude dead/knocked out", 5);
     }
 
-    private static void OracleFail(string what, int code)
+    private void OracleFail(string what, int code)
+    {
+        Console.Error.WriteLine($"oracle: {what}");
+        OracleShutdown(code);
+    }
+
+    /// <summary>THE single exit point of an oracle run — success (Program.cs after game.Run returns),
+    /// end-turn cap (7), dude dead/KO (5), unhandled exception (8). Task 11 extends this with the trace
+    /// flush/close (the fo2ce side closes its trace from atexit on every exit path likewise).</summary>
+    public void OracleShutdown(int code)
     {
         Console.Out.Flush();
-        Console.Error.WriteLine($"oracle: {what}");
         Console.Error.Flush();
         Environment.Exit(code);
     }

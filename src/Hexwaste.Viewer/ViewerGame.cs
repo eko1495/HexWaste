@@ -3528,8 +3528,11 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
             }
         }
 
+        // Trace oracle: wandering is a Hexwaste-only "honest fake" (no fo2ce counterpart — the original
+        // drives critter movement from scripts), so it would move critters the reference never moves and
+        // poison the comparison. Gate ONLY the wander; fidget (above) and reg_anim dispatch are untouched.
         _wanderTimerMs -= elapsedMs;
-        if (_wanderTimerMs <= 0)
+        if (_wanderTimerMs <= 0 && !OracleRngMode)
         {
             _wanderTimerMs = _ambientRandom.Next(3000, 9000);
             if (candidates.Count > 0)

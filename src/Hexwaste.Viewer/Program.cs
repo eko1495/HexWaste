@@ -866,6 +866,16 @@ for (int i = 0; i < args.Length; i++)
 
 // Trace oracle: the scenario's seed drives the shared fo2ce stream; its actions run after any
 // other startup actions (wait -> the 10 ms PumpMs pump, end-turn -> OracleEndTurn).
+if (rngMode is not null && rngMode != "fo2ce")
+{
+    Console.Error.WriteLine($"--rng: unknown mode '{rngMode}' (only 'fo2ce')");
+    return 2;
+}
+if (scenarioPath is not null && rngMode != "fo2ce")
+{
+    Console.Error.WriteLine("--scenario needs --rng fo2ce");
+    return 2;
+}
 if (scenarioPath is not null)
 {
     var scenario = Hexwaste.Formats.Trace.OracleScenario.Parse(File.ReadAllText(scenarioPath));
@@ -967,5 +977,22 @@ using var game = new ViewerGame(gameDir!, mapName, screenshot, roofs)
     OracleTracePath = tracePath,
     OracleFixture = fixtureName,
 };
-game.Run();
+if (!game.OracleRngMode)
+{
+    game.Run();
+    return 0;
+}
+
+// Trace oracle: every run ends through OracleShutdown (the one hook Task 11 extends with the trace
+// flush) — success here, cap/dead exits from inside the scenario, and any unhandled exception.
+try
+{
+    game.Run();
+}
+catch (Exception ex)
+{
+    Console.Error.WriteLine($"oracle: unhandled exception: {ex}");
+    game.OracleShutdown(8);
+}
+game.OracleShutdown(0);
 return 0;
