@@ -29,7 +29,7 @@ public static class SaveDatReader
         (string[] maps, int automapSize) = ReadMapList(r);                  // _SlotMap2Game (:2548)
         int[] gvars2 = r.ReadInt32Array(ctx.GlobalVarCount);                // scriptsSkipGameGlobalVars (scripts.cc:1746)
         if (!gvars.AsSpan().SequenceEqual(gvars2))
-            throw new InvalidDataException("SAVE.DAT global-variable copies differ — wrong GlobalVarCount?");
+            throw new InvalidDataException("SAVE.DAT global-variable copies differ - wrong GlobalVarCount?");
         MapObject dude = ReadDude(r, ctx);                                   // _obj_load_dude (object.cc:3629)
         int centerTile = r.ReadInt32();
         CritterSection critter = ReadCritter(r);                            // critterLoad (critter.cc:203)
