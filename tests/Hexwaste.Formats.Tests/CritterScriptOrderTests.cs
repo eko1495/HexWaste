@@ -103,6 +103,22 @@ public class CritterScriptOrderTests : IDisposable
     }
 
     [Fact]
+    public void ExtraOwnerKeepsAnUnheldSidAtItsSectionPosition()
+    {
+        ScriptHost host = MakeHost();
+        MapObject dude = Critter(18000, -1);
+        MapFile map = MapWith("e.map", Critter(24, 0x04000001));
+        map.CritterSids.Add(0x04004650); // the .SAV's stale obj_dude record: no map object holds it
+
+        host.RebuildCritterScripts(map, 0x04004650, dude);
+        host.BindDudeScript(map, dude);
+
+        Assert.Equal([0x04000001, 0x04004650, ScriptHost.DudeSid], host.CritterScripts.Sids);
+        Assert.True(host.TryGetScriptOwner(0x04004650, out MapObject owner));
+        Assert.Same(dude, owner);
+    }
+
+    [Fact]
     public void ItemsGetItemTypeSidsAndStayOffTheList()
     {
         ScriptHost host = MakeHost();

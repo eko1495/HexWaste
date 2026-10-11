@@ -414,8 +414,9 @@ public sealed class ScriptHost(GameFileSystem vfs, ScriptList scripts, Hexwaste.
 
     /// <summary>Map load: the list becomes the map's critter section in file order (fo2ce scriptLoadAll),
     /// minus sids no object on the map still holds (killed critters clear their sid; a .MAP corpse that
-    /// still carries a script keeps it, as in fo2ce).</summary>
-    public void RebuildCritterScripts(MapFile map)
+    /// still carries a script keeps it, as in fo2ce). <paramref name="extraSid"/> is a sid no map object
+    /// holds but <paramref name="extraOwner"/> owns (the vanilla import's stale dude script, oracle F6).</summary>
+    public void RebuildCritterScripts(MapFile map, int extraSid = -1, MapObject? extraOwner = null)
     {
         CritterScripts.Clear();
         _scriptOwners.Clear();
@@ -423,6 +424,8 @@ public sealed class ScriptHost(GameFileSystem vfs, ScriptList scripts, Hexwaste.
             foreach (MapObject obj in elev?.Objects ?? [])
                 if (obj.Sid != -1)
                     _scriptOwners[obj.Sid] = obj;
+        if (extraSid != -1 && extraOwner is not null)
+            _scriptOwners[extraSid] = extraOwner;
         foreach (int sid in map.CritterSids)
             if (_scriptOwners.ContainsKey(sid))
                 CritterScripts.Add(sid);

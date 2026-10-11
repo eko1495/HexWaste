@@ -14,6 +14,9 @@ public sealed partial class ViewerGame
     /// <summary>--load-vanilla-save &lt;slot dir&gt;: SAVE.DAT + the gzip'd &lt;MAP&gt;.SAV of one slot.</summary>
     public string? VanillaSaveDir { get; set; }
 
+    // The stale dude script sid LoadMap's critter-list rebuild keeps (vanilla import only; -1 otherwise).
+    private int _vanillaStaleDudeSid = -1;
+
     private void LoadVanillaSaveAtStartup()
     {
         string dir = VanillaSaveDir!;
@@ -70,6 +73,14 @@ public sealed partial class ViewerGame
         foreach ((int sid, MapScriptRecord record) in saved.ScriptsBySid)
             map.ScriptsBySid[sid] = record;
         map.SpatialScripts.AddRange(saved.SpatialScripts);
+        map.CritterSids.AddRange(saved.CritterSids);
+        // Oracle F6: the .SAV keeps the dude's previous-session script record (obj_dude, owner = the dude)
+        // in the critter section, so fo2ce runs obj_dude twice per round after a save load (findings F6).
+        // fo2ce runs it as its own Script struct; Hexwaste runs the dude's obj_dude (owner.Sid = DudeSid).
+        var heldSids = saved.Elevations.Where(e => e is not null).SelectMany(e => e!.Objects)
+            .Select(o => o.Sid).ToHashSet();
+        _vanillaStaleDudeSid = saved.CritterSids.FirstOrDefault(sid => !heldSids.Contains(sid)
+            && saved.ScriptsBySid.TryGetValue(sid, out MapScriptRecord r) && r.ScriptListIndex == 0, -1); // 0 = obj_dude, as in BindDudeScript
 
         string mapName = Path.ChangeExtension(save.Header.MapFileName, ".map").ToLowerInvariant();
         _visitedMaps.Clear();
@@ -82,7 +93,7 @@ public sealed partial class ViewerGame
             LoadMap(mapName, new MapDestination(0, save.Dude.HexTile, save.Header.Elevation, save.Dude.Rotation),
                 captureOutgoing: false, transient: false, preloadedMap: map);
         }
-        finally { _isLoadingGame = false; }
+        finally { _isLoadingGame = false; _vanillaStaleDudeSid = -1; }
         if (_dude is null)
             throw new InvalidDataException($"vanilla import: map {mapName} loaded without a dude");
 

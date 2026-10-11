@@ -541,8 +541,9 @@ public sealed partial class ViewerGame
         Fid.Type(o.Fid) is ObjectType.Critter
         && !o.IsDead && o.Sid != -1 && !_waitingCompanions.Contains(o);
 
-    /// <summary>One critter_p_proc per game tick, round-robin — the flattened
-    /// _script_chk_critters ticker (scripts.cc:705), gated like the engine's
+    /// <summary>One critter_p_proc per frame, round-robin over ScriptHost.CritterScripts -- ported from
+    /// fallout2-ce src/scripts.cc _script_chk_critters(), a _doBkProcesses ticker that runs once per
+    /// main-loop pass (60 Hz live, 100 Hz on the 10 ms harness/oracle frames), gated like the engine's
     /// !dialog && !combat && !movie check.</summary>
     private void PumpCritterProcs(double elapsedMs)
     {
@@ -550,25 +551,23 @@ public sealed partial class ViewerGame
             || _dialog is not null || _companionHub is not null || _lootContainer is not null || _worldmapOpen)
             return;
 
-        _critterProcTimerMs += elapsedMs;
-        if (_critterProcTimerMs < 100)
+        // P30 A-M2: the periodic sneak re-check (sneakEventProcess) is game-time driven: one reschedule
+        // "tick" per 100 ms, independent of the per-frame critter heartbeat. Isolated _sneakRng.
+        _sneakTimerMs += elapsedMs;
+        if (_sneakTimerMs >= 100)
+        {
+            _sneakTimerMs = 0;
+            if (_sneak.FlagSet && --_sneakTicksRemaining <= 0)
+                RollSneak();
+        }
+
+        if (_scriptHost.CritterScripts.Next() is not { } sid || !_scriptHost.TryGetScriptOwner(sid, out MapObject critter))
+            return; // empty list, or an owner gone this frame: the slot is consumed, as in fo2ce
+        // Hexwaste deviation: a "wait here" companion's slot is consumed but its follow proc does not run
+        // (phase-10 M4; vanilla handles waiting inside the party scripts).
+        if (_waitingCompanions.Contains(critter))
             return;
-        _critterProcTimerMs = 0;
-
-        // P30 A-M2: the periodic sneak re-check (sneakEventProcess) on the 100 ms heartbeat — one
-        // reschedule "tick" = one heartbeat. Fires only while the flag is set; uses the isolated
-        // _sneakRng so it can't perturb any other stream.
-        if (_sneak.FlagSet && --_sneakTicksRemaining <= 0)
-            RollSneak();
-
-        // A "wait here" companion is skipped, so its follow critter_p_proc never runs
-        // and it holds position until told to follow again (phase-10 M4).
-        List<MapObject> scripted = [.. _solidObjects[_elevation].Where(IsHeartbeatEligible)];
-        if (scripted.Count == 0)
-            return;
-
-        _critterProcIndex %= scripted.Count;
-        MapObject critter = scripted[_critterProcIndex++];
+        // Hexwaste deviation: a script without critter_p_proc runs nothing (fo2ce runs procedure 1, F8).
         var result = _scriptHost.RunObjectProc(critter, _map, _dude?.Dude, "critter_p_proc");
         if (result is not null)
             foreach (string line in result.Messages)

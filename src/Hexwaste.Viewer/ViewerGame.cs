@@ -146,11 +146,8 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
     /// RNG is known.</summary>
     private Formats.Combat.CombatEngine _combat = null!;
 
-    /// <summary>critter_p_proc round-robin (the engine's _script_chk_critters
-    /// ticker runs ONE critter script per frame; we pump at the 10 Hz game
-    /// tick instead of our 60 Hz frame rate).</summary>
-    private double _critterProcTimerMs;
-    private int _critterProcIndex;
+    /// <summary>P30 A-M2: the 100 ms sneak re-check clock (formerly also the critter heartbeat's).</summary>
+    private double _sneakTimerMs;
 
     /// <summary>P1-M2: the recurring map_update heartbeat clock. The engine re-fires SCRIPT_PROC_MAP_UPDATE
     /// for every script every 600 game ticks (scripts.cc:517 mapUpdateEventProcess → queueAddEvent(600));
@@ -1879,6 +1876,9 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
             // boxes are invisible items whose map_enter stocks the store and
             // store_external()s the box (the engine runs scripts regardless
             // of visibility).
+            // Oracle F6: the critter heartbeat list is the map's critter section, then the dude (and, after
+            // map_enter, the party via AllocateSid in InjectPartyMembers).
+            _scriptHost.RebuildCritterScripts(_map, _vanillaStaleDudeSid, _dude?.Dude);
             if (_dude is not null)
                 _scriptHost.BindDudeScript(_map, _dude.Dude);
             IEnumerable<MapObject> scripted = WithDudeScript(_map.Elevations
