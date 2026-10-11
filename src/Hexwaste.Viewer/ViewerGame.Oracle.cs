@@ -42,9 +42,9 @@ public sealed partial class ViewerGame
 {
     /// <summary>--rng fo2ce: every LOGIC draw comes from one shared <see cref="Fo2ceRng"/>.</summary>
     public bool OracleRngMode { get; set; }
-    /// <summary>--trace &lt;path&gt; (consumed by the trace sink, Task 11).</summary>
+    /// <summary>--trace &lt;path&gt; (the trace sink path).</summary>
     public string? OracleTracePath { get; set; }
-    /// <summary>--fixture &lt;name&gt; (the trace header's fixture name, Task 11).</summary>
+    /// <summary>--fixture &lt;name&gt; (the trace header's fixture name).</summary>
     public string? OracleFixture { get; set; }
     /// <summary>The shared oracle stream; null outside oracle mode (or before the post-load seed).</summary>
     public Fo2ceRng? OracleRng { get; private set; }
@@ -134,6 +134,7 @@ public sealed partial class ViewerGame
         return "?";
     }
 
+    private int _oracleWorkTicks; // OracleFrame calls = 10 ms work ticks run by the scenario
     private const int OracleEndTurnCapMs = 600000; // kOracleEndTurnCapMs (trace.patch)
     private const int OracleStepMs = 10;           // kOracleStepMs
 
@@ -191,6 +192,7 @@ public sealed partial class ViewerGame
     private void OracleFrame()
     {
         const int ms = OracleStepMs;
+        _oracleWorkTicks++;
         _animator.Update(ms);
         _combat.Step();
         _dude?.Update(ms);
@@ -230,10 +232,12 @@ public sealed partial class ViewerGame
     }
 
     /// <summary>THE single exit point of an oracle run — success (Program.cs after game.Run returns),
-    /// end-turn cap (7), dude dead/KO (5), unhandled exception (8). Task 11 extends this with the trace
-    /// flush/close (the fo2ce side closes its trace from atexit on every exit path likewise).</summary>
+    /// end-turn cap (7), dude dead/KO (5), unhandled exception (8). Flushes/closes the trace first (the
+    /// fo2ce side closes its trace from atexit on every exit path likewise).</summary>
     public void OracleShutdown(int code)
     {
+        if (code == 0) // the fo2ce runner's "scenario done" line (tick accounting: tools/fo2ce-trace/README.md)
+            Console.Error.WriteLine($"oracle: scenario done at t={_clock.Ticks} after {_oracleWorkTicks} work ticks");
         OracleTrace.Close(); // flush the trace (fo2ce: atexit oracleTraceClose)
         Console.Out.Flush();
         Console.Error.Flush();

@@ -52,7 +52,9 @@ public sealed partial class ViewerGame
         //    .MAP. Its header has flags & 1, so LoadMap skips the .gam MVAR override (map.cc:922-938) and
         //    map_enter runs with firstRun = 0 (RunMapEnter's flags default; no delta is registered).
         string savPath = Directory.GetFiles(slotDir)
-            .First(f => Path.GetFileName(f).Equals(save.Header.MapFileName, StringComparison.OrdinalIgnoreCase));
+            .FirstOrDefault(f => Path.GetFileName(f).Equals(save.Header.MapFileName, StringComparison.OrdinalIgnoreCase))
+            ?? throw new FileNotFoundException(
+                $"vanilla import: {slotDir} has no {save.Header.MapFileName} (the map SAVE.DAT names)");
         MapFile saved;
         using (Stream s = SlotFiles.OpenMaybeGzip(savPath))
             saved = MapFile.Load(s, _protos);
@@ -151,6 +153,10 @@ public sealed partial class ViewerGame
         _currentAreaId = save.Worldmap.CurrentArea;
 
         // 5. queueLoad (queue.cc:84): map each saved event onto the Hexwaste queue that models it.
+        //    Tie order differs: fo2ce queueLoad re-inserts the pre-existing (map_enter-created) events
+        //    AFTER saved events of equal time (queue.cc:171-184), so saved events win same-tick ties;
+        //    Hexwaste appends the imported timers behind them. Recorded as finding F10
+        //    (docs/research-notes/oracle-m1-findings-2026-10.md).
         int imported = ImportVanillaQueue(save.Queue, save.Dude.Id);
 
         int objects = _map.Elevations.Sum(e => e?.Objects.Count ?? 0);

@@ -39,7 +39,7 @@ string? menuStartState = null;
 bool fullscreen = false;
 string? rngMode = null;      // trace oracle: --rng fo2ce
 string? scenarioPath = null; // trace oracle: --scenario <path>
-string? tracePath = null;    // trace oracle: --trace <path> (written in Task 11)
+string? tracePath = null;    // trace oracle: --trace <path>
 string? fixtureName = null;  // trace oracle: --fixture <name>
 
 for (int i = 0; i < args.Length; i++)
@@ -883,7 +883,17 @@ if (tracePath is not null && rngMode != "fo2ce")
 }
 if (scenarioPath is not null)
 {
-    var scenario = Hexwaste.Formats.Trace.OracleScenario.Parse(File.ReadAllText(scenarioPath));
+    Hexwaste.Formats.Trace.OracleScenario scenario;
+    try
+    {
+        scenario = Hexwaste.Formats.Trace.OracleScenario.Parse(File.ReadAllText(scenarioPath));
+    }
+    catch (Exception ex) when (ex is FormatException or IOException or UnauthorizedAccessException)
+    {
+        // Exit 6 = bad scenario, the same code the fo2ce runner uses (oracle.cc oracleScenarioBegin).
+        Console.Error.WriteLine($"oracle: bad scenario {scenarioPath}: {ex.Message}");
+        return 6;
+    }
     rngSeed = scenario.Seed;
     foreach (var action in scenario.Actions)
         actions.Add(action switch
@@ -988,8 +998,8 @@ if (!game.OracleRngMode)
     return 0;
 }
 
-// Trace oracle: every run ends through OracleShutdown (the one hook Task 11 extends with the trace
-// flush) — success here, cap/dead exits from inside the scenario, and any unhandled exception.
+// Trace oracle: every run ends through OracleShutdown (which flushes and closes the trace) — success
+// here, cap/dead exits from inside the scenario, and any unhandled exception.
 try
 {
     game.Run();

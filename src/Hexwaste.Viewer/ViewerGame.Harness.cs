@@ -2689,7 +2689,9 @@ public sealed partial class ViewerGame
         // bench, which have their own exits in Draw) settle their actions here
         // and then have nothing left to do — exit cleanly so the determinism
         // harness gets a stdout + exit code without killing a hung window.
-        if (StartupActions.Count > 0 && _screenshotPath is null && BenchFrames == 0)
+        // Oracle runs always end here, even a seed-only scenario with no actions (fo2ce likewise exits
+        // at its first tick, before any work); Program.cs then exits through OracleShutdown(0).
+        if ((StartupActions.Count > 0 || OracleRngMode) && _screenshotPath is null && BenchFrames == 0)
             _exitAfterStartupActions = true;
     }
 

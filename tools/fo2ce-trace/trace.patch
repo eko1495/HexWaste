@@ -501,10 +501,10 @@ index 20b7aeff..f5262706 100644
  
 diff --git a/src/oracle.cc b/src/oracle.cc
 new file mode 100644
-index 00000000..ddeecf6b
+index 00000000..f1ab4bea
 --- /dev/null
 +++ b/src/oracle.cc
-@@ -0,0 +1,495 @@
+@@ -0,0 +1,498 @@
 +#include "oracle.h"
 +
 +#include <stdio.h>
@@ -740,16 +740,10 @@ index 00000000..ddeecf6b
 +}
 +
 +static FILE* gOracleTrace = nullptr;
-+static int gOracleSuppress = 0; // >0 while the scenario runner itself draws/acts
 +
 +bool oracleTracing()
 +{
-+    return gOracleTrace != nullptr && gOracleSuppress == 0;
-+}
-+
-+void oracleSuppress(bool on)
-+{
-+    gOracleSuppress += on ? 1 : -1;
++    return gOracleTrace != nullptr;
 +}
 +
 +static void oracleTraceClose()
@@ -874,6 +868,7 @@ index 00000000..ddeecf6b
 +static unsigned int gOracleScnUntil = 0; // WAIT_UNTIL / PRESSED target, or seek deadline
 +static int gOracleScnTurnsLeft = 0;
 +static bool gOracleScnInStep = false;
++static unsigned int gOracleScnWorkTicks = 0; // ticks whose work ran while the scenario was armed
 +
 +[[noreturn]] static void oracleScenarioFailExit(const char* what, int code)
 +{
@@ -928,9 +923,16 @@ index 00000000..ddeecf6b
 +        exit(6);
 +    }
 +    gOracleScnIndex = 0;
++    // Armed only: the first command is fetched by the first tick's oracleTick, like every later one.
++    // Tick accounting (tools/fo2ce-trace/README.md): oracleTick runs at the START of tickersExecute,
++    // before that pass's tickers and the rest of the mainLoop iteration (the tick's "work"), so a
++    // command fetched at clock T counts the tick at T as its first work tick. `wait N` started at T
++    // ends at the first tick with clock >= T + N - before that tick's work - i.e. after exactly
++    // ceil(N / 10) work ticks. Fetching here (before the first tick, at clock C) instead would end a
++    // first `wait N` at C + N = the (N/10)-th tick, one work tick short. Nothing between this call and
++    // mainLoop's first tickersExecute does game work, so a scenario with no commands still exits with
++    // zero work ticks (at the first tick's step).
 +    gOracleScnState = ORACLE_SCN_NEXT;
-+    // Instantaneous commands (wait 0, end-turn 0) complete before the first tick.
-+    oracleScenarioStep();
 +}
 +
 +static void oracleScenarioStep()
@@ -946,7 +948,7 @@ index 00000000..ddeecf6b
 +            break;
 +        case ORACLE_SCN_NEXT:
 +            if (gOracleScnIndex >= gOracleScnCount) {
-+                fprintf(stderr, "oracle: scenario done at clock %u\n", gOracleClock);
++                fprintf(stderr, "oracle: scenario done at clock %u after %u work ticks\n", gOracleClock, gOracleScnWorkTicks);
 +                gOracleScnState = ORACLE_SCN_IDLE;
 +                exit(0); // atexit closes the trace
 +            }
@@ -997,15 +999,16 @@ index 00000000..ddeecf6b
 +        break;
 +    }
 +    gOracleScnInStep = false;
++    gOracleScnWorkTicks++; // still armed: this tick's work (tickers + mainLoop iteration) runs now
 +}
 +
 +} // namespace fallout
 diff --git a/src/oracle.h b/src/oracle.h
 new file mode 100644
-index 00000000..b88dc4c2
+index 00000000..f63a118f
 --- /dev/null
 +++ b/src/oracle.h
-@@ -0,0 +1,48 @@
+@@ -0,0 +1,47 @@
 +#ifndef FALLOUT_ORACLE_H_
 +#define FALLOUT_ORACLE_H_
 +
@@ -1040,7 +1043,6 @@ index 00000000..b88dc4c2
 +
 +void oracleTraceOpen(const char* path, const char* header);
 +bool oracleTracing();
-+void oracleSuppress(bool on);
 +void oracleTraceRng(int min, int max, int result, const char* file, const char* func);
 +void oracleTraceProc(Object* self, const char* programName, const char* procName);
 +void oracleTraceGvar(int index, int oldValue, int newValue);
