@@ -493,6 +493,7 @@ public sealed partial class ViewerGame
                     (IReadOnlyList<string> destroyLines, _) = RunDestroyProc(obj, null);
                     foreach (string line in destroyLines)
                         Log(line);
+                    RemoveCritterScript(obj);
                     obj.Sid = -1;
                 }
                 _animator.Remove(obj);
@@ -505,6 +506,7 @@ public sealed partial class ViewerGame
             }
             else
             {
+                RemoveCritterScript(obj);
                 obj.Sid = -1;
                 obj.CombatResults |= 0x80; // DAM_DEAD
                 obj.CurrentHp = Math.Min(obj.CurrentHp, 0);
@@ -525,6 +527,7 @@ public sealed partial class ViewerGame
     {
         if (obj == _dude?.Dude || obj.IsDead)
             return;
+        RemoveCritterScript(obj);
         obj.Sid = -1;
         obj.CombatResults |= 0x80; // DAM_DEAD
         obj.CurrentHp = Math.Min(obj.CurrentHp, 0);
@@ -1387,6 +1390,8 @@ public sealed partial class ViewerGame
         ConvertToCorpse(critter, deathAnim);
         return false;
     }
+
+    public void RemoveCritterScript(MapObject critter) => _scriptHost?.RemoveScript(critter.Sid);
 
     /// <summary>Forget bookkeeping for a dead critter (walker + home tile).</summary>
     public void OnCritterRemoved(MapObject critter)

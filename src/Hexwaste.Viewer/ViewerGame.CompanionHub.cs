@@ -124,6 +124,7 @@ public sealed partial class ViewerGame
         OnPartyChanged(member, joined: false); // clears _partyScriptIndex, logs "leaves"
         _waitingCompanions.Remove(member);
         member.Team = _originalTeam.GetValueOrDefault(member, member.Team); // Vic → 25, etc.
+        RemoveCritterScript(member);
         member.Sid = -1; // halt the follow loop — an inert NPC again
         if (scriptIndex >= 0)
             _dismissedCompanions[member] = scriptIndex;

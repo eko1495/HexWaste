@@ -5515,6 +5515,7 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
                 // converting (CombatEngine.cs), so mirror it here.
                 obj.CombatResults |= 0x80; // DAM_DEAD
                 obj.CurrentHp = 0;
+                RemoveCritterScript(obj);
                 obj.Sid = -1;
                 ConvertToCorpse(obj, PickDeathAnim(obj));
             }
