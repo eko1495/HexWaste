@@ -96,8 +96,9 @@ public class StaleDudeScriptTests : IDisposable
         map.ScriptsBySid[critter.Sid] = new MapScriptRecord(0, -1, 0);
         map.ScriptsBySid[StaleSid] = new MapScriptRecord(0, 0, 1); // LVAR seeded 5
         map.CritterSids.AddRange([critter.Sid, StaleSid]);
-        host.RebuildCritterScripts(map, StaleSid, dude);
-        host.BindDudeScript(map, dude); // list: critter, stale, dude
+        host.RebuildCritterScripts(map);
+        host.BindDudeScript(map, dude);
+        host.ReplaceDudeScriptAfterVanillaLoad(map, dude, StaleSid); // list: critter, stale, dude
 
         var sw = new StringWriter();
         try
@@ -115,7 +116,7 @@ public class StaleDudeScriptTests : IDisposable
         string[] selves = sw.ToString().Split('\n')
             .Where(l => l.Contains(" PROC ")).Select(l => l[(l.LastIndexOf('#') + 1)..].Trim()).ToArray();
         Assert.Equal(["14", "24", "18000", "18000"], selves);
-        Assert.Equal(0, host.GlobalVars[777]); // gDude (LVAR 0) ran after the stale slot (LVAR 5)
+        Assert.Equal(0, host.GlobalVars[777]); // both fresh after Replace
     }
 
     [Fact]
@@ -141,5 +142,28 @@ public class StaleDudeScriptTests : IDisposable
         Assert.Equal(0, host.GlobalVars[777]); // stale: fresh zeros, not the .SAV's 7
         host.RunScriptProc(ScriptHost.DudeSid, dude, map, dude, 0, -1, "map_update_p_proc");
         Assert.Equal(0, host.GlobalVars[777]); // dude: fresh zeros, not 99
+    }
+
+    [Fact]
+    public void ReplaceKeepsCritterSpawnedAfterTheDude()
+    {
+        ScriptHost host = MakeHost();
+        MapFile map = EmptyMap([7]);
+        map.Elevations[0] = new MapElevation { Squares = new int[MapElevation.SquareGridSize] };
+        MapObject critter = Obj(24, 0x04000001, ObjectType.Critter);
+        MapObject dude = Obj(18000, -1, ObjectType.Critter);
+        map.Elevations[0]!.Objects.Add(critter);
+        map.ScriptsBySid[critter.Sid] = new MapScriptRecord(0, -1, 0);
+        map.CritterSids.AddRange([critter.Sid, StaleSid]);
+        host.RebuildCritterScripts(map);
+        host.BindDudeScript(map, dude);
+        MapObject spawned = Obj(30, -1, ObjectType.Critter);
+        spawned.Sid = host.AllocateSid(map, 0, spawned);
+
+        host.ReplaceDudeScriptAfterVanillaLoad(map, dude, StaleSid);
+
+        Assert.Equal([critter.Sid, StaleSid, spawned.Sid, ScriptHost.DudeSid], host.CritterScripts.Sids);
+        Assert.True(host.TryGetScriptOwner(StaleSid, out MapObject owner));
+        Assert.Same(dude, owner);
     }
 }

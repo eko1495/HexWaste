@@ -87,6 +87,8 @@ public sealed partial class ViewerGame
         {
             MapScriptRecord rec = saved.ScriptsBySid[staleDudeSid];
             int count = rec.LocalVarsCount;
+            if (count <= 0)
+                Console.Error.WriteLine("vanilla import: stale obj_dude record has no LVAR block; dude LVAR seed is empty");
             var slice = new int[Math.Max(count, 0)];
             for (int i = 0; i < slice.Length && rec.LocalVarsOffset >= 0 && rec.LocalVarsOffset + i < saved.LocalVariables.Length; i++)
                 slice[i] = saved.LocalVariables[rec.LocalVarsOffset + i];
