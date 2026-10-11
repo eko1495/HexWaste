@@ -229,6 +229,7 @@ public interface ICombatHost
     /// combat.cc:4870 — beside the XP award, same gating). Default no-op (P38); the fake host has
     /// no kill tracker.</summary>
     void RecordKill(MapObject victim) { }
+
     /// <summary>The victim's script leaves the critter heartbeat list (scriptRemove, combat.cc:4876), called
     /// while critter.Sid still holds the sid. Default no-op; the viewer forwards to ScriptHost.RemoveScript.</summary>
     void RemoveCritterScript(MapObject critter) { }

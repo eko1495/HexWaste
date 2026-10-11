@@ -148,7 +148,7 @@ reading where the fixtures do not exercise it.
 ### F6 — critter_p_proc cadence and order — FIXED
 
 **FIXED.** `ScriptHost.CritterScripts` (`CritterScriptList`) holds the critter sids in fo2ce's order
-(file order on load, append on add, tail-into-slot on remove, dude twice after a vanilla save load) and
+(file order on load, append on add, tail-into-slot on remove, the stale .SAV obj_dude slot plus the dude after a vanilla save load) and
 `PumpCritterProcs` runs one per frame. After a vanilla save load, the .SAV critter sid that no map object
 holds and whose script record is obj_dude (scripts.lst index 0; 0x04004650 = 0x04000000 | dude id 18000 in
 all three fixtures) is kept at its section position, owned by the dude, and `BindDudeScript` then appends
@@ -160,6 +160,19 @@ see F16); arcaves-ambush line 9 (fo2ce `LVAR sid=0x04000008 0 0->-3`, Hexwaste
 `PROC zclscorp.int combat_p_proc self=obj#102`). Still unverified: the list order after a map change (no
 oracle fixture changes maps). No golden fixture moved (the suites record probe/final-state lines, and
 combat scenarios gate the heartbeat off); golden runtime 91.55 s -> ~96 s.
+
+Because the heartbeat now also runs critters on other elevations, the cross-floor gates were ported:
+`obj_can_see_obj` / `obj_can_hear_obj` return false and `tile_distance_objs` returns 9999 unless both
+objects share an elevation (`interpreter_extra.cc:1793` / `:2631` / `:1498`).
+
+Known deviations:
+- Critter procs stop during loot, the companion hub and the worldmap. fo2ce's `_doBkProcesses` ticker keeps
+  running there; only dialog, combat and movies stop it.
+- Script-driven walks (`MoveRequested` / reg_anim moves) of a critter not on the dude's elevation are
+  refused. fo2ce animates it on its own elevation; Hexwaste's walker only models the current one (blocked
+  tiles, draw list, spatials). Float lines from such critters are also kept out of the message log.
+
+Original finding:
 
 - Fixtures: all. fo2ce runs one critter script per `tickersExecute` pass (100 Hz on the oracle's 10 ms
   virtual clock): 359 999 critter_p_proc in klamath-hour; Hexwaste pumps at 10 Hz: 36 000. Order also
@@ -267,9 +280,8 @@ ms rather than reading the game clock (the map-update heartbeat probe feeds it m
 
 - **Two obj_dude scripts after load.** fo2ce's first LVAR writes come from sid 0x04004650 and 0x04000005
   (artemple) / 0x04000028 (klamath), both `self=obj#18000`; obj_dude gets exactly 2 of every 3 critter
-  slots (artemple 4 000 vs acklint 1 999). Likely the map save's own dude-script entry plus the one
-  re-created by `scriptsSetDudeScript` around `_obj_load_dude` (`object.cc:3636-3660`). To verify against the
-  original game before Hexwaste copies it.
+  slots (artemple 4 000 vs acklint 1 999). Cause: the stale .SAV obj_dude record plus the dude's own
+  script; see F16.
 - **Render-only frames advance the virtual clock 10 ms** (`oracleRenderGuard`, see
   `tools/fo2ce-trace/README.md`). An oracle-model artefact with no Hexwaste equivalent; affects only waits
   inside render-only loops (end-turn button animation, dialog fidgets).
@@ -296,8 +308,8 @@ ms rather than reading the game clock (the map-update heartbeat probe feeds it m
 1. Fix F1 (one line, `sid - 1`), re-record the goldens it moves, re-run the oracle.
 2. Decide the clock model (F2): an oracle-only switch to the authentic 1 tick per 100 ms, frozen in combat,
    is enough to make traces comparable; the gameplay rate is a separate design question.
-3. Attach obj_dude.int (F3) and port critter-list order + cadence (F6) and the map_update sources/filter
-   (F7) — after these the first divergence should move off the PROC stream onto RNG/combat lines.
+3. Done: attach obj_dude.int (F3) and port critter-list order + cadence (F6). To do: the map_update
+   sources/filter (F7) — after these the first divergence should move off the PROC stream onto RNG/combat lines.
 4. Then the combat joiner path (F5) and re-check F4.
 5. F8–F13 are small, independent ports; F12/F14 first need trace-alignment decisions. Each fix should be
    validated by a fresh `oracle-run.sh` showing the first divergence moving later.
