@@ -61,8 +61,22 @@ Ported with `// ported from fallout2-ce src/scripts.cc _script_chk_critters() / 
 - Runtime spawns: `ScriptHost.AllocateSid` takes the script type. A critter gets a type-4 sid (`0x04800000`
   range, clear of map sids and of `DudeSid`) and is appended. Items keep type 3. The callers in the
   create-object paths pass the type from the object's fid type.
-- Deaths and destroys: when a critter dies or is destroyed, its sid is removed from the list. Find these by
-  grepping every site that sets `IsDead` or removes an object, and route each one through one helper.
+- Deaths: fo2ce removes the script at the moment of death (`critterKill`, `critter.cc:898`), so the list
+  order after a fight depends on the order of deaths. Removing lazily when the round-robin reaches a dead
+  critter would break the oracle match after any combat, so every kill site removes the sid immediately
+  through one viewer helper, `RemoveCritterScript(MapObject)`. The five sites that set `DAM_DEAD` (0x80):
+  - `CombatEngine.KillCritter` (`src/Hexwaste.Formats/Combat/CombatEngine.cs:2271`). It lives in
+    Formats and cannot call the viewer, so it calls a new `ICombatHost.RemoveCritterScript(MapObject)`
+    (default no-op, like `RecordKill`) right after `destroy_p_proc`, matching the engine's "then the
+    script is removed" order (`combat.cc:4850-4876`). The viewer's host forwards it to the helper.
+  - `KillCrittersByType` (`src/Hexwaste.Viewer/ViewerGame.CombatHost.cs:509`).
+  - `KillCritterObject` (`ViewerGame.CombatHost.cs:529`).
+  - `ViewerGame.cs:5516`.
+  - Save load (`ViewerGame.SaveLoad.cs:165`) marks restored corpses dead. The list is rebuilt after it,
+    so it calls nothing and must not re-add dead critters' sids.
+- Destroys: fo2ce also removes the script when its object is destroyed (`object.cc:3905`). About 14 viewer
+  sites take an object off the map; each one that can remove a scripted critter calls the same helper.
+  The list is rebuilt from the map on load, so only in-session removals matter.
 - Vanilla save import (the dude twice): the first implementation step checks whether the imported `.SAV`
   script section carries a critter record for the dude. If it does, `--load-vanilla-save` keeps that entry
   in the list, so the dude appears twice as in fo2ce. If it does not, find the real source of the second
@@ -93,9 +107,7 @@ Ported with `// ported from fallout2-ce src/scripts.cc _script_chk_critters() / 
   - an empty list returns null;
   - `Clear()` keeps the counter;
   - duplicate sids are allowed.
-- **Game data:** `MapFile.CritterSids` for `kladwtwn.map` follows the file's critter-section order. Pin its
-  first entries against the fo2ce klamath-hour first round.
-- **Oracle:** rerun all three fixtures. Success means:
+- **Oracle:** rerun all three fixtures. This also checks the list order against fo2ce. Success means:
   - the `critter_p_proc` sequence matches fo2ce's;
   - the first divergence moves past line 2;
   - the new first divergence is recorded in the findings doc.
