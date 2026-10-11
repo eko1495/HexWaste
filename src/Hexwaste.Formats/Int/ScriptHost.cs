@@ -518,7 +518,9 @@ public sealed class ScriptHost(GameFileSystem vfs, ScriptList scripts, Hexwaste.
     {
         foreach (MapFile.SpatialScript spatial in map.SpatialScripts)
         {
-            MapObject self = GetSpatialSelf(map, spatial);
+            MapObject self = GetSpatialSelf(map, spatial); // also registers the sid, so keep it unconditional
+            if (!DefinesProc(spatial.ScriptListIndex, procName))
+                continue;
             ScriptRunResult? result = RunProc(spatial.ScriptListIndex, map, spatial.Sid,
                 map.ScriptsBySid[spatial.Sid], self, dude, fixedParam, -1, [procName]);
             if (result is not null)
@@ -1142,10 +1144,32 @@ public sealed class ScriptHost(GameFileSystem vfs, ScriptList scripts, Hexwaste.
                 fixedParam: 0, -1, ["map_update_p_proc"]);
         }
 
-        foreach (MapObject obj in objects.ToList())
-            RunObjectProc(obj, map, dude, 0, -1, "map_update_p_proc");
-
+        // ported from fallout2-ce src/scripts.cc scriptsExecMapUpdateScripts(): the type lists run in
+        // enum order (system, SPATIAL, timed, item, critter), so spatials come before object scripts,
+        // and only scripts with procs[proc] > 0 (the proc exists) are called.
         RunSpatialMapProc(map, dude, 0, "map_update_p_proc"); // P113 (item 7e)
+
+        foreach (MapObject obj in objects.ToList())
+            if (map.ScriptsBySid.TryGetValue(obj.Sid, out MapScriptRecord? record)
+                && DefinesProc(record.ScriptListIndex, "map_update_p_proc"))
+                RunObjectProc(obj, map, dude, 0, -1, "map_update_p_proc");
+    }
+
+    /// <summary>Whether the script defines the proc (fallout2-ce procs[proc] > 0). A load failure counts
+    /// as defined so RunProc reports it as before.</summary>
+    private bool DefinesProc(int scriptListIndex, string procName)
+    {
+        string? path = scripts.GetScriptPath(scriptListIndex);
+        if (path is null)
+            return false;
+        try
+        {
+            return GetProgram(path) is not { } program || program.FindProcedure(procName) >= 0;
+        }
+        catch (Exception ex) when (ex is InvalidDataException or FileNotFoundException or NotSupportedException)
+        {
+            return true;
+        }
     }
 
     /// <summary>

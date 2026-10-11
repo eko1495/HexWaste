@@ -119,8 +119,7 @@ reading where the fixtures do not exercise it.
   `is_dropping_p_proc` before drop_p_proc. Re-run: artemple line 2 is now the same proc in both engines
   (`obj_dude.int critter_p_proc self=obj#18000`, one tick apart: F6 cadence); arcaves dude combat_p_proc
   6 = 6, TURN 16 = 16. Call counts still differ by the F6 cadence (artemple critter_p_proc 4 000 vs 300).
-  New observation: fo2ce fires map_update every ~10 s (artemple 6/min, klamath 360/h) vs Hexwaste every
-  60 s; fo2ce has an extra 30 000 ms bk-time map_update in `_script_chk_timed_events` that Hexwaste lacks.
+  map_update cadence: see F7 (fo2ce 3 rounds/min, Hexwaste 1; an earlier "every ~10 s" reading here was wrong).
   Golden moved: companion-lifecycle (heartbeatEligible +1 = the dude).
 
 - Fixtures: all. artemple-idle: 4 000 of 6 014 fo2ce PROC lines are `obj_dude.int critter_p_proc`, plus
@@ -159,6 +158,15 @@ reading where the fixtures do not exercise it.
 
 ### F7 — map_update cadence and the "has the proc" filter
 
+**FIXED** (bk-time source, procs filter, spatials first). Hexwaste adds the 30 000 ms bk-time round
+(`ViewerGame.CombatHost.cs` PumpMapUpdate, runs in combat, never reset on map load); `ScriptHost.RunMapUpdate`
+skips scripts without `map_update_p_proc` and runs spatials before objects; the trace patch starts fo2ce's
+window at save-load completion (`oracleResetBkMapUpdate`, from `getTicks()` — `_get_bk_time()` is stale
+there). klamath-hour and artemple-idle now run map_update at the same ticks (180/h) with the same script
+set per round. Still open: fo2ce runs `obj_dude.int map_update_p_proc` twice per round (Hexwaste once),
+and object order within a round follows fo2ce's script lists (see F6). The 600-tick source still counts
+ms rather than reading the game clock (the map-update heartbeat probe feeds it ms directly).
+
 - Fixture: klamath-hour. fo2ce runs 180 map_update rounds per hour (gaps alternate 6/294/300 ticks),
   Hexwaste 60. Hexwaste also runs `map_update_p_proc` for `ksbboard.int`, `stuff.int`, `trespass.int`
   (60 each), which fo2ce never runs.
@@ -166,6 +174,15 @@ reading where the fixtures do not exercise it.
   a 30 000 ms bk-time pass (`scripts.cc:758-760`) — Hexwaste only the first (`MapUpdateIntervalMs`,
   `ViewerGame.cs:160`). fo2ce `scriptsExecMapUpdateScripts` only calls scripts whose `procs[proc] > 0`
   (`scripts.cc:2642`); Hexwaste calls every scripted object (`ScriptHost.RunMapUpdate`, `ScriptHost.cs:1100`).
+- Checked (after F1-F3): confirmed. klamath-hour fo2ce rounds land at t=…694/…994 (bk, every 300 ticks)
+  and …000/…600 (queue, every 600 ticks): 120 + 60 = 180/h. The bk timer (`_doBkProcesses` ticker) runs
+  whenever iso is enabled and no dialog/movie is up — including combat and inventory — and
+  `_last_light_time` is never reset, so its phase is time since process start, not since map load.
+  The extra Hexwaste lines are trace-only: `kcitizen`, `ksbboard`, `stuff`, `trespass` and the other
+  extras define no `map_update_p_proc`, but `ScriptHost.TraceProc` logs before `TryRunProcedure` finds
+  the proc missing (fo2ce returns before its PROC line). fo2ce also runs `obj_dude.int map_update_p_proc`
+  twice per round, and puts spatial scripts before object scripts (script-type list order); Hexwaste runs
+  the dude once and spatials last.
 
 ### F8 — Missing proc → fo2ce runs procedure 1; Hexwaste runs nothing
 

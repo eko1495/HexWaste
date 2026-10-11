@@ -1,3 +1,6 @@
+using Hexwaste.Formats.Int;
+using Hexwaste.Formats.Map;
+using Hexwaste.Formats.Proto;
 using Hexwaste.Formats.Trace;
 
 namespace Hexwaste.Formats.Tests;
@@ -85,5 +88,33 @@ public class OracleTraceTests
             "t=0 MOVE obj#9 -1->500\n" +
             "t=0 SPAWN obj#10 pid=0x00000029 tile=-1\n",
             sw.ToString().Replace("\r\n", "\n"));
+    }
+
+    // fallout2-ce scriptsExecMapUpdateScripts() calls only scripts with procs[proc] > 0: kcsulik.int
+    // defines map_update_p_proc, ksbboard.int (the Klamath sign board) does not.
+    [GameDataFact]
+    public void MapUpdateSkipsScriptsWithoutTheProc()
+    {
+        using var vfs = GameFileSystem.Open(GameData.RequiredDir);
+        var protos = new ProtoDatabase(vfs);
+        var host = new ScriptHost(vfs, ScriptList.Load(vfs), protos);
+        MapFile map;
+        using (Stream stream = vfs.OpenRead(@"maps\kladwtwn.map"))
+            map = MapFile.Load(stream, protos);
+        var sw = new StringWriter();
+        try
+        {
+            OracleTrace.Open(sw, "hdr");
+            host.RunMapUpdate(map, map.Elevations.Where(e => e is not null).SelectMany(e => e!.Objects)
+                .Where(o => o.Sid != -1), dude: null);
+        }
+        finally
+        {
+            OracleTrace.Close();
+        }
+
+        string trace = sw.ToString();
+        Assert.Contains("kcsulik.int map_update_p_proc", trace);
+        Assert.DoesNotContain("ksbboard.int", trace);
     }
 }

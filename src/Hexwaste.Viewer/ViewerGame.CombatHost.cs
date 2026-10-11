@@ -577,12 +577,22 @@ public sealed partial class ViewerGame
     /// every scripted object, then reschedule. This is what lets quests that POLL state in map_update_p_proc
     /// (klagraz KCTorr's brahmin defense, the Den gang-war escalation) re-evaluate over time instead of only
     /// once on load. Gated to normal map play (same as PumpCritterProcs): not during combat, dialog, loot,
-    /// the companion hub, the worldmap, or game-over.</summary>
+    /// the companion hub, the worldmap, or game-over. The 30 s bk-time source (<see cref="_bkMapUpdateMs"/>)
+    /// runs first, as in _script_chk_timed_events, and keeps running in combat.</summary>
     private void PumpMapUpdate(double elapsedMs)
     {
-        if (_scriptHost is null || _map is null || _combat.Phase != Formats.Combat.CombatPhase.Idle
-            || _combat.IsGameOver || _dialog is not null || _companionHub is not null
-            || _lootContainer is not null || _worldmapOpen)
+        if (_scriptHost is null || _map is null || _combat.IsGameOver || _dialog is not null
+            || _companionHub is not null || _worldmapOpen)
+            return;
+
+        _bkMapUpdateMs += elapsedMs;
+        if (_bkMapUpdateMs >= BkMapUpdateIntervalMs)
+        {
+            _bkMapUpdateMs = 0; // _last_light_time = now: the excess is dropped
+            RunMapUpdateRound();
+        }
+
+        if (_combat.Phase != Formats.Combat.CombatPhase.Idle || _lootContainer is not null)
             return;
 
         _mapUpdateClockMs += elapsedMs;
@@ -590,7 +600,13 @@ public sealed partial class ViewerGame
             return;
         _mapUpdateClockMs -= MapUpdateIntervalMs;
         _mapUpdateFires++;
+        RunMapUpdateRound();
+    }
 
+    private void RunMapUpdateRound()
+    {
+        if (_scriptHost is null || _map is null)
+            return;
         // Re-evaluate the scripted set each fire (map_enter/earlier updates may have created objects).
         IEnumerable<MapObject> scripted = WithDudeScript(_map.Elevations
             .Where(e => e is not null)

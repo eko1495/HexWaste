@@ -159,6 +159,12 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
     private double _mapUpdateClockMs;
     private const double MapUpdateIntervalMs = 600 * 100.0; // 600 game ticks
 
+    /// <summary>The second map_update source, ported from fallout2-ce src/scripts.cc _script_chk_timed_events():
+    /// every 30000 ms of real (bk) time, in or out of combat. `_last_light_time` is never reset, so this window
+    /// carries over map loads.</summary>
+    private double _bkMapUpdateMs;
+    private const double BkMapUpdateIntervalMs = 30000;
+
     /// <summary>Main-menu front door (v0.6): Title → character pick → play.
     /// Headless/test flags skip it entirely.</summary>
     public bool StartInMenu { get; set; }

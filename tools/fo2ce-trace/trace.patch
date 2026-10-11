@@ -325,7 +325,7 @@ index 567548e4..3600151a 100644
  void lsgInit();
  int MapDirErase(const char* path, const char* extension);
 diff --git a/src/main.cc b/src/main.cc
-index ee67a0a4..9db3aacb 100644
+index ee67a0a4..d5328bb0 100644
 --- a/src/main.cc
 +++ b/src/main.cc
 @@ -1,6 +1,8 @@
@@ -354,7 +354,7 @@ index ee67a0a4..9db3aacb 100644
  static void main_unload_new();
  static void mainLoop();
  static void showDeath();
-@@ -81,6 +82,33 @@ int falloutMain(int argc, char** argv)
+@@ -81,6 +82,34 @@ int falloutMain(int argc, char** argv)
          return 1;
      }
  
@@ -379,6 +379,7 @@ index ee67a0a4..9db3aacb 100644
 +        snprintf(header, sizeof(header), "oracle v1 fixture=%s engine=fo2ce@e97087b+trace.patch@%s",
 +            oracleFixtureName(), ORACLE_PATCH_SHA);
 +        oracleTraceOpen(oracleTracePath(), header);
++        oracleResetBkMapUpdate();
 +        oracleScenarioBegin(oracleScenarioPath()); // parses, seeds, arms the step machine
 +        mainLoop(); // the step machine exits from oracleTick when the scenario is done
 +        fprintf(stderr, "oracle: mainLoop returned before the scenario finished (dude dead/quit?)\n");
@@ -388,7 +389,7 @@ index ee67a0a4..9db3aacb 100644
      // SFALL: Allow to skip intro movies
      int skipOpeningMovies;
      configGetInt(&gSfallConfig, SFALL_CONFIG_MISC_KEY, SFALL_CONFIG_SKIP_OPENING_MOVIES_KEY, &skipOpeningMovies);
-@@ -258,7 +286,7 @@ static void main_exit_system()
+@@ -258,7 +287,7 @@ static void main_exit_system()
  }
  
  // 0x480D4C
@@ -397,7 +398,7 @@ index ee67a0a4..9db3aacb 100644
  {
      _game_user_wants_to_quit = 0;
      _main_show_death_scene = 0;
-@@ -274,19 +302,19 @@ static int _main_load_new(char* mapFileName)
+@@ -274,19 +303,19 @@ static int _main_load_new(char* mapFileName)
      _map_init();
      gameMouseSetCursor(MOUSE_CURSOR_NONE);
      mouseShowCursor();
@@ -1202,7 +1203,7 @@ index 5a984dc5..66ffc371 100644
  
  } // namespace fallout
 diff --git a/src/scripts.cc b/src/scripts.cc
-index 573b3f58..4ea32382 100644
+index 573b3f58..8e7c5879 100644
 --- a/src/scripts.cc
 +++ b/src/scripts.cc
 @@ -25,6 +25,7 @@
@@ -1213,7 +1214,21 @@ index 573b3f58..4ea32382 100644
  #include "platform_compat.h"
  #include "proto.h"
  #include "proto_instance.h"
-@@ -1319,6 +1320,10 @@ int scriptExecProc(int sid, int proc)
+@@ -782,6 +783,13 @@ static void _script_chk_timed_events()
+     }
+ }
+ 
++// ORACLE: start the 30 000 ms bk-time map_update window at save-load completion. Vanilla never resets
++// _last_light_time, so its phase is time since process start; Hexwaste starts its window at load.
++void oracleResetBkMapUpdate()
++{
++    _last_light_time = getTicks(); // not _get_bk_time(): the ticker stamp is stale right after the load
++}
++
+ // 0x4A3E30
+ void _scrSetQueueTestVals(Object* a1, int a2)
+ {
+@@ -1319,6 +1327,10 @@ int scriptExecProc(int sid, int proc)
  
      script->flags |= SCRIPT_FLAG_0x04;
  
@@ -1224,7 +1239,7 @@ index 573b3f58..4ea32382 100644
      if (programLoaded) {
          scriptLocateProcs(script);
  
-@@ -2836,6 +2841,15 @@ int scriptSetLocalVar(int sid, int variable, ProgramValue& value)
+@@ -2836,6 +2848,15 @@ int scriptSetLocalVar(int sid, int variable, ProgramValue& value)
          script->localVarsOffset = _map_malloc_local_var(script->localVarsCount);
      }
  
@@ -1240,6 +1255,18 @@ index 573b3f58..4ea32382 100644
      mapSetLocalVar(script->localVarsOffset + variable, value);
  
      return 0;
+diff --git a/src/scripts.h b/src/scripts.h
+index f8437b05..62311439 100644
+--- a/src/scripts.h
++++ b/src/scripts.h
+@@ -166,6 +166,7 @@ Object* scriptGetSelf(Program* s);
+ int scriptSetObjects(int sid, Object* source, Object* target);
+ void scriptSetFixedParam(int a1, int a2);
+ int scriptSetActionBeingUsed(int sid, int a2);
++void oracleResetBkMapUpdate();
+ void _scrSetQueueTestVals(Object* a1, int a2);
+ int _scrQueueRemoveFixed(Object* obj, void* data);
+ int scriptAddTimerEvent(int sid, int delay, int param);
 diff --git a/src/svga.cc b/src/svga.cc
 index 8acca966..5e7bb738 100644
 --- a/src/svga.cc
