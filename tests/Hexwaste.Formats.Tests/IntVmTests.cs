@@ -267,4 +267,112 @@ public class IntVmTests
         Assert.Equal(0, vm.ReturnStackDepth);
         Assert.NotEmpty(externals.Explosions); // explosion dispatched (tile, elevation, maxDamage)
     }
+
+    // ---- trace oracle (Task 10): IntVm.SharedRandom — one stream across procs, no per-proc reseed ----
+    // Hermetic hand-assembled .int (the StaleHandleGuardTests/VmGlobalsPersistenceTests scaffold):
+    // critter_p_proc runs critter_heal(1, random(1, 6)) so FakeExternals.Heals records the draw.
+
+    private static void OpH(List<byte> code, ushort opcode)
+    {
+        code.Add((byte)(opcode >> 8));
+        code.Add((byte)opcode);
+    }
+
+    private static void Int32H(List<byte> bytes, int value)
+    {
+        bytes.Add((byte)(value >> 24));
+        bytes.Add((byte)(value >> 16));
+        bytes.Add((byte)(value >> 8));
+        bytes.Add((byte)value);
+    }
+
+    private static void PushIntH(List<byte> code, int value)
+    {
+        OpH(code, 0xC001);
+        Int32H(code, value);
+    }
+
+    private static byte[] BuildRandomScript()
+    {
+        string[] names = ["critter_p_proc"];
+        var idBytes = new List<byte>();
+        var nameOffsets = new int[names.Length];
+        for (int i = 0; i < names.Length; i++)
+        {
+            idBytes.Add((byte)((names[i].Length + 1) >> 8));
+            idBytes.Add((byte)(names[i].Length + 1));
+            nameOffsets[i] = 4 + idBytes.Count;
+            idBytes.AddRange(System.Text.Encoding.Latin1.GetBytes(names[i]));
+            idBytes.Add(0);
+        }
+
+        int codeStart = 42 + 4 + names.Length * 24 + 4 + idBytes.Count + 4;
+
+        var prologue = new List<byte>();
+        OpH(prologue, 0x802C); // set_global (no module globals)
+        OpH(prologue, 0x8003); // leave_critical_section
+        OpH(prologue, 0x801C); // pop_return
+
+        var proc = new List<byte>();
+        OpH(proc, 0x802B);     // push_base
+        PushIntH(proc, 1);     // critter handle
+        PushIntH(proc, 1);     // random min
+        PushIntH(proc, 6);     // random max
+        OpH(proc, 0x80B4);     // random(1, 6)
+        OpH(proc, 0x80E8);     // critter_heal(1, <draw>) -> recorded by FakeExternals
+        OpH(proc, 0x801A);     // pop the critter_heal result
+        PushIntH(proc, 0);     // epilogue
+        OpH(proc, 0x800D);     // d_to_a
+        OpH(proc, 0x8019);     // swapa
+        OpH(proc, 0x802A);     // pop_to_base
+        OpH(proc, 0x8029);     // pop_base
+        OpH(proc, 0x800C);     // a_to_d
+        OpH(proc, 0x801C);     // pop_return
+
+        int prologueAt = codeStart;
+        int procAt = prologueAt + prologue.Count;
+
+        var file = new List<byte>();
+        OpH(file, 0x8002);
+        PushIntH(file, 18);
+        OpH(file, 0x800D);
+        PushIntH(file, prologueAt);
+        foreach (ushort op in new ushort[] { 0x8004, 0x8010, 0x801A, 0x8020, 0x801A, 0x8021, 0x801A,
+                     0x8022, 0x801A, 0x8023, 0x8024, 0x8025, 0x8026 })
+            OpH(file, op);
+
+        Int32H(file, names.Length);
+        Int32H(file, nameOffsets[0]);
+        Int32H(file, 0);
+        Int32H(file, 0);
+        Int32H(file, 0);
+        Int32H(file, procAt);
+        Int32H(file, 0);
+
+        Int32H(file, idBytes.Count);
+        file.AddRange(idBytes);
+        Int32H(file, unchecked((int)0xFFFFFFFF));
+
+        file.AddRange(prologue);
+        file.AddRange(proc);
+        return file.ToArray();
+    }
+
+    [Fact]
+    public void SharedRandomDrawsOneStreamAcrossProcs()
+    {
+        var externals = new FakeExternals();
+        var vm = new IntVm(IntProgram.Load(BuildRandomScript()), externals)
+        {
+            SharedRandom = new Hexwaste.Formats.Combat.Fo2ceRandomAdapter(new Hexwaste.Formats.Combat.Fo2ceRng(5)),
+        };
+
+        Assert.True(vm.TryRunProcedure("critter_p_proc"));
+        Assert.True(vm.TryRunProcedure("critter_p_proc")); // no reseed between named procs
+
+        var expected = new Hexwaste.Formats.Combat.Fo2ceRng(5);
+        int first = expected.Between(1, 6);
+        int second = expected.Between(1, 6);
+        Assert.Equal([(1, first), (1, second)], externals.Heals);
+    }
 }

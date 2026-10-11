@@ -15,6 +15,25 @@ namespace Hexwaste.Viewer;
 // is called at the tail of LoadContent exactly where the foreach used to run (no behaviour change).
 public sealed partial class ViewerGame
 {
+    /// <summary>One headless 10 ms-style frame of the per-frame pump (--pump-ms / scenario wait /
+    /// oracle end-turn). Extracted verbatim from the PumpMs loop body (pure refactor).</summary>
+    private void PumpOneFrame(int ms)
+    {
+        _animator.Update(ms);
+        _combat.Step();
+        _dude?.Update(ms);
+        PumpPendingInteraction();
+        UpdateAmbientLife(ms);
+        UpdateClock(ms);
+        PumpCritterProcs(ms);
+        PumpMapUpdate(ms);
+        if (_pendingTransition is { } pumpTransition)
+        {
+            _pendingTransition = null;
+            ApplyTransition(pumpTransition);
+        }
+    }
+
     private void RunStartupActions()
     {
         foreach (StartupAction action in StartupActions)
@@ -614,25 +633,24 @@ public sealed partial class ViewerGame
                     // P116 (fix B QA): the same per-frame pump the post-action AdvanceCyclingMs loop
                     // runs, but MID sequence — a script cutscene (fade out + game_ui_disable + timed
                     // critter_p_proc beats, e.g. the Modoc shotgun wedding) plays out between probes.
+                    // Trace oracle: scenario `wait N` maps here (fo2ce runs N virtual ms at 10 ms/tick).
                     for (int advanced = 0; advanced < pumpMs; advanced += 10)
                     {
-                        _animator.Update(10);
-                        _combat.Step();
-                        _dude?.Update(10);
-                        PumpPendingInteraction();
-                        UpdateAmbientLife(10);
-                        UpdateClock(10);
-                        PumpCritterProcs(10);
-                        PumpMapUpdate(10);
-                        if (_pendingTransition is { } pumpTransition)
-                        {
-                            _pendingTransition = null;
-                            ApplyTransition(pumpTransition);
-                        }
+                        if (OracleRngMode)
+                            OracleFrame(); // the Update-order oracle tick (+ dead/KO exit 5)
+                        else
+                            PumpOneFrame(10);
                     }
                     Console.WriteLine($"pump-ms: {pumpMs}");
                     break;
                 }
+                case StartupAction.OracleEndTurn(var count):
+                    // Same semantics as the fo2ce patch's end-turn (tools/fo2ce-trace/trace.patch
+                    // oracleScenarioStep): n times — run until the dude awaits combat input (combat
+                    // over -> the action ends); end the turn; run 10 ms; run until the dude awaits
+                    // input again or combat is over. 10 ms steps, 600000 ms cap per seek (cap = exit 7).
+                    OracleEndTurns(count);
+                    break;
                 case StartupAction.UiProbe:
                     Console.WriteLine($"ui-probe: disabled={_gameUiDisabled}");
                     break;

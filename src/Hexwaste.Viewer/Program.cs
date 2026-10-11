@@ -37,6 +37,10 @@ bool noAmbient = false;
 bool forceMenu = false;
 string? menuStartState = null;
 bool fullscreen = false;
+string? rngMode = null;      // trace oracle: --rng fo2ce
+string? scenarioPath = null; // trace oracle: --scenario <path>
+string? tracePath = null;    // trace oracle: --trace <path> (written in Task 11)
+string? fixtureName = null;  // trace oracle: --fixture <name>
 
 for (int i = 0; i < args.Length; i++)
 {
@@ -53,6 +57,18 @@ for (int i = 0; i < args.Length; i++)
             break;
         case "--no-ambient":
             noAmbient = true;
+            break;
+        case "--rng" when i + 1 < args.Length:
+            rngMode = args[++i];                       // "fo2ce" or default
+            break;
+        case "--scenario" when i + 1 < args.Length:
+            scenarioPath = args[++i];
+            break;
+        case "--trace" when i + 1 < args.Length:
+            tracePath = args[++i];
+            break;
+        case "--fixture" when i + 1 < args.Length:
+            fixtureName = args[++i];
             break;
         case "--advance-ms" when i + 1 < args.Length:
             advanceMs = double.Parse(args[++i]);
@@ -848,6 +864,21 @@ for (int i = 0; i < args.Length; i++)
     }
 }
 
+// Trace oracle: the scenario's seed drives the shared fo2ce stream; its actions run after any
+// other startup actions (wait -> the 10 ms PumpMs pump, end-turn -> OracleEndTurn).
+if (scenarioPath is not null)
+{
+    var scenario = Hexwaste.Formats.Trace.OracleScenario.Parse(File.ReadAllText(scenarioPath));
+    rngSeed = scenario.Seed;
+    foreach (var action in scenario.Actions)
+        actions.Add(action switch
+        {
+            Hexwaste.Formats.Trace.ScenarioAction.Wait w => new ViewerGame.StartupAction.PumpMs(w.Ms),
+            Hexwaste.Formats.Trace.ScenarioAction.EndTurn e => new ViewerGame.StartupAction.OracleEndTurn(e.Count),
+            _ => throw new InvalidDataException($"unknown scenario action {action}"),
+        });
+}
+
 // A game directory must contain master.dat. When --game-dir is omitted, probe
 // the usual install locations (GOG, Steam) plus a game-data folder next to
 // the executable / working directory.
@@ -932,6 +963,9 @@ using var game = new ViewerGame(gameDir!, mapName, screenshot, roofs)
     TravelToArea = travelArea,
     DisableAudio = noAudio,
     DisableAmbientLife = noAmbient,
+    OracleRngMode = rngMode == "fo2ce",
+    OracleTracePath = tracePath,
+    OracleFixture = fixtureName,
 };
 game.Run();
 return 0;

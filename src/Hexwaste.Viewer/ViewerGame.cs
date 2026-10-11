@@ -836,6 +836,8 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
         /// map_update) for Ms simulated milliseconds in 10 ms steps, MID action sequence — lets a
         /// script-driven cutscene (the Modoc shotgun wedding) play out between probes. STATE-only.</summary>
         public sealed record PumpMs(int Ms) : StartupAction;
+        /// <summary>Trace oracle scenario `end-turn N` (same semantics as the fo2ce patch's runner).</summary>
+        public sealed record OracleEndTurn(int Count) : StartupAction;
         /// <summary>P119 QA: open the elevator level picker UI directly (art verification —
         /// no gameplay effect until a button is picked).</summary>
         public sealed record ElevatorOpen(int Type, int Level) : StartupAction;
@@ -1192,6 +1194,7 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
         if (RngSeed is { } seed)
             _combatRng = new Formats.Combat.SystemCombatRng(seed);
         _calledShotRng = new Formats.Combat.SystemCombatRng(RngSeed ?? Environment.TickCount); // P75-M4 isolated
+        PrepareOracleCombatRng(); // trace oracle: the engine captures its streams — hand it a retargetable slot
         _combat = new Formats.Combat.CombatEngine(this, _combatRng, _calledShotRng);
 
         _protos = new ProtoDatabase(_vfs);
@@ -1549,6 +1552,9 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
             LoadVanillaSaveAtStartup();
         else
             LoadMap(_mapName, spawnAt: null);
+        // Trace oracle: seed the ONE shared stream AFTER the load, like the fo2ce scenario runner
+        // (oracleRandomSeed right after lsgLoadGameHeadless) and before any scenario action.
+        InitOracle();
 
         _worldmapScreen = new WorldmapScreen(GraphicsDevice, _vfs, _palette, _cities, _fontRenderer, _frmCache)
         {

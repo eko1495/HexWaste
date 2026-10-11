@@ -553,6 +553,10 @@ public sealed class ScriptHost(GameFileSystem vfs, ScriptList scripts, Hexwaste.
     /// <summary>Rolls for do_check/statRoll (seedable by the host).</summary>
     public Random Rng { get; set; } = new();
 
+    /// <summary>Trace oracle: the shared fo2ce stream every script VM's random() draws from
+    /// (stamped onto each VM <see cref="GetOrCreateVm"/> returns). Null = per-VM seeded streams.</summary>
+    public Random? SharedVmRandom { get; set; }
+
     /// <summary>Effective stat, ported from fallout2-ce src/stat.cc
     /// critterGetStat(): base + bonus; pseudostats 35/36/37 read the instance.</summary>
     public int CritterStatValue(MapObject obj, int stat)
@@ -755,15 +759,16 @@ public sealed class ScriptHost(GameFileSystem vfs, ScriptList scripts, Hexwaste.
         if (_vmCache.TryGetValue(key, out IntVm? cached))
         {
             if (cached.IsRunning)
-                return new IntVm(program, externals, OnStubbedExternal, ExternalVars);
+                return new IntVm(program, externals, OnStubbedExternal, ExternalVars) { SharedRandom = SharedVmRandom };
             if (ReferenceEquals(cached.Program, program))
             {
                 cached.Rebind(externals);
+                cached.SharedRandom = SharedVmRandom;
                 return cached;
             }
         }
 
-        var vm = new IntVm(program, externals, OnStubbedExternal, ExternalVars);
+        var vm = new IntVm(program, externals, OnStubbedExternal, ExternalVars) { SharedRandom = SharedVmRandom };
         _vmCache[key] = vm;
         return vm;
     }
