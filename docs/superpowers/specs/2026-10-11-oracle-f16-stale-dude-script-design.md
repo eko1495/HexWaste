@@ -61,11 +61,14 @@ the dude are unchanged (their sid is their owner's sid); the stale slot now runs
    fo2ce uses the item list's file order; upgrade if the oracle shows a difference there);
 4. then `CritterScripts` in list order, by sid, through `RunScriptProc(sid, owner, ...)`.
 
-The `procs[proc] > 0` filter (`DefinesProc`) stays on both object groups. The viewer stops passing the dude
-via `WithDudeScript` to the map_update round; the dude and the stale slot come from the critter list.
-`WithDudeScript` stays where other callers use it.
+The `procs[proc] > 0` filter (`DefinesProc`) stays on both object groups. Step 4 runs a list entry only
+when the caller passed its owner, so the harness probes (which exclude the dude) keep their object sets;
+the viewer keeps `WithDudeScript`, and the dude's sid, being on the list, moves from step 3 to step 4.
 
-Effect: the dude's map_update now runs last, and twice after a vanilla load (stale, then gDude), as in fo2ce.
+obj_dude.int also defines `map_enter_p_proc`, and fo2ce's map_enter is the same
+`scriptsExecMapUpdateScripts` walk, so `RunMapEnter`'s object loop uses the same ordered helper.
+
+Effect: the dude's map_enter and map_update now run last, and twice after a vanilla load (stale, then gDude), as in fo2ce.
 This also changes live play (the dude's map_update moves from first to last).
 
 ### 4. Accepted deviations (code comments)
@@ -97,6 +100,5 @@ at the fix; new first divergences and next steps.
 ## Out of scope
 
 - F8 (missing proc runs procedure 1, start code on first run).
-- map_enter / map_exit for the stale script: not traced by the oracle; whether obj_dude defines them is
-  checked during implementation and noted, not ported unless a trace shows it.
+- map_exit: Hexwaste's map_exit path is not touched (obj_dude.int does not define `map_exit_p_proc`).
 - Item-list file order for map_update (see 3.3).
