@@ -45,8 +45,32 @@ Combat/animation waits (`_combat_turn_run`, `animationIsBusy` loops, `inputPause
 the scenario (`seed <int>` first, then `wait <ms>` / `end-turn [count]`). `scripts/oracle-selfcheck.sh <fixture>`
 copies `game-data/oracle-saves/<fixture>` into SLOT10, runs twice and requires byte-identical traces. Because control
 lives inside fo2ce's own combat loops once combat starts, the runner is a step machine called from every
-`oracleTick()`. End-turn presses `KEY_SPACE` while the dude sits in `_combat_input`. Exit codes: 0 done, 4 load failed,
+`oracleTick()`. End-turn presses `KEY_SPACE` while the dude sits in `_combat_input`. Exit codes: 0 done, 2 trace
+file could not be opened, 3 recipe failed or entered combat (`oracle-make-save.sh` mode only), 4 load failed,
 5 main loop returned early (dude dead/quit), 6 bad scenario, 7 end-turn cap (600000 virtual ms) reached.
+
+**Tick accounting** (the contract both engines implement). A *work tick* is one 10 ms engine step: in fo2ce
+one `tickersExecute` pass plus the rest of that `mainLoop`/combat-loop iteration, in Hexwaste one `OracleFrame`.
+fo2ce's `oracleTick` runs at the *start* of `tickersExecute`, so the step machine always decides before that tick's
+work; `oracleScenarioBegin` only arms it, and the first command is fetched by the first tick (nothing between
+`oracleScenarioBegin` and `mainLoop`'s first `tickersExecute` does game work).
+- `wait N` = exactly `ceil(N / 10)` work ticks (fo2ce: fetched at the tick with clock T, done at the first tick
+  with clock >= T + N, before its work; Hexwaste: `PumpMs` runs `OracleFrame` while `advanced < N`, += 10). Chained
+  waits add up (`wait 50` + `wait 50` = `wait 100` = 10 ticks).
+- `end-turn`: the press happens in the tick in which the dude was first seen awaiting input, *before* that tick's
+  work (fo2ce enqueues `KEY_SPACE` in the step; Hexwaste checks before each frame, then `EndPlayerTurn` + one
+  `OracleFrame`); that one work tick is `ENDTURN_PRESSED`; the next check (combat over / dude awaiting input) is
+  again before the following tick's work. A satisfied seek moves on within the same tick in both engines.
+- Scenario end: fo2ce exits in the step of the tick after the last work tick (before its work); Hexwaste exits on
+  the next `Update` without running it. No trailing tick on either side; a seed-only scenario runs 0 ticks.
+- Both engines print `oracle: scenario done ... after <n> work ticks` to stderr on success - compare those first.
+  fo2ce's virtual clock can also move outside ticks (`delay_ms`, the render-only guard), so a `wait` spanning
+  such a block runs fewer work ticks than `ceil(N / 10)`. Outside combat the M1 waits are exact (artemple-idle
+  `wait 60000` = 6000 ticks, klamath-hour `wait 3600000` = 360000 in both engines); in combat it is common
+  (arcaves-ambush: 1764 fo2ce work ticks over 28.9 s of virtual time).
+
+The first logic RNG draw after the oracle seed always returns `min` in both engines: seeding zeroes the shuffle
+table state (`_iv`), so the first `_iy` is 0. Consistent across engines, so not a bug.
 
 `run.sh` passes `[sound]initialize=0`: with sound on, two same-seed klamath-hour runs diverged (one brahmin `MOVE`
 at ~2.85M virtual ms, identical RNG/PROC/VAR streams) - the sound engine is paced by SDL's real-time audio thread.
@@ -55,6 +79,9 @@ With sound off both runs are byte-identical. Sound has no game-logic role the or
 ## End-to-end workflow
 
 All outputs land in gitignored places (`reference/`, `game-data/oracle-saves/`, `scratch/oracle-runs/`).
+Every fo2ce run (make-save, self-check, compare) overwrites `SAVEGAME/SLOT10` in `reference/fallout2-ce/run`,
+so never run two of these scripts concurrently. The Hexwaste side is the MonoGame DesktopGL app and needs a
+display (it opens a window even for a headless scenario).
 
 1. **Build the oracle binary** - `tools/fo2ce-trace/worktree.sh` (first time, or `--reset`), then
    `tools/fo2ce-trace/build.sh`.
@@ -69,8 +96,8 @@ All outputs land in gitignored places (`reference/`, `game-data/oracle-saves/`, 
    `IDENTICAL (N lines)` (exit 0) or `DIVERGED at fo2ce line N` with the preceding context and the
    mismatching pair (exit 1). Traces and logs: `scratch/oracle-runs/<fixture>/{fo2ce,hexwaste}.{trace,log}`.
    If either engine exits non-zero the runner stops with exit 3 and names the engine and code (fo2ce:
-   4 load fail, 5 dude dead/KO, 6 bad scenario, 7 end-turn cap, 124 timeout; Hexwaste: 2 bad flags,
-   5 dude dead/KO, 7 end-turn cap, 8 unhandled exception, 124 timeout) - except both exiting 5, a
+   2 trace open failed, 4 load fail, 5 dude dead/KO, 6 bad scenario, 7 end-turn cap, 124 timeout; Hexwaste:
+   2 bad flags, 5 dude dead/KO, 6 bad scenario, 7 end-turn cap, 8 unhandled exception, 124 timeout) - except both exiting 5, a
    legitimate shared outcome, which is still diffed. `ORACLE_TIMEOUT` (seconds, default 1800) bounds each
    engine run; klamath-hour takes about 2 minutes in fo2ce.
 

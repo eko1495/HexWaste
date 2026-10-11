@@ -29,20 +29,23 @@ dotnet build tools/TraceDiff -c Debug -v q -nologo >> "$OUT/build.log" 2>&1 \
 echo "== fo2ce $FIX"
 RUN=reference/fallout2-ce/run
 SLOT=$(find "$RUN" -maxdepth 3 -type d -iname SAVEGAME | head -1)
-rm -rf "$SLOT/SLOT10"; mkdir -p "$SLOT/SLOT10"; cp -r "$SAVE/." "$SLOT/SLOT10/"
+[ -n "$SLOT" ] || SLOT="$RUN/data/SAVEGAME"
+rm -rf "${SLOT:?}/SLOT10"; mkdir -p "$SLOT/SLOT10"; cp -r "$SAVE/." "$SLOT/SLOT10/"
 set +e
 bash tools/fo2ce-trace/run.sh fixture="$FIX" scenario="$SCEN" trace="$OUT/fo2ce.trace" \
   > "$OUT/fo2ce.log" 2>&1
 FO=$?
 echo "== hexwaste $FIX"
-FALLOUT2_DIR="$PWD/game-data" timeout "${ORACLE_TIMEOUT:-1800}" dotnet run --no-build --project src/Hexwaste.Viewer -c Debug -- \
+# The built apphost directly (as golden-lib.sh does): `timeout dotnet run` would kill only the
+# dotnet driver and orphan the viewer child.
+FALLOUT2_DIR="$PWD/game-data" timeout "${ORACLE_TIMEOUT:-1800}" src/Hexwaste.Viewer/bin/Debug/net10.0/Hexwaste.Viewer \
   --game-dir "$PWD/game-data" --no-audio --load-vanilla-save "$SAVE" --rng fo2ce \
   --fixture "$FIX" --scenario "$SCEN" --trace "$OUT/hexwaste.trace" > "$OUT/hexwaste.log" 2>&1
 HW=$?
 set -e
 
-# fo2ce: 0 ok, 4 load fail, 5 dude dead/KO, 6 bad scenario, 7 end-turn cap (124 = timeout).
-# Hexwaste: 0 ok, 124 timeout, 2 bad flags, 5 dude dead/KO, 7 end-turn cap, 8 unhandled exception.
+# fo2ce: 0 ok, 2 trace open failed, 4 load fail, 5 dude dead/KO, 6 bad scenario, 7 end-turn cap (124 = timeout).
+# Hexwaste: 0 ok, 124 timeout, 2 bad flags, 5 dude dead/KO, 6 bad scenario, 7 end-turn cap, 8 unhandled exception.
 # Both 5 is a legitimate shared outcome (the dude died in both) - still diff the traces.
 if [ "$FO" -ne 0 ] || [ "$HW" -ne 0 ]; then
   if [ "$FO" -eq 5 ] && [ "$HW" -eq 5 ]; then

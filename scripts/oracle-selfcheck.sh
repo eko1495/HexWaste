@@ -7,8 +7,9 @@ FIX="${1:?usage: $0 <fixture>}"
 OUT="$PWD/scratch/oracle-runs/selfcheck-$FIX"; mkdir -p "$OUT"
 RUN=reference/fallout2-ce/run
 SLOT=$(find "$RUN" -maxdepth 3 -type d -iname SAVEGAME | head -1)
+[ -n "$SLOT" ] || SLOT="$RUN/data/SAVEGAME"
 for pass in 1 2; do
-  rm -rf "$SLOT/SLOT10"; mkdir -p "$SLOT/SLOT10"
+  rm -rf "${SLOT:?}/SLOT10"; mkdir -p "$SLOT/SLOT10"
   cp -r "game-data/oracle-saves/$FIX/." "$SLOT/SLOT10/"
   bash tools/fo2ce-trace/run.sh fixture="$FIX" \
     scenario="$PWD/tests/golden-oracle/$FIX/scenario.txt" trace="$OUT/pass$pass.trace"
