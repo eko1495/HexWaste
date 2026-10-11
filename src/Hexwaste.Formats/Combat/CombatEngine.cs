@@ -2240,6 +2240,9 @@ public sealed class CombatEngine
             damage = acc.Damage;
             critFlags = 0;
         }
+        // Hexwaste's critFlags are already masked by CriticalTables.HonoredFlags (RollAttack/MassiveUpgrade),
+        // so a dflags divergence on a crit is a genuine "which flags Hexwaste honours" difference, not a
+        // hook artefact.
         int dflags = critFlags & ~CriticalTables.DamCritical;
         if (defender is not null && damage > 0 && Fid.PidType(defender.Pid) == (int)ObjectType.Critter
             && _host.GetCritterState(defender) is { } ds && ds.CurrentHp - damage <= 0)

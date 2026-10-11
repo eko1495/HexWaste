@@ -1200,7 +1200,7 @@ index 5a984dc5..66ffc371 100644
  
  } // namespace fallout
 diff --git a/src/scripts.cc b/src/scripts.cc
-index 573b3f58..ba5e4be1 100644
+index 573b3f58..4ea32382 100644
 --- a/src/scripts.cc
 +++ b/src/scripts.cc
 @@ -25,6 +25,7 @@
@@ -1211,15 +1211,18 @@ index 573b3f58..ba5e4be1 100644
  #include "platform_compat.h"
  #include "proto.h"
  #include "proto_instance.h"
-@@ -1335,6 +1336,7 @@ int scriptExecProc(int sid, int proc)
+@@ -1319,6 +1320,10 @@ int scriptExecProc(int sid, int proc)
  
-     script->action = proc;
+     script->flags |= SCRIPT_FLAG_0x04;
  
++    // ORACLE: trace before the first-load start code (_interpret below) so its GVAR/LVAR writes
++    // follow the PROC line, matching Hexwaste (which runs a script's init lazily inside the proc run).
 +    oracleTraceProc(script->owner, program->name, gScriptProcNames[proc]);
-     _executeProcedure(program, v9);
++
+     if (programLoaded) {
+         scriptLocateProcs(script);
  
-     script->source = nullptr;
-@@ -2836,6 +2838,15 @@ int scriptSetLocalVar(int sid, int variable, ProgramValue& value)
+@@ -2836,6 +2841,15 @@ int scriptSetLocalVar(int sid, int variable, ProgramValue& value)
          script->localVarsOffset = _map_malloc_local_var(script->localVarsCount);
      }
  
