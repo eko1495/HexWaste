@@ -406,6 +406,47 @@ public sealed class ScriptHost(GameFileSystem vfs, ScriptList scripts, Hexwaste.
         _scriptOwners[DudeSid] = dude;
     }
 
+    /// <summary>ported from fallout2-ce src/object.cc _obj_load_dude() (scriptsClearDudeScript +
+    /// scriptsSetDudeScript): after a vanilla save load the dude gets a fresh obj_dude script (zero LVARs,
+    /// program not loaded), and the .SAV's previous dude script record stays on the critter list at its
+    /// section position, also fresh (no LVAR block). Both run obj_dude's start body on their first
+    /// execution during play (oracle F16).</summary>
+    public void ReplaceDudeScriptAfterVanillaLoad(MapFile map, MapObject dude, int staleSid)
+    {
+        map.ScriptsBySid[staleSid] = new MapScriptRecord(0, -1, 0); // no .SAV LVAR block: fresh zeros
+        // Keep every entry LoadMap left (map_enter-spawned critters, party): drop the old dude slot, put the
+        // stale record back at its section position, then BindDudeScript appends the fresh dude script last.
+        List<int> sids = [.. CritterScripts.Sids];
+        sids.Remove(DudeSid);
+        sids.Remove(staleSid); // no duplicate slot
+        // Hexwaste removes entries in order while fo2ce's scriptRemove moves the tail into the gap: equivalent on the
+        // oracle fixtures (fo2ce dump), would differ only if a spawned critter followed the dude during the load passes.
+        int pos = 0;
+        foreach (int sid in map.CritterSids)
+        {
+            if (sid == staleSid)
+                break;
+            int at = sids.IndexOf(sid);
+            if (at >= 0)
+                pos = at + 1;
+        }
+        sids.Insert(pos, staleSid);
+        CritterScripts.Clear();
+        foreach (int sid in sids)
+            CritterScripts.Add(sid);
+        _scriptOwners[staleSid] = dude;
+        ForgetScriptState(map, staleSid);
+        ForgetScriptState(map, DudeSid);
+        BindDudeScript(map, dude); // appended last, as scriptsSetDudeScript's scriptAdd
+    }
+
+    // A fresh Script: its VM (module globals, init/start not yet run) and LVAR slice are dropped.
+    private void ForgetScriptState(MapFile map, int sid)
+    {
+        EvictVm(map, sid);
+        _localVarSlices.Remove(LvarKey(map, sid));
+    }
+
     /// <summary>The critter heartbeat's list (oracle F6). Session-scoped like fo2ce's _count_.</summary>
     public CritterScriptList CritterScripts { get; } = new();
 
@@ -414,9 +455,8 @@ public sealed class ScriptHost(GameFileSystem vfs, ScriptList scripts, Hexwaste.
 
     /// <summary>Map load: the list becomes the map's critter section in file order (fo2ce scriptLoadAll),
     /// minus sids no object on the map still holds (killed critters clear their sid; a .MAP corpse that
-    /// still carries a script keeps it, as in fo2ce). <paramref name="extraSid"/> is a sid no map object
-    /// holds but <paramref name="extraOwner"/> owns (the vanilla import's stale dude script, oracle F6).</summary>
-    public void RebuildCritterScripts(MapFile map, int extraSid = -1, MapObject? extraOwner = null)
+    /// still carries a script keeps it, as in fo2ce).</summary>
+    public void RebuildCritterScripts(MapFile map)
     {
         CritterScripts.Clear();
         _scriptOwners.Clear();
@@ -424,8 +464,6 @@ public sealed class ScriptHost(GameFileSystem vfs, ScriptList scripts, Hexwaste.
             foreach (MapObject obj in elev?.Objects ?? [])
                 if (obj.Sid != -1)
                     _scriptOwners[obj.Sid] = obj;
-        if (extraSid != -1 && extraOwner is not null)
-            _scriptOwners[extraSid] = extraOwner;
         foreach (int sid in map.CritterSids)
             if (_scriptOwners.ContainsKey(sid))
                 CritterScripts.Add(sid);
@@ -874,12 +912,20 @@ public sealed class ScriptHost(GameFileSystem vfs, ScriptList scripts, Hexwaste.
         RunObjectProc(obj, map, dude, 0, -1, procedureNames);
 
     public ScriptRunResult? RunObjectProc(MapObject obj, MapFile map, MapObject? dude,
+        int fixedParam, int actionBeingUsed, params string[] procedureNames) =>
+        RunScriptProc(obj.Sid, obj, map, dude, fixedParam, actionBeingUsed, procedureNames);
+
+    /// <summary>Runs <paramref name="sid"/>'s script (its LVARs, its VM) with <paramref name="self"/> as
+    /// self. Differs from <see cref="RunObjectProc(MapObject, MapFile, MapObject?, int, int, string[])"/>
+    /// only when self does not hold the sid: the vanilla import's stale obj_dude slot, which fo2ce runs as
+    /// its own Script with self = the dude (oracle F16).</summary>
+    public ScriptRunResult? RunScriptProc(int sid, MapObject self, MapFile map, MapObject? dude,
         int fixedParam, int actionBeingUsed, params string[] procedureNames)
     {
-        if (obj.Sid == -1 || !map.ScriptsBySid.TryGetValue(obj.Sid, out MapScriptRecord? record))
+        if (sid == -1 || !map.ScriptsBySid.TryGetValue(sid, out MapScriptRecord? record))
             return null;
 
-        return RunProc(record.ScriptListIndex, map, obj.Sid, record, obj, dude,
+        return RunProc(record.ScriptListIndex, map, sid, record, self, dude,
             fixedParam, actionBeingUsed, procedureNames);
     }
 
@@ -1156,8 +1202,7 @@ public sealed class ScriptHost(GameFileSystem vfs, ScriptList scripts, Hexwaste.
 
         // Snapshot: map_enter scripts create objects (container stocking),
         // mutating the underlying lists mid-iteration.
-        foreach (MapObject obj in objects.ToList())
-            RunObjectProc(obj, map, dude, firstRun, -1, "map_enter_p_proc");
+        RunObjectScriptsInListOrder(map, objects, dude, firstRun, "map_enter_p_proc");
 
         // P113 (item 7e): spatial scripts get map_enter too (scriptsExecMapUpdateScripts iterates
         // every script TYPE list, scripts.cc:2601-2674; MAP_ENTER carries firstRun, :2608-2610).
@@ -1199,10 +1244,32 @@ public sealed class ScriptHost(GameFileSystem vfs, ScriptList scripts, Hexwaste.
         // and only scripts with procs[proc] > 0 (the proc exists) are called.
         RunSpatialMapProc(map, dude, 0, "map_update_p_proc"); // P113 (item 7e)
 
-        foreach (MapObject obj in objects.ToList())
-            if (map.ScriptsBySid.TryGetValue(obj.Sid, out MapScriptRecord? record)
-                && DefinesProc(record.ScriptListIndex, "map_update_p_proc"))
-                RunObjectProc(obj, map, dude, 0, -1, "map_update_p_proc");
+        RunObjectScriptsInListOrder(map, objects, dude, 0, "map_update_p_proc");
+    }
+
+    /// <summary>ported from fallout2-ce src/scripts.cc scriptsExecMapUpdateScripts(): object scripts run
+    /// by type list, the critter list last and in list order, by sid (so the stale obj_dude slot runs its
+    /// own script, oracle F16); only scripts that define the proc (procs[proc] &gt; 0). Critter-list
+    /// entries run only when the caller passed their owner, so probe callers keep their object sets.</summary>
+    // shortcut: non-critter scripts run in the caller's object order, fo2ce uses the item list's file order;
+    // upgrade if the oracle shows a divergence there.
+    private void RunObjectScriptsInListOrder(MapFile map, IEnumerable<MapObject> objects, MapObject? dude,
+        int fixedParam, string procName)
+    {
+        List<MapObject> snapshot = objects.ToList(); // procs create objects (container stocking)
+        var passed = new HashSet<MapObject>(snapshot, ReferenceEqualityComparer.Instance);
+        var listed = new HashSet<int>(CritterScripts.Sids);
+
+        foreach (MapObject obj in snapshot)
+            if (!listed.Contains(obj.Sid) && map.ScriptsBySid.TryGetValue(obj.Sid, out MapScriptRecord? record)
+                && DefinesProc(record.ScriptListIndex, procName))
+                RunObjectProc(obj, map, dude, fixedParam, -1, procName);
+
+        foreach (int sid in CritterScripts.Sids.ToList())
+            if (_scriptOwners.TryGetValue(sid, out MapObject? owner) && passed.Contains(owner)
+                && map.ScriptsBySid.TryGetValue(sid, out MapScriptRecord? record)
+                && DefinesProc(record.ScriptListIndex, procName))
+                RunScriptProc(sid, owner, map, dude, fixedParam, -1, procName);
     }
 
     /// <summary>Whether the script defines the proc (fallout2-ce procs[proc] > 0). A load failure counts

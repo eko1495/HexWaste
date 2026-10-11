@@ -14,9 +14,6 @@ public sealed partial class ViewerGame
     /// <summary>--load-vanilla-save &lt;slot dir&gt;: SAVE.DAT + the gzip'd &lt;MAP&gt;.SAV of one slot.</summary>
     public string? VanillaSaveDir { get; set; }
 
-    // The stale dude script sid LoadMap's critter-list rebuild keeps (vanilla import only; -1 otherwise).
-    private int _vanillaStaleDudeSid = -1;
-
     private void LoadVanillaSaveAtStartup()
     {
         string dir = VanillaSaveDir!;
@@ -76,11 +73,29 @@ public sealed partial class ViewerGame
         map.CritterSids.AddRange(saved.CritterSids);
         // Oracle F6: the .SAV keeps the dude's previous-session script record (obj_dude, owner = the dude)
         // in the critter section, so fo2ce runs obj_dude twice per round after a save load (findings F6).
-        // fo2ce runs it as its own Script struct; Hexwaste runs the dude's obj_dude (owner.Sid = DudeSid).
+        // fo2ce runs it as its own Script (own LVARs, self = the dude); so does Hexwaste, by sid (F16).
+        // The .SAV record is the dude's script during the load passes (seeded below); _obj_load_dude then
+        // swaps in a fresh one and leaves the old record fresh too (ReplaceDudeScriptAfterVanillaLoad).
+        // Deviation: fo2ce saves it back into the map's .SAV, so it returns on a revisit; Hexwaste drops it
+        // on a map change and after a Hexwaste save/reload (no oracle fixture covers either).
         var heldSids = saved.Elevations.Where(e => e is not null).SelectMany(e => e!.Objects)
             .Select(o => o.Sid).ToHashSet();
-        _vanillaStaleDudeSid = saved.CritterSids.FirstOrDefault(sid => !heldSids.Contains(sid)
+        int staleDudeSid = saved.CritterSids.FirstOrDefault(sid => !heldSids.Contains(sid)
             && saved.ScriptsBySid.TryGetValue(sid, out MapScriptRecord r) && r.ScriptListIndex == 0, -1); // 0 = obj_dude, as in BindDudeScript
+
+        if (staleDudeSid != -1 && _scriptHost is not null)
+        {
+            MapScriptRecord rec = saved.ScriptsBySid[staleDudeSid];
+            int count = rec.LocalVarsCount;
+            if (count <= 0)
+                Console.Error.WriteLine("vanilla import: stale obj_dude record has no LVAR block; dude LVAR seed is empty");
+            var slice = new int[Math.Max(count, 0)];
+            for (int i = 0; i < slice.Length && rec.LocalVarsOffset >= 0 && rec.LocalVarsOffset + i < saved.LocalVariables.Length; i++)
+                slice[i] = saved.LocalVariables[rec.LocalVarsOffset + i];
+            // The .SAV's obj_dude record is the dude's script during mapLoadSaved's start/map_enter/
+            // map_update passes (LVARs keyed by map "", see ScriptHost.LvarKey).
+            _scriptHost.ImportLocalVars("", new Dictionary<int, int[]> { [Formats.Int.ScriptHost.DudeSid] = slice });
+        }
 
         string mapName = Path.ChangeExtension(save.Header.MapFileName, ".map").ToLowerInvariant();
         _visitedMaps.Clear();
@@ -93,9 +108,13 @@ public sealed partial class ViewerGame
             LoadMap(mapName, new MapDestination(0, save.Dude.HexTile, save.Header.Elevation, save.Dude.Rotation),
                 captureOutgoing: false, transient: false, preloadedMap: map);
         }
-        finally { _isLoadingGame = false; _vanillaStaleDudeSid = -1; }
+        finally { _isLoadingGame = false; }
         if (_dude is null)
             throw new InvalidDataException($"vanilla import: map {mapName} loaded without a dude");
+        // 4a. _obj_load_dude's scriptsClearDudeScript/scriptsSetDudeScript (object.cc:3629): see
+        //     ScriptHost.ReplaceDudeScriptAfterVanillaLoad (oracle F16).
+        if (staleDudeSid != -1 && _scriptHost is not null && _map is not null)
+            _scriptHost.ReplaceDudeScriptAfterVanillaLoad(_map, _dude.Dude, staleDudeSid);
 
         // 3. critterLoad / perksLoad / _pc_load_data / traitsLoad: the sheet, rebuilt like LoadGame()'s
         //    saved-base-stats branch. Vanilla bonusStats already hold level-up HP and the worn armor's

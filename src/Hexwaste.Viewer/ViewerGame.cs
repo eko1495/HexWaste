@@ -1878,7 +1878,7 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
             // of visibility).
             // Oracle F6: the critter heartbeat list is the map's critter section, then the dude (and, after
             // map_enter, the party via AllocateSid in InjectPartyMembers).
-            _scriptHost.RebuildCritterScripts(_map, _vanillaStaleDudeSid, _dude?.Dude);
+            _scriptHost.RebuildCritterScripts(_map);
             if (_dude is not null)
                 _scriptHost.BindDudeScript(_map, _dude.Dude);
             IEnumerable<MapObject> scripted = WithDudeScript(_map.Elevations
