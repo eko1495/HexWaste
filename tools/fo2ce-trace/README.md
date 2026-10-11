@@ -51,3 +51,30 @@ lives inside fo2ce's own combat loops once combat starts, the runner is a step m
 `run.sh` passes `[sound]initialize=0`: with sound on, two same-seed klamath-hour runs diverged (one brahmin `MOVE`
 at ~2.85M virtual ms, identical RNG/PROC/VAR streams) - the sound engine is paced by SDL's real-time audio thread.
 With sound off both runs are byte-identical. Sound has no game-logic role the oracle compares.
+
+## End-to-end workflow
+
+All outputs land in gitignored places (`reference/`, `game-data/oracle-saves/`, `scratch/oracle-runs/`).
+
+1. **Build the oracle binary** - `tools/fo2ce-trace/worktree.sh` (first time, or `--reset`), then
+   `tools/fo2ce-trace/build.sh`.
+2. **Make the vanilla saves** - `scripts/oracle-make-save.sh <fixture>` replays
+   `tests/golden-oracle/<fixture>/recipe.txt` in fo2ce and copies the slot to `game-data/oracle-saves/<fixture>/`.
+   Only needed once per fixture (or when its recipe changes).
+3. **Self-check fo2ce** - `scripts/oracle-selfcheck.sh <fixture>` must print `SELFCHECK OK` (two same-seed
+   runs, byte-identical traces). A failure means a nondeterminism leak in the patch; fix that before
+   trusting any comparison.
+4. **Compare** - `scripts/oracle-run.sh <fixture>` builds Hexwaste.Viewer + TraceDiff once, runs fo2ce
+   then Hexwaste (`--load-vanilla-save --rng fo2ce --fixture --scenario --trace --no-audio`), and prints
+   `IDENTICAL (N lines)` (exit 0) or `DIVERGED at fo2ce line N` with the preceding context and the
+   mismatching pair (exit 1). Traces and logs: `scratch/oracle-runs/<fixture>/{fo2ce,hexwaste}.{trace,log}`.
+   If either engine exits non-zero the runner stops with exit 3 and names the engine and code (fo2ce:
+   4 load fail, 5 dude dead/KO, 6 bad scenario, 7 end-turn cap, 124 timeout; Hexwaste: 2 bad flags,
+   5 dude dead/KO, 7 end-turn cap, 8 unhandled exception, 124 timeout) - except both exiting 5, a
+   legitimate shared outcome, which is still diffed. `ORACLE_TIMEOUT` (seconds, default 1800) bounds each
+   engine run; klamath-hour takes about 2 minutes in fo2ce.
+
+The M1 results and the open findings are in `docs/research-notes/oracle-m1-findings-2026-10.md`. As of M1
+every fixture diverges at line 2 (engine differences in the proc stream), so a later bug is found by
+comparing two Hexwaste traces or by projecting one record kind (e.g. `grep ' ATTACK '`), not as the
+lockstep first divergence.
