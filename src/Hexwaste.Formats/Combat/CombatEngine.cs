@@ -2301,6 +2301,7 @@ public sealed class CombatEngine
 
         _host.RemovePartyMember(critter);
 
+        _host.RemoveCritterScript(critter);
         critter.Sid = -1; // the engine removes the script on death (combat.cc:4876)
         _knockedDown.Remove(critter);
         _events.Remove(critter); // no pending wake for the dead (queue.cc:271)

@@ -1190,3 +1190,14 @@ PROC-stream differences are fixed. No engine behavior changed; goldens byte-iden
 `docs/superpowers/specs/2026-10-10-fo2ce-trace-oracle-design.md`,
 `docs/superpowers/plans/2026-10-10-fo2ce-trace-oracle.md`,
 `docs/research-notes/oracle-m1-findings-2026-10.md`.
+
+MAINTENANCE (2026-10-11, "oracle F6"): the critter heartbeat is now fo2ce's `_script_chk_critters`:
+one `critter_p_proc` per frame (60 Hz live, 100 Hz on harness/oracle 10 ms frames), round-robin over
+`ScriptHost.CritterScripts` in fo2ce's list order, all elevations, scripts removed at the moment of death
+(`ICombatHost.RemoveCritterScript`). After a vanilla save load the .SAV's unheld obj_dude script record is
+kept at its slot, owned by the dude. Oracle: critter_p_proc order matches fo2ce in all three M1 fixtures;
+first divergences moved from line 2 to 3 / 66 / 9 (new finding F16: that stale slot runs with its own
+LVARs in fo2ce). Golden fixtures: none moved (all five suites ALL PASS unchanged on three runs — fixtures
+record probe/final-state lines and combat gates the heartbeat off); golden runtime 91.55 s -> ~96 s.
+Spec/plan: `docs/superpowers/specs/2026-10-11-oracle-f6-critter-cadence-design.md`,
+`docs/superpowers/plans/2026-10-11-oracle-f6-critter-cadence.md`.

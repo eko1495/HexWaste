@@ -124,6 +124,7 @@ public sealed partial class ViewerGame
         OnPartyChanged(member, joined: false); // clears _partyScriptIndex, logs "leaves"
         _waitingCompanions.Remove(member);
         member.Team = _originalTeam.GetValueOrDefault(member, member.Team); // Vic → 25, etc.
+        RemoveCritterScript(member);
         member.Sid = -1; // halt the follow loop — an inert NPC again
         if (scriptIndex >= 0)
             _dismissedCompanions[member] = scriptIndex;
@@ -145,7 +146,7 @@ public sealed partial class ViewerGame
         int scriptIndex = _dismissedCompanions.GetValueOrDefault(member, -1);
         _dismissedCompanions.Remove(member);
         if (scriptIndex >= 0)
-            member.Sid = _scriptHost.AllocateSid(_map, scriptIndex); // rebind before OnPartyChanged reads it
+            member.Sid = _scriptHost.AllocateSid(_map, scriptIndex, member); // rebind before OnPartyChanged reads it
         _scriptHost.PartyMembers.Add(member);
         OnPartyChanged(member, joined: true);
         Console.WriteLine($"companion: {ObjectName(member)} rejoined count={Formats.Int.ScriptHost.PartyMemberCount(_scriptHost.PartyMembers)}");

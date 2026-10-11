@@ -230,6 +230,10 @@ public interface ICombatHost
     /// no kill tracker.</summary>
     void RecordKill(MapObject victim) { }
 
+    /// <summary>The victim's script leaves the critter heartbeat list (scriptRemove, combat.cc:4876), called
+    /// while critter.Sid still holds the sid. Default no-op; the viewer forwards to ScriptHost.RemoveScript.</summary>
+    void RemoveCritterScript(MapObject critter) { }
+
     /// <summary>An NPC quaffs ONE healing item from its inventory (the AI's _ai_check_drugs heal,
     /// combat_ai.cc:999): find a healing drug, apply its heal to the critter, consume it; return whether
     /// it healed (P42). Default false (the fake host has no inventory/proto model).</summary>

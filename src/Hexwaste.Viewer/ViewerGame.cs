@@ -146,11 +146,8 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
     /// RNG is known.</summary>
     private Formats.Combat.CombatEngine _combat = null!;
 
-    /// <summary>critter_p_proc round-robin (the engine's _script_chk_critters
-    /// ticker runs ONE critter script per frame; we pump at the 10 Hz game
-    /// tick instead of our 60 Hz frame rate).</summary>
-    private double _critterProcTimerMs;
-    private int _critterProcIndex;
+    /// <summary>P30 A-M2: the 100 ms sneak re-check clock (formerly also the critter heartbeat's).</summary>
+    private double _sneakTimerMs;
 
     /// <summary>P1-M2: the recurring map_update heartbeat clock. The engine re-fires SCRIPT_PROC_MAP_UPDATE
     /// for every script every 600 game ticks (scripts.cc:517 mapUpdateEventProcess → queueAddEvent(600));
@@ -1879,6 +1876,9 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
             // boxes are invisible items whose map_enter stocks the store and
             // store_external()s the box (the engine runs scripts regardless
             // of visibility).
+            // Oracle F6: the critter heartbeat list is the map's critter section, then the dude (and, after
+            // map_enter, the party via AllocateSid in InjectPartyMembers).
+            _scriptHost.RebuildCritterScripts(_map, _vanillaStaleDudeSid, _dude?.Dude);
             if (_dude is not null)
                 _scriptHost.BindDudeScript(_map, _dude.Dude);
             IEnumerable<MapObject> scripted = WithDudeScript(_map.Elevations
@@ -3557,6 +3557,12 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
             || Fid.Type(npc.Fid) is not ObjectType.Critter)
             return false;
 
+        // Hexwaste deviation (oracle F6): fo2ce animates an off-elevation critter on its own floor, but
+        // this walker only models the current elevation (_blockedTiles, _solidObjects[_elevation],
+        // spatials at _elevation) — walking it here would path and draw a ghost on the dude's floor.
+        if (ElevationOfObject(npc) != _elevation)
+            return false;
+
         int walkFid = Fid.Build(ObjectType.Critter, Fid.Index(npc.Fid), 1, Fid.WeaponCode(npc.Fid));
         if (!_vfs.Exists(_artIndex.GetFrmPath(walkFid)))
         {
@@ -4283,7 +4289,7 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
         {
             if (protoIndex == -1)
                 return null;
-            item.Sid = _scriptHost.AllocateSid(_map, protoIndex);
+            item.Sid = _scriptHost.AllocateSid(_map, protoIndex, item);
         }
         var result = _scriptHost.RunObjectProc(item, _map, _dude?.Dude, "use_p_proc");
         if (result is not null)
@@ -5515,6 +5521,7 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
                 // converting (CombatEngine.cs), so mirror it here.
                 obj.CombatResults |= 0x80; // DAM_DEAD
                 obj.CurrentHp = 0;
+                RemoveCritterScript(obj);
                 obj.Sid = -1;
                 ConvertToCorpse(obj, PickDeathAnim(obj));
             }
@@ -5566,10 +5573,10 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
             // target (the +15 to-hit + the knockback immunity actually apply). P36.
             Flags = proto.Flags & 0x800,
             Pid = si.Pid,
-            Sid = si.ScriptIndex >= 0 && _scriptHost is not null
-                ? _scriptHost.AllocateSid(_map, si.ScriptIndex)
-                : -1,
+            Sid = -1,
         };
+        if (si.ScriptIndex >= 0 && _scriptHost is not null)
+            obj.Sid = _scriptHost.AllocateSid(_map, si.ScriptIndex, obj);
         // Trace oracle: fo2ce worldmap.cc wmSetupCritterObjs — objectCreateWithPid (SPAWN, tile -1), then
         // each inventory item's objectCreateWithPid (SPAWN), then objectSetLocation (critter MOVE) below.
         if (Formats.Trace.OracleTrace.Active)

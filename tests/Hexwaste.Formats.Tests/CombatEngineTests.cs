@@ -14,6 +14,24 @@ namespace Hexwaste.Formats.Tests;
 public class CombatEngineTests
 {
     [Fact]
+    public void KillRemovesTheVictimsScriptBeforeClearingTheSid()
+    {
+        var host = new FakeCombatHost();
+        host.SetDude(NewCritter(tile: 20100, hp: 30, ap: 10));
+        MapObject enemy = host.AddCritter(NewCritter(tile: HexGrid.TileInDirection(20100, 0), hp: 1));
+        enemy.Sid = 0x04000005;
+        var engine = new CombatEngine(host, new MinRng());
+
+        Assert.True(engine.TryAttack(enemy));
+        host.Animating.Clear();
+        engine.ProcessAnimations();
+
+        Assert.True(enemy.IsDead);
+        Assert.Equal([0x04000005], host.RemovedScripts); // combat.cc:4876 scriptRemove, sid still set
+        Assert.Equal(-1, enemy.Sid);
+    }
+
+    [Fact]
     public void DamageAppliesOnAnimationCompletionAndXpPaysAtCombatEnd()
     {
         var host = new FakeCombatHost();
@@ -4618,6 +4636,8 @@ public class CombatEngineTests
         public bool StartDeathFall(MapObject critter, int deathAnim) => false; // no fall art → corpse now
         public void ConvertToCorpse(MapObject critter, int deathAnim) { }
         public void OnCritterRemoved(MapObject critter) { }
+        public List<int> RemovedScripts { get; } = [];
+        public void RemoveCritterScript(MapObject critter) => RemovedScripts.Add(critter.Sid);
         public readonly List<(MapObject Target, MapObject? Source, int Damage)> DamageProcCalls = [];
         public Action<MapObject, MapObject?, int>? OnDamageProc { get; set; } // a test side-effect (e.g. kill another victim)
         public IReadOnlyList<string> RunDamageProc(MapObject target, MapObject? source, int damage)

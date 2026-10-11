@@ -246,6 +246,10 @@ public sealed class MapFile
     /// <summary>Spatial trigger scripts (type-1 sids): trap corridors etc.</summary>
     public List<SpatialScript> SpatialScripts { get; } = [];
 
+    /// <summary>Critter-type (type 4) sids in script-section file order: fo2ce's
+    /// gScriptLists[SCRIPT_TYPE_CRITTER] order after scriptLoadAll, which the critter heartbeat walks.</summary>
+    public List<int> CritterSids { get; } = [];
+
     /// <summary>A spatial script record: exact tile (radius 0) or a radius
     /// circle on one elevation (built_tile decoded like MapDestination).</summary>
     public sealed record SpatialScript(int Sid, int ScriptListIndex, int Tile, int Elevation, int Radius);
@@ -293,7 +297,7 @@ public sealed class MapFile
             Elevations = elevations,
         };
 
-        ReadScripts(reader, map.ScriptsBySid, map.SpatialScripts);
+        ReadScripts(reader, map.ScriptsBySid, map.SpatialScripts, map.CritterSids);
         ReadObjects(reader, elevations, protos, header.Version);
 
         return map;
@@ -333,12 +337,13 @@ public sealed class MapFile
     /// discarded.
     /// </summary>
     private static void ReadScripts(BigEndianReader reader, Dictionary<int, MapScriptRecord> scriptsBySid,
-        List<SpatialScript> spatialScripts)
+        List<SpatialScript> spatialScripts, List<int> critterSids)
     {
         const int scriptTypeCount = 5;
         const int extentSize = 16;
         const int typeSpatial = 1;
         const int typeTimed = 2;
+        const int typeCritter = 4;
 
         for (int type = 0; type < scriptTypeCount; type++)
         {
@@ -385,6 +390,8 @@ public sealed class MapFile
                                 builtTile & 0x3FFFFFF,
                                 (builtTile & unchecked((int)0xE0000000)) >>> 29,
                                 radius));
+                        if (sid >> 24 == typeCritter)
+                            critterSids.Add(sid);
                     }
                 }
 
