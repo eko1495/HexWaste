@@ -1,6 +1,7 @@
 using Hexwaste.Formats.Int;
 using Hexwaste.Formats.Map;
 using Hexwaste.Formats.Proto;
+using Hexwaste.Formats.Trace;
 
 namespace Hexwaste.Formats.Tests;
 
@@ -79,5 +80,41 @@ public class StaleDudeScriptTests : IDisposable
         Dictionary<int, int[]> lvars = host.ExportLocalVars("stale.map");
         Assert.Equal([99], lvars[OwnSid]);
         Assert.Equal([20], lvars[StaleSid]);
+    }
+
+    [Fact]
+    public void MapUpdateRunsCritterListLastInListOrder()
+    {
+        ScriptHost host = MakeHost();
+        MapFile map = EmptyMap([5]);
+        map.Elevations[0] = new MapElevation { Squares = new int[MapElevation.SquareGridSize] };
+        MapObject scenery = Obj(14, 0x03000001, ObjectType.Scenery);
+        MapObject critter = Obj(24, 0x04000001, ObjectType.Critter);
+        MapObject dude = Obj(18000, -1, ObjectType.Critter);
+        map.Elevations[0]!.Objects.AddRange([scenery, critter]);
+        map.ScriptsBySid[scenery.Sid] = new MapScriptRecord(0, -1, 0);
+        map.ScriptsBySid[critter.Sid] = new MapScriptRecord(0, -1, 0);
+        map.ScriptsBySid[StaleSid] = new MapScriptRecord(0, 0, 1); // LVAR seeded 5
+        map.CritterSids.AddRange([critter.Sid, StaleSid]);
+        host.RebuildCritterScripts(map, StaleSid, dude);
+        host.BindDudeScript(map, dude); // list: critter, stale, dude
+
+        var sw = new StringWriter();
+        try
+        {
+            OracleTrace.Open(sw, "t");
+            OracleTrace.Clock = () => 0u;
+            host.RunMapUpdate(map, [dude, scenery, critter], dude); // the viewer prepends the dude
+        }
+        finally
+        {
+            OracleTrace.Clock = null;
+            OracleTrace.Close();
+        }
+
+        string[] selves = sw.ToString().Split('\n')
+            .Where(l => l.Contains(" PROC ")).Select(l => l[(l.LastIndexOf('#') + 1)..].Trim()).ToArray();
+        Assert.Equal(["14", "24", "18000", "18000"], selves);
+        Assert.Equal(0, host.GlobalVars[777]); // gDude (LVAR 0) ran after the stale slot (LVAR 5)
     }
 }

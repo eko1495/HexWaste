@@ -1164,8 +1164,7 @@ public sealed class ScriptHost(GameFileSystem vfs, ScriptList scripts, Hexwaste.
 
         // Snapshot: map_enter scripts create objects (container stocking),
         // mutating the underlying lists mid-iteration.
-        foreach (MapObject obj in objects.ToList())
-            RunObjectProc(obj, map, dude, firstRun, -1, "map_enter_p_proc");
+        RunObjectScriptsInListOrder(map, objects, dude, firstRun, "map_enter_p_proc");
 
         // P113 (item 7e): spatial scripts get map_enter too (scriptsExecMapUpdateScripts iterates
         // every script TYPE list, scripts.cc:2601-2674; MAP_ENTER carries firstRun, :2608-2610).
@@ -1207,10 +1206,32 @@ public sealed class ScriptHost(GameFileSystem vfs, ScriptList scripts, Hexwaste.
         // and only scripts with procs[proc] > 0 (the proc exists) are called.
         RunSpatialMapProc(map, dude, 0, "map_update_p_proc"); // P113 (item 7e)
 
-        foreach (MapObject obj in objects.ToList())
-            if (map.ScriptsBySid.TryGetValue(obj.Sid, out MapScriptRecord? record)
-                && DefinesProc(record.ScriptListIndex, "map_update_p_proc"))
-                RunObjectProc(obj, map, dude, 0, -1, "map_update_p_proc");
+        RunObjectScriptsInListOrder(map, objects, dude, 0, "map_update_p_proc");
+    }
+
+    /// <summary>ported from fallout2-ce src/scripts.cc scriptsExecMapUpdateScripts(): object scripts run
+    /// by type list, the critter list last and in list order, by sid (so the stale obj_dude slot runs its
+    /// own script, oracle F16); only scripts that define the proc (procs[proc] &gt; 0). Critter-list
+    /// entries run only when the caller passed their owner, so probe callers keep their object sets.</summary>
+    // shortcut: non-critter scripts run in the caller's object order, fo2ce uses the item list's file order;
+    // upgrade if the oracle shows a divergence there.
+    private void RunObjectScriptsInListOrder(MapFile map, IEnumerable<MapObject> objects, MapObject? dude,
+        int fixedParam, string procName)
+    {
+        List<MapObject> snapshot = objects.ToList(); // procs create objects (container stocking)
+        var passed = new HashSet<MapObject>(snapshot, ReferenceEqualityComparer.Instance);
+        var listed = new HashSet<int>(CritterScripts.Sids);
+
+        foreach (MapObject obj in snapshot)
+            if (!listed.Contains(obj.Sid) && map.ScriptsBySid.TryGetValue(obj.Sid, out MapScriptRecord? record)
+                && DefinesProc(record.ScriptListIndex, procName))
+                RunObjectProc(obj, map, dude, fixedParam, -1, procName);
+
+        foreach (int sid in CritterScripts.Sids.ToList())
+            if (_scriptOwners.TryGetValue(sid, out MapObject? owner) && passed.Contains(owner)
+                && map.ScriptsBySid.TryGetValue(sid, out MapScriptRecord? record)
+                && DefinesProc(record.ScriptListIndex, procName))
+                RunScriptProc(sid, owner, map, dude, fixedParam, -1, procName);
     }
 
     /// <summary>Whether the script defines the proc (fallout2-ce procs[proc] > 0). A load failure counts
