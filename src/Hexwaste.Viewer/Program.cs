@@ -876,6 +876,11 @@ if (scenarioPath is not null && rngMode != "fo2ce")
     Console.Error.WriteLine("--scenario needs --rng fo2ce");
     return 2;
 }
+if (tracePath is not null && rngMode != "fo2ce")
+{
+    Console.Error.WriteLine("--trace needs --rng fo2ce");
+    return 2;
+}
 if (scenarioPath is not null)
 {
     var scenario = Hexwaste.Formats.Trace.OracleScenario.Parse(File.ReadAllText(scenarioPath));

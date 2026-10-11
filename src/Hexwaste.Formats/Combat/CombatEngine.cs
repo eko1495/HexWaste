@@ -1,6 +1,7 @@
 using Hexwaste.Formats.Hex;
 using Hexwaste.Formats.Map;
 using Hexwaste.Formats.Proto;
+using Hexwaste.Formats.Trace;
 
 namespace Hexwaste.Formats.Combat;
 
@@ -442,6 +443,7 @@ public sealed class CombatEngine
             DamageType: weaponProto?.Weapon?.DamageType ?? 0, // P26 gore context
             AttackerAnim: DeathAnims.AttackAnimFor(isGun, weaponProto?.Weapon is not null),
             Accidental: accidental);
+        TraceAttack(dude, target, chance, hit, damage, critFlags, accidental);
         _host.Transcript($"attack {_host.ObjectName(target)}@{target.HexTile}"
             + $"{(weaponProto is null ? "" : $" [{_host.ObjectNameByPid(weaponProto.Pid)}{(isGun ? $" {weaponItem!.AmmoQuantity}rnd d{distance}" : "")}]")}: chance={chance}% hit={hit} damage={damage}{CritTag(critFlags)}");
 
@@ -572,6 +574,7 @@ public sealed class CombatEngine
         // — burst deliberately differs from the single-shot eager decrement in TryAttack.
         _pendingBurst = new PendingBurst(dude, target, weaponProto, weaponItem,
             ammoBefore, roundsFired, roundsHit, totalDamage, extras);
+        TraceAttack(dude, target, accuracy, roundsHit > 0, totalDamage, 0);
         _host.Transcript($"burst {_host.ObjectName(target)}@{target.HexTile}"
             + $" [{_host.ObjectNameByPid(weaponProto.Pid)} {ammoBefore}rnd d{distance}]:"
             + $" chance={accuracy}% rounds={roundsFired} hit={roundsHit} damage={totalDamage}");
@@ -998,6 +1001,7 @@ public sealed class CombatEngine
         _host.RemoveFromHand(dude, weaponItem); // leaves the hand at throw time
         _pendingThrow = new PendingThrow(dude, targetCritter, targetTile, hit, damage, explosive,
             weaponProto.Weapon.MinDamage, weaponProto.Weapon.MaxDamage, weaponProto, weaponItem, critFlags, accidental);
+        TraceAttack(dude, targetCritter, chance, hit, damage, critFlags, accidental);
         _host.Transcript($"throw {_host.ObjectNameByPid(weaponProto.Pid)} -> @{targetTile}"
             + $": chance={chance}% hit={hit}{(explosive ? " explosive" : $" damage={damage}")}{CritTag(critFlags)}");
         _host.OnThrowStarted(dude, targetTile, weaponProto);
@@ -2201,6 +2205,48 @@ public sealed class CombatEngine
         return overridden;
     }
 
+    // ---- trace oracle (inactive unless --trace) ----
+
+    /// <summary>TURN line — fo2ce combat.cc _combat_turn entry (oracleTraceTurn: obj->combat.ap, already
+    /// refreshed for the round, before combat_p_proc / standup).</summary>
+    private static void TraceTurn(MapObject critter, int ap)
+    {
+        if (OracleTrace.Active)
+            OracleTrace.Turn(critter.Id, ap);
+    }
+
+    /// <summary>The dude's TURN: his refreshed round budget (max AP − encumbrance, as ResetDudeAp sets),
+    /// computed without mutating state so the KO-skip path can trace it too.</summary>
+    private void TraceDudeTurn(MapObject dude)
+    {
+        if (OracleTrace.Active && _host.GetCritterState(dude) is { } stats)
+            OracleTrace.Turn(dude.Id, Math.Max(0, stats.MaxActionPoints - _host.DudeEncumbranceApPenalty()));
+    }
+
+    /// <summary>ATTACK line — fo2ce combat.cc attackCompute end (oracleTraceAttack): chance = accuracy,
+    /// hit = DAM_HIT in attackerFlags, dmg = defenderDamage, dflags = defenderFlags. Mapping: a missed shot
+    /// that strikes a bystander REPLACES the defender in fo2ce (attack->defender = accidentalTarget,
+    /// DAM_HIT set); DAM_CRITICAL is an ATTACKER flag there, so it is masked out of dflags; DAM_DEAD comes
+    /// from attackComputeDeathFlags → _check_for_death (critter, damage &gt; 0, hp − damage &lt;= 0).</summary>
+    private void TraceAttack(MapObject attacker, MapObject? defender, int chance, bool hit, int damage, int critFlags,
+        AccidentalHit? accidental = null)
+    {
+        if (!OracleTrace.Active)
+            return;
+        if (accidental is { } acc)
+        {
+            defender = acc.Victim;
+            hit = true;
+            damage = acc.Damage;
+            critFlags = 0;
+        }
+        int dflags = critFlags & ~CriticalTables.DamCritical;
+        if (defender is not null && damage > 0 && Fid.PidType(defender.Pid) == (int)ObjectType.Critter
+            && _host.GetCritterState(defender) is { } ds && ds.CurrentHp - damage <= 0)
+            dflags |= CriticalTables.DamDead;
+        OracleTrace.Attack(attacker.Id, defender?.Id ?? -1, chance, hit, damage, dflags);
+    }
+
     private int StandUpIfProne(MapObject critter, int ap)
     {
         if (!_knockedDown.Remove(critter))
@@ -2282,6 +2328,8 @@ public sealed class CombatEngine
         // The dude opened combat → round-1 order is dude (attacker) first, target (defender) second
         // (_combat_sequence_init). The dude's slot is index 0, so the turn stays his — he attacks now.
         BuildTurnOrder(firstRound: true, _host.Dude, target);
+        if (_host.Dude is { } turnDude)
+            TraceDudeTurn(turnDude); // the dude's round-1 slot opens here (no StepTurnOrder pass)
         _host.Log($"Combat begins - round 1, your turn (AP {_dudeAp}).");
     }
 
@@ -2337,6 +2385,8 @@ public sealed class CombatEngine
         if (!dudeSpectator && _host.GetCritterState(dude) is { } stats)
             ResetDudeAp(stats);
         BuildTurnOrder(firstRound: true, dudeSpectator ? null : dude, null);
+        if (!dudeSpectator)
+            TraceDudeTurn(dude);
         var teams = _hostiles.Select(h => h.Team).Distinct().OrderBy(t => t).ToList();
         if (!dudeSpectator)
             _host.Log($"You stumble into a battle! ({_hostiles.Count} combatants).");
@@ -3120,6 +3170,7 @@ public sealed class CombatEngine
             {
                 // The dude's slot — incapacitated dudes forfeit it (the wake fires as rounds advance),
                 // otherwise pause in PlayerTurn for input (the engine's blocking _combat_turn(gDude)).
+                TraceDudeTurn(dude!); // fo2ce emits TURN at _combat_turn entry, before the KO/lose-turn check
                 if (!CanAct(dude!))
                 {
                     SkipTurnIfIncapacitated(dude!);
@@ -3144,6 +3195,7 @@ public sealed class CombatEngine
             {
                 _actingAlly = actor;
                 _actingAllyAp = _host.GetCritterState(actor)?.MaxActionPoints ?? 5;
+                TraceTurn(actor, _actingAllyAp); // fo2ce _combat_turn entry, before combat_p_proc
                 if (TryAllyAction(actor))
                     return;
                 _currentAp[actor] = _actingAllyAp; // P77
@@ -3153,6 +3205,7 @@ public sealed class CombatEngine
             {
                 _actingEnemy = actor;
                 _actingEnemyAp = _host.GetCritterState(actor)?.MaxActionPoints ?? 5;
+                TraceTurn(actor, _actingEnemyAp); // fo2ce _combat_turn entry, before combat_p_proc
                 if (TryEnemyAction(actor))
                     return;
                 _currentAp[actor] = _actingEnemyAp; // P77
@@ -3957,6 +4010,7 @@ public sealed class CombatEngine
                 KnockbackPerk: weaponProto?.Weapon is { WeaponPerk: WeaponProtoStats.PerkKnockback }, // P74-M2
                 DamageType: weaponProto?.Weapon?.DamageType ?? 0,
                 AttackerAnim: DeathAnims.AttackAnimFor(isGun, weaponProto?.Weapon is not null));
+            TraceAttack(ally, target, chance, hit, damage, critFlags);
             _host.Transcript($"ally-attack {_host.ObjectName(ally)} -> {_host.ObjectName(target)}@{target.HexTile}"
                 + $"{(weaponProto is null ? "" : $" [{_host.ObjectNameByPid(weaponProto.Pid)}]")}: chance={chance}% hit={hit} damage={damage}{CritTag(critFlags)}");
             _host.OnAttackStarted(ally, target, weaponProto);
@@ -4033,6 +4087,7 @@ public sealed class CombatEngine
         if (loseTurn)
             _actingAllyAp = 0;
         _pendingBurst = new PendingBurst(ally, target, weaponProto, weaponItem, ammoBefore, fired, hits, total, extras);
+        TraceAttack(ally, target, acc, hits > 0, total, 0);
         _host.Transcript($"ally-burst {_host.ObjectName(ally)} -> {_host.ObjectName(target)}@{target.HexTile}"
             + $" [{_host.ObjectNameByPid(weaponProto.Pid)} {ammoBefore}rnd d{distance}]: chance={acc}% rounds={fired} hit={hits} damage={total}");
         foreach (BurstExtra ex in extras)
@@ -4065,6 +4120,7 @@ public sealed class CombatEngine
         if (loseTurn)
             _actingEnemyAp = 0;
         _pendingBurst = new PendingBurst(enemy, target, weaponProto, weaponItem, ammoBefore, fired, hits, total, extras);
+        TraceAttack(enemy, target, acc, hits > 0, total, 0);
         _host.Transcript($"enemy-burst {_host.ObjectName(enemy)} -> {_host.ObjectName(target)}@{target.HexTile}"
             + $" [{_host.ObjectNameByPid(weaponProto.Pid)} {ammoBefore}rnd d{distance}]: chance={acc}% rounds={fired} hit={hits} damage={total}");
         foreach (BurstExtra ex in extras)
@@ -4095,6 +4151,7 @@ public sealed class CombatEngine
             KnockbackPerk: weaponProto?.Weapon is { WeaponPerk: WeaponProtoStats.PerkKnockback }, // P74-M2
             DamageType: weaponProto?.Weapon?.DamageType ?? 0,
             AttackerAnim: DeathAnims.AttackAnimFor(isGun, weaponProto?.Weapon is not null));
+        TraceAttack(enemy, defenderObj, chance, hit, damage, critFlags);
         _host.Transcript($"enemy-attack {_host.ObjectName(enemy)}@{enemy.HexTile}"
             + $"{(weaponProto is null ? "" : $" [{_host.ObjectNameByPid(weaponProto.Pid)}{(isGun ? $" d{distance}" : "")}]")}: chance={chance}% hit={hit} damage={damage}{CritTag(critFlags)}");
 

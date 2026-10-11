@@ -389,6 +389,7 @@ public sealed partial class ViewerGame
         if (RebuildObject(typePid, 1) is { } box)
         {
             box.AmmoQuantity = ejected;
+            Formats.Trace.OracleTrace.SpawnPlaced(box.Id, box.Pid, -1); // fo2ce item.cc:1893 objectCreateWithPid(ammo)
             _dudeInventory.Add(box); // discrete — a partial box must not merge into a full stack
         }
         wi.AmmoQuantity = loaded - ejected;
@@ -1028,6 +1029,7 @@ public sealed partial class ViewerGame
             Id = -7, HexTile = tile, X = 0, Y = 0, Frame = 0, Rotation = 0,
             Fid = Fid.Build(ObjectType.Misc, 10, 0, 0), Flags = 0x08 | 0x10, Pid = 0x05000010, Sid = -1,
         };
+        Formats.Trace.OracleTrace.SpawnPlaced(marker.Id, marker.Pid, tile); // fo2ce actions.cc objectCreateWithFidPid(explosion)
         foreach (MapObject obj in _solidObjects[_elevation]
             .Where(o => o.Sid != -1 && Formats.Hex.HexGrid.Distance(o.HexTile, tile) <= 3).ToList())
         {

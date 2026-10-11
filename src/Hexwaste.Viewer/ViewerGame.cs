@@ -4939,6 +4939,7 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
                 Pid = item.Pid,
                 Sid = -1,
             };
+            Formats.Trace.OracleTrace.SpawnPlaced(unit.Id, unit.Pid, -1);
             to.Add(unit);
             return;
         }
@@ -5564,6 +5565,10 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
                 ? _scriptHost.AllocateSid(_map, si.ScriptIndex)
                 : -1,
         };
+        // Trace oracle: fo2ce worldmap.cc wmSetupCritterObjs — objectCreateWithPid (SPAWN, tile -1), then
+        // each inventory item's objectCreateWithPid (SPAWN), then objectSetLocation (critter MOVE) below.
+        if (Formats.Trace.OracleTrace.Active)
+            Formats.Trace.OracleTrace.Spawn(obj.Id, obj.Pid, -1);
 
         if (Fid.Type(obj.Fid) is ObjectType.Critter)
         {
@@ -5585,7 +5590,11 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
             if (it.Worn)
                 item.Flags |= MapObject.FlagWorn;
             obj.Inventory.Add(item);
+            if (Formats.Trace.OracleTrace.Active)
+                Formats.Trace.OracleTrace.Spawn(item.Id, item.Pid, -1);
         }
+        if (Formats.Trace.OracleTrace.Active && Fid.PidType(obj.Pid) == (int)ObjectType.Critter)
+            Formats.Trace.OracleTrace.Move(obj.Id, -1, obj.HexTile);
         return obj;
     }
 

@@ -1,4 +1,5 @@
 using Hexwaste.Formats.Combat;
+using Hexwaste.Formats.Trace;
 
 namespace Hexwaste.Viewer;
 
@@ -96,6 +97,41 @@ public sealed partial class ViewerGame
             _scriptHost.Rng = adapter;
             _scriptHost.SharedVmRandom = adapter;
         }
+        OpenOracleTrace();
+    }
+
+    /// <summary>--trace: open the sink AFTER the import + seed (nothing during the load is traced — the
+    /// fo2ce runner opens its trace after lsgLoadGameHeadless; seeding draws nothing). t= is the same
+    /// game-time tick scripts read via game_time (ScriptHost.ClockTicks → _clock.Ticks).</summary>
+    private void OpenOracleTrace()
+    {
+        if (OracleTracePath is not { } path)
+            return;
+        string? dir = Path.GetDirectoryName(Path.GetFullPath(path));
+        if (dir is not null)
+            Directory.CreateDirectory(dir);
+        OracleTrace.Clock = () => (uint)_clock.Ticks;
+        OracleTrace.Open(new StreamWriter(path), $"oracle v1 fixture={OracleFixture ?? "?"} engine=hexwaste@dev");
+        OracleRng!.OnDraw = (min, max, v) => OracleTrace.Rng(min, max, v, RngCallSite());
+    }
+
+    /// <summary>The trace's site= context (never compared by TraceDiff): the first stack frame outside
+    /// the RNG plumbing (Fo2ceRng, its Random adapter, the combat slot, System.Random).</summary>
+    private static string RngCallSite()
+    {
+        var frames = new System.Diagnostics.StackTrace(2, false).GetFrames();
+        foreach (var frame in frames)
+        {
+            if (frame.GetMethod() is not { } m || m.DeclaringType is not { } t)
+                continue;
+            if (t == typeof(Fo2ceRng) || t == typeof(Fo2ceRandomAdapter) || t == typeof(OracleRngSlot)
+                || t == typeof(Random) || t.FullName?.StartsWith("System.", StringComparison.Ordinal) == true)
+                continue;
+            while (t.Name.StartsWith('<') && t.DeclaringType is { } outer)
+                t = outer; // closure / state-machine classes → the user-written type
+            return $"{t.Name}:{m.Name}";
+        }
+        return "?";
     }
 
     private const int OracleEndTurnCapMs = 600000; // kOracleEndTurnCapMs (trace.patch)
@@ -198,6 +234,7 @@ public sealed partial class ViewerGame
     /// flush/close (the fo2ce side closes its trace from atexit on every exit path likewise).</summary>
     public void OracleShutdown(int code)
     {
+        OracleTrace.Close(); // flush the trace (fo2ce: atexit oracleTraceClose)
         Console.Out.Flush();
         Console.Error.Flush();
         Environment.Exit(code);

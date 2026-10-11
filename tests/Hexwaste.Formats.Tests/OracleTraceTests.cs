@@ -3,7 +3,13 @@ using Hexwaste.Formats.Trace;
 namespace Hexwaste.Formats.Tests;
 
 // All OracleTrace-touching tests live in this one class: OracleTrace is static, and xUnit runs
-// a class's tests sequentially, so they cannot race on the shared sink.
+// a class's tests sequentially, so they cannot race on the shared sink. The collection is also
+// non-parallel: the engine hooks (MapObject.HexTile, ScriptHost, CombatEngine) report to the same
+// static sink, so another test class moving a critter while a sink is open here would leak lines in.
+[CollectionDefinition(nameof(OracleTraceTests), DisableParallelization = true)]
+public sealed class OracleTraceCollection;
+
+[Collection(nameof(OracleTraceTests))]
 public class OracleTraceTests
 {
     [Fact]
@@ -44,5 +50,40 @@ public class OracleTraceTests
         Assert.False(OracleTrace.Active);
         OracleTrace.Gvar(1, 0, 1);
         Assert.Equal("# h\n", sw.ToString().Replace("\r\n", "\n"));
+    }
+
+    private static Map.MapObject Obj(int id, int pid, int tile) => new()
+    {
+        Id = id, HexTile = tile, X = 0, Y = 0, Frame = 0, Rotation = 0, Fid = 0, Flags = 0, Pid = pid, Sid = -1,
+    };
+
+    [Fact]
+    public void HexTileSetterTracesCritterMovesOnly()
+    {
+        var sw = new StringWriter();
+        try
+        {
+            OracleTrace.Open(sw, "h");
+            Map.MapObject critter = Obj(7, 0x01000010, 100); // initializer store: construction, not a move
+            Map.MapObject item = Obj(8, 0x00000029, 100);
+            critter.HexTile = 101;
+            critter.HexTile = 101; // from == to: nothing
+            critter.HexTile = -1;  // invalid tile (fo2ce objectSetLocation refuses it): nothing
+            item.HexTile = 300;    // not a critter: nothing
+            OracleTrace.SpawnPlaced(9, 0x01000010, 500); // SPAWN at the pre-placement -1, then the MOVE
+            OracleTrace.SpawnPlaced(10, 0x00000029, 500);
+        }
+        finally
+        {
+            OracleTrace.Close();
+        }
+
+        Assert.Equal(
+            "# h\n" +
+            "t=0 MOVE obj#7 100->101\n" +
+            "t=0 SPAWN obj#9 pid=0x01000010 tile=-1\n" +
+            "t=0 MOVE obj#9 -1->500\n" +
+            "t=0 SPAWN obj#10 pid=0x00000029 tile=-1\n",
+            sw.ToString().Replace("\r\n", "\n"));
     }
 }

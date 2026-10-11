@@ -37,8 +37,25 @@ public sealed class MapObject
 {
     public required int Id { get; set; } // settable: the trace-oracle vanilla import restores the saved dude id
 
-    /// <summary>Hex grid tile number (0..39999), or -1 for inventory items.</summary>
-    public required int HexTile { get; set; }
+    /// <summary>Hex grid tile number (0..39999), or -1 for inventory items. After construction the
+    /// setter reports critter moves to the trace oracle (fo2ce object.cc objectSetLocation →
+    /// oracleTraceMove: critters only, valid destination tile only, from != to).</summary>
+    public required int HexTile
+    {
+        get;
+        set
+        {
+            if (_hexTileAssigned && Trace.OracleTrace.Active && value is >= 0 and < 40000
+                && Formats.Fid.PidType(Pid) == (int)ObjectType.Critter)
+                Trace.OracleTrace.Move(Id, field, value);
+            field = value;
+            _hexTileAssigned = true;
+        }
+    }
+
+    // The object-initializer store is construction, not a move (fo2ce traces a spawned critter's
+    // placement explicitly at the spawn site — see OracleTrace.SpawnPlaced).
+    private bool _hexTileAssigned;
 
     /// <summary>Pixel offset from the hex tile center (objects can be nudged off-grid).</summary>
     public required int X { get; init; }

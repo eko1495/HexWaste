@@ -46,4 +46,17 @@ public static class OracleTrace
             Line($"MOVE obj#{objId} {fromTile}->{toTile}");
     }
     public static void Spawn(int objId, int pid, int tile) => Line($"SPAWN obj#{objId} pid=0x{pid:X8} tile={tile}");
+
+    /// <summary>A runtime-created object, already placed at <paramref name="tile"/>. fo2ce emits SPAWN
+    /// inside objectCreateWithFidPid, BEFORE placement, so the tile is the new-object default -1
+    /// (object.cc objectAllocate: tile = -1); a critter then placed by objectSetLocation adds its
+    /// MOVE -1->tile (the MapObject.HexTile setter skips the initializer store).</summary>
+    public static void SpawnPlaced(int objId, int pid, int tile)
+    {
+        if (!Active)
+            return;
+        Spawn(objId, pid, -1);
+        if (tile is >= 0 and < 40000 && Fid.PidType(pid) == (int)ObjectType.Critter)
+            Move(objId, -1, tile);
+    }
 }
