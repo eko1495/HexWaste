@@ -201,8 +201,8 @@ Original finding:
 skips scripts without `map_update_p_proc` and runs spatials before objects; the trace patch starts fo2ce's
 window at save-load completion (`oracleResetBkMapUpdate`, from `getTicks()` — `_get_bk_time()` is stale
 there). klamath-hour and artemple-idle now run map_update at the same ticks (180/h) with the same script
-set per round. Still open: fo2ce runs `obj_dude.int map_update_p_proc` twice per round (Hexwaste once),
-and object order within a round follows fo2ce's script lists (see F6). The 600-tick source still counts
+set per round. fo2ce's second `obj_dude.int map_update_p_proc` per round is explained by F16 (the stale slot), fixed;
+the order now matches. The 600-tick source still counts
 ms rather than reading the game clock (the map-update heartbeat probe feeds it ms directly).
 
 - Fixture: klamath-hour. fo2ce runs 180 map_update rounds per hour (gaps alternate 6/294/300 ticks),
@@ -219,7 +219,7 @@ ms rather than reading the game clock (the map-update heartbeat probe feeds it m
   The extra Hexwaste lines are trace-only: `kcitizen`, `ksbboard`, `stuff`, `trespass` and the other
   extras define no `map_update_p_proc`, but `ScriptHost.TraceProc` logs before `TryRunProcedure` finds
   the proc missing (fo2ce returns before its PROC line). fo2ce also runs `obj_dude.int map_update_p_proc`
-  twice per round, and puts spatial scripts before object scripts (script-type list order); Hexwaste runs
+  twice per round (the stale slot, F16 - fixed), and puts spatial scripts before object scripts (script-type list order); Hexwaste runs
   the dude once and spatials last.
 
 ### F8 — Missing proc → fo2ce runs procedure 1; Hexwaste runs nothing
@@ -281,12 +281,12 @@ ms rather than reading the game clock (the map-update heartbeat probe feeds it m
 - **Two obj_dude scripts after load.** fo2ce's first LVAR writes come from sid 0x04004650 and 0x04000005
   (artemple) / 0x04000028 (klamath), both `self=obj#18000`; obj_dude gets exactly 2 of every 3 critter
   slots (artemple 4 000 vs acklint 1 999). Cause: the stale .SAV obj_dude record plus the dude's own
-  script; see F16.
+  script; see F16 (explained and fixed with F16).
 - **Render-only frames advance the virtual clock 10 ms** (`oracleRenderGuard`, see
   `tools/fo2ce-trace/README.md`). An oracle-model artefact with no Hexwaste equivalent; affects only waits
   inside render-only loops (end-turn button animation, dialog fidgets).
 
-### F16 — Stale obj_dude script after a save load runs with its own state
+### F16 — Stale obj_dude script after a save load runs with its own state — FIXED
 
 - Fixtures: artemple-idle (fo2ce line 3), klamath-hour (fo2ce line 66); the stale sid is 0x04004650 in
   all three fixtures.
@@ -301,7 +301,31 @@ ms rather than reading the game clock (the map-update heartbeat probe feeds it m
 - Hypothesis: fo2ce keeps the .SAV record as a separate `Script` with its own LVAR block (the .SAV record has 5
   locals) that runs obj_dude.int against `self=obj#18000`; Hexwaste reuses the dude's script state.
   Porting it means giving the stale slot its own script instance. Also F15's "two obj_dude scripts".
-- Status: open. Also open: the critter list order after a map change (F6).
+- Status: FIXED (see below). Still open: the critter list order after a map change (F6).
+- **Fixed:** (1) `ScriptHost.RunScriptProc(sid, self, ...)`: the critter heartbeat runs the sid it took from the
+  critter list, so a slot whose owner holds a different sid runs its own LVARs/VM. (2) map_enter/map_update
+  (`ScriptHost.RunObjectScriptsInListOrder`): non-critter-list object scripts first, then the critter list in
+  list order, by sid (fo2ce `scriptsExecMapUpdateScripts`); the dude's map_enter/map_update now run last.
+  (3) Vanilla import models fo2ce `_obj_load_dude` (`ScriptHost.ReplaceDudeScriptAfterVanillaLoad`): during the
+  load passes the .SAV's obj_dude record (sid 0x04004650) is the dude's script (its saved LVARs seed the dude's
+  slice); afterwards the dude gets a fresh script appended last and the stale 0x04004650 slot stays at its
+  critter-section position, fresh (no LVAR block, program not loaded). Each runs obj_dude's `start` body on its
+  first execution during play (top-level code jumps into start: `if LVAR0 == 0 { LVAR0 := game_time;
+  GVAR 104++ }`). Grounded by a temporary fo2ce debug dump (reverted). Result: artemple-idle first divergence
+  line 3 -> 6, klamath-hour 66 -> 69; both are now only the sid label (F17). The map_update round matches
+  fo2ce (artemple, animfrvr obj#14, animfrvr obj#18, obj_dude obj#18000 x2; only the map script self
+  obj#16 vs obj#-2 differs = F12). Accepted deviations: the stale slot is dropped on a map change and after a
+  Hexwaste save/reload (fo2ce saves it into the map .SAV and it returns on revisit); no fixture covers either.
+
+### F17 — Dude script sid label
+
+- Fixtures: artemple-idle (line 6), klamath-hour (line 69).
+- Evidence: fo2ce `LVAR sid=0x04000005 0 0->302421` (klamath `0x04000028 ... 0->302424`) vs hexwaste
+  `LVAR sid=0x04800000`.
+- Cause: fo2ce allocates the dude's script sid from the critter list's id counter at `scriptsSetDudeScript`
+  (0x04000005 artemple, 0x04000028 klamath after load); Hexwaste uses a fixed `DudeSid` 0x04800000. Values
+  match; only the trace label differs. Scripts cannot observe a sid, so this is trace alignment (like F12).
+- Status: open. Options: a label mapping in the trace, or allocate the dude sid like fo2ce.
 
 ## Recommended next steps
 
@@ -310,7 +334,9 @@ ms rather than reading the game clock (the map-update heartbeat probe feeds it m
    is enough to make traces comparable; the gameplay rate is a separate design question.
 3. Done: attach obj_dude.int (F3), the map_update sources/filter (F7) and critter-list order + cadence
    (F6). The first divergence is now off the critter order (artemple line 3, klamath line 66, arcaves
-   line 9); next is the stale obj_dude slot's own state (F16).
-4. Then the combat joiner path (F5) and re-check F4.
+   line 9); F16 (stale obj_dude slot) is done. Next: F17 (trace-label alignment) and the arcaves line 9
+   difference (fo2ce `LVAR sid=0x04000008` vs hexwaste `zclscorp combat_p_proc`).
+4. Then the combat joiner path (F5) and re-check F4, then F8-F14. The start-body-on-first-run timing
+   (obj_dude `start` executes on first run) is part of F8 in general.
 5. F8–F13 are small, independent ports; F12/F14 first need trace-alignment decisions. Each fix should be
    validated by a fresh `oracle-run.sh` showing the first divergence moving later.
