@@ -389,6 +389,21 @@ public sealed class ScriptHost(GameFileSystem vfs, ScriptList scripts, Hexwaste.
         Car.TrunkMaxSize = size;
     }
 
+    /// <summary>The dude's script sid: obj_dude.int (scripts.lst index 0) gets a fixed synthetic sid,
+    /// clear of map and AllocateSid ranges, so its local vars can live outside any one map.</summary>
+    public const int DudeSid = 0x04800000;
+
+    /// <summary>ported from fallout2-ce src/scripts.cc scriptsSetDudeScript(): the dude carries
+    /// obj_dude.int (proto sid 0x4000000). Call on every map load, after the dude is spawned.</summary>
+    public void BindDudeScript(MapFile map, MapObject dude)
+    {
+        map.ScriptsBySid[DudeSid] = new MapScriptRecord(0, -1, 0);
+        dude.Sid = DudeSid;
+    }
+
+    // The dude's script survives map changes (SCRIPT_FLAG_0x10), so its LVARs are not keyed by map.
+    private static (string Map, int Sid) LvarKey(MapFile map, int sid) => (sid == DudeSid ? "" : map.Header.Name, sid);
+
     /// <summary>Runtime sid for a script-created object (engine scr_new): a
     /// fresh type-3 sid registered into the map's script table.</summary>
     public int AllocateSid(MapFile map, int scriptIndex)
@@ -943,8 +958,16 @@ public sealed class ScriptHost(GameFileSystem vfs, ScriptList scripts, Hexwaste.
         return ranAny ? new ScriptRunResult(overridden, messages) : null;
     }
 
+    /// <summary>ported from fallout2-ce src/proto_instance.cc _obj_drop() step 1: the dropper's
+    /// is_dropping_p_proc (source = the item); an override cancels the drop.</summary>
+    public ScriptRunResult? RunIsDropping(MapObject dropper, MapObject item, MapFile map, MapObject? dude) =>
+        dropper.Sid != -1 && map.ScriptsBySid.TryGetValue(dropper.Sid, out MapScriptRecord? record)
+            ? RunProcWith(record.ScriptListIndex, map, dropper.Sid, record, dropper, dude, usedWith: null,
+                "is_dropping_p_proc", source: item)
+            : null;
+
     private ScriptRunResult? RunProcWith(int scriptListIndex, MapFile map, int sid, MapScriptRecord record,
-        MapObject self, MapObject? dude, MapObject usedWith, string procedureName)
+        MapObject self, MapObject? dude, MapObject? usedWith, string procedureName, MapObject? source = null)
     {
         string? path = scripts.GetScriptPath(scriptListIndex);
         if (path is null)
@@ -954,7 +977,7 @@ public sealed class ScriptHost(GameFileSystem vfs, ScriptList scripts, Hexwaste.
             IntProgram? program = GetProgram(path);
             if (program is null)
                 return null;
-            var externals = new ScriptContext(this, map, sid, record, self, source: dude, dude: dude)
+            var externals = new ScriptContext(this, map, sid, record, self, source: source ?? dude, dude: dude)
             {
                 UsedWith = usedWith,
             };
@@ -1282,7 +1305,7 @@ public sealed class ScriptHost(GameFileSystem vfs, ScriptList scripts, Hexwaste.
 
     private int[] GetLocalVarSlice(MapFile map, int sid, MapScriptRecord record)
     {
-        if (_localVarSlices.TryGetValue((map.Header.Name, sid), out int[]? slice))
+        if (_localVarSlices.TryGetValue(LvarKey(map, sid), out int[]? slice))
             return slice;
 
         int count = record.LocalVarsCount > 0
@@ -1298,7 +1321,7 @@ public sealed class ScriptHost(GameFileSystem vfs, ScriptList scripts, Hexwaste.
                 slice[i] = map.LocalVariables[record.LocalVarsOffset + i];
         }
 
-        _localVarSlices[(map.Header.Name, sid)] = slice;
+        _localVarSlices[LvarKey(map, sid)] = slice;
         return slice;
     }
 

@@ -1730,7 +1730,7 @@ public sealed class CombatEngine
     /// hit (defenderDamage >= 0 && DAM_HIT) the ATTACKER's combat_p_proc runs with fixedParam=2 and
     /// target = the struck defender (e.g. a scorpion poisons whom it stung). DIVERGENCE: a lethal hit
     /// returns early in Hexwaste (KillCritter), so the hook fires only on a non-lethal hit — moot for
-    /// poison (a kill needs no poison). The dude attacker is a no-op (no gcd combat_p_proc / Sid -1).
+    /// poison (a kill needs no poison). The dude attacker runs obj_dude.int's.
     /// </summary>
     private void RunOnHitCombatProc(MapObject attacker, MapObject defender)
     {
@@ -3181,12 +3181,17 @@ public sealed class CombatEngine
                     _orderIndex++;
                     continue;
                 }
-                if (_host.GetCritterState(dude!) is { } stats)
-                {
+                var stats = _host.GetCritterState(dude!);
+                if (stats is not null)
                     ResetDudeAp(stats);
-                    if (StandUpIfProne(dude!, _dudeAp) is var afterStand && afterStand >= 0)
-                        _dudeAp = afterStand; // the dude stands at the cost of 3 AP
+                // obj_dude.int's per-turn combat_p_proc (combat.cc:3243); an override skips standup + input.
+                if (RunCombatProcOverridesTurn(dude!))
+                {
+                    _orderIndex++;
+                    continue;
                 }
+                if (stats is not null && StandUpIfProne(dude!, _dudeAp) is var afterStand && afterStand >= 0)
+                    _dudeAp = afterStand; // the dude stands at the cost of 3 AP
                 _phase = CombatPhase.PlayerTurn;
                 _host.Log($"Round {_round} - your turn (AP {_dudeAp}).");
                 return;

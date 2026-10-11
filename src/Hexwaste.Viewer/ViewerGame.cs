@@ -1699,9 +1699,9 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
             // map_exit_p_proc never fires; their objects stay on the map at their followed positions.
             // ported from fallout2-ce scripts.cc scriptsExecMapExitProc →
             // scriptsExecMapUpdateScripts(SCRIPT_PROC_MAP_EXIT).
-            IEnumerable<MapObject> exitScripted = _map.Elevations.Where(e => e is not null)
+            IEnumerable<MapObject> exitScripted = WithDudeScript(_map.Elevations.Where(e => e is not null)
                 .SelectMany(e => e!.Objects).Where(o => o.Sid != -1 && o != _dude?.Dude
-                    && _scriptHost?.PartyMembers.Contains(o) != true);
+                    && _scriptHost?.PartyMembers.Contains(o) != true));
             _scriptHost?.RunMapExit(_map, exitScripted, _dude?.Dude);
 
             // Guard #2 (transient persistence): a transient map being LEFT writes no delta —
@@ -1873,10 +1873,12 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
             // boxes are invisible items whose map_enter stocks the store and
             // store_external()s the box (the engine runs scripts regardless
             // of visibility).
-            IEnumerable<MapObject> scripted = _map.Elevations
+            if (_dude is not null)
+                _scriptHost.BindDudeScript(_map, _dude.Dude);
+            IEnumerable<MapObject> scripted = WithDudeScript(_map.Elevations
                 .Where(e => e is not null)
                 .SelectMany(e => e!.Objects)
-                .Where(o => o.Sid != -1 && o != _dude?.Dude);
+                .Where(o => o.Sid != -1 && o != _dude?.Dude));
             _scriptHost.SpatialsEnabled = false; // _scr_SpatialsEnabled gate (map.cc:973)
             // P1: the engine's start pass (map.cc:1006 scriptsExecStartProc) runs BEFORE map_enter so
             // every script's first execution (its global-init prologue) publishes its exported variables —
@@ -3212,16 +3214,8 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
             LightIntensity = Formats.Light.LightGrid.IntensityMax,
             LightDistance = 4,
             Pid = 0x01000001,
-            // Task 1/Task 2 hardening (F29): explicit, not the C# int default (0). The reference gives
-            // the dude a real, live sid in play (scriptsSetDudeScript, scripts.cc:1460-1489) so its
-            // damage_p_proc/etc. CAN fire — Hexwaste models no dude script at all, so -1 ("no script") is
-            // the honest value, matching every other unscripted MapObject's Sid convention. Before this,
-            // the dude's Sid silently defaulted to 0, which every `Sid != -1` guard in the codebase
-            // treated as "has a script" — harmless only because map format type-0 sids are never
-            // object-bound (Task 1's 146-map survey), so ScriptsBySid[0] never resolves. Verified safe
-            // codebase-wide (Task 2's Sid != -1 survey): every other such guard either already excludes
-            // `!= dude` explicitly, never receives the dude object, or is immediately followed by (or
-            // wraps) a ScriptsBySid.TryGetValue lookup that fails identically for Sid 0 and Sid -1.
+            // Explicit, not the C# int default (0): unscripted until the map load binds obj_dude.int
+            // (ScriptHost.BindDudeScript, scriptsSetDudeScript).
             Sid = -1,
         };
 
@@ -4052,9 +4046,14 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
         // self = the item; script_overrides keeps the item in the bag (proto_instance.cc:693-708).
         // fo2ce sets no action_being_used for DROP. Inert for vanilla map data today (only
         // proto-attached scripts define it — aibroc/aixander — and proto-sid instantiation isn't
-        // modelled), but the hook is where the engine has it. Note: _obj_drop's step 1,
-        // is_dropping_p_proc on the DROPPER (proto_instance.cc:680, source = item), is INERT here —
-        // only obj_dude.int defines it and the dude carries no script.
+        // modelled), but the hook is where the engine has it. Step 1, is_dropping_p_proc on the
+        // DROPPER (proto_instance.cc:680, source = item), runs first — only obj_dude.int defines it.
+        var dropping = _scriptHost?.RunIsDropping(_dude.Dude, item, _map, _dude.Dude);
+        if (dropping is not null)
+            foreach (string line in dropping.Messages)
+                Log(line);
+        if (dropping is { Overridden: true })
+            return;
         var dropScripted = _scriptHost?.RunObjectProc(item, _map, _dude.Dude, "drop_p_proc");
         if (dropScripted is not null)
             foreach (string line in dropScripted.Messages)
@@ -6860,6 +6859,11 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
                 gray);
         }
     }
+
+    /// <summary>A map-wide script pass plus the dude: he is not in the map's object lists, but fo2ce
+    /// keeps his obj_dude.int in the critter script list (scriptsSetDudeScript), first.</summary>
+    private IEnumerable<MapObject> WithDudeScript(IEnumerable<MapObject> scripted) =>
+        _dude is { Dude: { Sid: not -1 } d } ? scripted.Prepend(d) : scripted;
 
     /// <summary>Idle clock + hour-driven ambient (skipped when --ambient fixed it).</summary>
     private void UpdateClock(double elapsedMs)

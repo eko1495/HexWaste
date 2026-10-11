@@ -110,7 +110,18 @@ reading where the fixtures do not exercise it.
   second) and advances during combat. The single biggest source of divergence; changes all time-driven
   behavior (timers, healing, spawns, day/night).
 
-### F3 — `obj_dude.int` never runs in Hexwaste
+### F3 — `obj_dude.int` never runs in Hexwaste — FIXED
+
+- **Fixed:** `ScriptHost.BindDudeScript` binds obj_dude.int (scripts.lst 0) to the dude on every map load
+  under a fixed synthetic sid (`DudeSid`); its LVARs are not keyed by map (SCRIPT_FLAG_0x10). The dude now
+  joins the start/map_enter/map_update/map_exit passes, the critter_p_proc heartbeat, his per-turn
+  combat_p_proc (combat.cc:3243; an override skips his turn), the on-hit combat_p_proc, and
+  `is_dropping_p_proc` before drop_p_proc. Re-run: artemple line 2 is now the same proc in both engines
+  (`obj_dude.int critter_p_proc self=obj#18000`, one tick apart: F6 cadence); arcaves dude combat_p_proc
+  6 = 6, TURN 16 = 16. Call counts still differ by the F6 cadence (artemple critter_p_proc 4 000 vs 300).
+  New observation: fo2ce fires map_update every ~10 s (artemple 6/min, klamath 360/h) vs Hexwaste every
+  60 s; fo2ce has an extra 30 000 ms bk-time map_update in `_script_chk_timed_events` that Hexwaste lacks.
+  Golden moved: companion-lifecycle (heartbeatEligible +1 = the dude).
 
 - Fixtures: all. artemple-idle: 4 000 of 6 014 fo2ce PROC lines are `obj_dude.int critter_p_proc`, plus
   GVAR 104 writes (589 in klamath-hour) and obj_dude `map_update_p_proc`/`combat_p_proc`/`damage_p_proc`;

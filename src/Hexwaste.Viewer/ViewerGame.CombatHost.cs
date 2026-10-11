@@ -535,7 +535,7 @@ public sealed partial class ViewerGame
     /// non-dude critter that isn't a "wait here" companion (phase-10 M4). The single
     /// source of truth for both the heartbeat pump and the --companion diagnostic.</summary>
     private bool IsHeartbeatEligible(MapObject o) =>
-        Fid.Type(o.Fid) is ObjectType.Critter && o != _dude?.Dude
+        Fid.Type(o.Fid) is ObjectType.Critter
         && !o.IsDead && o.Sid != -1 && !_waitingCompanions.Contains(o);
 
     /// <summary>One critter_p_proc per game tick, round-robin — the flattened
@@ -592,10 +592,10 @@ public sealed partial class ViewerGame
         _mapUpdateFires++;
 
         // Re-evaluate the scripted set each fire (map_enter/earlier updates may have created objects).
-        IEnumerable<MapObject> scripted = _map.Elevations
+        IEnumerable<MapObject> scripted = WithDudeScript(_map.Elevations
             .Where(e => e is not null)
             .SelectMany(e => e!.Objects)
-            .Where(o => o.Sid != -1 && o != _dude?.Dude);
+            .Where(o => o.Sid != -1 && o != _dude?.Dude));
         _scriptHost.RunMapUpdate(_map, scripted, _dude?.Dude);
     }
 
