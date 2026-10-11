@@ -145,7 +145,21 @@ reading where the fixtures do not exercise it.
   `_combat_turn(obj, false)` at once (`combat.cc:2905-2930`); Hexwaste `CombatEngine.AddJoiners`
   (`CombatEngine.cs:2681`) only adds the critter to `_hostiles`.
 
-### F6 — critter_p_proc cadence and order
+### F6 — critter_p_proc cadence and order — FIXED
+
+**FIXED.** `ScriptHost.CritterScripts` (`CritterScriptList`) holds the critter sids in fo2ce's order
+(file order on load, append on add, tail-into-slot on remove, dude twice after a vanilla save load) and
+`PumpCritterProcs` runs one per frame. After a vanilla save load, the .SAV critter sid that no map object
+holds and whose script record is obj_dude (scripts.lst index 0; 0x04004650 = 0x04000000 | dude id 18000 in
+all three fixtures) is kept at its section position, owned by the dude, and `BindDudeScript` then appends
+the dude's own sid, as fo2ce does. No round-robin counter adjustment was needed: Hexwaste's first `Next()`
+already lands on slot 1, as fo2ce's does. The critter_p_proc order (first 100, script + `self=`) now matches
+fo2ce in artemple-idle, klamath-hour and arcaves-ambush. New first divergences (all were line 2):
+artemple-idle line 3 and klamath-hour line 66 (fo2ce's stale obj_dude slot writes `LVAR sid=0x04004650`,
+see F16); arcaves-ambush line 9 (fo2ce `LVAR sid=0x04000008 0 0->-3`, Hexwaste
+`PROC zclscorp.int combat_p_proc self=obj#102`). Still unverified: the list order after a map change (no
+oracle fixture changes maps). No golden fixture moved (the suites record probe/final-state lines, and
+combat scenarios gate the heartbeat off); golden runtime 91.55 s -> ~96 s.
 
 - Fixtures: all. fo2ce runs one critter script per `tickersExecute` pass (100 Hz on the oracle's 10 ms
   virtual clock): 359 999 critter_p_proc in klamath-hour; Hexwaste pumps at 10 Hz: 36 000. Order also
@@ -155,14 +169,17 @@ reading where the fixtures do not exercise it.
   `gScriptLists[SCRIPT_TYPE_CRITTER]`); Hexwaste `PumpCritterProcs` at the 10 Hz game tick
   (`ViewerGame.CombatHost.cs:544`). Note vanilla's cadence is frame-rate-bound; the oracle's 100 Hz is a model choice
   (F15), so match *order* first and make the rate a parameter.
-- Checked (F6 Task 1): after `--load-vanilla-save` (artemple-idle) fo2ce's critter list is three slots:
-  `0 sid=0x04000001 flags=0x5`, `1 sid=0x04004650 flags=0x18`, `2 sid=0x04000005 flags=0x18`.
-  `scriptsSetDudeScript` ran five times (sids 0x04000000, 01, 02, 04, 05; no `_obj_load_dude` double-call
-  proof, just five calls in the run), the last giving gDude->sid=0x04000005 (slot 2). Slot 0 (sid 0x04000001,
-  flags 0x5, not the 0x18 pair) survives although each call's `scriptsClearDudeScript` removes the previous
-  gDude->sid; it is most likely the dude's entry restored from the save's script list, i.e. the "second dude
-  entry" is slot 0 + slot 2, not two same-sid entries. Not proven beyond the log. Golden baseline before F6:
-  91.55 s (combat 8.06, opening 7.14, endgame 3.77, quest 15.41, encounter 57.17).
+- Checked (F6 Task 1, corrected in Task 6): after `--load-vanilla-save` (artemple-idle) fo2ce's critter
+  list is three slots: `0 sid=0x04000001 flags=0x5` (acklint, obj#24, held by a map object),
+  `1 sid=0x04004650 flags=0x18` (a stale obj_dude script record from the .SAV, held by no map object;
+  0x4650 = 18000, the dude's object id), `2 sid=0x04000005 flags=0x18` (gDude->sid). Task 1's text guessed
+  slot 0 was the stale dude entry; that was wrong (Task 6 read the .SAV: 0x04000001 is acklint, 0x04004650's
+  record is scripts.lst index 0 = obj_dude.int, and SAVE.DAT's dude carries sid -1). `scriptsSetDudeScript`
+  printed (`oracle-set-dude`) five times in the run, with sids 0x04000000, 0x04000001, 0x04000002,
+  0x04000004 and 0x04000005, the last being gDude->sid; which call sites made the first four is unknown
+  (not traced). fo2ce's `dude, dude, acklint, ...` is slots 1, 2, 0: the round-robin starts at slot 1.
+  Golden baseline before F6: 91.55 s (combat 8.06, opening 7.14, endgame 3.77, quest 15.41,
+  encounter 57.17).
 
 ### F7 — map_update cadence and the "has the proc" filter
 
@@ -256,6 +273,23 @@ ms rather than reading the game clock (the map-update heartbeat probe feeds it m
 - **Render-only frames advance the virtual clock 10 ms** (`oracleRenderGuard`, see
   `tools/fo2ce-trace/README.md`). An oracle-model artefact with no Hexwaste equivalent; affects only waits
   inside render-only loops (end-turn button animation, dialog fidgets).
+
+### F16 — Stale obj_dude script after a save load runs with its own state
+
+- Fixtures: artemple-idle (fo2ce line 3), klamath-hour (fo2ce line 66); the stale sid is 0x04004650 in
+  all three fixtures.
+- Evidence: fo2ce's run of the stale slot writes under its own sid —
+  ```
+  - fo2ce:    t=302420 LVAR sid=0x04004650 0 0->302420
+  + hexwaste: t=302421 PROC obj_dude.int critter_p_proc self=obj#18000
+  ```
+  (artemple, which also writes `GVAR 104 1->2`); klamath-hour `- fo2ce: t=302424 LVAR sid=0x04004650 0
+  0->302424`. The gDude run then writes `LVAR sid=0x04000005`. Hexwaste runs that slot (owner = the dude)
+  with the dude's own script and LVARs, so it emits neither line.
+- Hypothesis: fo2ce keeps the .SAV record as a separate `Script` with its own LVAR block (the .SAV record has 5
+  locals) that runs obj_dude.int against `self=obj#18000`; Hexwaste reuses the dude's script state.
+  Porting it means giving the stale slot its own script instance. Also F15's "two obj_dude scripts".
+- Status: open. Also open: the critter list order after a map change (F6).
 
 ## Recommended next steps
 
