@@ -1704,9 +1704,16 @@ public sealed class IntVm
             }
             case 0x80D3: // tile_distance_objs (pops obj2, obj1)
             {
-                int tileB = _externals.ObjTile(PopInt());
-                int tileA = _externals.ObjTile(PopInt());
-                PushInt(Hex.HexGrid.Distance(tileA, tileB));
+                // ported from fallout2-ce src/interpreter_extra.cc opTileDistanceBetweenObjects():
+                // 9999 unless both are on the map (tile != -1) and share an elevation.
+                int objB = PopInt();
+                int objA = PopInt();
+                int tileB = _externals.ObjTile(objB);
+                int tileA = _externals.ObjTile(objA);
+                PushInt(tileA != -1 && tileB != -1
+                        && _externals.ObjElevation(objA) == _externals.ObjElevation(objB)
+                    ? Hex.HexGrid.Distance(tileA, tileB)
+                    : 9999);
                 break;
             }
             case 0x80D5: // tile_num_in_direction (pops distance, rotation, tile)

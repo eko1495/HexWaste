@@ -569,7 +569,9 @@ public sealed partial class ViewerGame
             return;
         // Hexwaste deviation: a script without critter_p_proc runs nothing (fo2ce runs procedure 1, F8).
         var result = _scriptHost.RunObjectProc(critter, _map, _dude?.Dude, "critter_p_proc");
-        if (result is not null)
+        // Only the dude's floor reaches the log: the heartbeat now also runs critters on other
+        // elevations, whose float lines the dude could never see (they would flood the log).
+        if (result is not null && ElevationOfObject(critter) == _elevation)
             foreach (string line in result.Messages)
                 Log($"{ObjectName(critter)}: {line}");
     }

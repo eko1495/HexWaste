@@ -435,6 +435,8 @@ public sealed class ScriptHost(GameFileSystem vfs, ScriptList scripts, Hexwaste.
 
     /// <summary>ported from fallout2-ce src/scripts.cc scriptRemove(): drop a script from the critter list
     /// (tail moves into its slot) and the owner index. -1 and unknown sids are no-ops.</summary>
+    // fo2ce scriptRemove is a no-op for SCRIPT_FLAG_0x10 scripts (dude, current party members, scripts.cc:2307);
+    // Hexwaste callers only remove those after they leave the party / on death, which matches in practice.
     public void RemoveScript(int sid)
     {
         if (sid == -1)
@@ -2133,6 +2135,8 @@ public sealed class ScriptHost(GameFileSystem vfs, ScriptList scripts, Hexwaste.
             MapObject? target = _host.ObjectOf(targetHandle);
             if (source is null || target is null || source.HexTile == -1 || target.HexTile == -1)
                 return false; // interpreter_extra.cc:1790-1794 (null / off-map → false)
+            if (ObjElevation(objectHandle) != ObjElevation(targetHandle))
+                return false; // ported from fallout2-ce src/interpreter_extra.cc same-elevation gate (:1793 see / :2631 hear)
             return _host.ObjCanSeeResolver is { } r
                 ? r(source, target)
                 : Hex.HexGrid.Distance(source.HexTile, target.HexTile) <= 20; // headless fallback
@@ -2144,6 +2148,8 @@ public sealed class ScriptHost(GameFileSystem vfs, ScriptList scripts, Hexwaste.
             MapObject? target = _host.ObjectOf(targetHandle);
             if (source is null || target is null || source.HexTile == -1 || target.HexTile == -1)
                 return false; // interpreter_extra.cc:2630-2632
+            if (ObjElevation(objectHandle) != ObjElevation(targetHandle))
+                return false; // ported from fallout2-ce src/interpreter_extra.cc same-elevation gate (:1793 see / :2631 hear)
             return _host.ObjCanHearResolver is { } r
                 ? r(source, target)
                 : Hex.HexGrid.Distance(source.HexTile, target.HexTile) <= 20; // headless fallback
@@ -2583,6 +2589,7 @@ public sealed class ScriptHost(GameFileSystem vfs, ScriptList scripts, Hexwaste.
             // Script binding (engine scr_new + scriptSetScriptIndex): allocate
             // a fresh sid so the new object's procs (use_skill_on disarm,
             // examine) actually run.
+            // fo2ce opCreateObject (interpreter_extra.cc ~:893-922) also scriptAdds whether or not objectSetLocation succeeded.
             if (scriptIndex >= 0)
             {
                 int sid = _host.AllocateSid(_map, scriptIndex, obj);

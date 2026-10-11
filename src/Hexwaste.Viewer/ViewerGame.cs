@@ -3557,6 +3557,12 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
             || Fid.Type(npc.Fid) is not ObjectType.Critter)
             return false;
 
+        // Hexwaste deviation (oracle F6): fo2ce animates an off-elevation critter on its own floor, but
+        // this walker only models the current elevation (_blockedTiles, _solidObjects[_elevation],
+        // spatials at _elevation) — walking it here would path and draw a ghost on the dude's floor.
+        if (ElevationOfObject(npc) != _elevation)
+            return false;
+
         int walkFid = Fid.Build(ObjectType.Critter, Fid.Index(npc.Fid), 1, Fid.WeaponCode(npc.Fid));
         if (!_vfs.Exists(_artIndex.GetFrmPath(walkFid)))
         {
