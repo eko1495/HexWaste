@@ -406,6 +406,27 @@ public sealed class ScriptHost(GameFileSystem vfs, ScriptList scripts, Hexwaste.
         _scriptOwners[DudeSid] = dude;
     }
 
+    /// <summary>ported from fallout2-ce src/object.cc _obj_load_dude() (scriptsClearDudeScript +
+    /// scriptsSetDudeScript): after a vanilla save load the dude gets a fresh obj_dude script (zero LVARs,
+    /// program not loaded), and the .SAV's previous dude script record stays on the critter list at its
+    /// section position, also fresh (no LVAR block). Both run obj_dude's start body on their first
+    /// execution during play (oracle F16).</summary>
+    public void ReplaceDudeScriptAfterVanillaLoad(MapFile map, MapObject dude, int staleSid)
+    {
+        map.ScriptsBySid[staleSid] = new MapScriptRecord(0, -1, 0); // no .SAV LVAR block: fresh zeros
+        RebuildCritterScripts(map, staleSid, dude);
+        ForgetScriptState(map, staleSid);
+        ForgetScriptState(map, DudeSid);
+        BindDudeScript(map, dude); // appended after the stale slot, as scriptsSetDudeScript's scriptAdd
+    }
+
+    // A fresh Script: its VM (module globals, init/start not yet run) and LVAR slice are dropped.
+    private void ForgetScriptState(MapFile map, int sid)
+    {
+        EvictVm(map, sid);
+        _localVarSlices.Remove(LvarKey(map, sid));
+    }
+
     /// <summary>The critter heartbeat's list (oracle F6). Session-scoped like fo2ce's _count_.</summary>
     public CritterScriptList CritterScripts { get; } = new();
 

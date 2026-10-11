@@ -117,4 +117,29 @@ public class StaleDudeScriptTests : IDisposable
         Assert.Equal(["14", "24", "18000", "18000"], selves);
         Assert.Equal(0, host.GlobalVars[777]); // gDude (LVAR 0) ran after the stale slot (LVAR 5)
     }
+
+    [Fact]
+    public void ReplaceDudeScriptLeavesBothScriptsFresh()
+    {
+        ScriptHost host = MakeHost();
+        MapFile map = EmptyMap([7]);
+        map.Elevations[0] = new MapElevation { Squares = new int[MapElevation.SquareGridSize] };
+        MapObject critter = Obj(24, 0x04000001, ObjectType.Critter);
+        MapObject dude = Obj(18000, -1, ObjectType.Critter);
+        map.Elevations[0]!.Objects.Add(critter);
+        map.ScriptsBySid[critter.Sid] = new MapScriptRecord(0, -1, 0);
+        map.ScriptsBySid[StaleSid] = new MapScriptRecord(0, 0, 1); // .SAV block: LVAR0 = 7
+        map.CritterSids.AddRange([critter.Sid, StaleSid]);
+        host.RebuildCritterScripts(map);
+        host.BindDudeScript(map, dude);
+        host.RunScriptProc(ScriptHost.DudeSid, dude, map, dude, 0, -1, "critter_p_proc"); // dude LVAR0 := 99
+
+        host.ReplaceDudeScriptAfterVanillaLoad(map, dude, StaleSid);
+
+        Assert.Equal([critter.Sid, StaleSid, ScriptHost.DudeSid], host.CritterScripts.Sids);
+        host.RunScriptProc(StaleSid, dude, map, dude, 0, -1, "map_update_p_proc");
+        Assert.Equal(0, host.GlobalVars[777]); // stale: fresh zeros, not the .SAV's 7
+        host.RunScriptProc(ScriptHost.DudeSid, dude, map, dude, 0, -1, "map_update_p_proc");
+        Assert.Equal(0, host.GlobalVars[777]); // dude: fresh zeros, not 99
+    }
 }
