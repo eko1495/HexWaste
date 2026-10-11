@@ -6864,7 +6864,7 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
     /// <summary>Idle clock + hour-driven ambient (skipped when --ambient fixed it).</summary>
     private void UpdateClock(double elapsedMs)
     {
-        _clock.AdvanceRealTime(elapsedMs);
+        _clock.AdvanceRealTime(elapsedMs, _combat.Phase != Formats.Combat.CombatPhase.Idle);
         ProcessPoison(); // P35-M3: poison damage ticks on game time (also catches up after rest/travel jumps)
         ProcessDrugs(); // P37: scheduled drug stat reversals fire on game time (same catch-up after jumps)
         ProcessWithdrawals(); // P38: withdrawal onset/recovery fire on game time (drain-loop for clock jumps)

@@ -92,7 +92,13 @@ reading where the fixtures do not exercise it.
   following script in scripts.lst. One-line fix, but it changes behavior everywhere scripts spawn scripted
   objects → expect golden re-records.
 
-### F2 — Game clock: 60× rate and keeps running in combat
+### F2 — Game clock: 60× rate and keeps running in combat — FIXED
+
+- **Fixed:** `GameClock.AdvanceRealTime` ports `_script_chk_timed_events`: +1 tick once ≥100 ms have passed
+  (the window restarts, the first check fires at once since `_last_time__` starts at 0), frozen in combat.
+  Re-run: artemple-idle and klamath-hour now span exactly the same ticks as fo2ce (303020 / 338420), and the
+  line-2 divergence happens at the same timestamp in both engines. timed_event_p_proc is still 1 620 vs 2 731
+  in klamath (now down to F3/F6). No golden fixture moved.
 
 - Fixtures: all. artemple-idle 60 s: fo2ce advances 600 ticks (302420→303020), Hexwaste 36 000
   (302474→338414). klamath-hour 1 h: fo2ce 36 000 ticks, Hexwaste 2 160 000. arcaves-ambush: fo2ce game time

@@ -32,11 +32,21 @@ public class GameClockTests
     }
 
     [Fact]
-    public void AdvancesRealTimeAtIdleRate()
+    public void AdvancesOneTickPer100MsOutsideCombat()
     {
-        var clock = new GameClock { IdleRate = 60 };
-        clock.AdvanceRealTime(1000); // 1 real second = 1 game minute
-        Assert.Equal(825, clock.Hour);
+        var clock = new GameClock();
+        clock.AdvanceRealTime(10); // the first check fires at once
+        Assert.Equal(302401, clock.Ticks);
+        for (int i = 0; i < 100; i++)
+            clock.AdvanceRealTime(10); // 1 real second = 1 game second
+        Assert.Equal(302411, clock.Ticks);
+
+        clock.AdvanceRealTime(150); // the window restarts: the extra 50 ms is dropped
+        clock.AdvanceRealTime(50);
+        Assert.Equal(302412, clock.Ticks);
+
+        clock.AdvanceRealTime(100, inCombat: true); // frozen in combat
+        Assert.Equal(302412, clock.Ticks);
     }
 
     [Fact]

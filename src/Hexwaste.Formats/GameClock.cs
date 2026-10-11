@@ -3,9 +3,8 @@ namespace Hexwaste.Formats;
 /// <summary>
 /// The game clock: 10 ticks per game-second, booting at tick 302400
 /// (08:24 on July 25, 2241 — the FO2 start date, sfall_config.cc start
-/// year 2241 / month 6 / day 24, output +1) like fallout2-ce scripts.cc. The
-/// original only advances time on travel/combat/skill use; this PoC additionally
-/// runs a gentle idle rate so day/night is observable while walking around.
+/// year 2241 / month 6 / day 24, output +1) like fallout2-ce scripts.cc. Off the
+/// worldmap the engine also ticks it in real time: +1 tick per ≥100 ms, frozen in combat.
 /// </summary>
 public sealed class GameClock
 {
@@ -22,22 +21,22 @@ public sealed class GameClock
         ["January", "February", "March", "April", "May", "June",
          "July", "August", "September", "October", "November", "December"];
 
-    /// <summary>Game-seconds that pass per real second while just walking around.</summary>
-    public double IdleRate { get; set; } = 60; // 1 game-minute per real second
-
     public long Ticks { get; set; } = 302400;
 
-    private double _fraction;
+    // fo2ce's _last_time__ starts at 0 and is never reset, so the first check after boot fires at once.
+    private double _sinceLastTickMs = 100;
 
-    public void AdvanceRealTime(double elapsedMs)
+    /// <summary>ported from fallout2-ce src/scripts.cc _script_chk_timed_events(): once ≥100 ms
+    /// have passed since the last check, +1 tick (unless in combat); the 100 ms window restarts
+    /// rather than carrying the excess, so slow frames lose time exactly like the engine.</summary>
+    public void AdvanceRealTime(double elapsedMs, bool inCombat = false)
     {
-        _fraction += elapsedMs / 1000.0 * IdleRate * TicksPerSecond;
-        long whole = (long)_fraction;
-        if (whole > 0)
-        {
-            Ticks += whole;
-            _fraction -= whole;
-        }
+        _sinceLastTickMs += elapsedMs;
+        if (_sinceLastTickMs < 100)
+            return;
+        _sinceLastTickMs = 0;
+        if (!inCombat)
+            Ticks++;
     }
 
     public void AdvanceHours(int hours) => Ticks += (long)hours * TicksPerHour;
