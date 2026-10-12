@@ -31,8 +31,7 @@
 - Test: `tests/Hexwaste.Formats.Tests/StaleDudeScriptTests.cs`
 
 **Interfaces:**
-- Produces: `public int ScriptHost.DudeTraceSid { get; private set; }`; `internal static int ScriptHost.FirstFreeCritterSid(IEnumerable<int> critterSids, int start)`.
-- Check `tests/Hexwaste.Formats.Tests/Hexwaste.Formats.Tests.csproj` / `src/Hexwaste.Formats` for `InternalsVisibleTo("Hexwaste.Formats.Tests")`; if absent, make the helper `public static` instead (do not add the attribute).
+- Produces: `public int ScriptHost.DudeTraceSid { get; private set; }`; `public static int ScriptHost.FirstFreeCritterSid(IEnumerable<int> critterSids, int start)`.
 
 - [ ] **Step 1: Write the failing tests** (append to `StaleDudeScriptTests`)
 
@@ -101,7 +100,7 @@ In `ScriptHost.cs`, after the `DudeSid` const:
 
     /// <summary>ported from fallout2-ce src/scripts.cc scriptGetNewId(): from the counter value, step up past
     /// every critter id already in use.</summary>
-    internal static int FirstFreeCritterSid(IEnumerable<int> critterSids, int start)
+    public static int FirstFreeCritterSid(IEnumerable<int> critterSids, int start)
     {
         var used = critterSids.Select(sid => sid & 0xFFFFFF).ToHashSet();
         int id = start;
