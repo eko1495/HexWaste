@@ -14,6 +14,8 @@ Spec/plan: `docs/superpowers/specs/2026-10-10-fo2ce-trace-oracle-design.md`,
 | arcaves-ambush | seed, wait 5 s, end-turn ×5 | 510 | 12 366 | line 2 |
 | klamath-hour | seed, wait 1 h | 589 340 | 301 940 | line 2 |
 
+Update after F17: first divergences are now artemple line 1297, klamath line 1664, arcaves line 9.
+
 First divergent pairs (TraceDiff, `-` fo2ce / `+` Hexwaste):
 
 ```
@@ -330,7 +332,7 @@ Follow-ups (F16):
 
 ### F17 — Dude script sid label
 
-- Fixtures: artemple-idle (line 6), klamath-hour (line 69).
+- Fixtures: artemple-idle (was line 6), klamath-hour (was line 69).
 - Evidence: fo2ce `LVAR sid=0x04000005 0 0->302421` (klamath `0x04000028 ... 0->302424`) vs hexwaste
   `LVAR sid=0x04800000`.
 - Cause: fo2ce allocates the dude's script sid from the critter list's id counter at `scriptsSetDudeScript`
@@ -339,7 +341,18 @@ Follow-ups (F16):
 - Also: after a map change the dude's sid is pid-derived in fo2ce, `(scriptType << 24) | ((pid & 0xFFFFFF) + 18000)`
   (`party_member.cc:693`, `_partyMemberRecoverLoadInstance`) = 0x04004650 for the dude; after a save load it is
   counter-allocated (0x04000005 / 0x04000028).
-- Status: open. Options: a label mapping in the trace, or allocate the dude sid like fo2ce.
+- Counter rule: fo2ce `scriptGetNewId` (`scripts.cc:2138`) hands out the next id per type; `nextScriptId` is reset
+  only in `_scr_header_load` (`scripts.cc:1797`). Observed value for the dude: 5 (artemple).
+
+  | fixture | critter ids used | fo2ce dude sid |
+  |---|---|---|
+  | artemple-idle | 1, 18000 | 0x04000005 |
+  | arcaves-ambush | 2-5, 7-24, 18000 | 0x04000006 |
+  | klamath-hour | 1-39, 18000 | 0x04000028 |
+
+  Known limit: a critter script created during the load-time passes would move fo2ce's counter.
+- Status: FIXED (`ScriptHost.DudeTraceSid`, commit 5c29553). Rerun: artemple first divergence line 6 -> 1297,
+  klamath 69 -> 1664, arcaves unchanged at line 9.
 
 ## Recommended next steps
 
@@ -348,8 +361,12 @@ Follow-ups (F16):
    is enough to make traces comparable; the gameplay rate is a separate design question.
 3. Done: attach obj_dude.int (F3), the map_update sources/filter (F7) and critter-list order + cadence
    (F6). The first divergence is now off the critter order (artemple line 3, klamath line 66, arcaves
-   line 9); F16 (stale obj_dude slot) is done. Next: F17 (trace-label alignment) and the arcaves line 9
-   difference (fo2ce `LVAR sid=0x04000008` vs hexwaste `zclscorp combat_p_proc`).
+   line 9); F16 (stale obj_dude slot) and F17 (dude sid label) are done. After F17: artemple line 1297
+   (t=302550: fo2ce draws `RNG 0..100 site=worldmap.cc:wmSfxRollNextIdx` + ambient-sound RNG, Hexwaste runs
+   the next `obj_dude critter_p_proc`) and klamath line 1664 (t=302525: fo2ce `MOVE obj#26 17500->17701`,
+   Hexwaste runs `kcitizen critter_p_proc obj#156` with no move). Arcaves line 9 (fo2ce
+   `LVAR sid=0x04000008 0 0->-3`, a scorpion's combat LVAR, vs hexwaste `zclscorp combat_p_proc obj#102`;
+   fo2ce starts obj#70's combat turn first) belongs to F4/F5, not F17.
 4. Then the combat joiner path (F5) and re-check F4, then F8-F14. The start-body-on-first-run timing
    (obj_dude `start` executes on first run) is part of F8 in general.
 5. F8–F13 are small, independent ports; F12/F14 first need trace-alignment decisions. Each fix should be
