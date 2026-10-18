@@ -170,4 +170,49 @@ public class StaleDudeScriptTests : IDisposable
         Assert.True(host.TryGetScriptOwner(StaleSid, out MapObject owner));
         Assert.Same(dude, owner);
     }
+
+    [Theory]
+    [InlineData(new[] { 0x04000001, 0x04004650 }, 0x04000005)]                    // artemple-idle
+    [InlineData(new[] { 0x04000002, 0x04000003, 0x04000004, 0x04000005, 0x04000007, 0x04004650 }, 0x04000006)] // arcaves-ambush (subset)
+    [InlineData(new[] { 0x04000001, 0x04000005, 0x04000006, 0x04000027, 0x04004650 }, 0x04000007)]
+    public void FirstFreeCritterSidSkipsUsedIdsFromFive(int[] critterSids, int expected) =>
+        Assert.Equal(expected, ScriptHost.FirstFreeCritterSid(critterSids, 5));
+
+    [Fact]
+    public void FirstFreeCritterSidKlamath() => // ids 1-39 used
+        Assert.Equal(0x04000028, ScriptHost.FirstFreeCritterSid(
+            Enumerable.Range(1, 39).Select(i => 0x04000000 | i).Append(0x04004650), 5));
+
+    [Fact]
+    public void DudeLvarTracesUnderDudeTraceSid()
+    {
+        ScriptHost host = MakeHost();
+        MapFile map = EmptyMap([7]);
+        map.Elevations[0] = new MapElevation { Squares = new int[MapElevation.SquareGridSize] };
+        MapObject critter = Obj(24, 0x04000001, ObjectType.Critter);
+        MapObject dude = Obj(18000, -1, ObjectType.Critter);
+        map.Elevations[0]!.Objects.Add(critter);
+        map.ScriptsBySid[critter.Sid] = new MapScriptRecord(0, -1, 0);
+        map.ScriptsBySid[StaleSid] = new MapScriptRecord(0, 0, 1);
+        map.CritterSids.AddRange([critter.Sid, StaleSid]);
+        host.RebuildCritterScripts(map);
+        host.BindDudeScript(map, dude);
+        Assert.Equal(0x04004650, host.DudeTraceSid); // map change: pid-derived
+
+        host.ReplaceDudeScriptAfterVanillaLoad(map, dude, StaleSid);
+        Assert.Equal(0x04000005, host.DudeTraceSid); // save load: counter-allocated
+
+        var sw = new StringWriter();
+        try
+        {
+            OracleTrace.Open(sw, "hdr");
+            host.RunScriptProc(ScriptHost.DudeSid, dude, map, dude, 0, -1, "critter_p_proc"); // LVAR0 := 99
+        }
+        finally
+        {
+            OracleTrace.Close();
+        }
+        Assert.Contains("LVAR sid=0x04000005 0 0->99", sw.ToString());
+        Assert.DoesNotContain("sid=0x04800000", sw.ToString());
+    }
 }
