@@ -27,7 +27,7 @@ hexwaste: LVAR sid=0x04800000 0 0->302421
   so 6) and klamath (5-39 used, so 40) agree. This is the oracle's launch path (main menu, load a slot);
   the five earlier allocations were not counted from source.
 - After a map change the dude's sid is pid-derived: `(scriptType << 24) | ((pid & 0xFFFFFF) + 18000)` =
-  0x04004650 (`party_member.cc:692`, `_partyMemberRecoverLoadInstance`).
+  0x04004650 (`party_member.cc:693`, `_partyMemberRecoverLoadInstance`).
 - Scripts cannot observe a sid. The difference is a trace label only.
 
 ## Hexwaste today

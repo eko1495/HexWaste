@@ -174,14 +174,14 @@ public class StaleDudeScriptTests : IDisposable
     [Theory]
     [InlineData(new[] { 0x04000001, 0x04004650 }, 0x04000005)]                    // artemple-idle
     [InlineData(new[] { 0x04000002, 0x04000003, 0x04000004, 0x04000005, 0x04000007, 0x04004650 }, 0x04000006)] // arcaves-ambush (subset)
-    [InlineData(new[] { 0x04000001, 0x04000005, 0x04000006, 0x04000027, 0x04004650 }, 0x04000007)]
+    [InlineData(new[] { 0x04000001, 0x04000005, 0x04000006, 0x04000027, 0x04004650 }, 0x04000007)] // synthetic: gaps after 5
     public void FirstFreeCritterSidSkipsUsedIdsFromFive(int[] critterSids, int expected) =>
         Assert.Equal(expected, ScriptHost.FirstFreeCritterSid(critterSids, 5));
 
     [Fact]
     public void FirstFreeCritterSidKlamath() => // ids 1-39 used
         Assert.Equal(0x04000028, ScriptHost.FirstFreeCritterSid(
-            Enumerable.Range(1, 39).Select(i => 0x04000000 | i).Append(0x04004650), 5));
+            Enumerable.Range(1, 39).Select(i => 0x04000000 | i).Append(0x04004650), 5)); // + stale obj_dude record (id 18000)
 
     [Fact]
     public void DudeLvarTracesUnderDudeTraceSid()

@@ -419,7 +419,7 @@ public sealed class ScriptHost(GameFileSystem vfs, ScriptList scripts, Hexwaste.
         // maps yet), verified for a save load by the oracle traces.
         CritterScripts.Add(DudeSid);
         _scriptOwners[DudeSid] = dude;
-        // fo2ce party_member.cc:692 _partyMemberRecoverLoadInstance: after a map change the dude's sid is
+        // ported from fallout2-ce src/party_member.cc _partyMemberRecoverLoadInstance(): after a map change the dude's sid is
         // pid-derived, (4 << 24) | (pid 0x01000000 & 0xFFFFFF) + 18000.
         DudeTraceSid = 0x04004650;
     }
@@ -459,6 +459,7 @@ public sealed class ScriptHost(GameFileSystem vfs, ScriptList scripts, Hexwaste.
         // fo2ce _obj_load_dude -> scriptAdd -> scriptGetNewId: nextScriptId is never reset by a load; it is 5 on
         // the oracle's launch path (main menu, load a slot), the only value matching all three fixtures.
         // shortcut: assumes no critter script is created during the load-time passes (fo2ce's counter would move past 5); upgrade if an oracle fixture spawns one at load
+        // Also assumes the .SAV holds a stale obj_dude record (all three fixtures do); without one this label stays 0x04004650.
         DudeTraceSid = FirstFreeCritterSid(map.CritterSids, 5);
     }
 
