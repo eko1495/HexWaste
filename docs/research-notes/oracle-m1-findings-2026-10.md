@@ -16,6 +16,10 @@ Spec/plan: `docs/superpowers/specs/2026-10-10-fo2ce-trace-oracle-design.md`,
 
 Update after F17: first divergences are now artemple line 1297, klamath line 1664, arcaves line 9.
 
+Update after F12: artemple line 5809 (fo2ce `t=303000 PROC artemple.int map_update_p_proc self=obj#16` vs
+Hexwaste `t=303000 PROC obj_dude.int critter_p_proc self=obj#18000`: the map-script id label now matches;
+Hexwaste runs no map_update at that tick), klamath line 1664 (unchanged), arcaves line 9 (unchanged).
+
 Update after F13: artemple line 3011 (fo2ce `t=302720 PROC artemple.int map_update_p_proc self=obj#16` vs
 Hexwaste `self=obj#-2`: the map script's object id label, not RNG), klamath line 1664 (unchanged), arcaves
 line 9 (unchanged).
@@ -258,13 +262,33 @@ ms rather than reading the game clock (the map-update heartbeat probe feeds it m
 
 ### F12 — Object ids of synthetic/runtime objects
 
-- Fixtures: all. Map-script owner: fo2ce `obj#16` vs Hexwaste `obj#-2` (artemple, kladwtwn); spatial owner
-  `obj#-1` vs `obj#-5`; runtime spawns fresh ids (obj#18, #22, #26…) vs a constant `obj#-3`.
-- Hypothesis: fo2ce gives the map-script object and every new object an id from `scriptsNewObjectId`
-  (`map.cc:965`, `scripts.cc:526-549`), which increments `_cur_id` twice per call and only checks the first
-  value for collisions (`scripts.cc:531,547`) — vanilla can hand out an id already in use (the arcaves save
-  already holds duplicates: obj#126 carries two scripts, obj#118 two). Hexwaste uses constants
-  (`ScriptHost.cs:979,1066,1106` `-2`, `:2474` `-3`). Mostly a trace-alignment issue, but scripts compare object ids.
+- Status: FIXED (commits 7afc549, 936d7db). Fixtures: all. Before: map-script owner fo2ce `obj#16` vs Hexwaste
+  `obj#-2` (artemple, kladwtwn); spatial owner `obj#-1` vs `obj#-5`; runtime spawns fresh ids (obj#18, #22,
+  #26...) vs a constant `obj#-3`.
+- Counter rule: fo2ce `scriptsNewObjectId` (`scripts.cc:526`) increments `_cur_id` twice per call and only
+  checks the first value for collisions (`scripts.cc:531,547`), so vanilla can hand out an id already in use
+  (the arcaves save already holds duplicates: obj#126 carries two scripts, obj#118 two). `_cur_id` starts at 4
+  and is never reset; 12 was observed before the map load on the oracle's launch path. Hexwaste now ports the
+  counter; sites and ids consumed:
+
+  | site | fo2ce | ids |
+  |---|---|---|
+  | map-script owner | map.cc:957-972 | 2 |
+  | create_object_sid | opCreateObject, interpreter_extra.cc:938 | 1, +1 when scripted |
+  | script money | item.cc:3236 | 1 |
+  | encounter critter | wmSetupCritterObjs, _obj_new_sid_inst | 1, +1 when scripted; each item 1 |
+  | stack split | item.cc:435 _obj_copy | 1 |
+  | ammo box | item.cc:1893 | 1 |
+  | explosion marker | actions.cc:1595 | 1 |
+
+- Not modeled (ids not consumed in Hexwaste): projectiles (`actions.cc:780`), explosion ring
+  (`actions.cc:867/1608`), hidden barter/loot boxes (`inventory.cc:4123/5060`), the spatial owner created on
+  `self_obj`. The spatial label stays -1.
+- Encounter trace order fixed: MOVE now precedes the item SPAWN lines, as in fo2ce.
+- Rerun: artemple first divergence 3011 -> 5809 (map-script label matches: 180/180 kladwtwn map_update
+  lines are `self=obj#16` in both klamath traces). Klamath SPAWN ids match fo2ce (obj#18, 22, 26, 30, 34 with
+  the same pids; only the ticks differ, which is the F2 clock model); they come after line 1664, so this is
+  evidence only. Klamath stays at 1664, arcaves at 9.
 
 ### F13 — Ambient-sfx RNG draws missing
 
@@ -392,5 +416,8 @@ Follow-ups (F16):
    (obj_dude `start` executes on first run) is part of F8 in general.
 5. After F13: artemple's next gap is the map-script `self` id (fo2ce obj#16 vs Hexwaste constant -2, see F12/F-id
    notes); klamath 1664 and arcaves 9 are unchanged.
-6. F8–F13 are small, independent ports; F12/F14 first need trace-alignment decisions. Each fix should be
+6. After F12: artemple line 5809 (t=303000: fo2ce runs `artemple.int map_update_p_proc self=obj#16`, Hexwaste
+   runs the next `obj_dude critter_p_proc`, i.e. the map_update tick is missing); klamath 1664 and arcaves 9
+   are unchanged.
+7. F8–F13 are small, independent ports; F12/F14 first need trace-alignment decisions. Each fix should be
    validated by a fresh `oracle-run.sh` showing the first divergence moving later.
