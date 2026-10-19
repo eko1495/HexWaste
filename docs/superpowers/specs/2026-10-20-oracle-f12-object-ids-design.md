@@ -81,7 +81,7 @@ fo2ce takes them from one process-wide counter.
    | `ScriptContext.CreateObject` | `opCreateObject` | 1, +1 when `scriptIndex != -1` |
    | script money (`ScriptHost.cs:791`) | `item.cc:3236` | 1 |
    | encounter critter (`ViewerGame.cs:5575`) | `wmSetupCritterObjs` | 1, +1 when scripted; then each item 1 |
-   | stack split (`ViewerGame.cs:4952`) | `item.cc:435` `_obj_copy` | 1 |
+   | stack split (`ViewerGame.cs:4952`) | `item.cc:435` `_obj_copy` (the copy, new id, stays in the source slot; the original moves) | 1, also when the moved unit merges |
    | ammo box (`ViewerGame.CombatHost.cs:390`) | `item.cc:1893` | 1 |
    | explosion marker (`ViewerGame.CombatHost.cs:1050`) | `actions.cc:1595` | 1 |
 

@@ -278,7 +278,7 @@ ms rather than reading the game clock (the map-update heartbeat probe feeds it m
   | create_object_sid | opCreateObject, interpreter_extra.cc:938 | 1, +1 when scripted |
   | script money | item.cc:3236 | 1 |
   | encounter critter | wmSetupCritterObjs, _obj_new_sid_inst | 1, +1 when scripted; each item 1 |
-  | stack split | item.cc:435 _obj_copy | 1 |
+  | stack split | item.cc:435 _obj_copy (copy stays, original moves) | 1, also on merge |
   | ammo box | item.cc:1893 | 1 |
   | explosion marker | actions.cc:1595 | 1 |
 

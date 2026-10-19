@@ -390,7 +390,7 @@ public sealed partial class ViewerGame
         {
             box.Id = _scriptHost?.NewObjectId() ?? box.Id; // fo2ce item.cc:1893 objectCreateWithPid(ammo)
             box.AmmoQuantity = ejected;
-            Formats.Trace.OracleTrace.SpawnPlaced(box.Id, box.Pid, -1); // fo2ce item.cc:1893 objectCreateWithPid(ammo)
+            Formats.Trace.OracleTrace.SpawnPlaced(box.Id, box.Pid, -1);
             _dudeInventory.Add(box); // discrete — a partial box must not merge into a full stack
         }
         wi.AmmoQuantity = loaded - ejected;

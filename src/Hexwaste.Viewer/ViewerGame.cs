@@ -1237,8 +1237,8 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
                 OpenStateChanged = (obj, open) => SetDoorState(obj, open),
                 ObjectPlaced = (obj, map) => OnScriptObjectPlaced(obj),
                 // Oracle F12: fo2ce's scriptsNewObjectId skips ids used by objects on a map tile, all elevations.
-                ObjectIdInUse = id => _dude?.Dude.Id == id || _map.Elevations.Any(e => e is not null
-                    && e.Objects.Any(o => o.Id == id && o.HexTile >= 0)),
+                ObjectIdInUse = id => _dude?.Dude.Id == id || _map?.Elevations.Any(e => e is not null
+                    && e.Objects.Any(o => o.Id == id && o.HexTile >= 0)) == true,
                 ObjectRemoved = obj => OnScriptObjectRemoved(obj),
                 ClockTicks = () => _clock.Ticks,
                 CurrentMapIndexProvider = () => _mapList.GetIndexByFileName(_currentMapName),
@@ -4944,6 +4944,11 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
         if (item.StackCount > 1)
         {
             item.StackCount--;
+            // fo2ce item.cc:435 _obj_copy: the remaining stack is the copy (new id); the moved unit is the original.
+            int newId = _scriptHost?.NewObjectId() ?? item.Id;
+            Formats.Trace.OracleTrace.SpawnPlaced(newId, item.Pid, -1);
+            int movedId = item.Id;
+            item.Id = newId;
             if (to.FirstOrDefault(i => i.Pid == item.Pid) is { } existing)
             {
                 existing.StackCount++;
@@ -4952,7 +4957,7 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
 
             var unit = new MapObject
             {
-                Id = _scriptHost?.NewObjectId() ?? -4, // fo2ce item.cc:435 _obj_copy
+                Id = movedId,
                 HexTile = -1,
                 X = 0,
                 Y = 0,
@@ -4963,7 +4968,6 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
                 Pid = item.Pid,
                 Sid = -1,
             };
-            Formats.Trace.OracleTrace.SpawnPlaced(unit.Id, unit.Pid, -1);
             to.Add(unit);
             return;
         }

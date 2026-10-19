@@ -141,9 +141,6 @@ public sealed class MapObject
     public int AiPacket { get; set; }
     public int Team { get; set; }
 
-    /// <summary>Created at runtime by a script (create_object_sid) or an encounter; the harness counts these.
-    /// Not saved. Replaces the old Id == -3 marker (oracle F12: ids now come from the counter).</summary>
-    public bool Spawned { get; set; }
     public int WhoHitMeCid { get; set; }
 
     /// <summary>P101 (bucket 3): the live object that last hit this critter in combat (transient — NOT
@@ -169,6 +166,10 @@ public sealed class MapObject
     public int CurrentHp { get; set; }
     public int Radiation { get; set; }
     public int Poison { get; set; }
+
+    /// <summary>Created at runtime by a script (create_object_sid) or an encounter; the harness counts these.
+    /// Not saved. Replaces the old Id == -3 marker (oracle F12: ids now come from the counter).</summary>
+    public bool Spawned { get; set; }
 
     /// <summary>ported from fallout2-ce src/critter.cc critterIsDead(): DAM_DEAD.</summary>
     public bool IsDead => (CombatResults & 0x80) != 0;

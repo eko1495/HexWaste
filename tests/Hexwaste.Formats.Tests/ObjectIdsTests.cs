@@ -54,9 +54,9 @@ public class ObjectIdsTests : IDisposable
         return new ScriptHost(vfs, ScriptList.Load(vfs), new ProtoDatabase(vfs));
     }
 
-    private static MapFile ScriptedMap() => new()
+    private static MapFile ScriptedMap(string name = "idtest.map") => new()
     {
-        Header = new MapHeader(20, "idtest.map", 0, 0, 0, 0, 1, 0, 0, 0, 0, 0), // ScriptIndex 1 = idtest.int
+        Header = new MapHeader(20, name, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0), // ScriptIndex 1 = idtest.int
         GlobalVariables = [],
         LocalVariables = [],
         Elevations = new MapElevation?[MapFile.ElevationCount],
@@ -103,6 +103,19 @@ public class ObjectIdsTests : IDisposable
         Assert.Contains("PROC idtest.int map_enter_p_proc self=obj#16", trace);
         Assert.Contains("PROC idtest.int map_update_p_proc self=obj#16", trace);
         Assert.DoesNotContain("obj#-2", trace);
+    }
+
+    [Fact]
+    public void MapScriptOwnerIsNotReusedAcrossMaps()
+    {
+        ScriptHost host = MakeHost();
+        string trace = Traced(() =>
+        {
+            host.RunStartProcs(ScriptedMap(), [], null);                          // A's owner: 14, 16
+            host.RunMapEnter(ScriptedMap("idtest2.map"), [], null);               // B's owner: 18, 20
+        });
+        Assert.Contains("PROC idtest.int map_enter_p_proc self=obj#20", trace);
+        Assert.DoesNotContain("map_enter_p_proc self=obj#16", trace);
     }
 
     [Fact]
