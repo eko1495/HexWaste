@@ -271,9 +271,10 @@ ms rather than reading the game clock (the map-update heartbeat probe feeds it m
 - Status: FIXED (commits 977f24e, bd4d300). The ambient-sfx event is ported (`AmbientSfx.RunEvent` +
   `ViewerGame.RunAmbientSfxEvent`): it runs on game time after the script timers, starts on map load, and
   takes over the saved type-13 queue event on vanilla import; it draws from the shared RNG without audio.
-  Shortcut limits: only the single ambient event type-13 is modelled (not the general event queue), and
-  audio playback itself stays behind `_audio`. Rerun: artemple first divergence line 1297 -> 3011
-  (no longer an RNG line), klamath unchanged at 1664, arcaves unchanged at 9; `skipped queue event type 13`
+  Shortcut limits (code comments): an ambient event and a script timer due on the same tick run timers
+  first (fo2ce's single queue orders them by insertion); a Hexwaste save does not store the pending ambient
+  event (the chain restarts at map load). Playback (not the draws) stays behind `_audio`. Rerun: artemple
+  first divergence line 1297 -> 3011 (no longer an RNG line; now the map-script owner id label, F12), klamath unchanged at 1664, arcaves unchanged at 9; `skipped queue event type 13`
   is gone from all three hexwaste.log files.
 
 - Fixture: artemple-idle — the only RNG lines in fo2ce's trace are `wmSfxRollNextIdx` 0..100 and
