@@ -367,6 +367,14 @@ Follow-ups (F16):
 - Status: FIXED (`ScriptHost.DudeTraceSid`, commit 5c29553). Rerun: artemple first divergence line 6 -> 1297,
   klamath 69 -> 1664, arcaves unchanged at line 9.
 
+### F18 — Ambient event does not run during worldmap travel
+
+- Evidence (code): fo2ce's travel loop steps the clock event by event and calls `queueProcessEvents` each
+  time (`worldmap.cc:4184-4199`); the map stays loaded, so the ambient event keeps drawing on every leg.
+  Hexwaste's travel step (`ViewerGame.Worldmap.cs:112`, `:148`) runs no game-time events, so a travel
+  scenario would see the encounter-roll stream drift. Found reviewing F13; no fixture travels yet.
+- Status: open. Fix: run due game-time events (including `ProcessAmbientSfx`) inside the travel step.
+
 ## Recommended next steps
 
 1. Fix F1 (one line, `sid - 1`), re-record the goldens it moves, re-run the oracle.

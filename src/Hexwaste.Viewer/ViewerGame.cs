@@ -1413,6 +1413,7 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
                     ProcessWithdrawals();
                     ProcessRads(); // P113 (item 7c)
                     _scriptHost?.PumpTimers(_dude?.Dude); // P114: timers due within the jump fire
+                    ProcessAmbientSfx(); // oracle F13: queueProcessEvents runs inline, before the script continues
                 },
                 // P63 (Sierra Army Depot): tile_contains_obj_pid scans every object at (tile, elevation) for
                 // the pid (the engine's objectFindFirstAtLocation loop). ported from opTileContainsObjectWithPid.
@@ -1996,6 +1997,7 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
     /// <summary>Runs the due ambient event (scripts.cc _doBkProcesses -> queueProcessEvents, right after the
     /// clock tick); loops to catch up after clock jumps like the other game-time events.
     /// shortcut: an ambient event and a script timer due on the same tick run timers first; fo2ce's single queue orders them by insertion. Upgrade if the oracle shows a same-tick difference.</summary>
+    // shortcut: rest, skill books and AdvanceHours jump the clock in one step, so one ambient event fires where fo2ce's chunked rest loop fires one per chunk. Upgrade if an oracle scenario rests.
     private void ProcessAmbientSfx()
     {
         while (_ambientNextTick >= 0 && _ambientNextTick <= _clock.Ticks)
