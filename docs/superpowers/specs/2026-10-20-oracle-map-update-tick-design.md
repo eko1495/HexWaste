@@ -67,12 +67,19 @@ Hexwaste as line 10.
 5. **Scheduling**:
    - Map load (`ViewerGame.cs:1915`): `_mapUpdateNextTick = _clock.Ticks + MapUpdateIntervalTicks;`
      (`gameTimeScheduleUpdateEvent`).
-   - Vanilla import `case 12`: `_mapUpdateNextTick = e.Time;` (`queueLoad` keeps the saved time).
+   - Vanilla import (`ImportVanillaQueue`): next to the existing `_ambientNextTick = -1;` reset before the
+     event loop (`ViewerGame.VanillaImport.cs:~207`), add `_mapUpdateNextTick = -1;` (`queueLoad` replaces
+     the queue, dropping the event the import's map load scheduled); `case 12`:
+     `_mapUpdateNextTick = e.Time;` (the saved time).
 6. **Heartbeat probe**: advance the game clock instead of feeding ms:
    `_clock.Ticks += MapUpdateIntervalTicks / 2; ProcessMapUpdateEvent();` for the half interval, then
    `_clock.Ticks += MapUpdateIntervalTicks; ProcessMapUpdateEvent();` per beat. Output unchanged.
-7. **Shortcut comment** on `ProcessMapUpdateEvent`:
-   `shortcut: a map-update event due on the same tick as a script timer or the ambient event runs after them; fo2ce's single queue orders them by insertion. Upgrade if the oracle shows a same-tick difference.`
+7. **Shortcut comments** on `ProcessMapUpdateEvent`:
+   - `shortcut: a map-update event due on the same tick as a script timer or the ambient event runs after them; fo2ce's single queue orders them by insertion. Upgrade if the oracle shows a same-tick difference.`
+   - `shortcut: fo2ce's midnight event (gameTimeEventProcess -> gameTimeScheduleUpdateEvent, scripts.cc:428) queues another map-update event at midnight + 600, and whichever fires first clears the other; Hexwaste keeps one chain. Upgrade when a fixture crosses midnight.`
+8. **Re-entrancy** (checked, no change): the inline `game_time_advance` call runs the round from inside a
+   running script, as fo2ce does. `PumpTimers` already does this, and a same-sid re-entrant proc gets a
+   throwaway VM (`IntVm.cs:608`, `ScriptHost.cs:895`).
 
 Live play: the round still fires every 60 s of real time while the clock runs and never in combat. After a
 clock jump (rest, `game_time_advance`) it fires once, as in fo2ce; the ms count kept waiting.
@@ -88,8 +95,9 @@ clock jump (rest, `game_time_advance`) it fires once, as in fo2ce; the ms count 
 
 ## Docs
 
-Findings doc: under F7, the 600-tick source now reads the game clock (it was the known ms-count limit); the
-new first divergences.
+Findings doc: under F7, the 600-tick source now reads the game clock (it was the known ms-count limit); under
+F18, fo2ce's map-update event also keeps running during worldmap travel (the map stays loaded), which
+Hexwaste's worldmap gate skips; the new first divergences.
 
 ## Out of scope
 
