@@ -140,6 +140,10 @@ public sealed class MapObject
     public int CombatResults { get; set; }
     public int AiPacket { get; set; }
     public int Team { get; set; }
+
+    /// <summary>Created at runtime by a script (create_object_sid) or an encounter; the harness counts these.
+    /// Not saved. Replaces the old Id == -3 marker (oracle F12: ids now come from the counter).</summary>
+    public bool Spawned { get; set; }
     public int WhoHitMeCid { get; set; }
 
     /// <summary>P101 (bucket 3): the live object that last hit this critter in combat (transient — NOT

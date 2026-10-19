@@ -397,6 +397,14 @@ public sealed class ScriptHost(GameFileSystem vfs, ScriptList scripts, Hexwaste.
     /// the real sid stays <see cref="DudeSid"/>.</summary>
     public int DudeTraceSid { get; private set; } = 0x04004650;
 
+    /// <summary>Oracle F12: fo2ce's object id counter, shared by every object this session creates.</summary>
+    public ObjectIds ObjectIds { get; } = new();
+
+    /// <summary>True when an object on a map tile (any elevation) has the id; installed by the viewer.</summary>
+    public Func<int, bool> ObjectIdInUse { get; set; } = _ => false;
+
+    public int NewObjectId() => ObjectIds.Next(ObjectIdInUse);
+
     /// <summary>ported from fallout2-ce src/scripts.cc scriptGetNewId(): from the counter value, step up past
     /// every critter id already in use.</summary>
     public static int FirstFreeCritterSid(IEnumerable<int> critterSids, int start)
@@ -603,7 +611,7 @@ public sealed class ScriptHost(GameFileSystem vfs, ScriptList scripts, Hexwaste.
         {
             self = new MapObject
             {
-                Id = -5,
+                Id = -1, // fo2ce: a spatial script has no owner until self_obj (scriptGetSelf), so it traces obj#-1
                 HexTile = spatial.Tile,
                 X = 0,
                 Y = 0,
@@ -788,7 +796,7 @@ public sealed class ScriptHost(GameFileSystem vfs, ScriptList scripts, Hexwaste.
             {
                 var money = new MapObject
                 {
-                    Id = -5,
+                    Id = NewObjectId(),
                     HexTile = -1,
                     X = 0,
                     Y = 0,
@@ -1116,21 +1124,32 @@ public sealed class ScriptHost(GameFileSystem vfs, ScriptList scripts, Hexwaste.
         }
     }
 
-    /// <summary>The map script has no real owner object; synthesize one (shared by the
-    /// start/map_enter/map_update passes).</summary>
-    private static MapObject SynthMapScriptOwner() => new()
+    private (string Map, MapObject Owner)? _mapScriptOwner;
+
+    /// <summary>The map script's owner object, one per map load: fo2ce map.cc:957-972 creates it with
+    /// objectCreateWithFidPid (one id), then map.cc:970 takes the id it keeps. <paramref name="fresh"/> = a new
+    /// map load (RunStartProcs); other passes reuse it, building one if none exists for this map.</summary>
+    private MapObject MapScriptOwner(MapFile map, bool fresh = false)
     {
-        Id = -2,
-        HexTile = 1,
-        X = 0,
-        Y = 0,
-        Frame = 0,
-        Rotation = 0,
-        Fid = Fid.Build(ObjectType.Misc, 12),
-        Flags = 0,
-        Pid = 0x05000010,
-        Sid = -1,
-    };
+        if (!fresh && _mapScriptOwner is { } cached && cached.Map == map.Header.Name)
+            return cached.Owner;
+        NewObjectId(); // objectCreateWithFidPid
+        var owner = new MapObject
+        {
+            Id = NewObjectId(), // map.cc:970
+            HexTile = 1,
+            X = 0,
+            Y = 0,
+            Frame = 0,
+            Rotation = 0,
+            Fid = Fid.Build(ObjectType.Misc, 12),
+            Flags = 0,
+            Pid = 0x05000010,
+            Sid = -1,
+        };
+        _mapScriptOwner = (map.Header.Name, owner);
+        return owner;
+    }
 
     // ported from fallout2-ce src/interpreter.cc runScript() (via scriptExecProc, scripts.cc:1322-1338):
     // the FIRST time a script's program executes, its global-init prologue runs (offset 0) — that is where
@@ -1180,7 +1199,7 @@ public sealed class ScriptHost(GameFileSystem vfs, ScriptList scripts, Hexwaste.
         if (map.Header.ScriptIndex > 0)
         {
             var record = new MapScriptRecord(map.Header.ScriptIndex - 1, -1, 0);
-            RunStart(record.ScriptListIndex, map, sid: -2, record, SynthMapScriptOwner(), dude);
+            RunStart(record.ScriptListIndex, map, sid: -2, record, MapScriptOwner(map, fresh: true), dude);
         }
 
         foreach (MapObject obj in objects.ToList())
@@ -1204,22 +1223,8 @@ public sealed class ScriptHost(GameFileSystem vfs, ScriptList scripts, Hexwaste.
 
         if (map.Header.ScriptIndex > 0)
         {
-            // The map script has no real owner object; synthesize one.
-            var owner = new MapObject
-            {
-                Id = -2,
-                HexTile = 1,
-                X = 0,
-                Y = 0,
-                Frame = 0,
-                Rotation = 0,
-                Fid = Fid.Build(ObjectType.Misc, 12),
-                Flags = 0,
-                Pid = 0x05000010,
-                Sid = -1,
-            };
             var record = new MapScriptRecord(map.Header.ScriptIndex - 1, -1, 0);
-            RunProc(record.ScriptListIndex, map, sid: -2, record, owner, dude,
+            RunProc(record.ScriptListIndex, map, sid: -2, record, MapScriptOwner(map), dude,
                 firstRun, -1, ["map_enter_p_proc"]);
         }
 
@@ -1244,21 +1249,8 @@ public sealed class ScriptHost(GameFileSystem vfs, ScriptList scripts, Hexwaste.
     {
         if (map.Header.ScriptIndex > 0)
         {
-            var owner = new MapObject
-            {
-                Id = -2,
-                HexTile = 1,
-                X = 0,
-                Y = 0,
-                Frame = 0,
-                Rotation = 0,
-                Fid = Fid.Build(ObjectType.Misc, 12),
-                Flags = 0,
-                Pid = 0x05000010,
-                Sid = -1,
-            };
             var record = new MapScriptRecord(map.Header.ScriptIndex - 1, -1, 0);
-            RunProc(record.ScriptListIndex, map, sid: -2, record, owner, dude,
+            RunProc(record.ScriptListIndex, map, sid: -2, record, MapScriptOwner(map), dude,
                 fixedParam: 0, -1, ["map_update_p_proc"]);
         }
 
@@ -1327,7 +1319,7 @@ public sealed class ScriptHost(GameFileSystem vfs, ScriptList scripts, Hexwaste.
         if (map.Header.ScriptIndex > 0)
         {
             var record = new MapScriptRecord(map.Header.ScriptIndex - 1, -1, 0);
-            RunProc(record.ScriptListIndex, map, sid: -2, record, SynthMapScriptOwner(), dude,
+            RunProc(record.ScriptListIndex, map, sid: -2, record, MapScriptOwner(map), dude,
                 fixedParam: 0, -1, ["map_exit_p_proc"]);
         }
 
@@ -1350,7 +1342,7 @@ public sealed class ScriptHost(GameFileSystem vfs, ScriptList scripts, Hexwaste.
         if (map.Header.ScriptIndex <= 0)
             return null;
         var record = new MapScriptRecord(map.Header.ScriptIndex - 1, -1, 0);
-        return RunProc(record.ScriptListIndex, map, sid: -2, record, SynthMapScriptOwner(), dude,
+        return RunProc(record.ScriptListIndex, map, sid: -2, record, MapScriptOwner(map), dude,
             fixedParam: team, -1, ["combat_p_proc"]);
     }
 
@@ -2662,7 +2654,8 @@ public sealed class ScriptHost(GameFileSystem vfs, ScriptList scripts, Hexwaste.
 
             var obj = new MapObject
             {
-                Id = -3,
+                Id = _host.NewObjectId(), // objectCreateWithFidPid
+                Spawned = true,
                 HexTile = tile == -1 ? 0 : tile, // engine quirk: -1 coerced to 0
                 X = 0,
                 Y = 0,
@@ -2684,6 +2677,7 @@ public sealed class ScriptHost(GameFileSystem vfs, ScriptList scripts, Hexwaste.
             {
                 int sid = _host.AllocateSid(_map, scriptIndex, obj);
                 obj.Sid = sid;
+                obj.Id = _host.NewObjectId(); // interpreter_extra.cc:938, after objectSetLocation: SPAWN/MOVE showed the first id
             }
 
             if (elevation is >= 0 and < MapFile.ElevationCount && _map.Elevations[elevation] is { } elev)
