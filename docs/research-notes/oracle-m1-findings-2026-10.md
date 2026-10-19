@@ -18,7 +18,8 @@ Update after F17: first divergences are now artemple line 1297, klamath line 166
 
 Update after F12: artemple line 5809 (fo2ce `t=303000 PROC artemple.int map_update_p_proc self=obj#16` vs
 Hexwaste `t=303000 PROC obj_dude.int critter_p_proc self=obj#18000`: the map-script id label now matches;
-Hexwaste runs no map_update at that tick), klamath line 1664 (unchanged), arcaves line 9 (unchanged).
+both run map_update at t=302720/303000/303020, but at t=303000 fo2ce runs it first in the tick and Hexwaste
+after nine critter procs, a same-tick order difference), klamath line 1664 (unchanged), arcaves line 9 (unchanged).
 
 Update after F13: artemple line 3011 (fo2ce `t=302720 PROC artemple.int map_update_p_proc self=obj#16` vs
 Hexwaste `self=obj#-2`: the map script's object id label, not RNG), klamath line 1664 (unchanged), arcaves
@@ -417,7 +418,8 @@ Follow-ups (F16):
 5. After F13: artemple's next gap is the map-script `self` id (fo2ce obj#16 vs Hexwaste constant -2, see F12/F-id
    notes); klamath 1664 and arcaves 9 are unchanged.
 6. After F12: artemple line 5809 (t=303000: fo2ce runs `artemple.int map_update_p_proc self=obj#16`, Hexwaste
-   runs the next `obj_dude critter_p_proc`, i.e. the map_update tick is missing); klamath 1664 and arcaves 9
+   runs the next `obj_dude critter_p_proc` and its map_update round only after nine critter procs in the same
+   tick: a same-tick order difference, not a missing round); klamath 1664 and arcaves 9
    are unchanged.
 7. F8–F13 are small, independent ports; F12/F14 first need trace-alignment decisions. Each fix should be
    validated by a fresh `oracle-run.sh` showing the first divergence moving later.
