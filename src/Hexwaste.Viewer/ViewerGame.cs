@@ -149,12 +149,11 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
     /// <summary>P30 A-M2: the 100 ms sneak re-check clock (formerly also the critter heartbeat's).</summary>
     private double _sneakTimerMs;
 
-    /// <summary>P1-M2: the recurring map_update heartbeat clock. The engine re-fires SCRIPT_PROC_MAP_UPDATE
-    /// for every script every 600 game ticks (scripts.cc:517 mapUpdateEventProcess → queueAddEvent(600));
-    /// at Hexwaste's 1-tick=100ms script clock that is 60000 ms. Reset on map load (map_update already runs
-    /// once there).</summary>
-    private double _mapUpdateClockMs;
-    private const double MapUpdateIntervalMs = 600 * 100.0; // 600 game ticks
+    /// <summary>P1-M2: the recurring map_update heartbeat. The engine re-fires SCRIPT_PROC_MAP_UPDATE
+    /// for every script every 600 game ticks (scripts.cc:517 mapUpdateEventProcess → queueAddEvent(600)).
+    /// Scheduled on map load (map_update already runs once there).</summary>
+    private long _mapUpdateNextTick = -1; // EVENT_TYPE_MAP_UPDATE_EVENT time; -1 = none queued
+    private const int MapUpdateIntervalTicks = 600;
 
     /// <summary>The second map_update source, ported from fallout2-ce src/scripts.cc _script_chk_timed_events():
     /// every 30000 ms of real (bk) time, in or out of combat. `_last_light_time` is never reset, so this window
@@ -1417,6 +1416,7 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
                     ProcessRads(); // P113 (item 7c)
                     _scriptHost?.PumpTimers(_dude?.Dude); // P114: timers due within the jump fire
                     ProcessAmbientSfx(); // oracle F13: queueProcessEvents runs inline, before the script continues
+                    ProcessMapUpdateEvent(); // same inline queueProcessEvents
                 },
                 // P63 (Sierra Army Depot): tile_contains_obj_pid scans every object at (tile, elevation) for
                 // the pid (the engine's objectFindFirstAtLocation loop). ported from opTileContainsObjectWithPid.
@@ -1910,9 +1910,9 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
             // "cavern" level 50 (62.5%) that map_enter left at max; the other slice maps re-set
             // the same max (inert). `scripted` is re-evaluated, so map_enter-created objects are
             // included (faithful). P1-M2 adds the recurring 600-tick re-run (mapUpdateEventProcess)
-            // in Update; the clock resets here so the first heartbeat lands 600 ticks after load.
+            // in Update; the first heartbeat is scheduled 600 game ticks after load.
             _scriptHost.RunMapUpdate(_map, scripted, _dude?.Dude);
-            _mapUpdateClockMs = 0;
+            _mapUpdateNextTick = _clock.Ticks + MapUpdateIntervalTicks; // map.cc:1022 gameTimeScheduleUpdateEvent
         }
 
         foreach ((MapObject obj, int ordinal) in _objectOrdinals)
@@ -3010,7 +3010,7 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
         // game ticks so a clock jump fires due timers. dialog/loot/worldmap modes return earlier in Update.
         PumpCritterProcs(gameTime.ElapsedGameTime.TotalMilliseconds);
         ConsumePendingElevator(); // P113 (item 5): catch a use_p_proc / critter-proc metarule(15)
-        PumpMapUpdate(gameTime.ElapsedGameTime.TotalMilliseconds); // P1-M2: recurring 600-tick map_update
+        PumpMapUpdate(gameTime.ElapsedGameTime.TotalMilliseconds); // 30 s bk-time map_update round
 
         // Map transitions are queued by exit grids/stairs and applied here,
         // never while DudeController.Update is still on the stack.
@@ -6910,6 +6910,7 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
         ProcessRads(); // P113 (item 7c): the radiation band model — midnight checks + delayed damage/heal
         _scriptHost?.PumpTimers(_dude?.Dude); // P114: script timers fire on game time (catch-up after jumps)
         ProcessAmbientSfx(); // oracle F13: the ambient sfx event fires on game time
+        ProcessMapUpdateEvent(); // the 600-tick map_update event fires on game time
         ProcessArmedCharges(); // placed explosives detonate on game time
         ProcessTrickleItems(); // P116 (review H): Geiger/Stealth Boy charge drain on game time
 

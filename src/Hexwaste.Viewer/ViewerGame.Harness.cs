@@ -527,13 +527,17 @@ public sealed partial class ViewerGame
                 }
                 case StartupAction.MapUpdateHeartbeatProbe(var beats) when _map is not null && _scriptHost is not null:
                 {
-                    // P1-M2: prove the recurring 600-tick map_update heartbeat's cadence deterministically.
+                    // P1-M2: prove the recurring 600-tick map_update heartbeat's cadence on the game clock.
                     // Half an interval must NOT fire; each full interval fires exactly once. No RNG/UI.
                     int start = _mapUpdateFires;
-                    PumpMapUpdate(MapUpdateIntervalMs / 2);
+                    _clock.Ticks += MapUpdateIntervalTicks / 2;
+                    ProcessMapUpdateEvent();
                     int halfIntervalFires = _mapUpdateFires - start;
                     for (int i = 0; i < beats; i++)
-                        PumpMapUpdate(MapUpdateIntervalMs);
+                    {
+                        _clock.Ticks += MapUpdateIntervalTicks;
+                        ProcessMapUpdateEvent();
+                    }
                     int totalFires = _mapUpdateFires - start;
                     Console.WriteLine($"map-update-heartbeat: beats={beats} "
                         + $"halfIntervalFires={halfIntervalFires} totalFires={totalFires}");
