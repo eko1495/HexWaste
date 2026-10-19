@@ -203,6 +203,9 @@ public sealed partial class ViewerGame
     private int ImportVanillaQueue(IReadOnlyList<QueueEventSave> queue, int dudeId)
     {
         int imported = 0;
+        // queueLoad (queue.cc:84) replaces the whole queue: the ambient event map load queued is dropped.
+        _ambientNextTick = -1;
+        _ambientPendingIdx = null;
         foreach (QueueEventSave e in queue)
         {
             bool dudeOwned = e.OwnerId == dudeId;
@@ -238,6 +241,10 @@ public sealed partial class ViewerGame
                     break;
                 case 6 when dudeOwned: // EVENT_TYPE_RADIATION: data = { radiationLevel, isHealing }
                     _radEvents.Add((e.Time, e.Data[0], e.Data[1] != 0));
+                    break;
+                case 13: // EVENT_TYPE_GSOUND_SFX_EVENT: no readProc (queue.cc:67), so it fires with no data
+                    _ambientNextTick = e.Time;
+                    _ambientPendingIdx = null;
                     break;
                 default:
                     Console.Error.WriteLine($"vanilla-import: skipped queue event type {e.Type} (t={e.Time} owner={e.OwnerId})");

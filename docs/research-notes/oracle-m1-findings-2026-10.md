@@ -16,6 +16,10 @@ Spec/plan: `docs/superpowers/specs/2026-10-10-fo2ce-trace-oracle-design.md`,
 
 Update after F17: first divergences are now artemple line 1297, klamath line 1664, arcaves line 9.
 
+Update after F13: artemple line 3011 (fo2ce `t=302720 PROC artemple.int map_update_p_proc self=obj#16` vs
+Hexwaste `self=obj#-2`: the map script's object id label, not RNG), klamath line 1664 (unchanged), arcaves
+line 9 (unchanged).
+
 First divergent pairs (TraceDiff, `-` fo2ce / `+` Hexwaste):
 
 ```
@@ -264,6 +268,15 @@ ms rather than reading the game clock (the map-update heartbeat probe feeds it m
 
 ### F13 — Ambient-sfx RNG draws missing
 
+- Status: FIXED (commits 977f24e, bd4d300). The ambient-sfx event is ported (`AmbientSfx.RunEvent` +
+  `ViewerGame.RunAmbientSfxEvent`): it runs on game time after the script timers, starts on map load, and
+  takes over the saved type-13 queue event on vanilla import; it draws from the shared RNG without audio.
+  Shortcut limits (code comments): an ambient event and a script timer due on the same tick run timers
+  first (fo2ce's single queue orders them by insertion); a Hexwaste save does not store the pending ambient
+  event (the chain restarts at map load). Playback (not the draws) stays behind `_audio`. Rerun: artemple
+  first divergence line 1297 -> 3011 (no longer an RNG line; now the map-script owner id label, F12), klamath unchanged at 1664, arcaves unchanged at 9; `skipped queue event type 13`
+  is gone from all three hexwaste.log files.
+
 - Fixture: artemple-idle — the only RNG lines in fo2ce's trace are `wmSfxRollNextIdx` 0..100 and
   `ambientSoundEffectEventProcess` 15..20 (t=302550, 302700, 302880); Hexwaste draws none.
 - Hypothesis: fo2ce schedules ambient sfx on the game-time queue and draws even with sound off
@@ -354,6 +367,14 @@ Follow-ups (F16):
 - Status: FIXED (`ScriptHost.DudeTraceSid`, commit 5c29553). Rerun: artemple first divergence line 6 -> 1297,
   klamath 69 -> 1664, arcaves unchanged at line 9.
 
+### F18 — Ambient event does not run during worldmap travel
+
+- Evidence (code): fo2ce's travel loop steps the clock event by event and calls `queueProcessEvents` each
+  time (`worldmap.cc:4184-4199`); the map stays loaded, so the ambient event keeps drawing on every leg.
+  Hexwaste's travel step (`ViewerGame.Worldmap.cs:112`, `:148`) runs no game-time events, so a travel
+  scenario would see the encounter-roll stream drift. Found reviewing F13; no fixture travels yet.
+- Status: open. Fix: run due game-time events (including `ProcessAmbientSfx`) inside the travel step.
+
 ## Recommended next steps
 
 1. Fix F1 (one line, `sid - 1`), re-record the goldens it moves, re-run the oracle.
@@ -369,5 +390,7 @@ Follow-ups (F16):
    fo2ce starts obj#70's combat turn first) belongs to F4/F5, not F17.
 4. Then the combat joiner path (F5) and re-check F4, then F8-F14. The start-body-on-first-run timing
    (obj_dude `start` executes on first run) is part of F8 in general.
-5. F8–F13 are small, independent ports; F12/F14 first need trace-alignment decisions. Each fix should be
+5. After F13: artemple's next gap is the map-script `self` id (fo2ce obj#16 vs Hexwaste constant -2, see F12/F-id
+   notes); klamath 1664 and arcaves 9 are unchanged.
+6. F8–F13 are small, independent ports; F12/F14 first need trace-alignment decisions. Each fix should be
    validated by a fresh `oracle-run.sh` showing the first divergence moving later.
