@@ -22,12 +22,10 @@ namespace Hexwaste.Viewer;
 //   _addictionRng     Chemistry.cs:247             logic     addiction roll (item.cc:2822 _item_d_take_drug) — missing from the brief's list
 //   _scriptHost.Rng   ViewerGame.cs:1528           logic     do_check / statRoll (roll.cc via scripts)
 //   IntVm random()    IntVm.cs:629/:723            logic     interpreter_extra.cc opRandom :782 -> randomBetween (via ScriptHost.SharedVmRandom)
-//   _ambientRng       ViewerGame.cs:1982           logic     per-map ambient sfx index roll + interval. fo2ce's equivalent
-//                                                            (game_sound.cc:2125 ambientSoundEffectEventProcess, wmSfxRollNextIdx)
-//                                                            rides the game-time event queue => audit class LOGIC, so it shares
-//                                                            the stream. NOTE: Hexwaste schedules it off wall time in Update(),
-//                                                            skips it in combat and without audio (always, under --no-audio), so it
-//                                                            never draws in an oracle run while fo2ce does — an expected finding.
+//   _ambientRng       ViewerGame.cs RunAmbientSfxEvent
+//                                                  logic     ambient sfx event (game_sound.cc ambientSoundEffectEventProcess,
+//                                                            wmSfxRollNextIdx) on the game-time clock, drawing without audio
+//                                                            and in combat like fo2ce (oracle F13).
 //   _fidgetRng        ViewerGame.cs:6455           cosmetic  talking-head fidget (game_dialog.cc:2505/:2865 — audit: cosmetic)
 //   _ambientRandom    ViewerGame.cs:381            cosmetic  critter idle fidget = _dude_fidget (animation.cc:3071/:3109 — audit: cosmetic).
 //                     (fixed seed 20260612)        out-of-scope for its WANDER half: TryStartWander is a Hexwaste-only "honest fake"
@@ -182,7 +180,7 @@ public sealed partial class ViewerGame
     /// --pump-ms pump never advances NPC walkers (only Update's PruneFinishedWalkers does), so the first
     /// NPC that walks in combat leaves CombatEngine.IsBusy true forever and end-turn cap-exits. This
     /// mirrors Update()'s game-logic order instead (ViewerGame.cs Update: animator, combat, dude,
-    /// interaction, walkers, ambient life/sfx, critter procs, elevator, map_update, transition, clock);
+    /// interaction, walkers, ambient life, critter procs, elevator, map_update, transition, clock);
     /// render-only steps (projectiles, float text, palette cycling, HUD roll) and worldmap travel are
     /// omitted. Then the fo2ce mainLoop dead/KO check (exit 5).
     /// Unlike Update(), it does NOT replicate the modal early-returns (dialog / barter / loot / elevator
@@ -199,7 +197,6 @@ public sealed partial class ViewerGame
         PumpPendingInteraction();
         PruneFinishedWalkers(ms);
         UpdateAmbientLife(ms);
-        TickAmbientSfx(ms);
         PumpCritterProcs(ms);
         ConsumePendingElevator();
         PumpMapUpdate(ms);

@@ -392,12 +392,13 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
     private AudioManager? _audio;
     private int _stepCounter;
 
-    // Per-map ambient sfx (P34-M5): the weighted maps.txt list, a wall-time countdown, and a DEDICATED
-    // seeded RNG kept off the combat/worldmap/skill/sneak streams so a future wall-time golden can't shift.
+    // Per-map ambient sfx (P34-M5, oracle F13): the weighted maps.txt list, fo2ce's game-time ambient event
+    // (next due tick, -1 = none queued; the stored index, null = no data), and a DEDICATED seeded RNG kept
+    // off the combat/worldmap/skill/sneak streams (the oracle points it at the shared stream).
     private IReadOnlyList<(string Name, int Chance)> _mapAmbient = [];
-    private double _ambientTimerMs;
+    private long _ambientNextTick = -1;
+    private int? _ambientPendingIdx;
     private Random? _ambientRng;
-    private const double AmbientIntervalMs = 17000; // ~the engine's 10*randomBetween(15,20) game-ticks
     private WorldmapScreen? _worldmapScreen;
     private bool _worldmapOpen;
     private bool _worldmapWasOpen; // P123: open-transition latch (center the chrome view once)
@@ -1943,7 +1944,9 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
 
         _audio?.PlayMusic(_mapList.GetMusic(mapName));
         _mapAmbient = _mapList.GetAmbientSfx(mapName); // P34-M5: per-map ambient sfx list
-        _ambientTimerMs = AmbientIntervalMs;
+        // ported from fallout2-ce src/map.cc mapLoad() -> _gsound_sfx_q_start(): start the chain (no data).
+        // shortcut: a Hexwaste save does not store the pending ambient event; the chain restarts at map load. Upgrade if save/load round trips need the exact ambient schedule.
+        RunAmbientSfxEvent(null);
         _mapFadeElapsed = 0; // P52-M6: fade the freshly-loaded map in from black
 
         // Reveal the worldmap subtile of the town we just walked into, so the place
@@ -1974,23 +1977,29 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
     }
 
     /// <summary>
-    /// Per-map ambient sound effects (P34-M5): on a wall-time countdown, roll a weighted entry
-    /// (AmbientSfx.RollIndex), remap birds → crickets at night, and play it. Suppressed in combat
-    /// (the engine's ambientSoundEffectEventProcess isInCombat gate). Update/wall-time driven + behind
-    /// _audio, so the headless harness (which doesn't pump enough wall-time) never fires it.
+    /// ported from fallout2-ce src/game_sound.cc ambientSoundEffectEventProcess(): one ambient event on the
+    /// game-time queue. Draws even without audio (the shared stream must advance as in fo2ce); plays the
+    /// index's sound (birds -> crickets at night) only with audio and out of combat. fo2ce's 5000 ms
+    /// bk-time gate between plays is not ported (audio only, no draws).
     /// </summary>
-    private void TickAmbientSfx(double elapsedMs)
+    private void RunAmbientSfxEvent(int? storedIdx)
     {
-        if (_audio is null || _mapAmbient.Count == 0 || _combat.Phase != Formats.Combat.CombatPhase.Idle)
-            return;
-        _ambientTimerMs -= elapsedMs;
-        if (_ambientTimerMs > 0)
-            return;
-        _ambientTimerMs = AmbientIntervalMs;
         _ambientRng ??= new Random(RngSeed ?? Environment.TickCount);
-        int idx = Formats.Map.AmbientSfx.RollIndex(_mapAmbient, total => _ambientRng.Next(0, total + 1));
-        if (idx >= 0)
-            _audio.PlaySfx(Formats.Map.AmbientSfx.RemapBirdForNight(_mapAmbient[idx].Name, _clock.Hour));
+        (int playIdx, int? nextIdx, int delayTicks) = Formats.Map.AmbientSfx.RunEvent(_mapAmbient, storedIdx,
+            _combat.Phase != Formats.Combat.CombatPhase.Idle, (min, max) => _ambientRng.Next(min, max + 1));
+        _ambientNextTick = delayTicks >= 0 ? _clock.Ticks + delayTicks : -1;
+        _ambientPendingIdx = nextIdx;
+        if (playIdx != -1 && _audio is not null)
+            _audio.PlaySfx(Formats.Map.AmbientSfx.RemapBirdForNight(_mapAmbient[playIdx].Name, _clock.Hour));
+    }
+
+    /// <summary>Runs the due ambient event (scripts.cc _doBkProcesses -> queueProcessEvents, right after the
+    /// clock tick); loops to catch up after clock jumps like the other game-time events.
+    /// shortcut: an ambient event and a script timer due on the same tick run timers first; fo2ce's single queue orders them by insertion. Upgrade if the oracle shows a same-tick difference.</summary>
+    private void ProcessAmbientSfx()
+    {
+        while (_ambientNextTick >= 0 && _ambientNextTick <= _clock.Ticks)
+            RunAmbientSfxEvent(_ambientPendingIdx);
     }
 
     protected override void Update(GameTime gameTime)
@@ -2990,7 +2999,6 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
         // pruning every frame, and this call is what keeps walker lifecycle live on that path.
         PruneFinishedWalkers(gameTime.ElapsedGameTime.TotalMilliseconds);
         UpdateAmbientLife(gameTime.ElapsedGameTime.TotalMilliseconds);
-        TickAmbientSfx(gameTime.ElapsedGameTime.TotalMilliseconds); // P34-M5 ambient sfx
         _floatText.Tick(gameTime.ElapsedGameTime.TotalMilliseconds); // P45 floating combat text
 
         // P114: script timers now pump inside UpdateClock (below, after the clock advances) — keyed on
@@ -6887,6 +6895,7 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
         ProcessWithdrawals(); // P38: withdrawal onset/recovery fire on game time (drain-loop for clock jumps)
         ProcessRads(); // P113 (item 7c): the radiation band model — midnight checks + delayed damage/heal
         _scriptHost?.PumpTimers(_dude?.Dude); // P114: script timers fire on game time (catch-up after jumps)
+        ProcessAmbientSfx(); // oracle F13: the ambient sfx event fires on game time
         ProcessArmedCharges(); // placed explosives detonate on game time
         ProcessTrickleItems(); // P116 (review H): Geiger/Stealth Boy charge drain on game time
 
