@@ -222,7 +222,8 @@ there). klamath-hour and artemple-idle now run map_update at the same ticks (180
 set per round. fo2ce's second `obj_dude.int map_update_p_proc` per round is explained by F16 (the stale slot), fixed;
 the order now matches. The 600-tick source now reads the game clock (`_mapUpdateNextTick`, processed in
 `UpdateClock` right after the clock tick, like fo2ce's queue event), replacing the ms count that ran 90 ms out
-of phase (artemple t=303000: fo2ce line 1 of the tick, Hexwaste line 10).
+of phase (artemple t=303000: fo2ce line 1 of the tick, Hexwaste line 10). Rest and multi-day `game_time_advance`
+fire one round where fo2ce fires one per 600 ticks / per day (shortcut in code).
 
 - Fixture: klamath-hour. fo2ce runs 180 map_update rounds per hour (gaps alternate 6/294/300 ticks),
   Hexwaste 60. Hexwaste also runs `map_update_p_proc` for `ksbboard.int`, `stuff.int`, `trespass.int`
@@ -409,6 +410,15 @@ Follow-ups (F16):
   fo2ce's map-update event (the 600-tick round) likewise keeps running during travel, which Hexwaste's worldmap
   gate skips.
 - Status: open. Fix: run due game-time events (including `ProcessAmbientSfx`) inside the travel step.
+
+### F19 — Combat does not advance the game clock
+
+- Evidence (code): fo2ce adds 5 s per combat round (`combat.cc:3071`, `gameTimeAddSeconds(5)`) and its
+  `_doBkProcesses` queue loop keeps running in combat (`scripts.cc:766-781`), so game-time events (timers,
+  the 600-tick map_update, ambient sfx) can fire mid-combat after about 12 rounds. Hexwaste freezes the clock
+  in combat (F2) and gates the map-update event on combat.
+- Status: open; matters for a long-combat fixture. Fix: port the 5 s/round advance, then drop the combat gate
+  on the queue events.
 
 ## Recommended next steps
 

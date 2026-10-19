@@ -82,7 +82,7 @@ Hexwaste as line 10.
    throwaway VM (`IntVm.cs:608`, `ScriptHost.cs:895`).
 
 Live play: the round still fires every 60 s of real time while the clock runs and never in combat. After a
-clock jump (rest, `game_time_advance`) it fires once, as in fo2ce; the ms count kept waiting.
+clock jump (rest, `game_time_advance`) it fires once; fo2ce's rest loop fires one round per 600 ticks and `game_time_advance` one per day (both recorded as shortcuts in code). The ms count kept waiting.
 
 ## Testing
 
