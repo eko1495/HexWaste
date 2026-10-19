@@ -34,6 +34,31 @@ public static class AmbientSfx
     }
 
     /// <summary>
+    /// ported from fallout2-ce src/game_sound.cc ambientSoundEffectEventProcess(): the draws of one ambient
+    /// event, in fo2ce's order. <paramref name="storedIdx"/> is the event's data (null = no data, as for the
+    /// map-load start and a loaded .SAV event: roll now). The delay is always drawn; the next index and the
+    /// reschedule only for a non-empty list. In combat nothing plays (draws unchanged).
+    /// <paramref name="between"/> is the engine's inclusive randomBetween(min, max).
+    /// Returns DelayTicks -1 when the chain stops.
+    /// </summary>
+    public static (int PlayIdx, int? NextIdx, int DelayTicks) RunEvent(
+        IReadOnlyList<(string Name, int Chance)> entries, int? storedIdx, bool inCombat, Func<int, int, int> between)
+    {
+        int idx = storedIdx ?? (entries.Count > 0 ? RollIndex(entries, total => between(0, total)) : -1);
+        int delay = 10 * between(15, 20);
+        int? next = null;
+        int delayTicks = -1;
+        if (entries.Count > 0)
+        {
+            next = RollIndex(entries, total => between(0, total));
+            delayTicks = delay;
+        }
+        if (inCombat)
+            idx = -1;
+        return (idx, next, delayTicks);
+    }
+
+    /// <summary>
     /// ported from fallout2-ce src/worldmap.cc wmSfxIdxName(): at night (hhmm hour ≤ 600 or ≥ 1800)
     /// the two bird ambients become cricket sounds; everything else is unchanged.
     /// </summary>
