@@ -393,6 +393,21 @@ public sealed class ScriptHost(GameFileSystem vfs, ScriptList scripts, Hexwaste.
     /// clear of map and AllocateSid ranges, so its local vars can live outside any one map.</summary>
     public const int DudeSid = 0x04800000;
 
+    /// <summary>Oracle trace label for the dude's script: the sid fo2ce would print (F17). Trace-only;
+    /// the real sid stays <see cref="DudeSid"/>.</summary>
+    public int DudeTraceSid { get; private set; } = 0x04004650;
+
+    /// <summary>ported from fallout2-ce src/scripts.cc scriptGetNewId(): from the counter value, step up past
+    /// every critter id already in use.</summary>
+    public static int FirstFreeCritterSid(IEnumerable<int> critterSids, int start)
+    {
+        var used = critterSids.Select(sid => sid & 0xFFFFFF).ToHashSet();
+        int id = start;
+        while (used.Contains(id))
+            id++;
+        return 0x04000000 | id;
+    }
+
     /// <summary>ported from fallout2-ce src/scripts.cc scriptsSetDudeScript(): the dude carries
     /// obj_dude.int (proto sid 0x4000000). Call on every map load, after the dude is spawned.</summary>
     public void BindDudeScript(MapFile map, MapObject dude)
@@ -404,6 +419,9 @@ public sealed class ScriptHost(GameFileSystem vfs, ScriptList scripts, Hexwaste.
         // maps yet), verified for a save load by the oracle traces.
         CritterScripts.Add(DudeSid);
         _scriptOwners[DudeSid] = dude;
+        // ported from fallout2-ce src/party_member.cc _partyMemberRecoverLoadInstance(): after a map change the dude's sid is
+        // pid-derived, (4 << 24) | (pid 0x01000000 & 0xFFFFFF) + 18000.
+        DudeTraceSid = 0x04004650;
     }
 
     /// <summary>ported from fallout2-ce src/object.cc _obj_load_dude() (scriptsClearDudeScript +
@@ -438,6 +456,11 @@ public sealed class ScriptHost(GameFileSystem vfs, ScriptList scripts, Hexwaste.
         ForgetScriptState(map, staleSid);
         ForgetScriptState(map, DudeSid);
         BindDudeScript(map, dude); // appended last, as scriptsSetDudeScript's scriptAdd
+        // fo2ce _obj_load_dude -> scriptAdd -> scriptGetNewId: nextScriptId is never reset by a load; it is 5 on
+        // the oracle's launch path (main menu, load a slot), the only value matching all three fixtures.
+        // shortcut: assumes no critter script is created during the load-time passes (fo2ce's counter would move past 5); upgrade if an oracle fixture spawns one at load
+        // Also assumes the .SAV holds a stale obj_dude record (all three fixtures do); without one this label stays 0x04004650.
+        DudeTraceSid = FirstFreeCritterSid(map.CritterSids, 5);
     }
 
     // A fresh Script: its VM (module globals, init/start not yet run) and LVAR slice are dropped.
@@ -1760,7 +1783,7 @@ public sealed class ScriptHost(GameFileSystem vfs, ScriptList scripts, Hexwaste.
                 // fo2ce scripts.cc scriptSetLocalVar: oracleTraceLvar(sid, script-relative index, old, new),
                 // accepted stores only.
                 if (OracleTrace.Active)
-                    OracleTrace.Lvar(_sid, index, slice[index], value);
+                    OracleTrace.Lvar(_sid == DudeSid ? _host.DudeTraceSid : _sid, index, slice[index], value);
                 slice[index] = value;
             }
         }
