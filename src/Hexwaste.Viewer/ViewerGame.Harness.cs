@@ -183,14 +183,14 @@ public sealed partial class ViewerGame
                     LoadMap(emap, null, transient: true);
 
                     var spawned = _solidObjects[_elevation]
-                        .Where(o => o.Id == -3 && Fid.Type(o.Fid) is ObjectType.Critter)
+                        .Where(o => o.Spawned && Fid.Type(o.Fid) is ObjectType.Critter)
                         .OrderBy(o => o.HexTile)
                         .ToList();
                     // Flat spawns = the group's If()-gated ground members: scenery/items
                     // (e.g. ARRO_Rats' Xander Root at Distance:10) + Dead corpses. The
                     // pid + dist-from-dude lock the per-member If()/Distance fidelity (M4).
                     int dudeTile = _dude?.Dude.HexTile ?? 0;
-                    var flat = _flatObjects[_elevation].Where(o => o.Id == -3)
+                    var flat = _flatObjects[_elevation].Where(o => o.Spawned)
                         .OrderBy(o => o.HexTile).ToList();
                     foreach (MapObject o in spawned)
                         Console.WriteLine($"  spawn pid=0x{o.Pid:X8} tile={o.HexTile} rot={o.Rotation}"
@@ -216,7 +216,7 @@ public sealed partial class ViewerGame
                     LoadMap(fmap, null, transient: true); // SpawnEncounter → StartBrawl
 
                     var live = _solidObjects[_elevation]
-                        .Where(o => o.Id == -3 && Fid.Type(o.Fid) is ObjectType.Critter && !o.IsDead).ToList();
+                        .Where(o => o.Spawned && Fid.Type(o.Fid) is ObjectType.Critter && !o.IsDead).ToList();
                     int teamA = live.Count(o => o.Team == 1), teamB = live.Count(o => o.Team == 2);
                     Console.WriteLine($"encounter-fight: groups={ga}/{gb} spawned={live.Count}"
                         + $" teamA={teamA} teamB={teamB} hostiles={_combat.Hostiles.Count} phase={_combat.Phase}");
@@ -367,7 +367,7 @@ public sealed partial class ViewerGame
                     _currentMapTransient = true;                          // pretend we're on the encounter map
                     ApplyTransition(new MapDestination(-1, 0, 0, 0));     // walk off the edge → sets _resumeTravelDest
                     if (_resumeTravelDest is { } d) { _resumeTravelDest = null; TravelTo(d); }
-                    int spawned = _solidObjects[_elevation].Count(o => o.Id == -3 && Fid.Type(o.Fid) is ObjectType.Critter);
+                    int spawned = _solidObjects[_elevation].Count(o => o.Spawned && Fid.Type(o.Fid) is ObjectType.Critter);
                     Console.WriteLine($"travel-resume: from ({rx},{ry})->area{ra} {(_currentMapTransient ? "encounter" : "arrived")}"
                         + $" map={_currentMapName} worldPos=({_worldPosX},{_worldPosY}) spawned={spawned}");
                     break;
@@ -395,7 +395,7 @@ public sealed partial class ViewerGame
                     }
                     TravelTo(dest);
                     int spawnedCount = _solidObjects[_elevation]
-                        .Count(o => o.Id == -3 && Fid.Type(o.Fid) is ObjectType.Critter);
+                        .Count(o => o.Spawned && Fid.Type(o.Fid) is ObjectType.Critter);
                     string outcome = _currentMapTransient ? "encounter" : "arrived";
                     Console.WriteLine($"travel-from: ({tx},{ty})->area{ai} {outcome} map={_currentMapName}"
                         + $" worldPos=({_worldPosX},{_worldPosY}) spawned={spawnedCount}");

@@ -246,7 +246,7 @@ public sealed partial class ViewerGame
             ProtoInfo proto = _protos.Get(pid);
             var obj = new MapObject
             {
-                Id = -4,
+                Id = -4, // shortcut: objects rebuilt from a Hexwaste save keep -4, fo2ce restores their saved ids; upgrade if save round trips need stable ids
                 HexTile = -1,
                 X = 0,
                 Y = 0,

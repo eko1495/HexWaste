@@ -1236,6 +1236,9 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
                 IsOpenResolver = obj => _openDoors.Contains(obj),
                 OpenStateChanged = (obj, open) => SetDoorState(obj, open),
                 ObjectPlaced = (obj, map) => OnScriptObjectPlaced(obj),
+                // Oracle F12: fo2ce's scriptsNewObjectId skips ids used by objects on a map tile, all elevations.
+                ObjectIdInUse = id => _dude?.Dude.Id == id || _map?.Elevations.Any(e => e is not null
+                    && e.Objects.Any(o => o.Id == id && o.HexTile >= 0)) == true,
                 ObjectRemoved = obj => OnScriptObjectRemoved(obj),
                 ClockTicks = () => _clock.Ticks,
                 CurrentMapIndexProvider = () => _mapList.GetIndexByFileName(_currentMapName),
@@ -4936,11 +4939,16 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
         Console.WriteLine($"barter-sell: {ObjectNameByPid(item.Pid)} for {price} (dudeCaps {DudeCaps()})");
     }
 
-    private static void TransferOne(MapObject item, List<MapObject> from, List<MapObject> to)
+    private void TransferOne(MapObject item, List<MapObject> from, List<MapObject> to)
     {
         if (item.StackCount > 1)
         {
             item.StackCount--;
+            // fo2ce item.cc:435 _obj_copy: the remaining stack is the copy (new id); the moved unit is the original.
+            int newId = _scriptHost?.NewObjectId() ?? item.Id;
+            Formats.Trace.OracleTrace.SpawnPlaced(newId, item.Pid, -1);
+            int movedId = item.Id;
+            item.Id = newId;
             if (to.FirstOrDefault(i => i.Pid == item.Pid) is { } existing)
             {
                 existing.StackCount++;
@@ -4949,7 +4957,7 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
 
             var unit = new MapObject
             {
-                Id = -4,
+                Id = movedId,
                 HexTile = -1,
                 X = 0,
                 Y = 0,
@@ -4960,7 +4968,6 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
                 Pid = item.Pid,
                 Sid = -1,
             };
-            Formats.Trace.OracleTrace.SpawnPlaced(unit.Id, unit.Pid, -1);
             to.Add(unit);
             return;
         }
@@ -5572,7 +5579,8 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
 
         var obj = new MapObject
         {
-            Id = -3, // script-created marker, like ScriptContext.CreateObject
+            Id = _scriptHost?.NewObjectId() ?? -3, // objectCreateWithPid
+            Spawned = true,
             HexTile = si.Tile,
             X = 0,
             Y = 0,
@@ -5587,10 +5595,15 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
         };
         if (si.ScriptIndex >= 0 && _scriptHost is not null)
             obj.Sid = _scriptHost.AllocateSid(_map, si.ScriptIndex, obj);
-        // Trace oracle: fo2ce worldmap.cc wmSetupCritterObjs — objectCreateWithPid (SPAWN, tile -1), then
-        // each inventory item's objectCreateWithPid (SPAWN), then objectSetLocation (critter MOVE) below.
+        // Trace oracle: fo2ce worldmap.cc wmSetupCritterObjs - objectCreateWithPid (SPAWN, tile -1),
+        // _obj_new_sid_inst (a second id when scripted), objectSetLocation (critter MOVE), then each
+        // inventory item's objectCreateWithPid (SPAWN).
         if (Formats.Trace.OracleTrace.Active)
             Formats.Trace.OracleTrace.Spawn(obj.Id, obj.Pid, -1);
+        if (si.ScriptIndex >= 0 && _scriptHost is not null)
+            obj.Id = _scriptHost.NewObjectId(); // proto_instance.cc:158 _obj_new_sid_inst
+        if (Formats.Trace.OracleTrace.Active && Fid.PidType(obj.Pid) == (int)ObjectType.Critter)
+            Formats.Trace.OracleTrace.Move(obj.Id, -1, obj.HexTile);
 
         if (Fid.Type(obj.Fid) is ObjectType.Critter)
         {
@@ -5607,6 +5620,7 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
         {
             if (RebuildObject(it.Pid, it.Count) is not { } item)
                 continue;
+            item.Id = _scriptHost?.NewObjectId() ?? item.Id; // objectCreateWithPid
             if (it.Wielded)
                 item.Flags |= MapObject.FlagInRightHand;
             if (it.Worn)
@@ -5615,8 +5629,6 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
             if (Formats.Trace.OracleTrace.Active)
                 Formats.Trace.OracleTrace.Spawn(item.Id, item.Pid, -1);
         }
-        if (Formats.Trace.OracleTrace.Active && Fid.PidType(obj.Pid) == (int)ObjectType.Critter)
-            Formats.Trace.OracleTrace.Move(obj.Id, -1, obj.HexTile);
         return obj;
     }
 
