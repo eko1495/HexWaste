@@ -37,7 +37,8 @@ fo2ce takes them from one process-wide counter.
 - `ScriptHost` builds the map-script owner with `Id = -2` in four places: `SynthMapScriptOwner()` (start,
   map_exit, combat-over), and inline in `RunMapEnter` and `RunMapUpdate`.
 - `ViewerGame.LoadMap` (`ViewerGame.cs:1895-1911`) runs `RunStartProcs`, `RunMapEnter`, `RunMapUpdate` on
-  every map load (vanilla import included).
+  every map load. With a vanilla save the import's `LoadMap` replaces the default map load
+  (`ViewerGame.cs:1555`), so the save's map is the first load and the counter is still at its start value.
 - Only trace calls read `MapObject.Id` (`OracleTrace.Proc/Turn/Attack/Move/Spawn`); scripts compare
   objects by reference. The harness reads `Id == -3` to find spawned critters
   (`ViewerGame.Harness.cs:186,193,219,370,398`).
@@ -67,7 +68,8 @@ fo2ce takes them from one process-wide counter.
    `_map.Elevations[*].Objects` with `HexTile >= 0` has that id, or the dude has it.
 4. **Map-script owner**: one owner per map load.
    - `RunStartProcs` builds it when `map.Header.ScriptIndex > 0`: `NewObjectId()` (fo2ce's
-     `objectCreateWithFidPid`), then `Id = NewObjectId()` (`map.cc:970`); stored in `_mapScriptOwner`.
+     `objectCreateWithFidPid`), then `Id = NewObjectId()` (`map.cc:970`); stored with the map's name in
+     `_mapScriptOwner` (`(string Map, MapObject Owner)?`), so a proc for another map never reuses it.
    - `RunMapEnter`, `RunMapUpdate`, `RunMapExit`, `RunMapCombatOver` and the start pass all use it.
      `SynthMapScriptOwner()` and the two inline builds go away. If none was built yet for this map (a
      caller that skips `RunStartProcs`, e.g. tests), build it on first use the same way.
@@ -83,7 +85,14 @@ fo2ce takes them from one process-wide counter.
    | ammo box (`ViewerGame.CombatHost.cs:390`) | `item.cc:1893` | 1 |
    | explosion marker (`ViewerGame.CombatHost.cs:1050`) | `actions.cc:1595` | 1 |
 
-   The second id is taken where fo2ce takes it: after the SPAWN line, before the critter's MOVE line.
+   The second id is taken where fo2ce takes it, which fixes which id the critter's MOVE line shows:
+   - `CreateObject`: fo2ce places the object (`objectSetLocation`, MOVE) before `scriptAdd` and the second
+     id (`interpreter_extra.cc:895-938`), so SPAWN and MOVE both show the first id; take the second after
+     `SpawnPlaced`.
+   - Encounter critter: fo2ce takes the second id (`_obj_new_sid_inst`) before `objectSetLocation`
+     (`worldmap.cc:3848-3854`), and creates the items after it, so the MOVE line shows the final id and comes
+     before the item SPAWN lines. Hexwaste emits the items first; move its MOVE line ahead of the item loop
+     and correct the comment there.
    Viewer sites reach the counter through `_scriptHost.NewObjectId()`; with no script host they keep their
    current constant.
 6. **`MapObject.Spawned`** (`bool`, not saved): set at the two sites that used `-3` (`CreateObject`,
