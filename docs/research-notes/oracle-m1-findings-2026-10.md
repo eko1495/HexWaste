@@ -446,9 +446,11 @@ nobody able to act cannot spin. Terminate_combat, the end-combat button, game ov
 unchanged. Goldens: 5 combat fixtures moved only `rounds` +1 (the round counter advances before the
 end check, like `_combatNumTurns`); `arcaves-crit-fail-day6` now has @21729 join at the round-1 end
 and keeps its day-6 crit-fail (`flags=0x8000`). Oracle first divergences unchanged (arcaves 41,
-artemple identical, klamath 1664). Not ported: fo2ce ends the dude's turn when his AP and free move
-reach 0 (`_combat_input`); Hexwaste waits for Space/ENDTURN (pre-existing; the golden harness and the oracle
-runner end the turn explicitly).
+artemple identical, klamath 1664). Final-review follow-up: the dude's turn now also ends by itself when his
+AP and free move reach 0 (`_combat_input`, `combat.cc:3165`) once his action has resolved, and
+`TryEndCombat` ports `combatAttemptEnd`'s second loop (a non-combatant that would join refuses the exit,
+message 103). A dude-team non-party joiner (an escort marked ENGAGING by `_combatai_notify_friends`) no
+longer enters the hostile set, so it cannot keep the fight open. No golden fixture moved.
 
 Original finding:
 
@@ -494,3 +496,6 @@ Original finding:
    5 s per round clock advance, F19. Next: F19 (arcaves), klamath's obj#26 move.
 10. After F20 (round-transition combat end): the three first divergences are unchanged (arcaves 41, artemple
    IDENTICAL, klamath 1664).
+11. After the final-review fixes (0-AP turn end, `combatAttemptEnd` join loop, dude-team joiners, throw and
+   ally taunt outcomes, ally `_ai_try_attack` whoHitMe stamp): unchanged (arcaves 41, artemple IDENTICAL,
+   klamath 1664).
