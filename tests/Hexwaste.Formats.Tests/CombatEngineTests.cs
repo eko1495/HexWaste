@@ -4490,7 +4490,7 @@ public class CombatEngineTests
                 break; // combat resolved (dude/attacker traded blows) — fine, just not an eviction
         }
 
-        Assert.Null(candidate.WhoHitMe); // still never acquired one...
+        // (its own attack turn now stamps whoHitMe = dude, fo2ce _ai_try_attack combat_ai.cc:2694)
         Assert.True(candidate.IsDead || engine.Hostiles.Contains(candidate),
             "a hostile must stay in the fight (or die in it) — never silently vanish for lack of a danger source");
     }
@@ -4592,6 +4592,22 @@ public class CombatEngineTests
         engine.BeginScriptAggro(attacker, dude);
         Assert.Contains((attacker, -3), host.Reactions);
         Assert.DoesNotContain(host.Reactions, r => r.Critter == dude); // the dude's whoHitMe is a non-dude
+    }
+
+    [Fact]
+    public void AnAiAttackTurnOnTheDudeRewritesItsReactionOncePerTurn()
+    {
+        // fo2ce combat_ai.cc:2694: _ai_try_attack opens with _critter_set_who_hit_me(attacker, dude), so the
+        // aggressor's reaction LVAR is written again on its own turn (after the opening stamp), once even
+        // though the walk-then-swing turn spans frames.
+        var host = new FakeCombatHost();
+        MapObject dude = host.SetDude(NewCritter(tile: 20100, hp: 30, ap: 10));
+        MapObject enemy = host.AddCritter(NewCritter(tile: HexGrid.TileInDirection(20100, 0, 4), hp: 30, ap: 10));
+        enemy.Team = 1;
+        var engine = new CombatEngine(host, new MinRng());
+        engine.BeginScriptAggro(enemy, dude);
+        for (int i = 0; i < 20 && engine.Phase == CombatPhase.EnemyTurn; i++) { host.Animating.Clear(); engine.Step(); }
+        Assert.Equal(2, host.Reactions.Count(r => r == (enemy, -3))); // _combat_sequence_init + _ai_try_attack
     }
 
     [Fact]

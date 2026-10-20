@@ -114,6 +114,8 @@ public sealed class CombatEngine
     private bool _turnProcRan;
     // fo2ce _ai_attack's `taunt` (combat_ai.cc:2697): only the turn's first approach walk taunts.
     private bool _moveTauntPending;
+    // fo2ce _ai_try_attack runs once per AI turn and opens with _critter_set_who_hit_me (combat_ai.cc:2694).
+    private bool _tryAttackStampPending;
     private MapObject? _actingAlly;
     private int _actingAllyAp;
     // P77: every combatant's CURRENT combat AP, mirroring obj->data.critter.combat.ap. Reset to maxAp
@@ -3270,6 +3272,7 @@ public sealed class CombatEngine
         _phase = CombatPhase.EnemyTurn;
         _turnProcRan = false;
         _moveTauntPending = true;
+        _tryAttackStampPending = true;
         if (_host.PartyMembers.Contains(actor))
         {
             _actingAlly = actor;
@@ -3816,6 +3819,15 @@ public sealed class CombatEngine
         // after the flee gate, before _ai_try_attack). P42.
         if (ai is not null && _host.GetCritterState(enemy) is { } healSt)
             TryAiHeal(enemy, ai, healSt);
+
+        // _ai_try_attack opens with _critter_set_who_hit_me(attacker, defender) (combat_ai.cc:2694):
+        // attacking the dude rewrites the attacker's reaction LVAR to -3 every turn.
+        // ported from fallout2-ce src/combat_ai.cc _ai_try_attack()
+        if (_tryAttackStampPending)
+        {
+            _tryAttackStampPending = false;
+            SetWhoHitMe(enemy, defenderObj);
+        }
 
         (ProtoInfo? enemyWeapon, MapObject? enemyWeaponItem) = _host.EquippedWeapon(enemy);
         bool enemyGun = enemyWeapon?.Weapon is { } ew && ew.IsGun(enemyWeapon.ExtendedFlags);
