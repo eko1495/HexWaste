@@ -25,6 +25,9 @@ Update after F13: artemple line 3011 (fo2ce `t=302720 PROC artemple.int map_upda
 Hexwaste `self=obj#-2`: the map script's object id label, not RNG), klamath line 1664 (unchanged), arcaves
 line 9 (unchanged).
 
+Update after F4/F5: artemple IDENTICAL, klamath line 1664, arcaves line 41 (F19, round 2 starts at t=302451
+in fo2ce, t=302401 in Hexwaste).
+
 Update after the game-clock map_update tick: artemple-idle is now IDENTICAL (6 026 lines). klamath line 1664
 (unchanged: fo2ce `t=302525 MOVE obj#26 17500->17701` vs Hexwaste `t=302525 PROC kcitizen.int critter_p_proc
 self=obj#156`), arcaves line 9 (unchanged: fo2ce `t=302401 LVAR sid=0x04000008 0 0->-3` vs Hexwaste
@@ -147,21 +150,33 @@ reading where the fixtures do not exercise it.
   sid 0x4000000) so it is in the critter list and the map-update/combat passes; Hexwaste deliberately gives
   the dude no script (`ViewerGame.cs:4055-4057`) and filters him out of map_update (`ViewerGame.CombatHost.cs:598`).
 
-### F4 — arcaves combat starts later, with a different initiator, and obj#70 never fights
+### F4 — arcaves combat opening (round 1, reaction LVAR, taunt draws) — FIXED
 
-- Fixture: arcaves-ambush. fo2ce: obj#70's `critter_p_proc` starts combat at t=302401 (`TURN obj#70` first),
-  rounds obj#70 / dude / obj#98, 7 attacks. Hexwaste: combat starts at t=302700 after obj#98's
-  `critter_p_proc` (t=302694), only obj#98 takes turns, 4 attacks; the dude's first two TURNs are 2 700
-  ticks apart with no enemy TURN in between.
-- Hypothesis: the initiator follows from F6 (critter order/cadence) and F2; the missing obj#70 points at
-  joiner handling — see F5.
+- **Fixed** (branch `feat/oracle-combat-joiners`): `CombatEngine` keeps fo2ce's combat list
+  (`_combat_begin`: every non-hidden critter on the elevation, dude included, in hex-tile order). Round 1 is
+  attacker, defender, dude (`_combat_sequence_init`); nobody else is asked to join before it. Each AI attack
+  turn runs its per-turn `combat_p_proc` (fp=4) once, even when the turn spans frames. `_critter_set_who_hit_me`
+  writes the critter's reaction LVAR 0 = -3 when the dude is the stored attacker, both at combat start and at
+  the top of every AI attack turn (`_ai_try_attack`, `combat_ai.cc:2694`). Taunts draw fo2ce's
+  `_combatai_msg` 1..100 roll for MOVE (first approach walk), ATTACK, and the HIT/MISS outcome (melee:
+  attacker, ranged: defender); the dude never taunts.
+- Evidence (before): arcaves-ambush line 9, fo2ce `t=302401 LVAR sid=0x04000008 0 0->-3` vs Hexwaste
+  `t=302401 PROC zclscorp.int combat_p_proc self=obj#102` (Hexwaste asked nine critters to join before obj#70's
+  turn, re-ran combat_p_proc after each walk, and drew no taunt rolls). The older "starts at 302700, obj#70
+  never fights" text predated F6.
+- After: arcaves matches fo2ce through the whole opening round (40 lines, both engines' obj#70 / dude /
+  round-end joins / obj#98 turn) and now diverges at line 41 on F19 (see below).
 
-### F5 — Combat joiners get no AP and no immediate turn
+### F5 — Combat joiners get no AP and no immediate turn — FIXED
 
-- Fixture: arcaves-ambush (contributes to F4).
-- Evidence (code): fo2ce `_combat_add_noncoms` sets the joiner's AP to its max (+ `_gcsd` bonus) and calls
-  `_combat_turn(obj, false)` at once (`combat.cc:2905-2930`); Hexwaste `CombatEngine.AddJoiners`
-  (`CombatEngine.cs:2681`) only adds the critter to `_hostiles`.
+- **Fixed:** at round end Hexwaste runs fo2ce's `_combat_add_noncoms`: `_combatai_notify_friends(gDude)`, then
+  every non-combatant in list order is asked `_combatai_want_to_join`; a joiner is swapped into the
+  combatant part, gets max AP and takes its turn at once (`TURN` traced). Then the dead leave the list,
+  knocked-out and disengaging critters become non-combatants, and the combatants sort by Sequence then Luck.
+  A script attack during combat marks the attacker ENGAGING; the friendly-fire scan covers the whole list.
+- Goldens: 13 combat fixtures re-recorded (join lines move from combat start to the end of round 1, or go away
+  in single-attack scenarios; denbus2-fight-flee's joiners' flee lines move next to their joins).
+  `arcaves-crit-fail-day6` was NOT re-recorded: see F20.
 
 ### F6 — critter_p_proc cadence and order — FIXED
 
@@ -420,6 +435,20 @@ Follow-ups (F16):
 - Status: open; matters for a long-combat fixture. Fix: port the 5 s/round advance, then drop the combat gate
   on the queue events.
 
+### F20 — Hexwaste ends combat mid-round when the last hostile dies
+
+- Evidence: golden `arcaves-crit-fail-day6` (seed 7, day 7). With fo2ce's round 1 (attacker, defender, dude),
+  the dude kills the target Radscorpion@20529 in round 1 while Radscorpion@21729 is still a non-combatant.
+  Hexwaste's per-Step `CombatShouldEnd()` (`CombatEngine.UpdateCombat`) ends the fight at once
+  (`rounds=1 hostilesLeft=0`), so the round-end join pass never asks @21729. fo2ce checks
+  `_combat_should_end` only after `_combat_sequence()` (`combat.cc:3446`), i.e. after `_combat_add_noncoms`
+  has run; the dude's own turn ends only by AP, Space or `combatAttemptEnd` (which also refuses while a
+  hostile non-combatant would join, `combat.cc:3098-3112`). Before the F4/F5 fix @21729 joined at combat start, so this
+  early end was hidden. The fixture also loses its purpose (the day-6 LOSE_TURN crit-fail no longer happens).
+- Status: open; the fixture is left un-re-recorded (combat suite shows 1 regression) until this is decided.
+  Fix candidate: when the mid-round check fires, finish the round through the join pass (`RunJoinPass`) and
+  end only if nobody joined, or move the automatic end to the round boundary.
+
 ## Recommended next steps
 
 1. Fix F1 (one line, `sid - 1`), re-record the goldens it moves, re-run the oracle.
@@ -445,3 +474,8 @@ Follow-ups (F16):
    are unchanged, so the remaining work is the critter-move/combat-order items (F4/F5 and klamath's obj#26 move).
 8. F8–F13 are small, independent ports; F12/F14 first need trace-alignment decisions. Each fix should be
    validated by a fresh `oracle-run.sh` showing the first divergence moving later.
+9. After F4/F5 (branch `feat/oracle-combat-joiners`): artemple-idle IDENTICAL (6 026 lines); klamath line 1664
+   unchanged (fo2ce `t=302525 MOVE obj#26 17500->17701` vs Hexwaste `t=302525 PROC kcitizen.int critter_p_proc
+   self=obj#156`); arcaves line 41 (fo2ce `t=302451 TURN obj#18000 ap=9` vs Hexwaste `t=302401 TURN obj#18000
+   ap=9`): the opening round matches line for line, and round 2 starts 50 ticks later in fo2ce because of its
+   5 s per round clock advance, F19. Next: F19 (arcaves), F20 (the mid-round end), klamath's obj#26 move.
