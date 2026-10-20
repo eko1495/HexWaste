@@ -112,6 +112,8 @@ public sealed class CombatEngine
     // fo2ce _combat_turn runs the per-turn combat_p_proc once; a turn that spans frames re-enters
     // TryEnemyAction/TryAllyAction, which must not run it again.
     private bool _turnProcRan;
+    // fo2ce _ai_attack's `taunt` (combat_ai.cc:2697): only the turn's first approach walk taunts.
+    private bool _moveTauntPending;
     private MapObject? _actingAlly;
     private int _actingAllyAp;
     // P77: every combatant's CURRENT combat AP, mirroring obj->data.critter.combat.ap. Reset to maxAp
@@ -456,6 +458,7 @@ public sealed class CombatEngine
             + $"{(weaponProto is null ? "" : $" [{_host.ObjectNameByPid(weaponProto.Pid)}{(isGun ? $" {weaponItem!.AmmoQuantity}rnd d{distance}" : "")}]")}: chance={chance}% hit={hit} damage={damage}{CritTag(critFlags)}");
 
         _host.OnAttackStarted(dude, target, weaponProto);
+        TauntAttackOutcome(dude, target, isGun, hit, damage, hitLocation);
 
         if (_phase == CombatPhase.Idle)
             BeginCombat(target);
@@ -593,6 +596,7 @@ public sealed class CombatEngine
                 + $" hit={ex.RoundsHit} damage={ex.Damage}");
 
         _host.OnAttackStarted(dude, target, weaponProto);
+        TauntAttackOutcome(dude, target, ranged: true, roundsHit > 0, totalDamage, CriticalTables.LocationUncalled);
 
         if (_phase == CombatPhase.Idle)
             BeginCombat(target);
@@ -3265,6 +3269,7 @@ public sealed class CombatEngine
     {
         _phase = CombatPhase.EnemyTurn;
         _turnProcRan = false;
+        _moveTauntPending = true;
         if (_host.PartyMembers.Contains(actor))
         {
             _actingAlly = actor;
@@ -4003,6 +4008,11 @@ public sealed class CombatEngine
         int targetTile = enemy.HexTile;
         for (int i = 0; i < steps; i++)
             targetTile = HexGrid.TileInDirection(targetTile, path[i]);
+        if (_moveTauntPending)
+        {
+            _moveTauntPending = false;
+            _host.Taunt(enemy, CombatTaunt.Type.Move); // _ai_move_steps_closer, combat_ai.cc:2382
+        }
         return _host.StartWalk(enemy, targetTile, approachRun);
     }
 
@@ -4231,6 +4241,7 @@ public sealed class CombatEngine
             _host.Transcript($"ally-attack {_host.ObjectName(ally)} -> {_host.ObjectName(target)}@{target.HexTile}"
                 + $"{(weaponProto is null ? "" : $" [{_host.ObjectNameByPid(weaponProto.Pid)}]")}: chance={chance}% hit={hit} damage={damage}{CritTag(critFlags)}");
             _host.OnAttackStarted(ally, target, weaponProto);
+            TauntAttackOutcome(ally, target, isGun, hit, damage, CriticalTables.LocationUncalled);
             return true;
         }
 
@@ -4259,6 +4270,11 @@ public sealed class CombatEngine
         int walkTarget = ally.HexTile;
         for (int i = 0; i < steps; i++)
             walkTarget = HexGrid.TileInDirection(walkTarget, path[i]);
+        if (_moveTauntPending)
+        {
+            _moveTauntPending = false;
+            _host.Taunt(ally, CombatTaunt.Type.Move); // _ai_move_steps_closer, combat_ai.cc:2382
+        }
         return _host.StartWalk(ally, walkTarget, allyRun);
     }
 
@@ -4310,6 +4326,7 @@ public sealed class CombatEngine
         foreach (BurstExtra ex in extras)
             _host.Transcript($"burst-extra: {_host.ObjectName(ex.Victim)}@{ex.Victim.HexTile} hit={ex.RoundsHit} damage={ex.Damage}");
         _host.OnAttackStarted(ally, target, weaponProto);
+        TauntAttackOutcome(ally, target, ranged: true, hits > 0, total, CriticalTables.LocationUncalled);
         return true;
     }
 
@@ -4343,7 +4360,23 @@ public sealed class CombatEngine
         foreach (BurstExtra ex in extras)
             _host.Transcript($"burst-extra: {_host.ObjectName(ex.Victim)}@{ex.Victim.HexTile} hit={ex.RoundsHit} damage={ex.Damage}");
         _host.OnAttackStarted(enemy, target, weaponProto);
+        TauntAttackOutcome(enemy, target, ranged: true, hits > 0, total, CriticalTables.LocationUncalled);
         return true;
+    }
+
+    // ported from fallout2-ce src/actions.cc _action_melee() (:674-680) and _action_ranged() (:917-923): after the
+    // ATTACK taunt, melee taunts the attacker's HIT (hit, defender alive) or MISS; ranged taunts the defender's.
+    // shortcut: "defender alive" compares damage with current HP, ignoring instant-death crit flags; upgrade if
+    // a trace shows a taunt draw after a crit kill
+    private void TauntAttackOutcome(MapObject attacker, MapObject defender, bool ranged, bool hit, int damage,
+        int hitLocation)
+    {
+        MapObject taunter = ranged ? defender : attacker;
+        if (!hit)
+            _host.Taunt(taunter, CombatTaunt.Type.Miss);
+        else if (damage < defender.CurrentHp)
+            _host.Taunt(taunter, CombatTaunt.Type.Hit,
+                hitLocation == CriticalTables.LocationUncalled ? 3 : hitLocation); // uncalled = torso
     }
 
     private void EnemyAttack(MapObject enemy, MapObject defenderObj, ProtoInfo? weaponProto,
@@ -4356,9 +4389,10 @@ public sealed class CombatEngine
         enemy.Rotation = HexGrid.RotationTo(enemy.HexTile, defenderObj.HexTile);
 
         bool isGun = weaponProto?.Weapon is { } w && w.IsGun(weaponProto.ExtendedFlags);
+        int hitLoc = AiHitLocation(enemy, attacker, defender, weaponProto, weaponItem, distance, crittersInPath);
         (int chance, bool hit, int damage, int critFlags, int delta) = RollAttack(attacker, defender, weaponProto, weaponItem,
             distance, crittersInPath, attackerIsDude: false, defenderIsDude: defenderObj == _host.Dude,
-            AiHitLocation(enemy, attacker, defender, weaponProto, weaponItem, distance, crittersInPath), DiffDmgMod(enemy)); // P75-M4 + P84
+            hitLoc, DiffDmgMod(enemy)); // P75-M4 + P84
         if (!hit && TriggerCritFailure(attacker, attackerIsDude: false, weaponProto, weaponItem, delta))
             _actingEnemyAp = 0; // P41: a fumble can cost the enemy the rest of its turn
         if (UsesCharges(weaponProto) && weaponItem is not null)
@@ -4373,6 +4407,7 @@ public sealed class CombatEngine
             + $"{(weaponProto is null ? "" : $" [{_host.ObjectNameByPid(weaponProto.Pid)}{(isGun ? $" d{distance}" : "")}]")}: chance={chance}% hit={hit} damage={damage}{CritTag(critFlags)}");
 
         _host.OnAttackStarted(enemy, defenderObj, weaponProto);
+        TauntAttackOutcome(enemy, defenderObj, isGun, hit, damage, hitLoc);
     }
 
     // ====================================================================

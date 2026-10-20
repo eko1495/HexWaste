@@ -162,6 +162,9 @@ public interface ICombatHost
     // --- Attack choreography ---------------------------------------------
     /// <summary>Muzzle/punch FRM + weapon sfx (PlayWeaponSfx + StartAttackAnimation),
     /// and a flying projectile attacker→target for ranged/thrown shots (phase-10 #11).</summary>
+    /// <summary>fo2ce combat_ai.cc _combatai_msg(): a taunt chance roll (and message) for the critter.</summary>
+    void Taunt(MapObject critter, CombatTaunt.Type type, int hitLocation = 3) { }
+
     void OnAttackStarted(MapObject attacker, MapObject target, ProtoInfo? weaponProto);
     /// <summary>Hit reaction on a surviving target (actions.cc:424 _show_damage_to_object): a hit-from-
     /// front/back FRM, or a FALL when <paramref name="knockedDown"/>. The host picks the anim by facing

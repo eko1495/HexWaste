@@ -4594,11 +4594,32 @@ public class CombatEngineTests
         Assert.DoesNotContain(host.Reactions, r => r.Critter == dude); // the dude's whoHitMe is a non-dude
     }
 
+    [Fact]
+    public void AnAiTurnThatWalksThenSwingsTauntsMoveOnceThenTheMeleeOutcome()
+    {
+        // fo2ce: _ai_move_steps_closer MOVE taunt on the first approach (combat_ai.cc:2382), then _action_melee's
+        // attacker HIT/MISS taunt (actions.cc:674-680). The ATTACK taunt stays in the host's OnAttackStarted.
+        var host = new FakeCombatHost();
+        MapObject dude = host.SetDude(NewCritter(tile: 20100, hp: 30, ap: 10));
+        MapObject enemy = host.AddCritter(NewCritter(tile: HexGrid.TileInDirection(20100, 0, 4), hp: 30, ap: 10));
+        enemy.Team = 1;
+        host.AiPackets[enemy] = new AiPacket(12, "Guard", MinToHit: 0, MinHp: 0, 0, "", "");
+        var engine = new CombatEngine(host, new MinRng());
+        engine.BeginScriptAggro(enemy, dude);
+        for (int i = 0; i < 20 && engine.Phase == CombatPhase.EnemyTurn; i++) { host.Animating.Clear(); engine.Step(); }
+        var mine = host.Taunts.Where(t => t.Critter == enemy).Select(t => t.Type).ToList();
+        Assert.Equal(CombatTaunt.Type.Move, mine[0]);
+        Assert.Equal(1, mine.Count(t => t == CombatTaunt.Type.Move));
+        Assert.Contains(mine, t => t is CombatTaunt.Type.Hit or CombatTaunt.Type.Miss);
+    }
+
     private sealed class FakeCombatHost : ICombatHost
     {
         private readonly Dictionary<MapObject, CritterState> _states = [];
         private readonly List<MapObject> _critters = [];
         public readonly HashSet<MapObject> Animating = [];
+        public readonly List<(MapObject Critter, CombatTaunt.Type Type)> Taunts = [];
+        public void Taunt(MapObject critter, CombatTaunt.Type type, int hitLocation = 3) => Taunts.Add((critter, type));
         public readonly List<string> Transcripts = [];
         public readonly List<string> Logs = [];
         public int XpAwarded;
