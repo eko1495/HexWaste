@@ -2855,30 +2855,34 @@ public sealed class CombatEngine
             _hostiles.Clear();
             _hostiles.Add(attacker);
             attacker.WhoHitMeCid = -1;
-            // P113 (4.3): a script that aggroes the dude (opAttackComplex) has DECIDED to attack — the
-            // dude is its danger source ungated by perception, so a blind/rear-facing ambusher still
-            // engages. Byte-identical for goldens: the ambusher opens combat adjacent to the dude anyway.
-            attacker.WhoHitMe = dude;
             if (_host.GetCritterState(dude) is { } stats)
                 ResetDudeAp(stats);
             InitCombatList(attacker, dude);
+            // P113 (4.3): a script that aggroes the dude (opAttackComplex) has DECIDED to attack — the
+            // dude is its danger source ungated by perception, so a blind/rear-facing ambusher still
+            // engages. Byte-identical for goldens: the ambusher opens combat adjacent to the dude anyway.
+            // Seeded AFTER InitCombatList, which clears every whoHitMe (_combat_begin, combat.cc:2590).
+            attacker.WhoHitMe = dude;
             // The ambusher opened combat → it acts first (round-1 attacker, dude as defender).
             BuildTurnOrder(firstRound: true, attacker, dude);
             _phase = CombatPhase.EnemyTurn;
             _host.Log($"The {_host.ObjectName(attacker)} attacks you!");
             _host.Transcript($"scripted-aggro: {_host.ObjectName(attacker)}@{attacker.HexTile} starts combat");
         }
-        else if (_hostiles.Add(attacker))
+        else
         {
-            attacker.WhoHitMeCid = -1;
-            // ported from fallout2-ce src/interpreter_extra.cc opAttackComplex (:1858-1863): in combat the
-            // script only marks itself ENGAGING; the round-end join pass then lets it in.
+            // ported from fallout2-ce src/interpreter_extra.cc opAttackComplex (:1857-1862): in combat the
+            // script only marks itself ENGAGING (whatever its prior membership); the round-end join pass
+            // (RunJoinPass) then lets it in and logs the join.
             if (_combatList.Count > 0 && (attacker.Maneuver & ManeuverEngaging) == 0)
             {
                 attacker.Maneuver |= ManeuverEngaging;
                 attacker.WhoHitMe = target;
             }
-            _host.Log($"The {_host.ObjectName(attacker)} joins the fight!");
+            // Kept: a non-listed attacker (spawned mid-fight) never reaches the join pass, so _hostiles
+            // is still the only way it becomes a combatant; listed ones get the same adds in RunJoinPass.
+            if (_hostiles.Add(attacker))
+                attacker.WhoHitMeCid = -1;
         }
     }
 
@@ -3287,6 +3291,7 @@ public sealed class CombatEngine
     // ported from fallout2-ce src/combat.cc _combat_begin() + _combat_sequence_init(): the list in hex-tile
     // order, then the attacker, the defender and (if neither) the dude swapped to the front as round 1.
     // shortcut: critters created during combat never enter the fo2ce list, upgrade if a fixture spawns one mid-fight
+    // shortcut: critters that leave the map mid-fight stay in the combatant part and keep their turn slot, upgrade if a fixture removes a combatant mid-fight
     private void InitCombatList(MapObject? attacker, MapObject? defender)
     {
         MapObject? dude = _host.Dude;
@@ -3300,6 +3305,7 @@ public sealed class CombatEngine
         {
             c.Maneuver &= ManeuverEngaging;
             c.DamageLastTurn = 0;
+            c.WhoHitMe = null; // _combat_begin clears whoHitMe for the whole list (combat.cc:2590)
         }
         int next = 0;
         void Place(MapObject? o)
@@ -3318,7 +3324,8 @@ public sealed class CombatEngine
         _listNoncom = _combatList.Count - next;
     }
 
-    // ported from fallout2-ce src/combat_ai.cc _combatai_notify_friends(gDude)
+    // ported from fallout2-ce src/combat_ai.cc _combatai_notify_friends(gDude): scans _combatList, which equals
+    // fo2ce's _curr_crit_list (built from the same list by _caiTeamCombatInit).
     private void NotifyFriends(MapObject dude)
     {
         foreach (MapObject c in _combatList)
@@ -3467,11 +3474,19 @@ public sealed class CombatEngine
     /// teammates instead of the reference's LoF-tile walk + retarget. Giving it its reference policy
     /// therefore means porting the walk, not assigning a filter, so ShotFilter.FriendlyFire stays
     /// declared-and-cited but unconsumed until that port happens.</summary>
-    // The candidates are every listed critter (fo2ce scans _combat_list[0.._list_total), combat.cc:2287), so a
-    // teammate that has not joined yet still counts; a StartBrawl fight has no list and uses _hostiles.
-    private bool FriendlyOnFireLine(MapObject shooter, int targetTile) =>
-        (_combatList.Count > 0 ? _combatList : (IEnumerable<MapObject>)_hostiles).Any(h => h != shooter && !h.IsDead && h.Team == shooter.Team
+    // Borrows only fo2ce's whole-list candidate set (_list_total: every listed critter, not just joined ones, cf.
+    // combat.cc:2287), so a teammate that has not joined yet still counts; the collinear test is the P78-M3
+    // simplification above, not a fo2ce line-of-fire walk. Critters gone from the map are skipped (same
+    // membership test as RunJoinPass). A StartBrawl fight has no list and uses _hostiles.
+    private bool FriendlyOnFireLine(MapObject shooter, int targetTile)
+    {
+        if (_combatList.Count == 0)
+            return _hostiles.Any(h => h != shooter && !h.IsDead && h.Team == shooter.Team
+                && HexGrid.IsOnSegment(shooter.HexTile, h.HexTile, targetTile));
+        var onMap = _host.CombatCritters.Concat(_host.PartyMembers).ToHashSet();
+        return _combatList.Any(h => h != shooter && !h.IsDead && h.Team == shooter.Team && onMap.Contains(h)
             && HexGrid.IsOnSegment(shooter.HexTile, h.HexTile, targetTile));
+    }
 
     /// <summary>
     /// _ai_switch_weapons → _ai_search_inven_weap (combat_ai.cc:2596/2002): the wielded weapon is

@@ -207,6 +207,22 @@ public class CombatEngineTests
     }
 
     [Fact]
+    public void ScriptedAggroClearsStaleWhoHitMeButKeepsTheAggressorSeed()
+    {
+        var host = new FakeCombatHost();
+        MapObject dude = host.SetDude(NewCritter(tile: 20100, hp: 30, ap: 10));
+        MapObject attacker = host.AddCritter(NewCritter(tile: HexGrid.TileInDirection(20100, 0), hp: 30));
+        MapObject bystander = host.AddCritter(NewCritter(tile: HexGrid.TileInDirection(20100, 3), hp: 30));
+        bystander.WhoHitMe = dude;
+        var engine = new CombatEngine(host, new MinRng());
+
+        engine.BeginScriptAggro(attacker, dude);
+
+        Assert.Null(bystander.WhoHitMe); // _combat_begin clears whoHitMe for the whole list (combat.cc:2590)
+        Assert.Same(dude, attacker.WhoHitMe); // P113 seed survives, set after the clear
+    }
+
+    [Fact]
     public void RoundRolloverResetsDudeApAndEnemyRetaliates()
     {
         var host = new FakeCombatHost();
