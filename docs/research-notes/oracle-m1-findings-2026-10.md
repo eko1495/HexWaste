@@ -176,7 +176,7 @@ reading where the fixtures do not exercise it.
   A script attack during combat marks the attacker ENGAGING; the friendly-fire scan covers the whole list.
 - Goldens: 13 combat fixtures re-recorded (join lines move from combat start to the end of round 1, or go away
   in single-attack scenarios; denbus2-fight-flee's joiners' flee lines move next to their joins).
-  `arcaves-crit-fail-day6` was NOT re-recorded: see F20.
+  `arcaves-crit-fail-day6` was re-recorded with the F20 fix: see F20.
 
 ### F6 — critter_p_proc cadence and order — FIXED
 
@@ -435,7 +435,22 @@ Follow-ups (F16):
 - Status: open; matters for a long-combat fixture. Fix: port the 5 s/round advance, then drop the combat gate
   on the queue events.
 
-### F20 — Hexwaste ends combat mid-round when the last hostile dies
+### F20 — Hexwaste ends combat mid-round when the last hostile dies — FIXED
+
+**FIXED.** `UpdateCombat`'s post-Step `CombatShouldEnd()` now applies only to `StartBrawl` fights (no
+combat list); a fight with the fo2ce list ends only at `StepTurnOrder`'s round transition, after
+`RunJoinPass` (`_combat_add_noncoms`) and `SequenceCombatList` (`_combat_sequence`), as `_combat()`
+(`combat.cc:3420-3446`) does. Killing the last hostile leaves the dude's turn open until he ends it.
+`StepTurnOrder` now checks `CombatShouldEnd()` before its empty-order early return, so a round with
+nobody able to act cannot spin. Terminate_combat, the end-combat button, game over and the KO skip are
+unchanged. Goldens: 5 combat fixtures moved only `rounds` +1 (the round counter advances before the
+end check, like `_combatNumTurns`); `arcaves-crit-fail-day6` now has @21729 join at the round-1 end
+and keeps its day-6 crit-fail (`flags=0x8000`). Oracle first divergences unchanged (arcaves 41,
+artemple identical, klamath 1664). Not ported: fo2ce ends the dude's turn when his AP and free move
+reach 0 (`_combat_input`); Hexwaste waits for Space/ENDTURN (pre-existing; the golden harness and the oracle
+runner end the turn explicitly).
+
+Original finding:
 
 - Evidence: golden `arcaves-crit-fail-day6` (seed 7, day 7). With fo2ce's round 1 (attacker, defender, dude),
   the dude kills the target Radscorpion@20529 in round 1 while Radscorpion@21729 is still a non-combatant.
@@ -445,9 +460,7 @@ Follow-ups (F16):
   has run; the dude's own turn ends only by AP, Space or `combatAttemptEnd` (which also refuses while a
   hostile non-combatant would join, `combat.cc:3098-3112`). Before the F4/F5 fix @21729 joined at combat start, so this
   early end was hidden. The fixture also loses its purpose (the day-6 LOSE_TURN crit-fail no longer happens).
-- Status: open; the fixture is left un-re-recorded (combat suite shows 1 regression) until this is decided.
-  Fix candidate: when the mid-round check fires, finish the round through the join pass (`RunJoinPass`) and
-  end only if nobody joined, or move the automatic end to the round boundary.
+- Status (before the fix): open; the fixture was left un-re-recorded.
 
 ## Recommended next steps
 
@@ -478,4 +491,6 @@ Follow-ups (F16):
    unchanged (fo2ce `t=302525 MOVE obj#26 17500->17701` vs Hexwaste `t=302525 PROC kcitizen.int critter_p_proc
    self=obj#156`); arcaves line 41 (fo2ce `t=302451 TURN obj#18000 ap=9` vs Hexwaste `t=302401 TURN obj#18000
    ap=9`): the opening round matches line for line, and round 2 starts 50 ticks later in fo2ce because of its
-   5 s per round clock advance, F19. Next: F19 (arcaves), F20 (the mid-round end), klamath's obj#26 move.
+   5 s per round clock advance, F19. Next: F19 (arcaves), klamath's obj#26 move.
+10. After F20 (round-transition combat end): the three first divergences are unchanged (arcaves 41, artemple
+   IDENTICAL, klamath 1664).
