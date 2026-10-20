@@ -1436,6 +1436,12 @@ public sealed partial class ViewerGame
         return scripted is null ? ([], false) : (scripted.Messages.ToList(), scripted.Overridden);
     }
 
+    public void SetReaction(MapObject critter, int value)
+    {
+        if (_map is not null)
+            _scriptHost?.SetReaction(_map, critter, value);
+    }
+
     public bool RunMapCombatOver(int knockedOutByTeam) =>
         _map is not null && (_scriptHost?.RunMapCombatOver(_map, _dude?.Dude, knockedOutByTeam)?.Overridden ?? false);
 

@@ -4487,6 +4487,22 @@ public class CombatEngineTests
         }
     }
 
+    [Fact]
+    public void OpeningCombatWritesTheReactionOfTheCritterTheDudeFaces()
+    {
+        // fo2ce critter.cc:1297 _critter_set_who_hit_me: when the stored attacker is gDude,
+        // reactionSetValue(critter, -3) writes the critter's LVAR 0. _combat_sequence_init stamps
+        // attacker<->defender, so a script aggro writes the AGGRESSOR's reaction (dude = its whoHitMe).
+        var host = new FakeCombatHost();
+        MapObject dude = host.SetDude(NewCritter(tile: 20100, hp: 30, ap: 10));
+        MapObject attacker = host.AddCritter(NewCritter(tile: HexGrid.TileInDirection(20100, 0), hp: 30, ap: 10));
+        attacker.Team = 1;
+        var engine = new CombatEngine(host, new MinRng());
+        engine.BeginScriptAggro(attacker, dude);
+        Assert.Contains((attacker, -3), host.Reactions);
+        Assert.DoesNotContain(host.Reactions, r => r.Critter == dude); // the dude's whoHitMe is a non-dude
+    }
+
     private sealed class FakeCombatHost : ICombatHost
     {
         private readonly Dictionary<MapObject, CritterState> _states = [];
@@ -4523,6 +4539,9 @@ public class CombatEngineTests
             return c.Obj;
         }
         public CompanionAi CompanionSettings(MapObject ally) => Dispositions.GetValueOrDefault(ally, CompanionAi.Default);
+
+        public readonly List<(MapObject Critter, int Value)> Reactions = [];
+        public void SetReaction(MapObject critter, int value) => Reactions.Add((critter, value));
 
         public readonly Dictionary<MapObject, AiPacket> AiPackets = [];
         public bool CriticalsEnabled { get; set; }

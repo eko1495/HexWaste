@@ -2070,10 +2070,17 @@ public sealed class CombatEngine
     /// Both call sites that stamp whoHitMe in the reference (`_combat_sequence_init`, combat.cc:3012/3016,
     /// and the KO/DEAD bypass, combat.cc:4711-4716) route through this one helper here, so Hexwaste no
     /// longer carries two contradictory models of the same reference gate.</summary>
-    private static void SetWhoHitMe(MapObject target, MapObject? attacker)
+    // ported from fallout2-ce src/critter.cc _critter_set_who_hit_me()
+    // shortcut: fo2ce also stamps a same-team attacker when statRoll(INT, -1) < 2; that roll (a shared-stream
+    // draw) is not modeled, upgrade when a same-team hit fixture exists
+    private void SetWhoHitMe(MapObject target, MapObject? attacker)
     {
         if (attacker is null || attacker.Team != target.Team)
+        {
             target.WhoHitMe = attacker;
+            if (attacker is not null && attacker == _host.Dude)
+                _host.SetReaction(target, -3); // reactionSetValue(a1, -3), critter.cc:1297
+        }
     }
 
     /// <summary>Record who last hit a critter (whoHitMe) — ported from fallout2-ce combat.cc:4707 +
