@@ -78,12 +78,10 @@ public sealed class CombatEngine
     private const int CRITTER_INVULNERABLE = 0x400;
     private const int StandUpApCost = 3; // _combat_standup (combat.cc:5391)
 
-    /// <summary>The knockout-wake event queue + a combat-owned monotonic tick that
-    /// advances <see cref="TicksPerRound"/> per round (P14-M2). The wake fires off this
-    /// tick, NOT the saved GameClock — headless --fight loops don't advance wall-time,
-    /// and mutating the saved clock mid-fight would churn day-boundary state. The KO
-    /// delay (10*(35-3*EN)) and EN scaling stay exact; the round cadence is the
-    /// documented divergence (same class as LoF greedy-hex).</summary>
+    /// <summary>The knockout-wake event queue + a combat-owned monotonic tick that advances
+    /// <see cref="TicksPerRound"/> per round (P14-M2), in step with the game clock (F19,
+    /// <see cref="ICombatHost.AddGameTime"/>). The KO delay (10*(35-3*EN)) and EN scaling stay exact.</summary>
+    // shortcut: knockout wakes run on the engine's own combat tick, not as fo2ce's EVENT_TYPE_KNOCKOUT queue event on the game clock; both advance 50 per round, upgrade if a trace orders a wake against a timer
     private readonly EventQueue _events = new();
     private long _combatTick;
     private const int TicksPerRound = 50; // _combat_sequence: 5 game-seconds × 10 ticks/s
@@ -3451,7 +3449,7 @@ public sealed class CombatEngine
 
     /// <summary>Advance to the next round (combat.cc _combat_sequence at the bottom of the round loop):
     /// tick the combat clock + fire due knockout wakes (P14-M2), re-sequence the fo2ce list (StartBrawl:
-    /// let joiners in), then rebuild the
+    /// let joiners in), then advance the game clock 5 s (F19), then rebuild the
     /// Sequence-sorted turn order.</summary>
     private void StartNewRound()
     {
@@ -3464,6 +3462,9 @@ public sealed class CombatEngine
             SequenceCombatList(); // the join pass already ran (RunJoinPass, from StepTurnOrder)
         else
             AddJoiners(); // StartBrawl fights
+        // ported from fallout2-ce src/combat.cc _combat_sequence(): gameTimeAddSeconds(5), last, before _combat_should_end
+        // shortcut: in combat fo2ce drains the queue only on a 100 ms background tick, so a due event can fire a few frames later than here, and for an NPC that opens a round fo2ce's first background pass may come before or after its first action; upgrade if a trace shows due events landing elsewhere in a round
+        _host.AddGameTime(TicksPerRound);
         BuildTurnOrder(firstRound: false, null, null);
     }
 

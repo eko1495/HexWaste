@@ -1719,6 +1719,71 @@ public class CombatEngineTests
     }
 
     [Fact]
+    public void RoundTransitionAddsFiveSecondsAfterTheJoinPassAndBeforeTheNextRound()
+    {
+        // ported from fallout2-ce src/combat.cc _combat_sequence(): gameTimeAddSeconds(5) after _combat_add_noncoms
+        var host = new FakeCombatHost();
+        MapObject dude = host.SetDude(NewCritter(tile: 20100, hp: 30, ap: 10));
+        MapObject attacker = host.AddCritter(NewCritter(tile: 20102, hp: 30, ap: 10));
+        attacker.Team = 1;
+        MapObject candidate = host.AddCritter(NewCritter(tile: 20050, hp: 30, ap: 10));
+        candidate.Team = 1;
+        candidate.Sid = 7;
+        candidate.DamageLastTurn = 4; // _combatai_want_to_join: damaged -> joins at the round-1 end
+        var engine = new CombatEngine(host, new MinRng());
+        CombatPhase phaseAtAdd = CombatPhase.Idle;
+        int roundAtAdd = 0;
+        host.OnAddGameTime = () => { phaseAtAdd = engine.Phase; roundAtAdd = engine.Round; };
+
+        engine.BeginScriptAggro(attacker, dude);
+        for (int i = 0; i < 20 && engine.Phase != CombatPhase.PlayerTurn; i++) { host.Animating.Clear(); engine.Step(); }
+        Assert.Equal(CombatPhase.PlayerTurn, engine.Phase);
+        Assert.Empty(host.GameTimeAdds); // combat start (_combat_sequence_init) adds no time
+
+        engine.EndPlayerTurn();
+        for (int i = 0; i < 20 && engine.Phase is not (CombatPhase.PlayerTurn or CombatPhase.Idle); i++) { host.Animating.Clear(); engine.Step(); }
+
+        Assert.Equal(2, engine.Round);
+        var add = Assert.Single(host.GameTimeAdds);
+        Assert.Equal(50, add.Ticks);
+        Assert.Equal(2, roundAtAdd);                          // inside the round transition
+        Assert.NotEqual(CombatPhase.PlayerTurn, phaseAtAdd);  // before the dude's round-2 turn opens
+        int lastJoinCheck = host.CombatProcCalls.FindLastIndex(c => c.Critter == candidate && c.FixedParam == 5);
+        Assert.True(lastJoinCheck >= 0 && lastJoinCheck < add.ProcCallsBefore); // the join pass ran first
+    }
+
+    [Fact]
+    public void TheFinalRoundTransitionAddsTimeBeforeTheEndCheck()
+    {
+        // _combat_sequence (and its gameTimeAddSeconds) runs before _combat_should_end ends the fight
+        var (engine, host, _) = KillOnlyHostileOnDudeTurn(candidateJoins: false);
+        Assert.Equal(CombatPhase.Idle, engine.Phase);
+        Assert.Equal(new[] { 50 }, host.GameTimeAdds.Select(a => a.Ticks));
+    }
+
+    [Fact]
+    public void BrawlRoundsAddFiveSecondsEach()
+    {
+        var host = new FakeCombatHost();
+        host.SetDude(NewCritter(tile: 20100, hp: 30, ap: 10));
+        int aTile = HexGrid.TileInDirection(20100, 0, 8);
+        MapObject teamA = host.AddCritter(NewCritter(aTile, hp: 30, ap: 10));
+        MapObject teamB = host.AddCritter(NewCritter(HexGrid.TileInDirection(aTile, 0), hp: 30, ap: 10));
+        teamA.Team = 1;
+        teamB.Team = 2;
+        var engine = new CombatEngine(host, new MinRng());
+
+        engine.StartBrawl([teamA, teamB]);
+        Assert.Empty(host.GameTimeAdds);
+        engine.EndPlayerTurn();
+        for (int i = 0; i < 200 && engine.Phase == CombatPhase.EnemyTurn; i++) { host.Animating.Clear(); engine.Step(); }
+
+        Assert.True(engine.Round >= 2);
+        Assert.Equal(engine.Round - 1, host.GameTimeAdds.Count);
+        Assert.All(host.GameTimeAdds, a => Assert.Equal(50, a.Ticks));
+    }
+
+    [Fact]
     public void KillingTheLastHostileMidRoundEndsCombatAtTheRoundTransition()
     {
         var (engine, host, candidate) = KillOnlyHostileOnDudeTurn(candidateJoins: false);
@@ -4833,6 +4898,14 @@ public class CombatEngineTests
 
         public readonly List<(MapObject Critter, int Value)> Reactions = [];
         public void SetReaction(MapObject critter, int value) => Reactions.Add((critter, value));
+        // F19: each AddGameTime call, with how many combat_p_proc calls had run by then (orders it vs the joins).
+        public readonly List<(int Ticks, int ProcCallsBefore)> GameTimeAdds = [];
+        public Action? OnAddGameTime { get; set; }
+        public void AddGameTime(int ticks)
+        {
+            GameTimeAdds.Add((ticks, CombatProcCalls.Count));
+            OnAddGameTime?.Invoke();
+        }
 
         public readonly Dictionary<MapObject, AiPacket> AiPackets = [];
         public bool CriticalsEnabled { get; set; }
