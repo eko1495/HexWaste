@@ -101,8 +101,8 @@ The findings doc's F4 text ("obj#70 never fights", combat starts at 302700) pred
    `shortcut: fo2ce also stamps a same-team attacker when statRoll(INT, -1) < 2; that roll (a shared-stream
    draw) is not modeled, upgrade when a same-team hit fixture exists`.
 2. **Combat list.** `CombatEngine` keeps `List<MapObject> _combatList` and `int _listCom`:
-   - Built at combat start (`BeginCombat`, `BeginScriptAggro`) from a new host member
-     `IEnumerable<MapObject> CombatListCritters`: every non-hidden critter on the dude's elevation, the dude
+   - Built at combat start (`BeginCombat`, `BeginScriptAggro`) from the existing host members
+     (`CombatCritters`, `PartyMembers`, `Dude`): every non-hidden critter on the dude's elevation, the dude
      included, ordered by `HexTile` (stable for equal tiles). Each entry's `Maneuver &= ManeuverEngaging`,
      `DamageLastTurn = 0`.
    - Round 1: fo2ce's three swaps (attacker, defender, dude if neither) and `_listCom` = the number placed.
@@ -110,8 +110,8 @@ The findings doc's F4 text ("obj#70 never fights", combat starts at 302700) pred
      (every non-dude, non-party critter that has entered the fight; never removed by a round transition), so
      targeting and end-of-combat code is unchanged. The dude is always placed in round 1, so he is never a
      non-combatant.
-   - A critter removed from the map mid-combat (death cleanup, `destroy_object`, `RemoveHostile`) is removed
-     from `_combatList`. A critter created mid-combat is not added. Shortcut comment:
+   - A critter no longer on the map (not in `CombatCritters`/`PartyMembers`) is skipped by the join pass;
+     dead combatants leave the live part at the round transition. A critter created mid-combat is not added. Shortcut comment:
      `shortcut: critters created during combat never enter the fo2ce list, upgrade if a fixture spawns one
      mid-fight`.
    - `BuildTurnOrder(firstRound: true)` takes `_combatList[0.._listCom)` as the order; party members not
