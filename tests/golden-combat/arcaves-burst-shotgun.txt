@@ -3,5 +3,4 @@ animating 2 multi-frame scenery/misc object(s)
 give: Combat Shotgun x1
 equip: Combat Shotgun readied
 burst Radscorpion@20529 [Combat Shotgun 12rnd d1]: chance=65% rounds=3 hit=1 damage=20
-joins: Radscorpion@21729 (team 4)
 burst-result: hp=-10 dead=True
