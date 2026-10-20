@@ -460,7 +460,7 @@ public sealed class CombatEngine
             + $"{(weaponProto is null ? "" : $" [{_host.ObjectNameByPid(weaponProto.Pid)}{(isGun ? $" {weaponItem!.AmmoQuantity}rnd d{distance}" : "")}]")}: chance={chance}% hit={hit} damage={damage}{CritTag(critFlags)}");
 
         _host.OnAttackStarted(dude, target, weaponProto);
-        TauntAttackOutcome(dude, target, isGun, hit, damage, hitLocation);
+        TauntAttackOutcome(dude, target, isGun || IsThrowWeapon(weaponProto), hit, damage, hitLocation);
 
         if (_phase == CombatPhase.Idle)
             BeginCombat(target);
@@ -1019,6 +1019,8 @@ public sealed class CombatEngine
         _host.Transcript($"throw {_host.ObjectNameByPid(weaponProto.Pid)} -> @{targetTile}"
             + $": chance={chance}% hit={hit}{(explosive ? " explosive" : $" damage={damage}")}{CritTag(critFlags)}");
         _host.OnThrowStarted(dude, targetTile, weaponProto);
+        if (targetCritter is not null) // _action_ranged: the defender's MISS/HIT taunt (actions.cc:917-923)
+            TauntAttackOutcome(dude, targetCritter, ranged: true, hit, damage, CriticalTables.LocationUncalled);
 
         if (_phase == CombatPhase.Idle && targetCritter is not null)
             BeginCombat(targetCritter);
@@ -2079,11 +2081,12 @@ public sealed class CombatEngine
     /// unrelated to this helper (drawing on the roll here would move golden fixtures). The cross-team
     /// path — the only one the reference reaches without drawing RNG, since the `||` short-circuits on
     /// `team != team` before the roll — is modelled EXACTLY. A null attacker also writes exactly (clears
-    /// whoHitMe), matching the reference's `a2 == nullptr` arm.
+    /// whoHitMe), matching the reference's `a2 == nullptr` arm. When the stored attacker is the dude it
+    /// also writes the target's reaction LVAR 0 to -3 (`reactionSetValue`, critter.cc:1297).
     ///
-    /// Both call sites that stamp whoHitMe in the reference (`_combat_sequence_init`, combat.cc:3012/3016,
-    /// and the KO/DEAD bypass, combat.cc:4711-4716) route through this one helper here, so Hexwaste no
-    /// longer carries two contradictory models of the same reference gate.</summary>
+    /// The reference's stamp sites (`_combat_sequence_init`, combat.cc:3012/3016, the KO/DEAD bypass,
+    /// combat.cc:4711-4716, and `_ai_try_attack`, combat_ai.cc:2694) route through this one helper here,
+    /// so Hexwaste no longer carries contradictory models of the same reference gate.</summary>
     // ported from fallout2-ce src/critter.cc _critter_set_who_hit_me()
     // shortcut: fo2ce also stamps a same-team attacker when statRoll(INT, -1) < 2; that roll (a shared-stream
     // draw) is not modeled, upgrade when a same-team hit fixture exists
@@ -2993,7 +2996,8 @@ public sealed class CombatEngine
     }
 
     /// <summary>Player-initiated end-combat gate — ported from fallout2-ce src/combat.cc combatAttemptEnd
-    /// (:3075): refuse to leave while any live hostile still WANTS TO FIGHT. Returns true iff combat
+    /// (:3075): refuse to leave while any live hostile still WANTS TO FIGHT, or (combat-list fights) a
+    /// non-combatant still wants to join. Returns true iff combat
     /// actually ended (the caller shows combat.msg #103 on false). Distinct from Reset() (the debug/map-load
     /// hard teardown) — this is what the ENDCOMBAT button must call.</summary>
     public bool TryEndCombat()
@@ -3004,6 +3008,18 @@ public sealed class CombatEngine
             return false;
         if (_hostiles.Any(h => !WantsToStopFighting(h)))
             return false; // an enemy still engaged — combat.cc:3086 message #103, no end
+        // combat.cc:3100-3112: a non-combatant that would join (same team test as the first loop) also refuses.
+        if (_combatList.Count > 0 && _host.Dude is { } dude)
+        {
+            var onMap = _host.CombatCritters.Concat(_host.PartyMembers).ToHashSet();
+            for (int i = _listCom; i < _listCom + _listNoncom; i++)
+            {
+                MapObject c = _combatList[i];
+                if (c != dude && onMap.Contains(c)
+                    && (c.Team != dude.Team || c.WhoHitMe?.Team == c.Team) && WantToJoin(c, dude))
+                    return false; // message #103
+            }
+        }
         EndCombat();
         return true;
     }
@@ -3102,11 +3118,17 @@ public sealed class CombatEngine
             return;
         }
 
+        // ported from fallout2-ce src/combat.cc _combat_input() (:3165): no AP and no free move ends the
+        // dude's turn. Checked once his action has fully resolved (the guards above, and his own anim/walk).
+        if (_phase == CombatPhase.PlayerTurn && _dudeAp <= 0 && _dudeFreeMove <= 0
+            && _host.Dude is { } turnDude && !_host.IsAnimating(turnDude) && !_host.IsDudeMoving)
+            EndPlayerTurn();
+
         // Task 3 (correction): let the currently-active combatant's own turn run BEFORE asking
         // CombatShouldEnd() whether anyone still wants to fight. WantsToStopFighting reads live
         // Maneuver/KO/perception state that a critter's OWN turn this round is often what sets or
-        // resolves (TryFlee stamping FLEEING/DISENGAGING, the KO-forfeit branch, a script presetting
-        // the flee maneuver before combat even opens) — asking first would judge that state before
+        // resolves (TryFlee stamping FLEEING/DISENGAGING, the KO-forfeit branch, a combat_p_proc setting
+        // the flee maneuver at its turn start) — asking first would judge that state before
         // the actor ever got to act on it. The original PruneEscapedHostiles ran its distance-only
         // test before StepTurnOrder() safely, because raw position never changes except through an
         // already-resolved move; WantsToStopFighting's richer state does not have that property, so
@@ -3305,6 +3327,10 @@ public sealed class CombatEngine
     // order, then the attacker, the defender and (if neither) the dude swapped to the front as round 1.
     // shortcut: critters created during combat never enter the fo2ce list, upgrade if a fixture spawns one mid-fight
     // shortcut: critters that leave the map mid-fight stay in the combatant part and keep their turn slot, upgrade if a fixture removes a combatant mid-fight
+    // shortcut: party members are not filtered by elevation (MapObject.Elevation is load-time only, never updated
+    // on elevator/map moves), upgrade when the host tracks a live elevation per object
+    // shortcut: fo2ce's list includes corpses; CombatCritters (_solidObjects) drops them, which can shift the
+    // join-check order of the hex-sorted list, upgrade if a trace shows a join order differing around a corpse
     private void InitCombatList(MapObject? attacker, MapObject? defender)
     {
         MapObject? dude = _host.Dude;
@@ -3372,7 +3398,9 @@ public sealed class CombatEngine
             (_combatList[_joinIndex], _combatList[_listCom]) = (_combatList[_listCom], c);
             _listCom++;
             _listNoncom--;
-            if (!_host.PartyMembers.Contains(c))
+            // A dude-team joiner (an escort NotifyFriends marked ENGAGING) is not a hostile: fo2ce's
+            // _combat_should_end ignores it, so adding it would keep the fight open and make it a target.
+            if (!_host.PartyMembers.Contains(c) && c.Team != dude.Team)
                 _hostiles.Add(c);
             c.WhoHitMeCid = -1; // marks the dude as the aggressor
             _host.Log($"The {_host.ObjectName(c)} joins the fight!");
@@ -4176,6 +4204,13 @@ public sealed class CombatEngine
             .ToList();
         MapObject target = hostiles[CompanionAi.PickTarget(ai.AttackWho, ranked)];
 
+        // _ai_try_attack's opening _critter_set_who_hit_me, once per turn (combat_ai.cc:2694; allies too).
+        if (_tryAttackStampPending)
+        {
+            _tryAttackStampPending = false;
+            SetWhoHitMe(ally, target);
+        }
+
         (ProtoInfo? weaponProto, MapObject? weaponItem) = _host.EquippedWeapon(ally);
         bool isGun = weaponProto?.Weapon is { } w && w.IsGun(weaponProto.ExtendedFlags);
         int distance = HexGrid.Distance(ally.HexTile, target.HexTile);
@@ -4242,9 +4277,10 @@ public sealed class CombatEngine
                 return false;
             _actingAllyAp -= apCost;
             ally.Rotation = HexGrid.RotationTo(ally.HexTile, target.HexTile);
+            int hitLoc = AiHitLocation(ally, attacker, defender, weaponProto, weaponItem, distance, crittersInPath);
             (int chance, bool hit, int damage, int critFlags, int delta) = RollAttack(attacker, defender, weaponProto, weaponItem,
                 distance, crittersInPath, attackerIsDude: false, defenderIsDude: false,
-                AiHitLocation(ally, attacker, defender, weaponProto, weaponItem, distance, crittersInPath), DiffDmgMod(ally)); // P75-M4 + P84
+                hitLoc, DiffDmgMod(ally)); // P75-M4 + P84
             if (!hit && TriggerCritFailure(attacker, attackerIsDude: false, weaponProto, weaponItem, delta))
                 _actingAllyAp = 0; // P41: a fumble can cost the ally its turn
             if (UsesCharges(weaponProto) && weaponItem is not null)
@@ -4258,7 +4294,7 @@ public sealed class CombatEngine
             _host.Transcript($"ally-attack {_host.ObjectName(ally)} -> {_host.ObjectName(target)}@{target.HexTile}"
                 + $"{(weaponProto is null ? "" : $" [{_host.ObjectNameByPid(weaponProto.Pid)}]")}: chance={chance}% hit={hit} damage={damage}{CritTag(critFlags)}");
             _host.OnAttackStarted(ally, target, weaponProto);
-            TauntAttackOutcome(ally, target, isGun, hit, damage, CriticalTables.LocationUncalled);
+            TauntAttackOutcome(ally, target, isGun || IsThrowWeapon(weaponProto), hit, damage, hitLoc);
             return true;
         }
 
@@ -4381,6 +4417,10 @@ public sealed class CombatEngine
         return true;
     }
 
+    // A throw goes through fo2ce _action_ranged (defender taunts) even where Hexwaste resolves it as a short swing.
+    private static bool IsThrowWeapon(ProtoInfo? proto) =>
+        proto?.Weapon is not null && WeaponClass.AttackType(proto.ExtendedFlags) == WeaponClass.AttackThrow;
+
     // ported from fallout2-ce src/actions.cc _action_melee() (:674-680) and _action_ranged() (:917-923): after the
     // ATTACK taunt, melee taunts the attacker's HIT (hit, defender alive) or MISS; ranged taunts the defender's.
     // shortcut: "defender alive" compares damage with current HP, ignoring instant-death crit flags; upgrade if
@@ -4424,7 +4464,7 @@ public sealed class CombatEngine
             + $"{(weaponProto is null ? "" : $" [{_host.ObjectNameByPid(weaponProto.Pid)}{(isGun ? $" d{distance}" : "")}]")}: chance={chance}% hit={hit} damage={damage}{CritTag(critFlags)}");
 
         _host.OnAttackStarted(enemy, defenderObj, weaponProto);
-        TauntAttackOutcome(enemy, defenderObj, isGun, hit, damage, hitLoc);
+        TauntAttackOutcome(enemy, defenderObj, isGun || IsThrowWeapon(weaponProto), hit, damage, hitLoc);
     }
 
     // ====================================================================

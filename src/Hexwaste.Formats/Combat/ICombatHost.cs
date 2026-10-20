@@ -132,6 +132,8 @@ public interface ICombatHost
     bool IsAnyWalkerMoving();
     /// <summary>This specific critter's walker is mid-move.</summary>
     bool IsWalkerMoving(MapObject critter);
+    /// <summary>The dude's own walk is mid-move (his walker is not an NPC walker).</summary>
+    bool IsDudeMoving => false;
 
     // --- Movement (StartNpcWalk + its draw-list/blocking closure stay here) ---
     /// <summary>run = request ANIM_RUNNING; the host still falls back to walk when the
@@ -160,11 +162,11 @@ public interface ICombatHost
     void ClearAnimation(MapObject critter);
 
     // --- Attack choreography ---------------------------------------------
-    /// <summary>Muzzle/punch FRM + weapon sfx (PlayWeaponSfx + StartAttackAnimation),
-    /// and a flying projectile attacker→target for ranged/thrown shots (phase-10 #11).</summary>
     /// <summary>fo2ce combat_ai.cc _combatai_msg(): a taunt chance roll (and message) for the critter.</summary>
     void Taunt(MapObject critter, CombatTaunt.Type type, int hitLocation = 3) { }
 
+    /// <summary>Muzzle/punch FRM + weapon sfx (PlayWeaponSfx + StartAttackAnimation),
+    /// and a flying projectile attacker→target for ranged/thrown shots (phase-10 #11).</summary>
     void OnAttackStarted(MapObject attacker, MapObject target, ProtoInfo? weaponProto);
     /// <summary>Hit reaction on a surviving target (actions.cc:424 _show_damage_to_object): a hit-from-
     /// front/back FRM, or a FALL when <paramref name="knockedDown"/>. The host picks the anim by facing

@@ -1017,6 +1017,7 @@ public sealed partial class ViewerGame
     public bool IsAnyWalkerMoving() => _npcWalkers.Values.Any(w => w.Moving);
     public bool IsWalkerMoving(MapObject critter) =>
         _npcWalkers.TryGetValue(critter, out DudeController? w) && w.Moving;
+    public bool IsDudeMoving => _dude is { Moving: true };
     public bool StartWalk(MapObject critter, int targetTile, bool run = false) => StartNpcWalk(critter, targetTile, run);
 
     /// <summary>ICombatHost (P117): the critters.lst run flag (art.cc artCritterFidShouldRun) —

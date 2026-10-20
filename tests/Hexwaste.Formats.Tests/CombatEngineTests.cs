@@ -4507,7 +4507,7 @@ public class CombatEngineTests
     // ====================================================================
 
     [Fact]
-    public void JoiningHostileWithNoWhoHitMeYetIsNeverEvictedFromHostiles()
+    public void SameTeamCandidateJoinsAtTheRoundEndAndStaysInTheFight()
     {
         // The regression net for the bug this correction fixed: AddJoiners() adds a fresh hostile
         // to _hostiles WITHOUT stamping its WhoHitMe (traced live on denbus2-fight-flee — a
@@ -4680,6 +4680,116 @@ public class CombatEngineTests
         Assert.Equal(CombatTaunt.Type.Move, mine[0]);
         Assert.Equal(1, mine.Count(t => t == CombatTaunt.Type.Move));
         Assert.Contains(mine, t => t is CombatTaunt.Type.Hit or CombatTaunt.Type.Miss);
+    }
+
+    [Fact]
+    public void ADudeTeamNonPartyJoinerIsNotAHostileSoCombatEnds()
+    {
+        // NotifyFriends marks a dude-team escort ENGAGING, so it joins at the round end; fo2ce's
+        // _combat_should_end ignores same-team critters, so killing the only hostile still ends the fight.
+        var host = new FakeCombatHost();
+        MapObject dude = host.SetDude(NewCritter(tile: 20100, hp: 30, ap: 10));
+        MapObject enemy = host.AddCritter(NewCritter(tile: HexGrid.TileInDirection(20100, 0), hp: 1));
+        enemy.Team = 1;
+        MapObject escort = host.AddCritter(NewCritter(tile: HexGrid.TileInDirection(20100, 3), hp: 30));
+        var engine = new CombatEngine(host, new MinRng());
+
+        Assert.True(engine.TryAttack(enemy));
+        host.Animating.Clear();
+        engine.ProcessAnimations();
+        Assert.True(enemy.IsDead);
+        engine.EndPlayerTurn();
+        for (int i = 0; i < 10 && engine.Phase != CombatPhase.Idle; i++) { host.Animating.Clear(); engine.Step(); }
+
+        Assert.Equal(CombatPhase.Idle, engine.Phase);
+        Assert.Contains(host.Transcripts, t => t.StartsWith("joins: ")); // it did join
+        Assert.DoesNotContain(escort, engine.Hostiles);
+    }
+
+    [Fact]
+    public void LeavingCombatIsRefusedWhileANonCombatantWantsToJoin()
+    {
+        // fo2ce combatAttemptEnd's second loop (combat.cc:3100-3112): a cross-team non-combatant that
+        // _combatai_want_to_join's refuses the exit (message 103) even when every combatant wants to stop.
+        var host = new FakeCombatHost();
+        host.SetDude(NewCritter(tile: 20100, hp: 30, ap: 10));
+        MapObject enemy = host.AddCritter(NewCritter(tile: HexGrid.TileInDirection(20100, 0), hp: 1));
+        enemy.Team = 1;
+        MapObject other = host.AddCritter(NewCritter(tile: HexGrid.TileInDirection(20100, 3), hp: 30));
+        other.Team = 1; // same team as an active hostile, perceives the dude -> wants to join
+        var engine = new CombatEngine(host, new MinRng());
+
+        Assert.True(engine.TryAttack(enemy));
+        host.Animating.Clear();
+        engine.ProcessAnimations();
+        Assert.True(enemy.IsDead);
+
+        Assert.False(engine.TryEndCombat());
+        Assert.Equal(CombatPhase.PlayerTurn, engine.Phase);
+        other.Team = 0; // dude team, no whoHitMe -> skipped by the team test
+        Assert.True(engine.TryEndCombat());
+    }
+
+    [Fact]
+    public void TheDudesTurnEndsByItselfOnceHisApAndFreeMoveAreSpent()
+    {
+        // fo2ce _combat_input (combat.cc:3165): ap <= 0 && free move <= 0 breaks out of the dude's input loop.
+        var host = new FakeCombatHost();
+        host.SetDude(NewCritter(tile: 20100, hp: 30, ap: 3)); // one punch (3 AP) spends the turn
+        MapObject enemy = host.AddCritter(NewCritter(tile: HexGrid.TileInDirection(20100, 0), hp: 100));
+        enemy.Team = 1;
+        var engine = new CombatEngine(host, new MinRng());
+
+        Assert.True(engine.TryAttack(enemy));
+        Assert.Equal(0, engine.DudeAp);
+        engine.Step(); // the swing is still animating: the turn stays open
+        Assert.Equal(CombatPhase.PlayerTurn, engine.Phase);
+
+        host.Animating.Clear();
+        engine.Step(); // resolves, then the 0-AP turn ends and the enemy's slot runs
+        Assert.Equal(CombatPhase.EnemyTurn, engine.Phase);
+        Assert.Equal(enemy, host.AttackOrder[^1]);
+        engine.EndPlayerTurn(); // a manual end on an already-ended turn is a no-op
+        Assert.Equal(CombatPhase.EnemyTurn, engine.Phase);
+    }
+
+    [Fact]
+    public void ADudeThrowTauntsTheDefendersOutcome()
+    {
+        // fo2ce sends a throw through _action_ranged: the DEFENDER taunts MISS/HIT (actions.cc:917-923).
+        var host = new FakeCombatHost();
+        MapObject dude = host.SetDude(NewCritter(20100, hp: 30, ap: 10));
+        int targetTile = Step(20100, 0, 3);
+        MapObject target = host.AddCritter(NewCritter(targetTile, hp: 100));
+        host.Equipped = MakeThrowWeapon(pid: 0x07, ext: 0x50, dmgType: 0, r1: 2, r2: 8, min: 3, max: 10);
+        var engine = new CombatEngine(host, new MinRng());
+
+        Assert.True(engine.TryThrow(targetTile));
+
+        Assert.Contains(host.Taunts, t => t.Critter == target && t.Type is CombatTaunt.Type.Hit or CombatTaunt.Type.Miss);
+        Assert.DoesNotContain(host.Taunts, t => t.Critter == dude);
+    }
+
+    [Fact]
+    public void AnAllyAttackTurnStampsItsWhoHitMeWithItsTarget()
+    {
+        // fo2ce _combat_ai runs _ai_try_attack for party members too; it opens with
+        // _critter_set_who_hit_me(attacker, defender) (combat_ai.cc:2694).
+        var host = new FakeCombatHost();
+        host.SetDude(NewCritter(tile: 20100, hp: 30, ap: 10));
+        MapObject enemy = host.AddCritter(NewCritter(tile: HexGrid.TileInDirection(20100, 0), hp: 100));
+        enemy.Team = 1;
+        MapObject ally = host.AddAlly(NewCritter(tile: HexGrid.TileInDirection(enemy.HexTile, 1), hp: 30), CompanionAi.Default);
+        var engine = new CombatEngine(host, new MinRng());
+
+        Assert.True(engine.TryAttack(enemy));
+        host.Animating.Clear();
+        engine.ProcessAnimations();
+        engine.EndPlayerTurn();
+        for (int i = 0; i < 20 && !host.AttackOrder.Contains(ally); i++) { host.Animating.Clear(); engine.Step(); }
+
+        Assert.Contains(ally, host.AttackOrder);
+        Assert.Same(enemy, ally.WhoHitMe);
     }
 
     private sealed class FakeCombatHost : ICombatHost
