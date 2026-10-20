@@ -603,17 +603,17 @@ public sealed partial class ViewerGame
     // shortcut: a map-update event due on the same tick as a script timer or the ambient event runs after them; fo2ce's single queue orders them by insertion. Upgrade if the oracle shows a same-tick difference.
     // shortcut: fo2ce's midnight event (gameTimeEventProcess -> gameTimeScheduleUpdateEvent, scripts.cc:428) queues another map-update event at midnight + 600, and whichever fires first clears the other; Hexwaste keeps one chain. Upgrade when a fixture crosses midnight.
     // shortcut: rest, skill books, AdvanceHours and multi-day game_time_advance jump the clock in one step, so one round fires where fo2ce's chunked rest loop (pipboy.cc:1990-2010) fires one per 600 ticks and opGameTimeAdvance one per day. Upgrade if an oracle scenario rests.
-    // shortcut: the dialog/combat/loot gates also apply to the inline game_time_advance call; fo2ce's queueProcessEvents there is ungated, so a round asked for from a dialog node runs when the dialog closes instead of inside it. Upgrade if a fixture advances time from dialog.
+    // shortcut: the dialog/loot gates also apply to the inline game_time_advance call; fo2ce's queueProcessEvents there is ungated, so a round asked for from a dialog node runs when the dialog closes instead of inside it. Upgrade if a fixture advances time from dialog.
     // ported from fallout2-ce src/scripts.cc mapUpdateEventProcess(): run the round, reschedule at now + 600
     /// <summary>P1-M2 / oracle: the recurring 600-tick map_update heartbeat as fo2ce's game-time queue event
     /// (EVENT_TYPE_MAP_UPDATE_EVENT): processed right after the clock tick, before that frame's critter proc
     /// (scripts.cc:774-781). Lets quests that POLL state in map_update_p_proc (klagraz KCTorr's brahmin
-    /// defense, the Den gang-war escalation) re-evaluate over time. Not in combat (Hexwaste freezes the clock there; fo2ce adds 5 s per combat round, combat.cc:3071, and its queue keeps running - see the findings doc)
-    /// or with a loot container open; a gated due event waits.</summary>
+    /// defense, the Den gang-war escalation) re-evaluate over time. Runs in combat too (mapUpdateEventProcess has no combat check; the clock moves 5 s per round, combat.cc:3071).
+    /// Not with a loot container open; a gated due event waits.</summary>
     private void ProcessMapUpdateEvent()
     {
         if (_mapUpdateNextTick < 0 || _clock.Ticks < _mapUpdateNextTick || !MapUpdateAllowed()
-            || _combat.Phase != Formats.Combat.CombatPhase.Idle || _lootContainer is not null)
+            || _lootContainer is not null)
             return;
         _mapUpdateNextTick = _clock.Ticks + MapUpdateIntervalTicks; // before the round: a round that moves the clock does not refire it
         _mapUpdateFires++;
@@ -1447,6 +1447,9 @@ public sealed partial class ViewerGame
         if (_map is not null)
             _scriptHost?.SetReaction(_map, critter, value);
     }
+
+    // ported from fallout2-ce src/scripts.cc gameTimeAddSeconds(); the same frame's UpdateClock (after Step) fires what came due
+    public void AddGameTime(int ticks) => _clock.Ticks += ticks;
 
     public bool RunMapCombatOver(int knockedOutByTeam) =>
         _map is not null && (_scriptHost?.RunMapCombatOver(_map, _dude?.Dude, knockedOutByTeam)?.Overridden ?? false);

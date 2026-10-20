@@ -28,6 +28,11 @@ line 9 (unchanged).
 Update after F4/F5: artemple IDENTICAL, klamath line 1664, arcaves line 41 (F19, round 2 starts at t=302451
 in fo2ce, t=302401 in Hexwaste).
 
+Update after F19: artemple IDENTICAL (6 026 lines), klamath line 1664 (unchanged), arcaves line 47 (round 2
+now starts at t=302451 in both; the round-2 timers fire there in both, but in a different order: fo2ce
+`t=302451 PROC zclscorp.int timed_event_p_proc self=obj#206` vs Hexwaste `... zclrat.int timed_event_p_proc
+self=obj#96`, see F19).
+
 Update after the game-clock map_update tick: artemple-idle is now IDENTICAL (6 026 lines). klamath line 1664
 (unchanged: fo2ce `t=302525 MOVE obj#26 17500->17701` vs Hexwaste `t=302525 PROC kcitizen.int critter_p_proc
 self=obj#156`), arcaves line 9 (unchanged: fo2ce `t=302401 LVAR sid=0x04000008 0 0->-3` vs Hexwaste
@@ -426,7 +431,23 @@ Follow-ups (F16):
   gate skips.
 - Status: open. Fix: run due game-time events (including `ProcessAmbientSfx`) inside the travel step.
 
-### F19 — Combat does not advance the game clock
+### F19 — Combat does not advance the game clock — FIXED
+
+**FIXED.** `CombatEngine.StartNewRound` calls `ICombatHost.AddGameTime(50)` (`gameTimeAddSeconds(5)`,
+`combat.cc:3071`) once per round transition, after the re-sequence and before the end check; the viewer's
+host bumps `_clock.Ticks`, and the same frame's `UpdateClock` (which runs after `_combat.Step()`) fires the
+queue events that came due: script timers, poison/drug/withdrawal/radiation, the ambient event and the
+map-update event, which no longer has a combat gate (`mapUpdateEventProcess` has none). Two shortcuts stay:
+the 100 ms real-time drain gate still decides which frame processes due events, and KO wake-ups still run on
+the engine tick. Arcaves moved from line 41 to line 47: round 2 now starts at t=302451 and its first two
+timers (obj#126, obj#144 with their `RNG 3..5` draws) match. The new divergence is the order of the
+same-tick timers that follow: on the vanilla-save load Hexwaste's `map_enter` arms 21 timers (delay 20, in
+object-list order) and `ImportVanillaQueue` then appends the save's 21 queued timers (t=302410-302450); fo2ce
+holds the same 42 timers (same multiset at t=302451) in a different queue order (its third is obj#206, due by
+t=302420, ahead of the save's t=302420 entries). Next: trace fo2ce's `queueAddEvent` for the load-time
+timers (who arms them, with what delay, before or after `queueLoad`). No golden fixture moved.
+
+Original finding:
 
 - Evidence (code): fo2ce adds 5 s per combat round (`combat.cc:3071`, `gameTimeAddSeconds(5)`) and its
   `_doBkProcesses` queue loop keeps running in combat (`scripts.cc:766-781`), so game-time events (timers,
@@ -499,3 +520,8 @@ Original finding:
 11. After the final-review fixes (0-AP turn end, `combatAttemptEnd` join loop, dude-team joiners, throw and
    ally taunt outcomes, ally `_ai_try_attack` whoHitMe stamp): unchanged (arcaves 41, artemple IDENTICAL,
    klamath 1664).
+12. After F19 (5 s per combat round clock): artemple IDENTICAL (6 026 lines); klamath line 1664 unchanged (fo2ce
+   `t=302525 MOVE obj#26 17500->17701` vs Hexwaste `t=302525 PROC kcitizen.int critter_p_proc self=obj#156`);
+   arcaves line 47 (fo2ce `t=302451 PROC zclscorp.int timed_event_p_proc self=obj#206` vs Hexwaste
+   `t=302451 PROC zclrat.int timed_event_p_proc self=obj#96`): same-tick timer queue order after the
+   vanilla-save load (map_enter timers vs imported queue), see F19. Next: that timer order, klamath's obj#26 move.
