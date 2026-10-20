@@ -967,14 +967,16 @@ public sealed partial class ViewerGame
     /// message rolls draw from the ISOLATED <see cref="_tauntRng"/>, and the float is Draw-only, so
     /// combat goldens stay byte-identical (a taunting critter perturbs nothing the transcript sees).
     /// Skips a dead/knocked-out critter (the engine's DAM_DEAD|DAM_KNOCKED_OUT guard, :3316).</summary>
-    private void TryTaunt(MapObject critter, Formats.Combat.CombatTaunt.Type type)
+    private void TryTaunt(MapObject critter, Formats.Combat.CombatTaunt.Type type, int hitLocation = 3)
     {
+        if (critter == _dude?.Dude) // combat_ai.cc:3314: the dude never taunts (no draw)
+            return;
         if (critter.IsDead || (critter.CombatResults & Formats.Combat.CriticalTables.DamKnockedOut) != 0)
             return;
         if (GetAiPacket(critter) is not { } pkt)
             return;
         _tauntRng ??= new Formats.Combat.SystemCombatRng(RngSeed ?? Environment.TickCount);
-        int msgId = Formats.Combat.CombatTaunt.Pick(pkt, type, _tauntRng);
+        int msgId = Formats.Combat.CombatTaunt.Pick(pkt, type, _tauntRng, hitLocation);
         if (msgId < 0)
             return;
         if (LazyMsg(@"text\english\game\combatai.msg", ref _combatAiMsgTried, ref _combatAiMsg)?.GetText(msgId)
@@ -983,6 +985,9 @@ public sealed partial class ViewerGame
         (byte r, byte g, byte b) = _palette.GetRgb(pkt.TauntColor & 0xFF);
         _floatText.Add(critter.HexTile, _elevation, text, new Color(r, g, b));
     }
+
+    public void Taunt(MapObject critter, Formats.Combat.CombatTaunt.Type type, int hitLocation = 3) =>
+        TryTaunt(critter, type, hitLocation);
 
     public bool IsBlocked(int tile) => _blockedTiles.Contains(tile);
 
@@ -1012,6 +1017,7 @@ public sealed partial class ViewerGame
     public bool IsAnyWalkerMoving() => _npcWalkers.Values.Any(w => w.Moving);
     public bool IsWalkerMoving(MapObject critter) =>
         _npcWalkers.TryGetValue(critter, out DudeController? w) && w.Moving;
+    public bool IsDudeMoving => _dude is { Moving: true };
     public bool StartWalk(MapObject critter, int targetTile, bool run = false) => StartNpcWalk(critter, targetTile, run);
 
     /// <summary>ICombatHost (P117): the critters.lst run flag (art.cc artCritterFidShouldRun) —
@@ -1434,6 +1440,12 @@ public sealed partial class ViewerGame
     {
         var scripted = _scriptHost?.RunCombatProc(critter, target, _dude?.Dude, _map, fixedParam);
         return scripted is null ? ([], false) : (scripted.Messages.ToList(), scripted.Overridden);
+    }
+
+    public void SetReaction(MapObject critter, int value)
+    {
+        if (_map is not null)
+            _scriptHost?.SetReaction(_map, critter, value);
     }
 
     public bool RunMapCombatOver(int knockedOutByTeam) =>

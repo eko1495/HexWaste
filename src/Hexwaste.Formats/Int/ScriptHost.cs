@@ -1505,6 +1505,20 @@ public sealed class ScriptHost(GameFileSystem vfs, ScriptList scripts, Hexwaste.
         return slice.Length > 0 ? slice[0] : -1;
     }
 
+    /// <summary>ported from fallout2-ce src/reaction.cc reactionSetValue(): scriptSetLocalVar(sid, 0, value),
+    /// traced like a script's own store. No-op for an unscripted critter or a script without LVARs.</summary>
+    public void SetReaction(MapFile map, MapObject critter, int value)
+    {
+        if (critter.Sid == -1 || !map.ScriptsBySid.TryGetValue(critter.Sid, out MapScriptRecord? record))
+            return;
+        int[] slice = GetLocalVarSlice(map, critter.Sid, record);
+        if (slice.Length == 0)
+            return;
+        if (OracleTrace.Active)
+            OracleTrace.Lvar(critter.Sid == DudeSid ? DudeTraceSid : critter.Sid, 0, slice[0], value);
+        slice[0] = value;
+    }
+
     /// <summary>Clears the object handle table — call on map transitions
     /// (handles never outlive a VM run / dialog session).</summary>
     public void ResetHandles()

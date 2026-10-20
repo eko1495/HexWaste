@@ -56,7 +56,12 @@ public class CombatEngineTests
         Assert.True(enemy.IsDead);
         Assert.Equal(0, host.XpAwarded);
 
-        // Next step ends combat (nothing hostile standing) and pays XP.
+        // F20: combat ends only at the round transition (fo2ce _combat :3446), so the dude's turn stays
+        // open; ending it closes the round, combat ends (nothing hostile standing) and XP pays.
+        engine.Step();
+        Assert.Equal(CombatPhase.PlayerTurn, engine.Phase);
+        Assert.Equal(0, host.XpAwarded);
+        engine.EndPlayerTurn();
         engine.Step();
         Assert.Equal(CombatPhase.Idle, engine.Phase);
         Assert.Equal(10, engine.DudeAp); // §A: EndCombat resets AP to max
@@ -204,6 +209,22 @@ public class CombatEngineTests
         Assert.Equal(CombatPhase.EnemyTurn, engine.Phase);
         Assert.Equal(10, engine.DudeAp); // §A: ambush hands control back at full AP
         Assert.Contains(host.Transcripts, t => t.StartsWith("scripted-aggro:"));
+    }
+
+    [Fact]
+    public void ScriptedAggroClearsStaleWhoHitMeButKeepsTheAggressorSeed()
+    {
+        var host = new FakeCombatHost();
+        MapObject dude = host.SetDude(NewCritter(tile: 20100, hp: 30, ap: 10));
+        MapObject attacker = host.AddCritter(NewCritter(tile: HexGrid.TileInDirection(20100, 0), hp: 30));
+        MapObject bystander = host.AddCritter(NewCritter(tile: HexGrid.TileInDirection(20100, 3), hp: 30));
+        bystander.WhoHitMe = dude;
+        var engine = new CombatEngine(host, new MinRng());
+
+        engine.BeginScriptAggro(attacker, dude);
+
+        Assert.Null(bystander.WhoHitMe); // _combat_begin clears whoHitMe for the whole list (combat.cc:2590)
+        Assert.Same(dude, attacker.WhoHitMe); // P113 seed survives, set after the clear
     }
 
     [Fact]
@@ -473,10 +494,10 @@ public class CombatEngineTests
         int eTile = HexGrid.TileInDirection(20100, 0);
         MapObject enemy = host.AddCritter(NewCritter(tile: eTile, hp: 30, ap: 10)); // healthy, would normally attack
         host.AiPackets[enemy] = new AiPacket(13, "Coward", MinToHit: 0, MinHp: 0, 10, "", "");
-        enemy.Maneuver |= ManeuverFleeing; // a script flagged it to flee
         var engine = new CombatEngine(host, new MinRng());
 
         engine.BeginScriptAggro(enemy, dude);
+        enemy.Maneuver |= ManeuverFleeing; // a script flagged it to flee (after _combat_begin's maneuver reset)
         engine.Step();
 
         Assert.Contains(host.Transcripts, t => t.StartsWith("flee:"));
@@ -601,11 +622,11 @@ public class CombatEngineTests
         var host = new FakeCombatHost();
         MapObject dude = host.SetDude(NewCritter(tile: 20100, hp: 30, ap: 10));
         MapObject enemy = host.AddCritter(NewCritter(tile: HexGrid.TileInDirection(20100, 0), hp: 30, ap: 10));
-        enemy.Maneuver |= 0x04; // script-set FLEEING, the path that does not need a packet
         // deliberately NO host.AiPackets[enemy] entry
         var engine = new CombatEngine(host, new MinRng());
 
         engine.BeginScriptAggro(enemy, dude);
+        enemy.Maneuver |= 0x04; // script-set FLEEING (after _combat_begin's maneuver reset), no packet needed
         engine.Step();
 
         Assert.Contains(host.Transcripts, t => t.StartsWith("flee:"));
@@ -1483,6 +1504,27 @@ public class CombatEngineTests
     }
 
     [Fact]
+    public void AMultiFrameAiTurnRunsItsPerTurnCombatProcOnce()
+    {
+        // fo2ce _combat_turn (combat.cc:3247) runs combat_p_proc once; the walk and attack then run inside
+        // _combat_turn_run. Hexwaste re-enters TryEnemyAction after the walk and must not re-run fp=4.
+        var host = new FakeCombatHost();
+        MapObject dude = host.SetDude(NewCritter(tile: 20100, hp: 30, ap: 10));
+        MapObject enemy = host.AddCritter(NewCritter(tile: HexGrid.TileInDirection(20100, 0, 4), hp: 30, ap: 10));
+        enemy.Team = 1;
+        enemy.Sid = 5;
+        host.AiPackets[enemy] = new AiPacket(12, "Guard", MinToHit: 0, MinHp: 0, 0, "", "");
+        var engine = new CombatEngine(host, new MinRng());
+        engine.BeginScriptAggro(enemy, dude); // the enemy opens -> its round-1 turn starts now
+        for (int i = 0; i < 20 && engine.Phase == CombatPhase.EnemyTurn; i++)
+        {
+            host.Animating.Clear(); // finish the walk/attack animation
+            engine.Step();
+        }
+        Assert.Equal(1, host.CombatProcCalls.Count(c => c.Critter == enemy && c.FixedParam == 4));
+    }
+
+    [Fact]
     public void PerTurnCombatProcRunsForAScriptedEnemyThenDefaultAi()
     {
         // P35: a scripted (Sid != -1) enemy runs combat_p_proc (fp=4) at the top of its turn; with no
@@ -1554,7 +1596,7 @@ public class CombatEngineTests
         Assert.Empty(host.CombatProcCalls);
     }
 
-    // P35-M4 want-to-join (combat_ai.cc:3165): AddJoiners runs at combat start; a candidate's maneuver /
+    // P35-M4 want-to-join (combat_ai.cc:3165): the round-end join pass (_combat_add_noncoms); a candidate's maneuver /
     // damage / fp=5 decides whether it joins. A far attacker opens combat; the candidate is the subject.
     private static (CombatEngine, FakeCombatHost, MapObject Dude, MapObject Candidate) JoinSetup(
         int candidateTile, Action<MapObject> setup)
@@ -1565,9 +1607,12 @@ public class CombatEngineTests
         attacker.Team = 1;
         MapObject candidate = host.AddCritter(NewCritter(tile: candidateTile, hp: 30, ap: 10));
         candidate.Team = 1; // same team as the attacker (so the ShouldJoin fallback would consider it)
-        setup(candidate);
         var engine = new CombatEngine(host, new MinRng());
-        engine.BeginScriptAggro(attacker, dude); // adds the attacker + runs AddJoiners over the candidate
+        engine.BeginScriptAggro(attacker, dude);
+        setup(candidate); // after _combat_begin's maneuver/damageLastTurn reset
+        for (int i = 0; i < 20 && engine.Phase != CombatPhase.PlayerTurn; i++) { host.Animating.Clear(); engine.Step(); }
+        engine.EndPlayerTurn(); // round 1 ends -> _combat_add_noncoms
+        for (int i = 0; i < 20 && engine.Phase is not (CombatPhase.PlayerTurn or CombatPhase.Idle); i++) { host.Animating.Clear(); engine.Step(); }
         return (engine, host, dude, candidate);
     }
 
@@ -1607,6 +1652,100 @@ public class CombatEngineTests
         // A scripted (Sid != -1) candidate gets its combat_p_proc run with fixedParam=5.
         var (_, host, _, candidate) = JoinSetup(HexGrid.TileInDirection(20100, 2), c => c.Sid = 7);
         Assert.Contains(host.CombatProcCalls, p => p.Critter == candidate && p.FixedParam == 5);
+    }
+
+    [Fact]
+    public void RoundOneIsTheAttackerAndTheDudeOnly_OthersJoinAtRoundEndWithAnImmediateTurn()
+    {
+        // fo2ce _combat_sequence_init: round 1 = attacker, defender (dude); no join check before it.
+        // _combat_add_noncoms at round end: a joiner gets max AP and takes its turn at once.
+        var host = new FakeCombatHost();
+        MapObject dude = host.SetDude(NewCritter(tile: 20100, hp: 30, ap: 10));
+        MapObject attacker = host.AddCritter(NewCritter(tile: HexGrid.TileInDirection(20100, 0), hp: 30, ap: 10));
+        attacker.Team = 1;
+        MapObject other = host.AddCritter(NewCritter(tile: HexGrid.TileInDirection(20100, 2), hp: 30, ap: 10));
+        other.Team = 1;
+        other.Sid = 9;
+        var engine = new CombatEngine(host, new MinRng());
+        engine.BeginScriptAggro(attacker, dude);
+        Assert.DoesNotContain(host.CombatProcCalls, c => c.Critter == other); // no join check at combat start
+        for (int i = 0; i < 20 && engine.Phase != CombatPhase.PlayerTurn; i++) { host.Animating.Clear(); engine.Step(); }
+        Assert.Equal(1, engine.Round);
+        Assert.DoesNotContain(host.CombatProcCalls, c => c.Critter == other);
+        engine.EndPlayerTurn(); // round 1 ends -> join pass
+        for (int i = 0; i < 20 && engine.Phase != CombatPhase.PlayerTurn; i++) { host.Animating.Clear(); engine.Step(); }
+        int join = host.CombatProcCalls.FindIndex(c => c.Critter == other && c.FixedParam == 5);
+        int turn = host.CombatProcCalls.FindIndex(c => c.Critter == other && c.FixedParam == 4);
+        Assert.True(join >= 0 && turn > join, "the joiner is asked (fp=5), then takes its turn (fp=4)");
+        Assert.Contains(other, engine.Hostiles);
+    }
+
+    // F20: fo2ce _combat() (combat.cc:3420-3446) checks _combat_should_end only after _combat_sequence, so
+    // killing the last round-1 hostile leaves the dude's turn open and the round-end join pass still runs.
+    private static (CombatEngine, FakeCombatHost, MapObject Candidate) KillOnlyHostileOnDudeTurn(bool candidateJoins)
+    {
+        var host = new FakeCombatHost();
+        MapObject dude = host.SetDude(NewCritter(tile: 20100, hp: 30, ap: 10));
+        MapObject attacker = host.AddCritter(NewCritter(tile: HexGrid.TileInDirection(20100, 0), hp: 30, ap: 10));
+        attacker.Team = 1;
+        MapObject candidate = host.AddCritter(NewCritter(tile: 20050, hp: 30, ap: 10));
+        candidate.Team = 1;
+        candidate.Sid = 7;
+        var engine = new CombatEngine(host, new MinRng());
+        engine.BeginScriptAggro(attacker, dude);
+        if (candidateJoins)
+            candidate.DamageLastTurn = 4; // _combatai_want_to_join: damaged -> joins
+        else
+            host.OnCombatProc = (c, fp) => { if (fp == 5) c.Maneuver = 0x02; }; // DISENGAGING: never joins
+        for (int i = 0; i < 20 && engine.Phase != CombatPhase.PlayerTurn; i++) { host.Animating.Clear(); engine.Step(); }
+        Assert.Equal(CombatPhase.PlayerTurn, engine.Phase);
+        engine.Kill(attacker, dude); // the only round-1 hostile dies on the dude's turn
+        for (int i = 0; i < 10; i++) { host.Animating.Clear(); engine.Step(); }
+        Assert.Equal(CombatPhase.PlayerTurn, engine.Phase); // no mid-round end: the turn stays open
+        Assert.Equal(1, engine.Round);
+        engine.EndPlayerTurn(); // round 1 ends -> _combat_add_noncoms, _combat_sequence, _combat_should_end
+        for (int i = 0; i < 20 && engine.Phase is not (CombatPhase.PlayerTurn or CombatPhase.Idle); i++) { host.Animating.Clear(); engine.Step(); }
+        return (engine, host, candidate);
+    }
+
+    [Fact]
+    public void KillingTheLastHostileMidRoundStillRunsTheJoinPass_AJoinerKeepsCombatGoing()
+    {
+        var (engine, host, candidate) = KillOnlyHostileOnDudeTurn(candidateJoins: true);
+        Assert.True(Joined(host, candidate));
+        Assert.Contains(host.CombatProcCalls, c => c.Critter == candidate && c.FixedParam == 4); // it acts
+        Assert.Equal(CombatPhase.PlayerTurn, engine.Phase);
+        Assert.Equal(2, engine.Round);
+    }
+
+    [Fact]
+    public void KillingTheLastHostileMidRoundEndsCombatAtTheRoundTransition()
+    {
+        var (engine, host, candidate) = KillOnlyHostileOnDudeTurn(candidateJoins: false);
+        Assert.Contains(host.CombatProcCalls, c => c.Critter == candidate && c.FixedParam == 5); // asked at round end
+        Assert.False(Joined(host, candidate));
+        Assert.Equal(CombatPhase.Idle, engine.Phase);
+    }
+
+    [Fact]
+    public void TheJoinPassAsksNonCombatantsInHexTileOrder()
+    {
+        // objectListCreate walks tiles 0..39999 (object.cc:2652); _combat_add_noncoms visits in list order.
+        var host = new FakeCombatHost();
+        MapObject dude = host.SetDude(NewCritter(tile: 20100, hp: 30, ap: 10));
+        MapObject attacker = host.AddCritter(NewCritter(tile: HexGrid.TileInDirection(20100, 0), hp: 30, ap: 10));
+        attacker.Team = 1;
+        MapObject high = host.AddCritter(NewCritter(tile: 20300, hp: 30, ap: 10)); // added first, higher tile
+        MapObject low = host.AddCritter(NewCritter(tile: 19900, hp: 30, ap: 10));
+        high.Sid = 11; low.Sid = 12;
+        host.OnCombatProc = (c, fp) => { if (fp == 5) c.Maneuver = 0x02; }; // DISENGAGING: asked, never joins
+        var engine = new CombatEngine(host, new MinRng());
+        engine.BeginScriptAggro(attacker, dude);
+        for (int i = 0; i < 20 && engine.Phase != CombatPhase.PlayerTurn; i++) { host.Animating.Clear(); engine.Step(); }
+        engine.EndPlayerTurn();
+        for (int i = 0; i < 20 && engine.Phase != CombatPhase.PlayerTurn; i++) { host.Animating.Clear(); engine.Step(); }
+        var asked = host.CombatProcCalls.Where(c => c.FixedParam == 5).Select(c => c.Critter).ToList();
+        Assert.Equal([low, high], asked);
     }
 
     [Fact]
@@ -4368,7 +4507,7 @@ public class CombatEngineTests
     // ====================================================================
 
     [Fact]
-    public void JoiningHostileWithNoWhoHitMeYetIsNeverEvictedFromHostiles()
+    public void SameTeamCandidateJoinsAtTheRoundEndAndStaysInTheFight()
     {
         // The regression net for the bug this correction fixed: AddJoiners() adds a fresh hostile
         // to _hostiles WITHOUT stamping its WhoHitMe (traced live on denbus2-fight-flee — a
@@ -4388,7 +4527,11 @@ public class CombatEngineTests
         Assert.Null(candidate.WhoHitMe);
 
         var engine = new CombatEngine(host, new MinRng());
-        engine.BeginScriptAggro(attacker, dude); // opens combat, runs AddJoiners over the candidate
+        engine.BeginScriptAggro(attacker, dude); // opens combat; round 1 = attacker + dude only
+        for (int i = 0; i < 20 && engine.Phase != CombatPhase.PlayerTurn; i++) { host.Animating.Clear(); engine.Step(); }
+        engine.EndPlayerTurn(); // round 1 ends -> the join pass over the candidate
+        host.Animating.Clear();
+        engine.Step();
         Assert.Contains(candidate, engine.Hostiles); // sanity: it did join
 
         for (int i = 0; i < 5; i++)
@@ -4399,7 +4542,7 @@ public class CombatEngineTests
                 break; // combat resolved (dude/attacker traded blows) — fine, just not an eviction
         }
 
-        Assert.Null(candidate.WhoHitMe); // still never acquired one...
+        // (its own attack turn now stamps whoHitMe = dude, fo2ce _ai_try_attack combat_ai.cc:2694)
         Assert.True(candidate.IsDead || engine.Hostiles.Contains(candidate),
             "a hostile must stay in the fight (or die in it) — never silently vanish for lack of a danger source");
     }
@@ -4423,6 +4566,7 @@ public class CombatEngineTests
         for (int i = 0; i < 20 && engine.Phase != CombatPhase.Idle; i++)
         {
             host.Animating.Clear();
+            engine.EndPlayerTurn(); // F20: the dude ends his turn; combat ends at the round transition
             engine.Step();
         }
 
@@ -4487,11 +4631,174 @@ public class CombatEngineTests
         }
     }
 
+    [Fact]
+    public void OpeningCombatWritesTheReactionOfTheCritterTheDudeFaces()
+    {
+        // fo2ce critter.cc:1297 _critter_set_who_hit_me: when the stored attacker is gDude,
+        // reactionSetValue(critter, -3) writes the critter's LVAR 0. _combat_sequence_init stamps
+        // attacker<->defender, so a script aggro writes the AGGRESSOR's reaction (dude = its whoHitMe).
+        var host = new FakeCombatHost();
+        MapObject dude = host.SetDude(NewCritter(tile: 20100, hp: 30, ap: 10));
+        MapObject attacker = host.AddCritter(NewCritter(tile: HexGrid.TileInDirection(20100, 0), hp: 30, ap: 10));
+        attacker.Team = 1;
+        var engine = new CombatEngine(host, new MinRng());
+        engine.BeginScriptAggro(attacker, dude);
+        Assert.Contains((attacker, -3), host.Reactions);
+        Assert.DoesNotContain(host.Reactions, r => r.Critter == dude); // the dude's whoHitMe is a non-dude
+    }
+
+    [Fact]
+    public void AnAiAttackTurnOnTheDudeRewritesItsReactionOncePerTurn()
+    {
+        // fo2ce combat_ai.cc:2694: _ai_try_attack opens with _critter_set_who_hit_me(attacker, dude), so the
+        // aggressor's reaction LVAR is written again on its own turn (after the opening stamp), once even
+        // though the walk-then-swing turn spans frames.
+        var host = new FakeCombatHost();
+        MapObject dude = host.SetDude(NewCritter(tile: 20100, hp: 30, ap: 10));
+        MapObject enemy = host.AddCritter(NewCritter(tile: HexGrid.TileInDirection(20100, 0, 4), hp: 30, ap: 10));
+        enemy.Team = 1;
+        var engine = new CombatEngine(host, new MinRng());
+        engine.BeginScriptAggro(enemy, dude);
+        for (int i = 0; i < 20 && engine.Phase == CombatPhase.EnemyTurn; i++) { host.Animating.Clear(); engine.Step(); }
+        Assert.Equal(2, host.Reactions.Count(r => r == (enemy, -3))); // _combat_sequence_init + _ai_try_attack
+    }
+
+    [Fact]
+    public void AnAiTurnThatWalksThenSwingsTauntsMoveOnceThenTheMeleeOutcome()
+    {
+        // fo2ce: _ai_move_steps_closer MOVE taunt on the first approach (combat_ai.cc:2382), then _action_melee's
+        // attacker HIT/MISS taunt (actions.cc:674-680). The ATTACK taunt stays in the host's OnAttackStarted.
+        var host = new FakeCombatHost();
+        MapObject dude = host.SetDude(NewCritter(tile: 20100, hp: 30, ap: 10));
+        MapObject enemy = host.AddCritter(NewCritter(tile: HexGrid.TileInDirection(20100, 0, 4), hp: 30, ap: 10));
+        enemy.Team = 1;
+        host.AiPackets[enemy] = new AiPacket(12, "Guard", MinToHit: 0, MinHp: 0, 0, "", "");
+        var engine = new CombatEngine(host, new MinRng());
+        engine.BeginScriptAggro(enemy, dude);
+        for (int i = 0; i < 20 && engine.Phase == CombatPhase.EnemyTurn; i++) { host.Animating.Clear(); engine.Step(); }
+        var mine = host.Taunts.Where(t => t.Critter == enemy).Select(t => t.Type).ToList();
+        Assert.Equal(CombatTaunt.Type.Move, mine[0]);
+        Assert.Equal(1, mine.Count(t => t == CombatTaunt.Type.Move));
+        Assert.Contains(mine, t => t is CombatTaunt.Type.Hit or CombatTaunt.Type.Miss);
+    }
+
+    [Fact]
+    public void ADudeTeamNonPartyJoinerIsNotAHostileSoCombatEnds()
+    {
+        // NotifyFriends marks a dude-team escort ENGAGING, so it joins at the round end; fo2ce's
+        // _combat_should_end ignores same-team critters, so killing the only hostile still ends the fight.
+        var host = new FakeCombatHost();
+        MapObject dude = host.SetDude(NewCritter(tile: 20100, hp: 30, ap: 10));
+        MapObject enemy = host.AddCritter(NewCritter(tile: HexGrid.TileInDirection(20100, 0), hp: 1));
+        enemy.Team = 1;
+        MapObject escort = host.AddCritter(NewCritter(tile: HexGrid.TileInDirection(20100, 3), hp: 30));
+        var engine = new CombatEngine(host, new MinRng());
+
+        Assert.True(engine.TryAttack(enemy));
+        host.Animating.Clear();
+        engine.ProcessAnimations();
+        Assert.True(enemy.IsDead);
+        engine.EndPlayerTurn();
+        for (int i = 0; i < 10 && engine.Phase != CombatPhase.Idle; i++) { host.Animating.Clear(); engine.Step(); }
+
+        Assert.Equal(CombatPhase.Idle, engine.Phase);
+        Assert.Contains(host.Transcripts, t => t.StartsWith("joins: ")); // it did join
+        Assert.DoesNotContain(escort, engine.Hostiles);
+    }
+
+    [Fact]
+    public void LeavingCombatIsRefusedWhileANonCombatantWantsToJoin()
+    {
+        // fo2ce combatAttemptEnd's second loop (combat.cc:3100-3112): a cross-team non-combatant that
+        // _combatai_want_to_join's refuses the exit (message 103) even when every combatant wants to stop.
+        var host = new FakeCombatHost();
+        host.SetDude(NewCritter(tile: 20100, hp: 30, ap: 10));
+        MapObject enemy = host.AddCritter(NewCritter(tile: HexGrid.TileInDirection(20100, 0), hp: 1));
+        enemy.Team = 1;
+        MapObject other = host.AddCritter(NewCritter(tile: HexGrid.TileInDirection(20100, 3), hp: 30));
+        other.Team = 1; // same team as an active hostile, perceives the dude -> wants to join
+        var engine = new CombatEngine(host, new MinRng());
+
+        Assert.True(engine.TryAttack(enemy));
+        host.Animating.Clear();
+        engine.ProcessAnimations();
+        Assert.True(enemy.IsDead);
+
+        Assert.False(engine.TryEndCombat());
+        Assert.Equal(CombatPhase.PlayerTurn, engine.Phase);
+        other.Team = 0; // dude team, no whoHitMe -> skipped by the team test
+        Assert.True(engine.TryEndCombat());
+    }
+
+    [Fact]
+    public void TheDudesTurnEndsByItselfOnceHisApAndFreeMoveAreSpent()
+    {
+        // fo2ce _combat_input (combat.cc:3165): ap <= 0 && free move <= 0 breaks out of the dude's input loop.
+        var host = new FakeCombatHost();
+        host.SetDude(NewCritter(tile: 20100, hp: 30, ap: 3)); // one punch (3 AP) spends the turn
+        MapObject enemy = host.AddCritter(NewCritter(tile: HexGrid.TileInDirection(20100, 0), hp: 100));
+        enemy.Team = 1;
+        var engine = new CombatEngine(host, new MinRng());
+
+        Assert.True(engine.TryAttack(enemy));
+        Assert.Equal(0, engine.DudeAp);
+        engine.Step(); // the swing is still animating: the turn stays open
+        Assert.Equal(CombatPhase.PlayerTurn, engine.Phase);
+
+        host.Animating.Clear();
+        engine.Step(); // resolves, then the 0-AP turn ends and the enemy's slot runs
+        Assert.Equal(CombatPhase.EnemyTurn, engine.Phase);
+        Assert.Equal(enemy, host.AttackOrder[^1]);
+        engine.EndPlayerTurn(); // a manual end on an already-ended turn is a no-op
+        Assert.Equal(CombatPhase.EnemyTurn, engine.Phase);
+    }
+
+    [Fact]
+    public void ADudeThrowTauntsTheDefendersOutcome()
+    {
+        // fo2ce sends a throw through _action_ranged: the DEFENDER taunts MISS/HIT (actions.cc:917-923).
+        var host = new FakeCombatHost();
+        MapObject dude = host.SetDude(NewCritter(20100, hp: 30, ap: 10));
+        int targetTile = Step(20100, 0, 3);
+        MapObject target = host.AddCritter(NewCritter(targetTile, hp: 100));
+        host.Equipped = MakeThrowWeapon(pid: 0x07, ext: 0x50, dmgType: 0, r1: 2, r2: 8, min: 3, max: 10);
+        var engine = new CombatEngine(host, new MinRng());
+
+        Assert.True(engine.TryThrow(targetTile));
+
+        Assert.Contains(host.Taunts, t => t.Critter == target && t.Type is CombatTaunt.Type.Hit or CombatTaunt.Type.Miss);
+        Assert.DoesNotContain(host.Taunts, t => t.Critter == dude);
+    }
+
+    [Fact]
+    public void AnAllyAttackTurnStampsItsWhoHitMeWithItsTarget()
+    {
+        // fo2ce _combat_ai runs _ai_try_attack for party members too; it opens with
+        // _critter_set_who_hit_me(attacker, defender) (combat_ai.cc:2694).
+        var host = new FakeCombatHost();
+        host.SetDude(NewCritter(tile: 20100, hp: 30, ap: 10));
+        MapObject enemy = host.AddCritter(NewCritter(tile: HexGrid.TileInDirection(20100, 0), hp: 100));
+        enemy.Team = 1;
+        MapObject ally = host.AddAlly(NewCritter(tile: HexGrid.TileInDirection(enemy.HexTile, 1), hp: 30), CompanionAi.Default);
+        var engine = new CombatEngine(host, new MinRng());
+
+        Assert.True(engine.TryAttack(enemy));
+        host.Animating.Clear();
+        engine.ProcessAnimations();
+        engine.EndPlayerTurn();
+        for (int i = 0; i < 20 && !host.AttackOrder.Contains(ally); i++) { host.Animating.Clear(); engine.Step(); }
+
+        Assert.Contains(ally, host.AttackOrder);
+        Assert.Same(enemy, ally.WhoHitMe);
+    }
+
     private sealed class FakeCombatHost : ICombatHost
     {
         private readonly Dictionary<MapObject, CritterState> _states = [];
         private readonly List<MapObject> _critters = [];
         public readonly HashSet<MapObject> Animating = [];
+        public readonly List<(MapObject Critter, CombatTaunt.Type Type)> Taunts = [];
+        public void Taunt(MapObject critter, CombatTaunt.Type type, int hitLocation = 3) => Taunts.Add((critter, type));
         public readonly List<string> Transcripts = [];
         public readonly List<string> Logs = [];
         public int XpAwarded;
@@ -4523,6 +4830,9 @@ public class CombatEngineTests
             return c.Obj;
         }
         public CompanionAi CompanionSettings(MapObject ally) => Dispositions.GetValueOrDefault(ally, CompanionAi.Default);
+
+        public readonly List<(MapObject Critter, int Value)> Reactions = [];
+        public void SetReaction(MapObject critter, int value) => Reactions.Add((critter, value));
 
         public readonly Dictionary<MapObject, AiPacket> AiPackets = [];
         public bool CriticalsEnabled { get; set; }
