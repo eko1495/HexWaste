@@ -1449,6 +1449,7 @@ public sealed partial class ViewerGame
     }
 
     // ported from fallout2-ce src/scripts.cc gameTimeAddSeconds(); the same frame's UpdateClock (after Step) fires what came due
+    // shortcut: several rounds' time landing in one frame (a P73 spectator stalemate brawl, or the headless --fight loops that Step without UpdateClock) drains each processor in turn, not one time-ordered queue; upgrade if a fixture needs events inside such a batch ordered
     public void AddGameTime(int ticks) => _clock.Ticks += ticks;
 
     public bool RunMapCombatOver(int knockedOutByTeam) =>
