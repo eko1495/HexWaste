@@ -25,6 +25,13 @@ Update after F13: artemple line 3011 (fo2ce `t=302720 PROC artemple.int map_upda
 Hexwaste `self=obj#-2`: the map script's object id label, not RNG), klamath line 1664 (unchanged), arcaves
 line 9 (unchanged).
 
+Update after the game-clock map_update tick: artemple-idle is now IDENTICAL (6 026 lines). klamath line 1664
+(unchanged: fo2ce `t=302525 MOVE obj#26 17500->17701` vs Hexwaste `t=302525 PROC kcitizen.int critter_p_proc
+self=obj#156`), arcaves line 9 (unchanged: fo2ce `t=302401 LVAR sid=0x04000008 0 0->-3` vs Hexwaste
+`t=302401 PROC zclscorp.int combat_p_proc self=obj#102`). klamath's `kladwtwn.int map_update_p_proc` runs at the
+same 180 distinct ticks in both traces; the position in the tick matches except t=303000, where Hexwaste
+first runs a `kcdunton.int timed_event_p_proc` (position 4 vs fo2ce 1).
+
 First divergent pairs (TraceDiff, `-` fo2ce / `+` Hexwaste):
 
 ```
@@ -213,8 +220,10 @@ skips scripts without `map_update_p_proc` and runs spatials before objects; the 
 window at save-load completion (`oracleResetBkMapUpdate`, from `getTicks()` — `_get_bk_time()` is stale
 there). klamath-hour and artemple-idle now run map_update at the same ticks (180/h) with the same script
 set per round. fo2ce's second `obj_dude.int map_update_p_proc` per round is explained by F16 (the stale slot), fixed;
-the order now matches. The 600-tick source still counts
-ms rather than reading the game clock (the map-update heartbeat probe feeds it ms directly).
+the order now matches. The 600-tick source now reads the game clock (`_mapUpdateNextTick`, processed in
+`UpdateClock` right after the clock tick, like fo2ce's queue event), replacing the ms count that ran 90 ms out
+of phase (artemple t=303000: fo2ce line 1 of the tick, Hexwaste line 10). Rest and multi-day `game_time_advance`
+fire one round where fo2ce fires one per 600 ticks / per day (shortcut in code).
 
 - Fixture: klamath-hour. fo2ce runs 180 map_update rounds per hour (gaps alternate 6/294/300 ticks),
   Hexwaste 60. Hexwaste also runs `map_update_p_proc` for `ksbboard.int`, `stuff.int`, `trespass.int`
@@ -398,7 +407,18 @@ Follow-ups (F16):
   time (`worldmap.cc:4184-4199`); the map stays loaded, so the ambient event keeps drawing on every leg.
   Hexwaste's travel step (`ViewerGame.Worldmap.cs:112`, `:148`) runs no game-time events, so a travel
   scenario would see the encounter-roll stream drift. Found reviewing F13; no fixture travels yet.
+  fo2ce's map-update event (the 600-tick round) likewise keeps running during travel, which Hexwaste's worldmap
+  gate skips.
 - Status: open. Fix: run due game-time events (including `ProcessAmbientSfx`) inside the travel step.
+
+### F19 — Combat does not advance the game clock
+
+- Evidence (code): fo2ce adds 5 s per combat round (`combat.cc:3071`, `gameTimeAddSeconds(5)`) and its
+  `_doBkProcesses` queue loop keeps running in combat (`scripts.cc:766-781`), so game-time events (timers,
+  the 600-tick map_update, ambient sfx) can fire mid-combat after about 12 rounds. Hexwaste freezes the clock
+  in combat (F2) and gates the map-update event on combat.
+- Status: open; matters for a long-combat fixture. Fix: port the 5 s/round advance, then drop the combat gate
+  on the queue events.
 
 ## Recommended next steps
 
@@ -421,5 +441,7 @@ Follow-ups (F16):
    runs the next `obj_dude critter_p_proc` and its map_update round only after nine critter procs in the same
    tick: a same-tick order difference, not a missing round); klamath 1664 and arcaves 9
    are unchanged.
-7. F8–F13 are small, independent ports; F12/F14 first need trace-alignment decisions. Each fix should be
+7. After the game-clock map_update tick: artemple-idle is identical (6 026 lines); klamath 1664 and arcaves 9
+   are unchanged, so the remaining work is the critter-move/combat-order items (F4/F5 and klamath's obj#26 move).
+8. F8–F13 are small, independent ports; F12/F14 first need trace-alignment decisions. Each fix should be
    validated by a fresh `oracle-run.sh` showing the first divergence moving later.

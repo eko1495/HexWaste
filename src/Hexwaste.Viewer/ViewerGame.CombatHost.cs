@@ -578,17 +578,18 @@ public sealed partial class ViewerGame
                 Log($"{ObjectName(critter)}: {line}");
     }
 
-    /// <summary>P1-M2: the recurring map_update heartbeat — ported from fallout2-ce scripts.cc:507
-    /// mapUpdateEventProcess: every 600 game ticks re-run SCRIPT_PROC_MAP_UPDATE for the map script and
-    /// every scripted object, then reschedule. This is what lets quests that POLL state in map_update_p_proc
-    /// (klagraz KCTorr's brahmin defense, the Den gang-war escalation) re-evaluate over time instead of only
-    /// once on load. Gated to normal map play (same as PumpCritterProcs): not during combat, dialog, loot,
-    /// the companion hub, the worldmap, or game-over. The 30 s bk-time source (<see cref="_bkMapUpdateMs"/>)
-    /// runs first, as in _script_chk_timed_events, and keeps running in combat.</summary>
+    /// <summary>Script host, map and normal map play (not game-over, dialog, the companion hub or the
+    /// worldmap): both map_update sources need it.</summary>
+    private bool MapUpdateAllowed() =>
+        _scriptHost is not null && _map is not null && !_combat.IsGameOver && _dialog is null
+        && _companionHub is null && !_worldmapOpen;
+
+    /// <summary>The 30 s bk-time map_update round (fallout2-ce scripts.cc:758-760, _script_chk_timed_events):
+    /// runs on elapsed ms and keeps running in combat. The 600-tick round is the game-time event in
+    /// <see cref="ProcessMapUpdateEvent"/>.</summary>
     private void PumpMapUpdate(double elapsedMs)
     {
-        if (_scriptHost is null || _map is null || _combat.IsGameOver || _dialog is not null
-            || _companionHub is not null || _worldmapOpen)
+        if (!MapUpdateAllowed())
             return;
 
         _bkMapUpdateMs += elapsedMs;
@@ -597,14 +598,24 @@ public sealed partial class ViewerGame
             _bkMapUpdateMs = 0; // _last_light_time = now: the excess is dropped
             RunMapUpdateRound();
         }
+    }
 
-        if (_combat.Phase != Formats.Combat.CombatPhase.Idle || _lootContainer is not null)
+    // shortcut: a map-update event due on the same tick as a script timer or the ambient event runs after them; fo2ce's single queue orders them by insertion. Upgrade if the oracle shows a same-tick difference.
+    // shortcut: fo2ce's midnight event (gameTimeEventProcess -> gameTimeScheduleUpdateEvent, scripts.cc:428) queues another map-update event at midnight + 600, and whichever fires first clears the other; Hexwaste keeps one chain. Upgrade when a fixture crosses midnight.
+    // shortcut: rest, skill books, AdvanceHours and multi-day game_time_advance jump the clock in one step, so one round fires where fo2ce's chunked rest loop (pipboy.cc:1990-2010) fires one per 600 ticks and opGameTimeAdvance one per day. Upgrade if an oracle scenario rests.
+    // shortcut: the dialog/combat/loot gates also apply to the inline game_time_advance call; fo2ce's queueProcessEvents there is ungated, so a round asked for from a dialog node runs when the dialog closes instead of inside it. Upgrade if a fixture advances time from dialog.
+    // ported from fallout2-ce src/scripts.cc mapUpdateEventProcess(): run the round, reschedule at now + 600
+    /// <summary>P1-M2 / oracle: the recurring 600-tick map_update heartbeat as fo2ce's game-time queue event
+    /// (EVENT_TYPE_MAP_UPDATE_EVENT): processed right after the clock tick, before that frame's critter proc
+    /// (scripts.cc:774-781). Lets quests that POLL state in map_update_p_proc (klagraz KCTorr's brahmin
+    /// defense, the Den gang-war escalation) re-evaluate over time. Not in combat (Hexwaste freezes the clock there; fo2ce adds 5 s per combat round, combat.cc:3071, and its queue keeps running - see the findings doc)
+    /// or with a loot container open; a gated due event waits.</summary>
+    private void ProcessMapUpdateEvent()
+    {
+        if (_mapUpdateNextTick < 0 || _clock.Ticks < _mapUpdateNextTick || !MapUpdateAllowed()
+            || _combat.Phase != Formats.Combat.CombatPhase.Idle || _lootContainer is not null)
             return;
-
-        _mapUpdateClockMs += elapsedMs;
-        if (_mapUpdateClockMs < MapUpdateIntervalMs)
-            return;
-        _mapUpdateClockMs -= MapUpdateIntervalMs;
+        _mapUpdateNextTick = _clock.Ticks + MapUpdateIntervalTicks; // before the round: a round that moves the clock does not refire it
         _mapUpdateFires++;
         RunMapUpdateRound();
     }

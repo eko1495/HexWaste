@@ -205,6 +205,7 @@ public sealed partial class ViewerGame
         int imported = 0;
         // queueLoad (queue.cc:84) replaces the whole queue: the ambient event map load queued is dropped.
         _ambientNextTick = -1;
+        _mapUpdateNextTick = -1; // queueLoad replaces the queue: drop the event the import's map load scheduled
         _ambientPendingIdx = null;
         foreach (QueueEventSave e in queue)
         {
@@ -227,8 +228,7 @@ public sealed partial class ViewerGame
                     break;
                 }
                 case 12: // EVENT_TYPE_MAP_UPDATE_EVENT: the next map_update heartbeat lands on the saved time
-                    // (it precedes the load-time +600 one, which mapUpdateEventProcess then clears).
-                    _mapUpdateClockMs = Math.Max(0, MapUpdateIntervalMs - (e.Time - _clock.Ticks) * 100.0);
+                    _mapUpdateNextTick = e.Time;
                     break;
                 case 0 when dudeOwned: // EVENT_TYPE_DRUG: data = { stats[3], modifiers[3] } (item.cc:2886)
                     _pendingDrugEvents.Add((e.Time, null, e.Data[0..3], e.Data[3..6]));
