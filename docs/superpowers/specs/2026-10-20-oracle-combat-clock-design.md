@@ -63,7 +63,8 @@ dozen script timers that came due (`zclrat.int` / `zclscorp.int timed_event_p_pr
 
 - **Unit (`CombatEngine` + test host)**: a round transition calls `AddGameTime(50)` once per round, after the
   round-end join pass and before the next round's first TURN; the `StartBrawl` path calls it too. The fake host
-  records the calls.
+  records the calls. Combat start makes no `AddGameTime` call (round 1 begins without it, as in
+  `_combat_sequence_init`).
 - **Oracle**: rerun all three fixtures. Success: arcaves moves past line 41 (the round-2 timers match);
   artemple stays IDENTICAL; klamath stays at 1664.
 - **Goldens**: run all suites sequentially. Fixtures whose fights last long enough for a timer, poison or drug
@@ -75,4 +76,6 @@ dozen script timers that came due (`zclrat.int` / `zclscorp.int timed_event_p_pr
 
 - Moving knockout wakes onto the game-clock queue (shortcut above).
 - The 100 ms background-tick gate on queue processing in combat (shortcut above).
+- Timer scripts started while combat is active: `timed_event_p_proc` can now run mid-fight (as in fo2ce);
+  none of the current fixtures starts a fight from a timer.
 - Player-visible clock effects beyond fo2ce's (the HUD clock now moves 5 s per combat round, as in fo2ce).
