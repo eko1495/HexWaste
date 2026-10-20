@@ -473,10 +473,10 @@ public class CombatEngineTests
         int eTile = HexGrid.TileInDirection(20100, 0);
         MapObject enemy = host.AddCritter(NewCritter(tile: eTile, hp: 30, ap: 10)); // healthy, would normally attack
         host.AiPackets[enemy] = new AiPacket(13, "Coward", MinToHit: 0, MinHp: 0, 10, "", "");
-        enemy.Maneuver |= ManeuverFleeing; // a script flagged it to flee
         var engine = new CombatEngine(host, new MinRng());
 
         engine.BeginScriptAggro(enemy, dude);
+        enemy.Maneuver |= ManeuverFleeing; // a script flagged it to flee (after _combat_begin's maneuver reset)
         engine.Step();
 
         Assert.Contains(host.Transcripts, t => t.StartsWith("flee:"));
@@ -601,11 +601,11 @@ public class CombatEngineTests
         var host = new FakeCombatHost();
         MapObject dude = host.SetDude(NewCritter(tile: 20100, hp: 30, ap: 10));
         MapObject enemy = host.AddCritter(NewCritter(tile: HexGrid.TileInDirection(20100, 0), hp: 30, ap: 10));
-        enemy.Maneuver |= 0x04; // script-set FLEEING, the path that does not need a packet
         // deliberately NO host.AiPackets[enemy] entry
         var engine = new CombatEngine(host, new MinRng());
 
         engine.BeginScriptAggro(enemy, dude);
+        enemy.Maneuver |= 0x04; // script-set FLEEING (after _combat_begin's maneuver reset), no packet needed
         engine.Step();
 
         Assert.Contains(host.Transcripts, t => t.StartsWith("flee:"));
@@ -1575,7 +1575,7 @@ public class CombatEngineTests
         Assert.Empty(host.CombatProcCalls);
     }
 
-    // P35-M4 want-to-join (combat_ai.cc:3165): AddJoiners runs at combat start; a candidate's maneuver /
+    // P35-M4 want-to-join (combat_ai.cc:3165): the round-end join pass (_combat_add_noncoms); a candidate's maneuver /
     // damage / fp=5 decides whether it joins. A far attacker opens combat; the candidate is the subject.
     private static (CombatEngine, FakeCombatHost, MapObject Dude, MapObject Candidate) JoinSetup(
         int candidateTile, Action<MapObject> setup)
@@ -1586,9 +1586,12 @@ public class CombatEngineTests
         attacker.Team = 1;
         MapObject candidate = host.AddCritter(NewCritter(tile: candidateTile, hp: 30, ap: 10));
         candidate.Team = 1; // same team as the attacker (so the ShouldJoin fallback would consider it)
-        setup(candidate);
         var engine = new CombatEngine(host, new MinRng());
-        engine.BeginScriptAggro(attacker, dude); // adds the attacker + runs AddJoiners over the candidate
+        engine.BeginScriptAggro(attacker, dude);
+        setup(candidate); // after _combat_begin's maneuver/damageLastTurn reset
+        for (int i = 0; i < 20 && engine.Phase != CombatPhase.PlayerTurn; i++) { host.Animating.Clear(); engine.Step(); }
+        engine.EndPlayerTurn(); // round 1 ends -> _combat_add_noncoms
+        for (int i = 0; i < 20 && engine.Phase is not (CombatPhase.PlayerTurn or CombatPhase.Idle); i++) { host.Animating.Clear(); engine.Step(); }
         return (engine, host, dude, candidate);
     }
 
@@ -1628,6 +1631,53 @@ public class CombatEngineTests
         // A scripted (Sid != -1) candidate gets its combat_p_proc run with fixedParam=5.
         var (_, host, _, candidate) = JoinSetup(HexGrid.TileInDirection(20100, 2), c => c.Sid = 7);
         Assert.Contains(host.CombatProcCalls, p => p.Critter == candidate && p.FixedParam == 5);
+    }
+
+    [Fact]
+    public void RoundOneIsTheAttackerAndTheDudeOnly_OthersJoinAtRoundEndWithAnImmediateTurn()
+    {
+        // fo2ce _combat_sequence_init: round 1 = attacker, defender (dude); no join check before it.
+        // _combat_add_noncoms at round end: a joiner gets max AP and takes its turn at once.
+        var host = new FakeCombatHost();
+        MapObject dude = host.SetDude(NewCritter(tile: 20100, hp: 30, ap: 10));
+        MapObject attacker = host.AddCritter(NewCritter(tile: HexGrid.TileInDirection(20100, 0), hp: 30, ap: 10));
+        attacker.Team = 1;
+        MapObject other = host.AddCritter(NewCritter(tile: HexGrid.TileInDirection(20100, 2), hp: 30, ap: 10));
+        other.Team = 1;
+        other.Sid = 9;
+        var engine = new CombatEngine(host, new MinRng());
+        engine.BeginScriptAggro(attacker, dude);
+        Assert.DoesNotContain(host.CombatProcCalls, c => c.Critter == other); // no join check at combat start
+        for (int i = 0; i < 20 && engine.Phase != CombatPhase.PlayerTurn; i++) { host.Animating.Clear(); engine.Step(); }
+        Assert.Equal(1, engine.Round);
+        Assert.DoesNotContain(host.CombatProcCalls, c => c.Critter == other);
+        engine.EndPlayerTurn(); // round 1 ends -> join pass
+        for (int i = 0; i < 20 && engine.Phase != CombatPhase.PlayerTurn; i++) { host.Animating.Clear(); engine.Step(); }
+        int join = host.CombatProcCalls.FindIndex(c => c.Critter == other && c.FixedParam == 5);
+        int turn = host.CombatProcCalls.FindIndex(c => c.Critter == other && c.FixedParam == 4);
+        Assert.True(join >= 0 && turn > join, "the joiner is asked (fp=5), then takes its turn (fp=4)");
+        Assert.Contains(other, engine.Hostiles);
+    }
+
+    [Fact]
+    public void TheJoinPassAsksNonCombatantsInHexTileOrder()
+    {
+        // objectListCreate walks tiles 0..39999 (object.cc:2652); _combat_add_noncoms visits in list order.
+        var host = new FakeCombatHost();
+        MapObject dude = host.SetDude(NewCritter(tile: 20100, hp: 30, ap: 10));
+        MapObject attacker = host.AddCritter(NewCritter(tile: HexGrid.TileInDirection(20100, 0), hp: 30, ap: 10));
+        attacker.Team = 1;
+        MapObject high = host.AddCritter(NewCritter(tile: 20300, hp: 30, ap: 10)); // added first, higher tile
+        MapObject low = host.AddCritter(NewCritter(tile: 19900, hp: 30, ap: 10));
+        high.Sid = 11; low.Sid = 12;
+        host.OnCombatProc = (c, fp) => { if (fp == 5) c.Maneuver = 0x02; }; // DISENGAGING: asked, never joins
+        var engine = new CombatEngine(host, new MinRng());
+        engine.BeginScriptAggro(attacker, dude);
+        for (int i = 0; i < 20 && engine.Phase != CombatPhase.PlayerTurn; i++) { host.Animating.Clear(); engine.Step(); }
+        engine.EndPlayerTurn();
+        for (int i = 0; i < 20 && engine.Phase != CombatPhase.PlayerTurn; i++) { host.Animating.Clear(); engine.Step(); }
+        var asked = host.CombatProcCalls.Where(c => c.FixedParam == 5).Select(c => c.Critter).ToList();
+        Assert.Equal([low, high], asked);
     }
 
     [Fact]
@@ -4409,7 +4459,11 @@ public class CombatEngineTests
         Assert.Null(candidate.WhoHitMe);
 
         var engine = new CombatEngine(host, new MinRng());
-        engine.BeginScriptAggro(attacker, dude); // opens combat, runs AddJoiners over the candidate
+        engine.BeginScriptAggro(attacker, dude); // opens combat; round 1 = attacker + dude only
+        for (int i = 0; i < 20 && engine.Phase != CombatPhase.PlayerTurn; i++) { host.Animating.Clear(); engine.Step(); }
+        engine.EndPlayerTurn(); // round 1 ends -> the join pass over the candidate
+        host.Animating.Clear();
+        engine.Step();
         Assert.Contains(candidate, engine.Hostiles); // sanity: it did join
 
         for (int i = 0; i < 5; i++)

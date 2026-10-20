@@ -96,6 +96,11 @@ public sealed class CombatEngine
 
     private CombatPhase _phase = CombatPhase.Idle;
     private readonly HashSet<MapObject> _hostiles = [];
+    // fo2ce combat.cc _combat_list / _list_com / _list_noncom: every critter on the elevation (dude included),
+    // combatants first. Empty for a StartBrawl fight, which keeps the AddJoiners path.
+    private readonly List<MapObject> _combatList = [];
+    private int _listCom, _listNoncom;
+    private int _joinIndex = -1; // position of the running round-end join pass (-1 = none)
     // The round's INTERLEAVED turn order (dude + hostiles + allies), ported from combat.cc
     // _combat() iterating the sorted _combat_list: round 1 is attacker/defender/dude-first
     // (_combat_sequence_init), rounds 2+ are sorted by Sequence (Luck tiebreak) via _compare_faster
@@ -2338,7 +2343,7 @@ public sealed class CombatEngine
         _events.ClearAll();
         _hostiles.Clear();
         _hostiles.Add(target);
-        AddJoiners();
+        InitCombatList(_host.Dude, target);
         // The dude opened combat → round-1 order is dude (attacker) first, target (defender) second
         // (_combat_sequence_init). The dude's slot is index 0, so the turn stays his — he attacks now.
         BuildTurnOrder(firstRound: true, _host.Dude, target);
@@ -2368,6 +2373,7 @@ public sealed class CombatEngine
         _combatTick = 0;
         _events.ClearAll();
         _hostiles.Clear();
+        _combatList.Clear(); // a brawl keeps the AddJoiners path
         foreach (MapObject c in combatants)
             if (!c.IsDead && c != dude && c.Team != dude.Team)
             {
@@ -2688,7 +2694,8 @@ public sealed class CombatEngine
     }
 
     /// <summary>Same-team / hurt / script-willing critters join the fight at round start
-    /// (combat.cc:2905 _combat_add_noncoms → _combatai_want_to_join per candidate).</summary>
+    /// (combat.cc:2905 _combat_add_noncoms → _combatai_want_to_join per candidate). StartBrawl fights
+    /// only; a fight with a fo2ce combat list uses <see cref="RunJoinPass"/>.</summary>
     private void AddJoiners()
     {
         MapObject? dude = _host.Dude;
@@ -2731,12 +2738,26 @@ public sealed class CombatEngine
     /// (_compare_faster in _combat_sequence). Knocked-out / disengaging critters are dropped (the
     /// engine moves them to the non-combatant list). The sort is STABLE for fully-tied critters (a
     /// documented divergence from the engine's unstable qsort — keeps the goldens reproducible).
+    /// When a fo2ce combat list exists (every fight but StartBrawl) the order is simply its combatant
+    /// part, already placed by <see cref="InitCombatList"/> / <see cref="SequenceCombatList"/>.
     /// </summary>
     private void BuildTurnOrder(bool firstRound, MapObject? attacker, MapObject? defender)
     {
         _order.Clear();
         _actingEnemy = null;
         _actingAlly = null;
+        if (_combatList.Count > 0)
+        {
+            _order.AddRange(_combatList.Take(_listCom));
+            if (firstRound && attacker is not null && defender is not null)
+            {
+                SetWhoHitMe(attacker, defender); // _combat_sequence_init, combat.cc:3011-3017
+                SetWhoHitMe(defender, attacker);
+            }
+            _orderIndex = 0;
+            ResetAllCombatAp();
+            return;
+        }
         MapObject? dude = _host.Dude;
 
         var combatants = new List<MapObject>();
@@ -2838,9 +2859,9 @@ public sealed class CombatEngine
             // dude is its danger source ungated by perception, so a blind/rear-facing ambusher still
             // engages. Byte-identical for goldens: the ambusher opens combat adjacent to the dude anyway.
             attacker.WhoHitMe = dude;
-            AddJoiners();
             if (_host.GetCritterState(dude) is { } stats)
                 ResetDudeAp(stats);
+            InitCombatList(attacker, dude);
             // The ambusher opened combat → it acts first (round-1 attacker, dude as defender).
             BuildTurnOrder(firstRound: true, attacker, dude);
             _phase = CombatPhase.EnemyTurn;
@@ -2850,6 +2871,13 @@ public sealed class CombatEngine
         else if (_hostiles.Add(attacker))
         {
             attacker.WhoHitMeCid = -1;
+            // ported from fallout2-ce src/interpreter_extra.cc opAttackComplex (:1858-1863): in combat the
+            // script only marks itself ENGAGING; the round-end join pass then lets it in.
+            if (_combatList.Count > 0 && (attacker.Maneuver & ManeuverEngaging) == 0)
+            {
+                attacker.Maneuver |= ManeuverEngaging;
+                attacker.WhoHitMe = target;
+            }
             _host.Log($"The {_host.ObjectName(attacker)} joins the fight!");
         }
     }
@@ -2932,6 +2960,9 @@ public sealed class CombatEngine
 
         _phase = CombatPhase.Idle;
         _hostiles.Clear();
+        _combatList.Clear();
+        _listCom = _listNoncom = 0;
+        _joinIndex = -1;
         _order.Clear();
         _currentAp.Clear();
         _actingEnemy = null;
@@ -3099,8 +3130,9 @@ public sealed class CombatEngine
     // every round, from AddJoiners() adding a fresh hostile without stamping its WhoHitMe) was
     // evidence that the GATE was wrong, not that mutation was wrong.
     //
-    // The shipped shape: Hexwaste does not maintain a second, mutable combatant list — _order (built
-    // by BuildTurnOrder) already applies _combat_sequence's own dead/KO/DISENGAGING predicate, and
+    // The shipped shape: the want-to-stop check never mutates the combatant list — _order (built by
+    // BuildTurnOrder from _combatList, which SequenceCombatList evicts with _combat_sequence's own
+    // dead/KO/DISENGAGING predicate) is the turn order, and
     // CombatShouldEnd() applies the same predicate to _hostiles, which is what _combat_should_end
     // reads the post-eviction _list_com for. _combatai_want_to_stop stays where the reference puts
     // it — TryEndCombat(), the player's manual exit gate — and is NOT part of the automatic check.
@@ -3123,7 +3155,7 @@ public sealed class CombatEngine
                 return;
             _currentAp[ae] = _actingEnemyAp; // P77: leftover AP boosts its AC until its next turn
             _actingEnemy = null;
-            _orderIndex++;
+            if (_joinIndex >= 0) _joinIndex++; else _orderIndex++;
         }
         else if (_actingAlly is { } aa)
         {
@@ -3131,7 +3163,7 @@ public sealed class CombatEngine
                 return;
             _currentAp[aa] = _actingAllyAp;
             _actingAlly = null;
-            _orderIndex++;
+            if (_joinIndex >= 0) _joinIndex++; else _orderIndex++;
         }
 
         // Walk the order to the next actor that can act.
@@ -3139,6 +3171,14 @@ public sealed class CombatEngine
         {
             if (_orderIndex >= _order.Count)
             {
+                if (_combatList.Count > 0)
+                {
+                    if (RunJoinPass())
+                        return; // a joiner's turn spans frames
+                    _joinIndex = -1;
+                    if (_phase is CombatPhase.Idle or CombatPhase.GameOver)
+                        return; // a joiner's turn ended the fight
+                }
                 // P73: a dude-absent brawl has no dude slot to pause this loop, so a STALEMATE
                 // (two factions that can't reach each other → every actor passes) would spin
                 // StartNewRound forever. Cap it: end the brawl once it runs this long (a draw if
@@ -3209,42 +3249,173 @@ public sealed class CombatEngine
             }
 
             // An NPC slot: a party ally or a hostile (different targeting logic).
-            _phase = CombatPhase.EnemyTurn;
-            if (_host.PartyMembers.Contains(actor))
-            {
-                _actingAlly = actor;
-                _actingAllyAp = _host.GetCritterState(actor)?.MaxActionPoints ?? 5;
-                _turnProcRan = false;
-                TraceTurn(actor, _actingAllyAp); // fo2ce _combat_turn entry, before combat_p_proc
-                if (TryAllyAction(actor))
-                    return;
-                _currentAp[actor] = _actingAllyAp; // P77
-                _actingAlly = null;
-            }
-            else
-            {
-                _actingEnemy = actor;
-                _actingEnemyAp = _host.GetCritterState(actor)?.MaxActionPoints ?? 5;
-                _turnProcRan = false;
-                TraceTurn(actor, _actingEnemyAp); // fo2ce _combat_turn entry, before combat_p_proc
-                if (TryEnemyAction(actor))
-                    return;
-                _currentAp[actor] = _actingEnemyAp; // P77
-                _actingEnemy = null;
-            }
+            if (StartNpcTurn(actor))
+                return;
             _orderIndex++;
         }
     }
 
+    /// <summary>fo2ce _combat_turn for a non-dude critter: AP to max, TURN, the per-turn combat_p_proc and the AI.
+    /// Returns true while the turn spans frames (StepTurnOrder resumes it).</summary>
+    private bool StartNpcTurn(MapObject actor)
+    {
+        _phase = CombatPhase.EnemyTurn;
+        _turnProcRan = false;
+        if (_host.PartyMembers.Contains(actor))
+        {
+            _actingAlly = actor;
+            _actingAllyAp = _host.GetCritterState(actor)?.MaxActionPoints ?? 5;
+            TraceTurn(actor, _actingAllyAp); // fo2ce _combat_turn entry, before combat_p_proc
+            if (TryAllyAction(actor))
+                return true;
+            _currentAp[actor] = _actingAllyAp; // P77
+            _actingAlly = null;
+        }
+        else
+        {
+            _actingEnemy = actor;
+            _actingEnemyAp = _host.GetCritterState(actor)?.MaxActionPoints ?? 5;
+            TraceTurn(actor, _actingEnemyAp); // fo2ce _combat_turn entry, before combat_p_proc
+            if (TryEnemyAction(actor))
+                return true;
+            _currentAp[actor] = _actingEnemyAp; // P77
+            _actingEnemy = null;
+        }
+        return false;
+    }
+
+    // ported from fallout2-ce src/combat.cc _combat_begin() + _combat_sequence_init(): the list in hex-tile
+    // order, then the attacker, the defender and (if neither) the dude swapped to the front as round 1.
+    // shortcut: critters created during combat never enter the fo2ce list, upgrade if a fixture spawns one mid-fight
+    private void InitCombatList(MapObject? attacker, MapObject? defender)
+    {
+        MapObject? dude = _host.Dude;
+        _combatList.Clear();
+        _joinIndex = -1;
+        IEnumerable<MapObject> all = _host.CombatCritters.Concat(_host.PartyMembers);
+        if (dude is not null)
+            all = all.Append(dude);
+        _combatList.AddRange(all.Where(c => !c.IsHidden).Distinct().OrderBy(c => c.HexTile)); // stable
+        foreach (MapObject c in _combatList)
+        {
+            c.Maneuver &= ManeuverEngaging;
+            c.DamageLastTurn = 0;
+        }
+        int next = 0;
+        void Place(MapObject? o)
+        {
+            int i = o is null ? -1 : _combatList.IndexOf(o);
+            if (i < 0)
+                return;
+            (_combatList[i], _combatList[next]) = (_combatList[next], _combatList[i]);
+            next++;
+        }
+        Place(attacker);
+        Place(defender);
+        if (attacker != dude && defender != dude)
+            Place(dude);
+        _listCom = next;
+        _listNoncom = _combatList.Count - next;
+    }
+
+    // ported from fallout2-ce src/combat_ai.cc _combatai_notify_friends(gDude)
+    private void NotifyFriends(MapObject dude)
+    {
+        foreach (MapObject c in _combatList)
+            if ((c.Maneuver & ManeuverEngaging) == 0 && c.Team == dude.Team && WithinPerception(c, dude))
+                c.Maneuver |= ManeuverEngaging;
+    }
+
+    // ported from fallout2-ce src/combat.cc _combat_add_noncoms(): visit the non-combatants in list order; a
+    // joiner moves into the combatant part and takes its turn at once. Returns true while a joiner's turn
+    // spans frames (StepTurnOrder finishes it and advances _joinIndex).
+    // shortcut: fo2ce runs one background frame (_process_bk) before each join check, which can fire due queue
+    // events; not modeled, upgrade if a trace shows a timer firing between join checks
+    private bool RunJoinPass()
+    {
+        if (_host.Dude is not { } dude)
+            return false;
+        if (_joinIndex < 0)
+        {
+            NotifyFriends(dude);
+            _joinIndex = _listCom;
+        }
+        var onMap = _host.CombatCritters.Concat(_host.PartyMembers).ToHashSet();
+        for (; _joinIndex < _listCom + _listNoncom; _joinIndex++)
+        {
+            if (_gameOver || _phase is CombatPhase.Idle or CombatPhase.GameOver)
+                return false;
+            MapObject c = _combatList[_joinIndex];
+            if (c == dude || !onMap.Contains(c) || !WantToJoin(c, dude))
+                continue;
+            c.Maneuver = 0; // CRITTER_MANEUVER_NONE (combat.cc:2907)
+            (_combatList[_joinIndex], _combatList[_listCom]) = (_combatList[_listCom], c);
+            _listCom++;
+            _listNoncom--;
+            if (!_host.PartyMembers.Contains(c))
+                _hostiles.Add(c);
+            c.WhoHitMeCid = -1; // marks the dude as the aggressor
+            _host.Log($"The {_host.ObjectName(c)} joins the fight!");
+            _host.Transcript($"joins: {_host.ObjectName(c)}@{c.HexTile} (team {c.Team})");
+            if (StartNpcTurn(c))
+                return true;
+        }
+        return false;
+    }
+
+    // ported from fallout2-ce src/combat.cc _combat_sequence() (after _combat_add_noncoms): the dead leave the
+    // list's live part, knocked-out and disengaging critters become non-combatants, the rest sort by
+    // Sequence then Luck (stable; glibc qsort is a merge sort for these sizes).
+    private void SequenceCombatList()
+    {
+        MapObject? dude = _host.Dude;
+        int count = _listCom;
+        for (int i = 0; i < count; i++)
+        {
+            MapObject c = _combatList[i];
+            if (!c.IsDead)
+                continue;
+            _combatList[i] = _combatList[count - 1];
+            _combatList[count - 1] = _combatList[_listNoncom + count - 1];
+            _combatList[_listNoncom + count - 1] = c;
+            i--;
+            count--;
+        }
+        for (int i = 0; i < count; i++)
+        {
+            MapObject c = _combatList[i];
+            if (c == dude || (!IsKnockedOut(c) && c.Maneuver != ManeuverDisengaging))
+                continue;
+            c.Maneuver &= ~ManeuverEngaging;
+            _listNoncom++;
+            _combatList[i] = _combatList[count - 1];
+            _combatList[count - 1] = c;
+            i--;
+            count--;
+        }
+        List<MapObject> sorted = [.. _combatList.Take(count)
+            .OrderByDescending(c => _host.GetCritterState(c)?.Sequence ?? 0)
+            .ThenByDescending(c => _host.GetCritterState(c)?.Stat(CritterStat.Luck) ?? 0)];
+        for (int i = 0; i < count; i++)
+            _combatList[i] = sorted[i];
+        _listCom = count;
+    }
+
     /// <summary>Advance to the next round (combat.cc _combat_sequence at the bottom of the round loop):
-    /// tick the combat clock + fire due knockout wakes (P14-M2), let joiners in, then rebuild the
+    /// tick the combat clock + fire due knockout wakes (P14-M2), re-sequence the fo2ce list (StartBrawl:
+    /// let joiners in), then rebuild the
     /// Sequence-sorted turn order.</summary>
     private void StartNewRound()
     {
         _round++;
         _combatTick += TicksPerRound;
+        // shortcut: fo2ce fires knockout wakes after _combat_sequence (queue events in a later frame); Hexwaste
+        // processes them before it, upgrade if a trace shows a KO'd critter rejoining a round early
         _events.Process(_combatTick, OnCombatEvent);
-        AddJoiners();
+        if (_combatList.Count > 0)
+            SequenceCombatList(); // the join pass already ran (RunJoinPass, from StepTurnOrder)
+        else
+            AddJoiners(); // StartBrawl fights
         BuildTurnOrder(firstRound: false, null, null);
     }
 
@@ -3296,8 +3467,10 @@ public sealed class CombatEngine
     /// teammates instead of the reference's LoF-tile walk + retarget. Giving it its reference policy
     /// therefore means porting the walk, not assigning a filter, so ShotFilter.FriendlyFire stays
     /// declared-and-cited but unconsumed until that port happens.</summary>
+    // The candidates are every listed critter (fo2ce scans _combat_list[0.._list_total), combat.cc:2287), so a
+    // teammate that has not joined yet still counts; a StartBrawl fight has no list and uses _hostiles.
     private bool FriendlyOnFireLine(MapObject shooter, int targetTile) =>
-        _hostiles.Any(h => h != shooter && !h.IsDead && h.Team == shooter.Team
+        (_combatList.Count > 0 ? _combatList : (IEnumerable<MapObject>)_hostiles).Any(h => h != shooter && !h.IsDead && h.Team == shooter.Team
             && HexGrid.IsOnSegment(shooter.HexTile, h.HexTile, targetTile));
 
     /// <summary>
@@ -4239,6 +4412,9 @@ public sealed class CombatEngine
         _dudeSpectator = false; // P73
         _dudeFreeMove = 0; // P74-M4
         _hostiles.Clear();
+        _combatList.Clear();
+        _listCom = _listNoncom = 0;
+        _joinIndex = -1;
         _order.Clear();
         _actingEnemy = null;
         _actingAlly = null;
