@@ -4,7 +4,8 @@ namespace Hexwaste.Formats;
 /// The game clock: 10 ticks per game-second, booting at tick 302400
 /// (08:24 on July 25, 2241 — the FO2 start date, sfall_config.cc start
 /// year 2241 / month 6 / day 24, output +1) like fallout2-ce scripts.cc. Off the
-/// worldmap the engine also ticks it in real time: +1 tick per ≥100 ms, frozen in combat.
+/// worldmap the engine also ticks it in real time: +1 tick per ≥100 ms, frozen in combat
+/// (combat instead adds 5 s per round, ICombatHost.AddGameTime / combat.cc _combat_sequence).
 /// </summary>
 public sealed class GameClock
 {

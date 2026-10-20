@@ -217,6 +217,10 @@ public interface ICombatHost
     /// <summary>fo2ce reaction.cc reactionSetValue(): store <paramref name="value"/> in the critter's
     /// script LVAR 0 (no-op for an unscripted critter).</summary>
     void SetReaction(MapObject critter, int value) { }
+
+    /// <summary>fo2ce gameTimeAddSeconds(): advance the game clock by <paramref name="ticks"/> (10 per second).
+    /// Called once per combat round transition. Default no-op so the fake test host needs no override.</summary>
+    void AddGameTime(int ticks) { }
     /// <summary>P100 (Point 3): the "combat over / dude knocked out" hook, ported from fallout2-ce
     /// src/scripts.cc:2848 _scr_end_combat(): run the MAP script's combat_p_proc with fixedParam =
     /// <paramref name="knockedOutByTeam"/> and return whether it script_overrides (the ring catches the KO
