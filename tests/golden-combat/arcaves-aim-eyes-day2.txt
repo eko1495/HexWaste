@@ -15,4 +15,4 @@ enemy-attack Radscorpion@20729: chance=66% hit=False damage=0
 attack Radscorpion@20729: chance=12% hit=False damage=0
 attack Radscorpion@20729: chance=12% hit=True damage=10
 xp: +120 (total 120, level 1)
-fight-result: rounds=4 dudeHp=34 gameOver=False targetDead=True hostilesLeft=0
+fight-result: rounds=5 dudeHp=34 gameOver=False targetDead=True hostilesLeft=0
