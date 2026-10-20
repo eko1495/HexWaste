@@ -56,7 +56,12 @@ public class CombatEngineTests
         Assert.True(enemy.IsDead);
         Assert.Equal(0, host.XpAwarded);
 
-        // Next step ends combat (nothing hostile standing) and pays XP.
+        // F20: combat ends only at the round transition (fo2ce _combat :3446), so the dude's turn stays
+        // open; ending it closes the round, combat ends (nothing hostile standing) and XP pays.
+        engine.Step();
+        Assert.Equal(CombatPhase.PlayerTurn, engine.Phase);
+        Assert.Equal(0, host.XpAwarded);
+        engine.EndPlayerTurn();
         engine.Step();
         Assert.Equal(CombatPhase.Idle, engine.Phase);
         Assert.Equal(10, engine.DudeAp); // §A: EndCombat resets AP to max
@@ -1673,6 +1678,53 @@ public class CombatEngineTests
         int turn = host.CombatProcCalls.FindIndex(c => c.Critter == other && c.FixedParam == 4);
         Assert.True(join >= 0 && turn > join, "the joiner is asked (fp=5), then takes its turn (fp=4)");
         Assert.Contains(other, engine.Hostiles);
+    }
+
+    // F20: fo2ce _combat() (combat.cc:3420-3446) checks _combat_should_end only after _combat_sequence, so
+    // killing the last round-1 hostile leaves the dude's turn open and the round-end join pass still runs.
+    private static (CombatEngine, FakeCombatHost, MapObject Candidate) KillOnlyHostileOnDudeTurn(bool candidateJoins)
+    {
+        var host = new FakeCombatHost();
+        MapObject dude = host.SetDude(NewCritter(tile: 20100, hp: 30, ap: 10));
+        MapObject attacker = host.AddCritter(NewCritter(tile: HexGrid.TileInDirection(20100, 0), hp: 30, ap: 10));
+        attacker.Team = 1;
+        MapObject candidate = host.AddCritter(NewCritter(tile: 20050, hp: 30, ap: 10));
+        candidate.Team = 1;
+        candidate.Sid = 7;
+        var engine = new CombatEngine(host, new MinRng());
+        engine.BeginScriptAggro(attacker, dude);
+        if (candidateJoins)
+            candidate.DamageLastTurn = 4; // _combatai_want_to_join: damaged -> joins
+        else
+            host.OnCombatProc = (c, fp) => { if (fp == 5) c.Maneuver = 0x02; }; // DISENGAGING: never joins
+        for (int i = 0; i < 20 && engine.Phase != CombatPhase.PlayerTurn; i++) { host.Animating.Clear(); engine.Step(); }
+        Assert.Equal(CombatPhase.PlayerTurn, engine.Phase);
+        engine.Kill(attacker, dude); // the only round-1 hostile dies on the dude's turn
+        for (int i = 0; i < 10; i++) { host.Animating.Clear(); engine.Step(); }
+        Assert.Equal(CombatPhase.PlayerTurn, engine.Phase); // no mid-round end: the turn stays open
+        Assert.Equal(1, engine.Round);
+        engine.EndPlayerTurn(); // round 1 ends -> _combat_add_noncoms, _combat_sequence, _combat_should_end
+        for (int i = 0; i < 20 && engine.Phase is not (CombatPhase.PlayerTurn or CombatPhase.Idle); i++) { host.Animating.Clear(); engine.Step(); }
+        return (engine, host, candidate);
+    }
+
+    [Fact]
+    public void KillingTheLastHostileMidRoundStillRunsTheJoinPass_AJoinerKeepsCombatGoing()
+    {
+        var (engine, host, candidate) = KillOnlyHostileOnDudeTurn(candidateJoins: true);
+        Assert.True(Joined(host, candidate));
+        Assert.Contains(host.CombatProcCalls, c => c.Critter == candidate && c.FixedParam == 4); // it acts
+        Assert.Equal(CombatPhase.PlayerTurn, engine.Phase);
+        Assert.Equal(2, engine.Round);
+    }
+
+    [Fact]
+    public void KillingTheLastHostileMidRoundEndsCombatAtTheRoundTransition()
+    {
+        var (engine, host, candidate) = KillOnlyHostileOnDudeTurn(candidateJoins: false);
+        Assert.Contains(host.CombatProcCalls, c => c.Critter == candidate && c.FixedParam == 5); // asked at round end
+        Assert.False(Joined(host, candidate));
+        Assert.Equal(CombatPhase.Idle, engine.Phase);
     }
 
     [Fact]
@@ -4514,6 +4566,7 @@ public class CombatEngineTests
         for (int i = 0; i < 20 && engine.Phase != CombatPhase.Idle; i++)
         {
             host.Animating.Clear();
+            engine.EndPlayerTurn(); // F20: the dude ends his turn; combat ends at the round transition
             engine.Step();
         }
 

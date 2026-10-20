@@ -3116,7 +3116,11 @@ public sealed class CombatEngine
 
         // _phase guard: StepTurnOrder() may already have ended the fight (see EndCombat's idempotency
         // note) — don't re-evaluate a trivially-true CombatShouldEnd() over an emptied _hostiles.
-        if (_phase != CombatPhase.Idle && CombatShouldEnd())
+        // F20: only a StartBrawl fight (no fo2ce list) ends mid-round here. ported from fallout2-ce
+        // src/combat.cc _combat() (:3420-3446): _combat_should_end() is checked once per round, after
+        // _combat_sequence(); the turn loop breaks early only on _combat_turn() == -1 or
+        // _combat_ending_guy, so a fight with a combat list ends at StepTurnOrder's round transition.
+        if (_phase != CombatPhase.Idle && _combatList.Count == 0 && CombatShouldEnd())
         {
             EndCombat();
             return;
@@ -3200,8 +3204,6 @@ public sealed class CombatEngine
                     return;
                 }
                 StartNewRound();
-                if (_order.Count == 0)
-                    return; // nothing left (CombatShouldEnd guards the real end)
                 // Task 3 (correction, round 2): ported from fallout2-ce src/combat.cc _combat()'s
                 // own round loop — `} while (!_combat_should_end());` (:3446) — checked once per
                 // round, right after the round transition (_combat_sequence()/StartNewRound here),
@@ -3221,6 +3223,9 @@ public sealed class CombatEngine
                     EndCombat();
                     return;
                 }
+                // F20: checked above, not only in UpdateCombat, since a combat-list fight now ends only here.
+                if (_order.Count == 0)
+                    return; // nothing can act this round (everyone KO'd): retry next Step
             }
 
             MapObject actor = _order[_orderIndex];
