@@ -43,6 +43,11 @@ public sealed record AiPacket(
     /// <summary>ai.txt <c>run_start</c>/<c>run_end</c>: the combatai.msg id range a critter picks from
     /// when it flees (AI_MESSAGE_TYPE_RUN, combat_ai.cc:1209). P72-M3.</summary>
     int RunStart = 0, int RunEnd = -1,
+    /// <summary>ai.txt <c>move_start</c>/<c>move_end</c>, <c>miss_start</c>/<c>miss_end</c> and the eight
+    /// <c>hit_&lt;location&gt;_start/_end</c> pairs (combat_ai.cc:421-443): the combatai.msg ranges for the
+    /// MOVE, MISS and HIT taunts. HitRanges is indexed by fo2ce HIT_LOCATION_* (head 0 .. groin 7).</summary>
+    int MoveStart = 0, int MoveEnd = -1, int MissStart = 0, int MissEnd = -1,
+    (int Start, int End)[]? HitRanges = null,
     /// <summary>ai.txt <c>called_freq</c>: a 1/called_freq chance to make an AIMED (called) shot at a
     /// random body part (_ai_called_shot, combat_ai.cc:2634). 10000 ≈ never (the golden packets); 0/absent
     /// = never. P75-M4.</summary>
@@ -78,6 +83,10 @@ public sealed class AiPacketTable
 
     public AiPacket? Get(int packetNum) => _byNum.GetValueOrDefault(packetNum);
 
+    // fo2ce HIT_LOCATION_* order (combat_ai.cc:429-443)
+    private static readonly string[] HitLocationKeys =
+        ["head", "left_arm", "right_arm", "torso", "right_leg", "left_leg", "eyes", "groin"];
+
     public static AiPacketTable Parse(string text)
     {
         var packets = new List<AiPacket>();
@@ -95,6 +104,9 @@ public sealed class AiPacketTable
                     Chance: I("chance"), TauntColor: I("color"),         // P72-M3 taunt fields
                     AttackStart: I("attack_start"), AttackEnd: I("attack_end"),
                     RunStart: I("run_start"), RunEnd: I("run_end"),
+                    MoveStart: I("move_start"), MoveEnd: I("move_end"),
+                    MissStart: I("miss_start"), MissEnd: I("miss_end"),
+                    HitRanges: [.. HitLocationKeys.Select(k => (I($"hit_{k}_start"), I($"hit_{k}_end")))],
                     CalledFreq: I("called_freq"),                        // P75-M4
                     AreaAttackMode: S("area_attack_mode"), SecondaryFreq: I("secondary_freq"), // P76-M1
                     ChemPrimaryDesire: ParseIntList(S("chem_primary_desire")))); // P78-M2

@@ -185,13 +185,55 @@ public class AiPacketTests
         public int Next(int lo, int hi) => Math.Clamp(v[Math.Min(_i++, v.Length - 1)], lo, hi - 1);
     }
 
-    [Fact]
-    public void TauntPickSkipsWhenChanceIsZero()
+    private sealed class CountingRng(params int[] v) : ICombatRng
     {
+        public int Draws;
+        public int Next(int lo, int hi) => Math.Clamp(v[Math.Min(Draws++, v.Length - 1)], lo, hi - 1);
+    }
+
+    [Fact]
+    public void TauntPickDrawsTheChanceRollEvenWhenChanceIsZero()
+    {
+        // fo2ce _combatai_msg (combat_ai.cc:3324) always draws randomBetween(1,100); chance 0 then skips.
         var p = new AiPacket(8, "Scorpion", 0, 0, 0, "", "", Chance: 0,
             AttackStart: 50140, AttackEnd: 50159);
-        // chance 0 short-circuits with no roll → no taunt (the Scorpion packet).
-        Assert.Equal(-1, CombatTaunt.Pick(p, CombatTaunt.Type.Attack, new SeqRng(1, 50150)));
+        var rng = new CountingRng(1, 50150);
+        Assert.Equal(-1, CombatTaunt.Pick(p, CombatTaunt.Type.Attack, rng));
+        Assert.Equal(1, rng.Draws);
+    }
+
+    [Fact]
+    public void TauntFieldsForMoveMissAndHitParseFromAiTxt()
+    {
+        AiPacketTable t = AiPacketTable.Parse(
+            "[Addict]\npacket_num=179\nchance=15\nmove_start=2020\nmove_end=2029\nmiss_start=2060\nmiss_end=2069\n"
+            + "hit_head_start=2100\nhit_head_end=2101\nhit_left_arm_start=2110\nhit_left_arm_end=2111\n"
+            + "hit_right_arm_start=2120\nhit_right_arm_end=2121\nhit_torso_start=2130\nhit_torso_end=2131\n"
+            + "hit_right_leg_start=2140\nhit_right_leg_end=2141\nhit_left_leg_start=2150\nhit_left_leg_end=2151\n"
+            + "hit_eyes_start=2160\nhit_eyes_end=2161\nhit_groin_start=2170\nhit_groin_end=2171\n");
+        AiPacket p = t.Get(179)!;
+        Assert.Equal((2020, 2029), (p.MoveStart, p.MoveEnd));
+        Assert.Equal((2060, 2069), (p.MissStart, p.MissEnd));
+        Assert.Equal(8, p.HitRanges!.Length);
+        Assert.Equal((2130, 2131), p.HitRanges[3]);
+        Assert.Equal((2170, 2171), p.HitRanges[7]);
+    }
+
+    [Fact]
+    public void TauntPickUsesTheMoveMissAndHitRanges()
+    {
+        var p = new AiPacket(179, "Addict", 0, 0, 0, "", "", Chance: 15,
+            MoveStart: 2020, MoveEnd: 2029, MissStart: 2060, MissEnd: 2069,
+            HitRanges: [(2100, 2101), (2110, 2111), (2120, 2121), (2130, 2131),
+                        (2140, 2141), (2150, 2151), (2160, 2161), (2170, 2171)]);
+        Assert.Equal(2025, CombatTaunt.Pick(p, CombatTaunt.Type.Move, new CountingRng(1, 2025)));
+        Assert.Equal(2061, CombatTaunt.Pick(p, CombatTaunt.Type.Miss, new CountingRng(1, 2061)));
+        Assert.Equal(2161, CombatTaunt.Pick(p, CombatTaunt.Type.Hit, new CountingRng(1, 2161), hitLocation: 6));
+        // no hit table (HitRanges null) -> empty range -> no taunt, chance roll only
+        var bare = new AiPacket(1, "P", 0, 0, 0, "", "", Chance: 100);
+        var rng = new CountingRng(1);
+        Assert.Equal(-1, CombatTaunt.Pick(bare, CombatTaunt.Type.Hit, rng));
+        Assert.Equal(1, rng.Draws);
     }
 
     [Fact]
