@@ -106,19 +106,30 @@ The findings doc's F4 text ("obj#70 never fights", combat starts at 302700) pred
      included, ordered by `HexTile` (stable for equal tiles). Each entry's `Maneuver &= ManeuverEngaging`,
      `DamageLastTurn = 0`.
    - Round 1: fo2ce's three swaps (attacker, defender, dude if neither) and `_listCom` = the number placed.
-     `BeginCombat` and `BeginScriptAggro` no longer call `AddJoiners()`; `_hostiles` holds the non-dude,
-     non-party combatants of `_combatList[0.._listCom)`, so targeting code is unchanged.
+     `BeginCombat` and `BeginScriptAggro` no longer call `AddJoiners()`. `_hostiles` keeps today's meaning
+     (every non-dude, non-party critter that has entered the fight; never removed by a round transition), so
+     targeting and end-of-combat code is unchanged. The dude is always placed in round 1, so he is never a
+     non-combatant.
+   - A critter removed from the map mid-combat (death cleanup, `destroy_object`, `RemoveHostile`) is removed
+     from `_combatList`. A critter created mid-combat is not added. Shortcut comment:
+     `shortcut: critters created during combat never enter the fo2ce list, upgrade if a fixture spawns one
+     mid-fight`.
    - `BuildTurnOrder(firstRound: true)` takes `_combatList[0.._listCom)` as the order; party members not
      placed are non-combatants until they join.
    - `StartBrawl` keeps its own entry path and does not build the list (out of scope).
 3. **Round end** (`StartNewRound`), in fo2ce's order:
    1. **Notify friends**: every critter on the dude's team in the list that is not ENGAGING and perceives the
       dude (`WithinPerception`) becomes ENGAGING.
-   2. **Join pass**: visit `index = _listCom .. _listCom + noncomCount - 1` in list order. A critter that
+   2. **Join pass** (fo2ce `_combat_add_noncoms`): visit `index = _listCom .. _listCom + noncomCount - 1` in list order. A critter that
       `WantToJoin`s: `Maneuver = 0`, swap with `_combatList[_listCom]`, `_listCom++`, add to `_hostiles` (or
-      leave it to the party set if it is a party member), AP = its max (0 for the dude), trace `TURN` with that
-      AP, and take its turn now through the existing enemy/ally turn path. A turn that spans frames pauses
-      the pass; the next `Step` resumes the turn, then the pass at the next index.
+      leave it to the party set if it is a party member), and take its turn now through the existing
+      enemy/ally turn path (which sets the AP to its max and traces `TURN`).
+   - State: `int _joinIndex` (-1 = no pass running). A joiner's turn that spans frames sets
+      `_actingEnemy`/`_actingAlly` as today; when `StepTurnOrder` finishes such a turn while `_joinIndex >= 0`,
+      it resumes the pass at `_joinIndex + 1` instead of advancing `_orderIndex`. When the pass ends, step 3
+      runs and `_joinIndex = -1`.
+   - fo2ce ignores `_combat_turn`'s result here, so a joiner that kills the dude does not stop the pass; Hexwaste
+      stops it when `_gameOver` is set (the existing game-over path owns the rest).
    3. Then the existing round transition: tick `_combatTick`, process combat events, drop the dead, the
       knocked-out and disengaging critters leave the combatant part, sort the combatants by Sequence then
       Luck, and rebuild `_order` from `_combatList[0.._listCom)`.
@@ -136,12 +147,16 @@ The findings doc's F4 text ("obj#70 never fights", combat starts at 302700) pred
      uncalled shot uses torso.
    - `AiPacket` reads `move_*`, `miss_*` and the eight `hit_<location>_*` pairs (`AiPackets.cs`).
    - New `ICombatHost.Taunt(MapObject critter, CombatTaunt.Type type, int hitLocation = 3)` (default no-op);
-     the viewer routes it to `TryTaunt`, which keeps its dude / dead / KO / no-packet early returns.
-   - Wire the sites in the engine, in fo2ce's order relative to the attack's own draws (to-hit and damage are
-     drawn first, in `attackCompute`):
-     - MOVE: the first approach step of an AI attack turn (fo2ce `_ai_attack`'s `taunt` flag) and the
-       distance-preference charge, after the "already adjacent" and AP early returns.
-     - ATTACK: unchanged (`OnAttackStarted`), moved if the oracle shows it drawn before the to-hit roll.
+     the viewer routes it to `TryTaunt`. `TryTaunt` gains the dude early return (today only its
+     `OnAttackStarted` caller checks it) and keeps its dead / KO / no-packet returns.
+   - Wire the sites in the engine, in fo2ce's order relative to the attack's own draws. The arcaves trace
+     pins it: `_combat_attack` (to-hit) and `weaponGetDamage` draws, the `ATTACK` line, then the ATTACK taunt
+     draw, then the outcome taunt draw (`fo2ce.trace` lines 138-142, 241-246).
+     - MOVE: the first approach of an AI attack turn (fo2ce `_ai_attack`'s `taunt` flag: a per-turn bool set
+       when the turn opens and cleared after the first approach) and the distance-preference charge, after
+       the "already adjacent" and AP early returns, before the first MOVE line (trace lines 13, 30).
+     - ATTACK: `OnAttackStarted`, moved after the attack's to-hit and damage draws if an AI path calls it
+       earlier.
      - Melee: the attacker's HIT (hit, defender not dead) or MISS. Ranged: the defender's MISS or HIT (hit, not
        dead).
    - Outside oracle mode `_tauntRng` stays a separate stream, so the new draws do not shift combat rolls.
