@@ -104,6 +104,9 @@ public sealed class CombatEngine
     private int _orderIndex;
     private MapObject? _actingEnemy;
     private int _actingEnemyAp;
+    // fo2ce _combat_turn runs the per-turn combat_p_proc once; a turn that spans frames re-enters
+    // TryEnemyAction/TryAllyAction, which must not run it again.
+    private bool _turnProcRan;
     private MapObject? _actingAlly;
     private int _actingAllyAp;
     // P77: every combatant's CURRENT combat AP, mirroring obj->data.critter.combat.ap. Reset to maxAp
@@ -3211,6 +3214,7 @@ public sealed class CombatEngine
             {
                 _actingAlly = actor;
                 _actingAllyAp = _host.GetCritterState(actor)?.MaxActionPoints ?? 5;
+                _turnProcRan = false;
                 TraceTurn(actor, _actingAllyAp); // fo2ce _combat_turn entry, before combat_p_proc
                 if (TryAllyAction(actor))
                     return;
@@ -3221,6 +3225,7 @@ public sealed class CombatEngine
             {
                 _actingEnemy = actor;
                 _actingEnemyAp = _host.GetCritterState(actor)?.MaxActionPoints ?? 5;
+                _turnProcRan = false;
                 TraceTurn(actor, _actingEnemyAp); // fo2ce _combat_turn entry, before combat_p_proc
                 if (TryEnemyAction(actor))
                     return;
@@ -3568,8 +3573,12 @@ public sealed class CombatEngine
 
         // Per-turn combat_p_proc hook (combat.cc:3243) — before standup + default AI; an override
         // cancels the whole turn (P35). Inside the !incapacitated branch like the engine.
-        if (RunCombatProcOverridesTurn(enemy))
-            return false;
+        if (!_turnProcRan)
+        {
+            _turnProcRan = true;
+            if (RunCombatProcOverridesTurn(enemy))
+                return false;
+        }
 
         // Stand up first if prone (3 AP), then act with what's left.
         if (StandUpIfProne(enemy, _actingEnemyAp) is var stood && stood >= 0)
@@ -3897,8 +3906,12 @@ public sealed class CombatEngine
             return false;
 
         // Per-turn combat_p_proc hook — the engine runs it for EVERY combatant (no party exclusion). P35.
-        if (RunCombatProcOverridesTurn(ally))
-            return false;
+        if (!_turnProcRan)
+        {
+            _turnProcRan = true;
+            if (RunCombatProcOverridesTurn(ally))
+                return false;
+        }
 
         if (StandUpIfProne(ally, _actingAllyAp) is var stood && stood >= 0)
         {

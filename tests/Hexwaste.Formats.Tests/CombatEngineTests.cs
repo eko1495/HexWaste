@@ -1483,6 +1483,27 @@ public class CombatEngineTests
     }
 
     [Fact]
+    public void AMultiFrameAiTurnRunsItsPerTurnCombatProcOnce()
+    {
+        // fo2ce _combat_turn (combat.cc:3247) runs combat_p_proc once; the walk and attack then run inside
+        // _combat_turn_run. Hexwaste re-enters TryEnemyAction after the walk and must not re-run fp=4.
+        var host = new FakeCombatHost();
+        MapObject dude = host.SetDude(NewCritter(tile: 20100, hp: 30, ap: 10));
+        MapObject enemy = host.AddCritter(NewCritter(tile: HexGrid.TileInDirection(20100, 0, 4), hp: 30, ap: 10));
+        enemy.Team = 1;
+        enemy.Sid = 5;
+        host.AiPackets[enemy] = new AiPacket(12, "Guard", MinToHit: 0, MinHp: 0, 0, "", "");
+        var engine = new CombatEngine(host, new MinRng());
+        engine.BeginScriptAggro(enemy, dude); // the enemy opens -> its round-1 turn starts now
+        for (int i = 0; i < 20 && engine.Phase == CombatPhase.EnemyTurn; i++)
+        {
+            host.Animating.Clear(); // finish the walk/attack animation
+            engine.Step();
+        }
+        Assert.Equal(1, host.CombatProcCalls.Count(c => c.Critter == enemy && c.FixedParam == 4));
+    }
+
+    [Fact]
     public void PerTurnCombatProcRunsForAScriptedEnemyThenDefaultAi()
     {
         // P35: a scripted (Sid != -1) enemy runs combat_p_proc (fp=4) at the top of its turn; with no
