@@ -22,7 +22,9 @@ The game directory is the install folder containing `master.dat`,
 usual GOG/Steam install paths and a `game-data/` folder next to the
 executable. A plain interactive launch opens in a 1280x720 window; pass
 `--fullscreen` to open fullscreen at the desktop's native resolution instead
-(Alt+Enter toggles between the two at runtime either way).
+(Alt+Enter toggles between the two at runtime either way). `--window 640x480`
+sets the window size; together with `--fullscreen` the game renders at that
+size and is scaled to the display with black bars, like the original.
 
 **Latest release: [v0.14.0 — Interplay MVE video support](https://github.com/eko1495/HexWaste/releases/tag/v0.14.0)** —
 the engine's cutscenes now decode and play in-engine. Prebuilt self-contained

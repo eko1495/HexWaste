@@ -4,6 +4,7 @@ string? gameDir = null;
 string mapName = "artemple.map";
 string? screenshot = null;
 bool roofs = true;
+(int, int)? windowSize = null; // --window WxH
 int zoom = 1; // P85: initial world zoom (1×..4×), for --zoom screenshots
 int forceHead = -1; // P87: --force-head debug aid (render a head on a head-less dialog)
 double advanceMs = 0;
@@ -854,6 +855,11 @@ for (int i = 0; i < args.Length; i++)
         case "--screenshot" when i + 1 < args.Length:
             screenshot = args[++i];
             break;
+        case "--window" when i + 1 < args.Length:
+            if (args[++i].Split('x') is [var ws, var hs] && int.TryParse(ws, out int ww) && int.TryParse(hs, out int wh) && ww > 0 && wh > 0)
+                windowSize = (ww, wh);
+            else { Console.Error.WriteLine($"--window: expected WxH, got '{args[i]}'"); return 1; }
+            break;
         case "--zoom" when i + 1 < args.Length:
             int.TryParse(args[++i], out zoom);
             break;
@@ -957,6 +963,7 @@ using var game = new ViewerGame(gameDir!, mapName, screenshot, roofs)
 {
     StartInMenu = interactiveLaunch || forceMenu,
     StartFullscreen = interactiveLaunch && fullscreen,
+    WindowSize = windowSize,
     MenuStartState = menuStartState,
     AdvanceCyclingMs = advanceMs,
     BenchFrames = benchFrames,

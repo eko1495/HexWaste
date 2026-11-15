@@ -86,7 +86,7 @@ public sealed partial class ViewerGame
         if (_stdArrow is null)
             return; // art missing -> the OS cursor stays visible
 
-        MouseState m = Mouse.GetState();
+        MouseState m = ReadMouse();
         Rectangle vp = GraphicsDevice.Viewport.Bounds;
         bool overWorld = _debugCursorTile >= 0
             || (WorldCursorActive() && m.Y < vp.Height - _hudBarHeight && PickHex(m.X, m.Y) >= 0); // P85: zoom-aware
@@ -269,7 +269,7 @@ public sealed partial class ViewerGame
         // otherwise only on screen mid-click). Falls back to a darken tint if the DN
         // art is missing.
         _panelPixel ??= CreatePixel();
-        MouseState rawMouse = Mouse.GetState();
+        MouseState rawMouse = ReadMouse();
         Point hoverMouse = UiMouse();
         string? forcePress = Environment.GetEnvironmentVariable("HEXWASTE_HUD_FORCE_PRESS");
         foreach (HudButton b in HudButtons())
@@ -524,7 +524,7 @@ public sealed partial class ViewerGame
         }
 
         // AP/HP text HUD above the message log.
-        if (_dude is not null && GetCritterState(_dude.Dude) is { } dudeStats)
+        if (WindowSize is null && _dude is not null && GetCritterState(_dude.Dude) is { } dudeStats)
         {
             string hud = $"HP {dudeStats.CurrentHp}/{dudeStats.MaxHp}  AP {_combat.DudeAp}/{dudeStats.MaxActionPoints}"
                 + $"  L{_dudeLevel} XP {_dudeXp}";

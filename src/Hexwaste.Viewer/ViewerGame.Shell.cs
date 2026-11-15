@@ -100,7 +100,7 @@ public sealed partial class ViewerGame
         (int ox, int oy) = MenuOrigin();
         DrawMenuBackdrop(_mainMenuBg);
 
-        bool mouseDown = Mouse.GetState().LeftButton == ButtonState.Pressed;
+        bool mouseDown = ReadMouse().LeftButton == ButtonState.Pressed;
         // ported from fallout2-ce src/mainmenu.cc:130,205 — button label color is _colorTable[21091],
         // a constant reused for both normal and pressed states; hover/press is conveyed by the
         // menuup/menudown button-graphic swap below, not by recoloring the text.
@@ -309,7 +309,7 @@ public sealed partial class ViewerGame
             T(306, 150 + li * (_fontRenderer.LineHeight + 1), line, green);
 
         // The four lil-red buttons over their baked labels (down-art while pressed).
-        bool mouseDown = Mouse.GetState().LeftButton == ButtonState.Pressed;
+        bool mouseDown = ReadMouse().LeftButton == ButtonState.Pressed;
         foreach ((string id, Rectangle band, Point btn) in SelectorButtons)
         {
             if (btn.X < 0)
