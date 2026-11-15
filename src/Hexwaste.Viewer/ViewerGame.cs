@@ -41,6 +41,10 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
     /// StartInMenu. See Initialize() and ToggleFullscreen().</summary>
     public bool StartFullscreen { get; set; }
 
+    /// <summary>--window WxH: windowed back-buffer size (e.g. 640x480 to match fo2ce's screen 1:1
+    /// for visual comparison). Also hides the dev HP/AP text line, which vanilla doesn't have.</summary>
+    public (int Width, int Height)? WindowSize { get; set; }
+
     private int _windowedWidth = 1280;
     private int _windowedHeight = 720;
 
@@ -1154,7 +1158,7 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
                 _windowedWidth = Window.ClientBounds.Width;
                 _windowedHeight = Window.ClientBounds.Height;
             }
-            _camera.SetWindowSize(Window.ClientBounds.Width, Window.ClientBounds.Height);
+            _camera.SetWindowSize(ScreenSize().X, IsoWindowHeight());
         };
     }
 
@@ -1166,11 +1170,13 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
         // path leaves StartFullscreen false.
         if (StartFullscreen)
         {
-            DisplayMode mode = GraphicsAdapter.DefaultAdapter.CurrentDisplayMode;
-            _graphics.HardwareModeSwitch = false;
-            _graphics.IsFullScreen = true;
-            _graphics.PreferredBackBufferWidth = mode.Width;
-            _graphics.PreferredBackBufferHeight = mode.Height;
+            EnterFullscreen();
+            _graphics.ApplyChanges();
+        }
+        else if (WindowSize is { } size)
+        {
+            _graphics.PreferredBackBufferWidth = _windowedWidth = size.Width;
+            _graphics.PreferredBackBufferHeight = _windowedHeight = size.Height;
             _graphics.ApplyChanges();
         }
 
@@ -1938,7 +1944,7 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
 
         RebuildLighting();
 
-        _camera.SetWindowSize(Window.ClientBounds.Width, Window.ClientBounds.Height);
+        _camera.SetWindowSize(ScreenSize().X, IsoWindowHeight());
         _camera.SetCenter(_dude?.Dude.HexTile ?? _map.Header.EnteringTile);
         _camera.PanX = 0;
         _camera.PanY = 0;
@@ -2019,7 +2025,7 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
 
         _frameClock.Restart();
         KeyboardState keyboard = Keyboard.GetState();
-        MouseState mouse = Mouse.GetState();
+        MouseState mouse = ReadMouse();
 
         // Global fullscreen toggle, checked before any state-specific handling so it
         // works regardless of what screen/dialog/menu is open. Consumes the Enter
@@ -3141,13 +3147,56 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
         }
         else
         {
-            DisplayMode mode = GraphicsAdapter.DefaultAdapter.CurrentDisplayMode;
-            _graphics.HardwareModeSwitch = false;
-            _graphics.IsFullScreen = true;
-            _graphics.PreferredBackBufferWidth = mode.Width;
-            _graphics.PreferredBackBufferHeight = mode.Height;
+            EnterFullscreen();
         }
         _graphics.ApplyChanges();
+    }
+
+    /// <summary>Borderless fullscreen at the desktop resolution. With --window WxH the game still
+    /// renders at WxH and Draw letterboxes it (see <see cref="Letterboxed"/>). Caller applies.</summary>
+    private void EnterFullscreen()
+    {
+        DisplayMode mode = GraphicsAdapter.DefaultAdapter.CurrentDisplayMode;
+        _graphics.HardwareModeSwitch = false;
+        _graphics.IsFullScreen = true;
+        _graphics.PreferredBackBufferWidth = mode.Width;
+        _graphics.PreferredBackBufferHeight = mode.Height;
+    }
+
+    /// <summary>--window WxH + fullscreen: the frame renders into a WxH target that is stretched to
+    /// the display keeping its aspect (black bars), point-sampled, with the mouse mapped back --
+    /// fallout2-ce's fullscreen SDL_RenderSetLogicalSize(640, 480) (svga.cc). (XWayland stretches an
+    /// exclusive-mode switch to 16:9 instead, so this is done by hand.)</summary>
+    private bool Letterboxed => WindowSize is not null && _graphics.IsFullScreen;
+    private RenderTarget2D? _letterboxTarget;
+
+    /// <summary>The game's logical screen size: WxH when letterboxed, else the window.</summary>
+    private Point ScreenSize() => Letterboxed && WindowSize is { } ws
+        ? new Point(ws.Width, ws.Height)
+        : new Point(Window.ClientBounds.Width, Window.ClientBounds.Height);
+
+    private Rectangle LetterboxRect()
+    {
+        Point s = ScreenSize();
+        int bw = GraphicsDevice.PresentationParameters.BackBufferWidth;
+        int bh = GraphicsDevice.PresentationParameters.BackBufferHeight;
+        float k = Math.Min((float)bw / s.X, (float)bh / s.Y);
+        int w = (int)(s.X * k), h = (int)(s.Y * k);
+        return new Rectangle((bw - w) / 2, (bh - h) / 2, w, h);
+    }
+
+    /// <summary>ReadMouse() in logical-screen coordinates (identity unless letterboxed).</summary>
+    private MouseState ReadMouse()
+    {
+        MouseState m = Mouse.GetState();
+        if (!Letterboxed)
+            return m;
+        Point s = ScreenSize();
+        Rectangle r = LetterboxRect();
+        int x = Math.Clamp((m.X - r.X) * s.X / Math.Max(1, r.Width), 0, s.X - 1);
+        int y = Math.Clamp((m.Y - r.Y) * s.Y / Math.Max(1, r.Height), 0, s.Y - 1);
+        return new MouseState(x, y, m.ScrollWheelValue, m.LeftButton, m.MiddleButton, m.RightButton,
+            m.XButton1, m.XButton2, m.HorizontalScrollWheelValue);
     }
 
     private bool IsKeyPressed(KeyboardState keyboard, Keys key) =>
@@ -5915,6 +5964,16 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
                 GraphicsDevice.PresentationParameters.BackBufferHeight);
             GraphicsDevice.SetRenderTarget(_screenshotTarget);
         }
+        else if (Letterboxed)
+        {
+            Point ls = ScreenSize();
+            if (_letterboxTarget is null || _letterboxTarget.Width != ls.X || _letterboxTarget.Height != ls.Y)
+            {
+                _letterboxTarget?.Dispose();
+                _letterboxTarget = new RenderTarget2D(GraphicsDevice, ls.X, ls.Y);
+            }
+            GraphicsDevice.SetRenderTarget(_letterboxTarget);
+        }
 
         GraphicsDevice.Clear(Color.Black);
 
@@ -6016,6 +6075,16 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
             _spriteBatch.Draw(_screenshotTarget, Vector2.Zero, Color.White);
             _spriteBatch.End();
         }
+        else if (Letterboxed && _letterboxTarget is not null)
+        {
+            GraphicsDevice.SetRenderTarget(null);
+            GraphicsDevice.Clear(Color.Black);
+            _spriteBatch.Begin(samplerState: SamplerState.PointClamp);
+            _spriteBatch.Draw(_letterboxTarget, LetterboxRect(), Color.White);
+            _spriteBatch.End();
+            // Update-time layout (UiScale/VirtualViewport read GraphicsDevice.Viewport) sees the logical size.
+            GraphicsDevice.Viewport = new Viewport(0, 0, _letterboxTarget.Width, _letterboxTarget.Height);
+        }
 
         base.Draw(gameTime);
         _drawMs.Add(_frameClock.Elapsed.TotalMilliseconds);
@@ -6043,6 +6112,12 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
             Exit();
         }
     }
+
+    /// <summary>The iso view's height: the window minus the interface bar, so the camera centres
+    /// above the bar (ported from fallout2-ce src/map.cc isoInit: tileInit(..., screenGetVisibleHeight())
+    /// = screen height - INTERFACE_BAR_HEIGHT 100, svga.cc screenGetVisibleHeight()).</summary>
+    private int IsoWindowHeight() => ScreenSize().Y
+        - (int)(InterfaceBar.WindowHeight * Formats.Rendering.UiScale.ComputeScale(ScreenSize().X, ScreenSize().Y));
 
     private void PrintBenchReport()
     {
@@ -7416,8 +7491,7 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
 
     private void CaptureThumbnail(string path)
     {
-        int bw = GraphicsDevice.PresentationParameters.BackBufferWidth;
-        int bh = GraphicsDevice.PresentationParameters.BackBufferHeight;
+        (int bw, int bh) = (ScreenSize().X, ScreenSize().Y);
         _screenshotTarget ??= new RenderTarget2D(GraphicsDevice, bw, bh);
         _thumbnailTarget ??= new RenderTarget2D(GraphicsDevice, ThumbW, ThumbH);
 

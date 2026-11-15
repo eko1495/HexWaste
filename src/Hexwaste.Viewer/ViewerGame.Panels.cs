@@ -1740,7 +1740,7 @@ public sealed partial class ViewerGame
             DrawCalledShotToHit(digits, p.X + (i < 4 ? 33 : 453), rowY, pct);
         }
 
-        bool cancelPressed = Mouse.GetState().LeftButton == ButtonState.Pressed
+        bool cancelPressed = ReadMouse().LeftButton == ButtonState.Pressed
             && CalledShotCancelRect().Contains(mouse.X, mouse.Y);
         if (InterfaceFrm(cancelPressed ? CalledShotCancelDownFrmId : CalledShotCancelUpFrmId) is { } cancel)
             _spriteBatch.Draw(cancel, new Vector2(p.X + 210, p.Y + 268), Color.White);
@@ -1759,7 +1759,7 @@ public sealed partial class ViewerGame
         var hot = new Color(252, 252, 84);
         _fontRenderer!.Draw(_spriteBatch, "AIM - pick a hit location (1-9 / click, Esc cancel)",
             new Vector2(p.X + 12, p.Y + 8), Color.LightGray);
-        int hovered = AimDialogRowAt(Mouse.GetState().X, Mouse.GetState().Y);
+        int hovered = AimDialogRowAt(ReadMouse().X, ReadMouse().Y);
         // P52-M4: the LIVE per-location to-hit % against the captured target, via the same
         // CombatEngine math the attack uses; shown alongside the static penalty.
         MapObject? aimTarget = _aimDialogTarget;

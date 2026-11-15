@@ -39,10 +39,10 @@ public sealed partial class ViewerGame
     /// starting Stage 2 (the dialog panel and the main-menu family); later stages replace the
     /// remaining Mouse.GetState().X/Y position reads with this wherever a click is tested against
     /// scaled content. Callers that need button-press state (e.g. Mouse.GetState().LeftButton)
-    /// keep calling Mouse.GetState() directly for that — only the position needs transforming.</summary>
+    /// keep calling ReadMouse() directly for that — only the position needs transforming.</summary>
     private Point UiMouse()
     {
-        MouseState mouse = Mouse.GetState();
+        MouseState mouse = ReadMouse();
         (int x, int y) = Formats.Rendering.UiScale.TransformMouse(mouse.X, mouse.Y, UiScale());
         return new Point(x, y);
     }

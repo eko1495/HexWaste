@@ -288,7 +288,7 @@ public sealed partial class ViewerGame
         _spriteBatch.Draw(gauge, new Vector2(p.X + 121, p.Y + 41),
             new Rectangle(0, slice * sliceH, gauge.Width, sliceH), Color.White);
 
-        MouseState rawMouse = Mouse.GetState();
+        MouseState rawMouse = ReadMouse();
         Point mouse = UiMouse();
         for (int i = 0; i < picker.Levels; i++)
         {

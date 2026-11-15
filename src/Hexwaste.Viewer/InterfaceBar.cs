@@ -23,6 +23,10 @@ public sealed class InterfaceBar : IDisposable
     public const int Width = 640;
     public const int Height = 99;
 
+    /// <summary>The bar's window height: iface.frm's 99 rows blit at the top of a 100-row window at
+    /// screen height - 100 (ported from fallout2-ce src/interface.cc interfaceInit, INTERFACE_BAR_HEIGHT).</summary>
+    public const int WindowHeight = 100;
+
     /// <summary>The bar background, or null if the art is missing (HUD then hidden).</summary>
     public Texture2D? Background { get; }
 
@@ -64,7 +68,7 @@ public sealed class InterfaceBar : IDisposable
     /// <summary>Top-left of the bar: bottom-centre at native scale (interface.cc:319-320).
     /// Clamps x to 0 for windows narrower than the bar (clipping accepted, documented).</summary>
     public Point Origin(Rectangle viewport) =>
-        new(Math.Max(0, (viewport.Width - Width) / 2), viewport.Height - Height);
+        new(Math.Max(0, (viewport.Width - Width) / 2), viewport.Height - WindowHeight);
 
     /// <summary>Load a loose-path intrface FRM (frame 0) as an RGBA texture — the
     /// WorldmapScreen pattern. Index 0 is the FRM transparent colour, so it maps to
