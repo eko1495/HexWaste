@@ -1414,9 +1414,7 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
                     ProcessDrugs();
                     ProcessWithdrawals();
                     ProcessRads(); // P113 (item 7c)
-                    _scriptHost?.PumpTimers(_dude?.Dude); // P114: timers due within the jump fire
-                    ProcessAmbientSfx(); // oracle F13: queueProcessEvents runs inline, before the script continues
-                    ProcessMapUpdateEvent(); // same inline queueProcessEvents
+                    ProcessQueuedEvents(); // P114 + oracle F13: queueProcessEvents runs inline, before the script continues
                 },
                 // P63 (Sierra Army Depot): tile_contains_obj_pid scans every object at (tile, elevation) for
                 // the pid (the engine's objectFindFirstAtLocation loop). ported from opTileContainsObjectWithPid.
@@ -1556,6 +1554,7 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
         }
 
         // Trace oracle: a vanilla SAVE.DAT slot replaces the default map load (and the JSON load below).
+        SeedOracleLoadStream();
         if (VanillaSaveDir is not null)
             LoadVanillaSaveAtStartup();
         else
@@ -1997,14 +1996,30 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
             _audio.PlaySfx(Formats.Map.AmbientSfx.RemapBirdForNight(_mapAmbient[playIdx].Name, _clock.Hour));
     }
 
-    /// <summary>Runs the due ambient event (scripts.cc _doBkProcesses -> queueProcessEvents, right after the
-    /// clock tick); loops to catch up after clock jumps like the other game-time events.
-    /// shortcut: an ambient event and a script timer due on the same tick run timers first; fo2ce's single queue orders them by insertion. Upgrade if the oracle shows a same-tick difference.</summary>
+    /// <summary>Script timers, the ambient sfx event and the map_update event share fo2ce's ONE game-time
+    /// queue, so the earliest due event fires first (scripts.cc _doBkProcesses -> queueProcessEvents, right
+    /// after the clock tick); loops to catch up after clock jumps.</summary>
+    // ported from fallout2-ce src/queue.cc queueProcessEvents()
+    // shortcut: events due on the SAME tick run timer, then ambient, then map_update; fo2ce orders ties by insertion. Upgrade if the oracle shows a same-tick tie.
     // shortcut: rest, skill books and AdvanceHours jump the clock in one step, so one ambient event fires where fo2ce's chunked rest loop fires one per chunk. Upgrade if an oracle scenario rests.
-    private void ProcessAmbientSfx()
+    private void ProcessQueuedEvents()
     {
-        while (_ambientNextTick >= 0 && _ambientNextTick <= _clock.Ticks)
-            RunAmbientSfxEvent(_ambientPendingIdx);
+        while (true)
+        {
+            long timer = _scriptHost?.NextTimerDue ?? long.MaxValue;
+            long ambient = _ambientNextTick >= 0 ? _ambientNextTick : long.MaxValue;
+            long mapUpdate = _mapUpdateNextTick >= 0 && MapUpdateAllowed() && _lootContainer is null
+                ? _mapUpdateNextTick : long.MaxValue;
+            long next = Math.Min(timer, Math.Min(ambient, mapUpdate));
+            if (next > _clock.Ticks)
+                return;
+            if (timer == next)
+                _scriptHost!.PumpOneTimer(_dude?.Dude);
+            else if (ambient == next)
+                RunAmbientSfxEvent(_ambientPendingIdx);
+            else
+                ProcessMapUpdateEvent();
+        }
     }
 
     protected override void Update(GameTime gameTime)
@@ -3265,6 +3280,7 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
             // (canUseDoor + _obj_use_door) — without this, every building interior is
             // single-click unreachable (2,481 stranded tiles on kladwtwn alone).
             isUsableClosedDoor: tile => UsableClosedDoorAt(tile) is not null,
+            inCombat: () => _combat.Phase != Formats.Combat.CombatPhase.Idle,
             openDoorAt: tile =>
             {
                 if (UsableClosedDoorAt(tile) is { } blockingDoor)
@@ -3554,7 +3570,7 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
     }
 
     /// <summary>Starts a script- or ambient-driven NPC walk (shared walker plumbing).</summary>
-    private bool StartNpcWalk(MapObject npc, int target, bool run = false)
+    private bool StartNpcWalk(MapObject npc, int target, bool run = false, byte[]? path = null)
     {
         // ported from fallout2-ce src/animation.cc animationIsBusy (:581): the reference's busy test
         // is LIVENESS-based — it walks only sequences actually in use (field_0 != -1000) and reports
@@ -3608,6 +3624,7 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
         var walker = new DudeController(npc, _frmCache, tile => _blockedTiles.Contains(tile),
             () => animCode,
             isUsableClosedDoor: t => NpcUsableClosedDoorAt(npc, t) is not null,
+            inCombat: () => _combat.Phase != Formats.Combat.CombatPhase.Idle,
             openDoorAt: t =>
             {
                 if (NpcUsableClosedDoorAt(npc, t) is { } blockingDoor)
@@ -3625,7 +3642,7 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
             InsertSorted(solids, npc);
         };
 
-        if (!walker.WalkTo(target))
+        if (!walker.WalkTo(target, path: path))
             return false;
         _npcWalkers[npc] = walker;
         return true;
@@ -3659,6 +3676,7 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
             // canUseDoor) — a wander target inside an unlocked building is walked to, door opened.
             var walker = new DudeController(npc, _frmCache, tile => _blockedTiles.Contains(tile),
                 isUsableClosedDoor: t => NpcUsableClosedDoorAt(npc, t) is not null,
+                inCombat: () => _combat.Phase != Formats.Combat.CombatPhase.Idle,
                 openDoorAt: t =>
                 {
                     if (NpcUsableClosedDoorAt(npc, t) is { } blockingDoor)
@@ -6908,9 +6926,7 @@ public sealed partial class ViewerGame : Game, Formats.Combat.ICombatHost
         ProcessDrugs(); // P37: scheduled drug stat reversals fire on game time (same catch-up after jumps)
         ProcessWithdrawals(); // P38: withdrawal onset/recovery fire on game time (drain-loop for clock jumps)
         ProcessRads(); // P113 (item 7c): the radiation band model — midnight checks + delayed damage/heal
-        _scriptHost?.PumpTimers(_dude?.Dude); // P114: script timers fire on game time (catch-up after jumps)
-        ProcessAmbientSfx(); // oracle F13: the ambient sfx event fires on game time
-        ProcessMapUpdateEvent(); // the 600-tick map_update event fires on game time
+        ProcessQueuedEvents(); // script timers, ambient sfx, map_update: one time-ordered game-time queue
         ProcessArmedCharges(); // placed explosives detonate on game time
         ProcessTrickleItems(); // P116 (review H): Geiger/Stealth Boy charge drain on game time
 

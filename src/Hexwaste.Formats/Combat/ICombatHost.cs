@@ -139,6 +139,9 @@ public interface ICombatHost
     /// <summary>run = request ANIM_RUNNING; the host still falls back to walk when the
     /// critter has no run art or a crippled leg (animation.cc:753-758). (P117.)</summary>
     bool StartWalk(MapObject critter, int targetTile, bool run = false); // :1616 StartNpcWalk
+    /// <summary>Walk an already-computed path prefix (animateMoveObjectToObject walks the rotations its
+    /// own _make_path returned, cut to the AP budget — re-pathing to the cut tile can pick another route).</summary>
+    bool StartWalk(MapObject critter, int targetTile, bool run, byte[] path) => StartWalk(critter, targetTile, run);
     /// <summary>The critters.lst run flag (art.cc artCritterFidShouldRun) — gates the AI
     /// approach's run request (combat_ai.cc:2424). (P117.)</summary>
     bool CritterShouldRun(MapObject critter);
@@ -168,6 +171,11 @@ public interface ICombatHost
     /// <summary>Muzzle/punch FRM + weapon sfx (PlayWeaponSfx + StartAttackAnimation),
     /// and a flying projectile attacker→target for ranged/thrown shots (phase-10 #11).</summary>
     void OnAttackStarted(MapObject attacker, MapObject target, ProtoInfo? weaponProto);
+    /// <summary>As above, with <paramref name="kick"/> = the swing is a KICK_LEG (combat.cc _combat_attack).</summary>
+    void OnAttackStarted(MapObject attacker, MapObject target, ProtoInfo? weaponProto, bool kick) =>
+        OnAttackStarted(attacker, target, weaponProto);
+    /// <summary>artExists(critter fid with ANIM_KICK_LEG) — combat.cc _combat_attack's kick gate.</summary>
+    bool HasKickArt(MapObject critter) => false;
     /// <summary>Hit reaction on a surviving target (actions.cc:424 _show_damage_to_object): a hit-from-
     /// front/back FRM, or a FALL when <paramref name="knockedDown"/>. The host picks the anim by facing
     /// (attacker vs target rotation) + art existence (P34-M6). :2494-2498</summary>

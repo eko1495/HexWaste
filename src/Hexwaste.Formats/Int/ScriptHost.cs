@@ -767,6 +767,24 @@ public sealed class ScriptHost(GameFileSystem vfs, ScriptList scripts, Hexwaste.
             _timers.Insert(index, entry);
     }
 
+    /// <summary>Runs a save's queue import with fo2ce queueLoad tie order: the loaded events come first,
+    /// then the timers already pending (map_enter's) re-insert after loaded ones of equal time.</summary>
+    // ported from fallout2-ce src/queue.cc queueLoad() (old-list merge, lines 171-184)
+    public void LoadTimers(Action loadSaved)
+    {
+        List<TimerEntry> old = [.. _timers];
+        _timers.Clear();
+        loadSaved();
+        foreach (TimerEntry t in old)
+        {
+            int index = _timers.FindIndex(x => x.DueTick > t.DueTick);
+            if (index < 0)
+                _timers.Add(t);
+            else
+                _timers.Insert(index, t);
+        }
+    }
+
     public void RemoveTimers(MapObject owner, int? param = null) =>
         _timers.RemoveAll(t => t.Owner == owner && (param is null || t.Param == param));
 
@@ -844,17 +862,26 @@ public sealed class ScriptHost(GameFileSystem vfs, ScriptList scripts, Hexwaste.
     /// </summary>
     public void PumpTimers(MapObject? dude)
     {
+        while (PumpOneTimer(dude)) { }
+    }
+
+    /// <summary>The head timer's due tick, or long.MaxValue when none is pending.</summary>
+    public long NextTimerDue => _timers.Count > 0 ? _timers[0].DueTick : long.MaxValue;
+
+    /// <summary>Fires the head timer if it is due; false when nothing is due.</summary>
+    public bool PumpOneTimer(MapObject? dude)
+    {
         long now = ClockTicks?.Invoke() ?? 302400;
-        while (_timers.Count > 0 && _timers[0].DueTick <= now)
-        {
-            TimerEntry entry = _timers[0];
-            _timers.RemoveAt(0);
-            ScriptRunResult? result = RunObjectProc(entry.Owner, entry.Map, dude,
-                entry.Param, -1, "timed_event_p_proc");
-            if (result is not null && OnScriptMessage is not null)
-                foreach (string message in result.Messages)
-                    OnScriptMessage(message);
-        }
+        if (_timers.Count == 0 || _timers[0].DueTick > now)
+            return false;
+        TimerEntry entry = _timers[0];
+        _timers.RemoveAt(0);
+        ScriptRunResult? result = RunObjectProc(entry.Owner, entry.Map, dude,
+            entry.Param, -1, "timed_event_p_proc");
+        if (result is not null && OnScriptMessage is not null)
+            foreach (string message in result.Messages)
+                OnScriptMessage(message);
+        return true;
     }
 
     /// <summary>Session GVARs, exposed for save/load.</summary>
@@ -1809,11 +1836,12 @@ public sealed class ScriptHost(GameFileSystem vfs, ScriptList scripts, Hexwaste.
         }
 
         // metarule: 14 FIRST_RUN (host tracks revisits); 16 PARTY_COUNT; 22
-        // IS_LOADGAME = 0; 49 WEAPON_DAMAGE_TYPE (the misc-10 explosion marker →
+        // IS_LOADGAME (true during a save load's script replay); 49 WEAPON_DAMAGE_TYPE (the misc-10 explosion marker →
         // EXPLOSION, for the temple-door damage_p_proc); everything else 0.
         public int Metarule(int rule, int argument) => rule switch
         {
             14 => _host.IsFirstRun(_map) ? 1 : 0,
+            22 => _host.IsLoadingGame() ? 1 : 0, // METARULE_IS_LOADGAME (interpreter_extra.cc:3231 _isLoadingGame)
             // METARULE_PARTY_COUNT (16) — _getPartyMemberCount (party_member.cc:900):
             // slot 0 is the dude (always counted), plus each live, visible, recruited
             // critter. dcVic gates the join on metarule(16)-1 >= floor(CHA/2)+trait(98).

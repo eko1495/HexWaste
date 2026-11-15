@@ -86,6 +86,14 @@ public class PathfinderTests
     private static int Tile(int x, int y) => y * HexGrid.Width + x;
 
     [Fact]
+    public void CombatPathTieBreakMatchesFo2ce()
+    {
+        // Oracle arcaves-ambush: fo2ce pathfinderFindPath(21125 -> 20523, in combat) returned 0,5,0,5 —
+        // the lowest-slot tie-break with no turn penalty in combat.
+        Assert.Equal([0, 5, 0, 5], Pathfinder.FindPath(21125, 20523, _ => false, inCombat: true));
+    }
+
+    [Fact]
     public void FindsStraightPath()
     {
         int from = Tile(100, 100);

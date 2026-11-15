@@ -89,6 +89,11 @@ public class SoundRealGameDataTests
         var ambient = maps.GetAmbientSfx("denbus2.map");
         Assert.NotEmpty(ambient);
         Assert.Contains(ambient, e => e.Name == "dogbark");
+
+        // fo2ce strParseKeyValue/atoi: arcaves' "animal:15 animal:10" (missing comma) is ONE entry, total 90.
+        var arcaves = maps.GetAmbientSfx("arcaves.map");
+        Assert.Equal(90, arcaves.Sum(e => e.Chance));
+        Assert.Contains(arcaves, e => e.Name == "animal" && e.Chance == 15);
     }
 }
 

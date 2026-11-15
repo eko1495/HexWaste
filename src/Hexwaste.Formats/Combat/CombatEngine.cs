@@ -2605,7 +2605,7 @@ public sealed class CombatEngine
                             || critter.LastAttackTarget != _host.Dude)
                             continue;
                         if (Pathfinder.FindPath(self.HexTile, critter.HexTile, tile => _host.IsBlocked(tile),
-                                requireFreeDestination: false) is null)
+                                requireFreeDestination: false, inCombat: InCombatPath) is null)
                             continue;
                         ShotStatus shot = CheckBadShot(self, critter);
                         if (shot != ShotStatus.Ok && shot != ShotStatus.NoAmmo && shot != ShotStatus.OutOfRange)
@@ -2666,7 +2666,7 @@ public sealed class CombatEngine
             if (!WithinPerception(self, candidate))
                 continue;
             byte[]? path = Pathfinder.FindPath(self.HexTile, candidate.HexTile,
-                tile => _host.IsBlocked(tile), requireFreeDestination: false);
+                tile => _host.IsBlocked(tile), requireFreeDestination: false, inCombat: InCombatPath);
             if (path is not null || CheckBadShot(self, candidate) == ShotStatus.Ok)
                 return candidate;
         }
@@ -4037,7 +4037,7 @@ public sealed class CombatEngine
         // P113 (Stage 4.1): combat approach paths route through closed usable doors and open them on
         // contact, like fo2ce (canUseDoor exempts them in _make_path for AI moves too, animation.cc:1802).
         byte[]? path = Pathfinder.FindPath(enemy.HexTile, dudeTile,
-            tile => _host.IsBlocked(tile), t => _host.IsPassableClosedDoor(enemy, t));
+            tile => _host.IsBlocked(tile), t => _host.IsPassableClosedDoor(enemy, t), inCombat: InCombatPath);
         if (path is null || path.Length <= 1)
             return false;
 
@@ -4059,7 +4059,7 @@ public sealed class CombatEngine
             _moveTauntPending = false;
             _host.Taunt(enemy, CombatTaunt.Type.Move); // _ai_move_steps_closer, combat_ai.cc:2382
         }
-        return _host.StartWalk(enemy, targetTile, approachRun);
+        return _host.StartWalk(enemy, targetTile, approachRun, path[..steps]);
     }
 
     /// <summary>Run away from a threat tile: greedily step to the unblocked
@@ -4116,7 +4116,7 @@ public sealed class CombatEngine
             {
                 int dest = HexGrid.TileInDirection(fromTile, dir, dist);
                 if (dest != fromTile && Pathfinder.FindPath(fromTile, dest, _host.IsBlocked,
-                        t => _host.IsPassableClosedDoor(critter, t), requireFreeDestination: true) is not null) // P113 (4.1): flee through doors
+                        t => _host.IsPassableClosedDoor(critter, t), requireFreeDestination: true, inCombat: InCombatPath) is not null) // P113 (4.1): flee through doors
                 {
                     target = dest;
                     break;
@@ -4279,6 +4279,7 @@ public sealed class CombatEngine
             _actingAllyAp -= apCost;
             ally.Rotation = HexGrid.RotationTo(ally.HexTile, target.HexTile);
             int hitLoc = AiHitLocation(ally, attacker, defender, weaponProto, weaponItem, distance, crittersInPath);
+            bool kick = RollKick(ally, weaponProto);
             (int chance, bool hit, int damage, int critFlags, int delta) = RollAttack(attacker, defender, weaponProto, weaponItem,
                 distance, crittersInPath, attackerIsDude: false, defenderIsDude: false,
                 hitLoc, DiffDmgMod(ally)); // P75-M4 + P84
@@ -4290,11 +4291,11 @@ public sealed class CombatEngine
             _pendingAttack = new PendingAttack(ally, target, chance, hit, damage, critFlags, CanKnockback: !isGun,
                 KnockbackPerk: weaponProto?.Weapon is { WeaponPerk: WeaponProtoStats.PerkKnockback }, // P74-M2
                 DamageType: weaponProto?.Weapon?.DamageType ?? 0,
-                AttackerAnim: DeathAnims.AttackAnimFor(isGun, weaponProto?.Weapon is not null));
+                AttackerAnim: kick ? DeathAnims.KickLeg : DeathAnims.AttackAnimFor(isGun, weaponProto?.Weapon is not null));
             TraceAttack(ally, target, chance, hit, damage, critFlags);
             _host.Transcript($"ally-attack {_host.ObjectName(ally)} -> {_host.ObjectName(target)}@{target.HexTile}"
                 + $"{(weaponProto is null ? "" : $" [{_host.ObjectNameByPid(weaponProto.Pid)}]")}: chance={chance}% hit={hit} damage={damage}{CritTag(critFlags)}");
-            _host.OnAttackStarted(ally, target, weaponProto);
+            _host.OnAttackStarted(ally, target, weaponProto, kick);
             TauntAttackOutcome(ally, target, isGun || IsThrowWeapon(weaponProto), hit, damage, hitLoc);
             return true;
         }
@@ -4312,7 +4313,7 @@ public sealed class CombatEngine
         if (_actingAllyAp < 1)
             return false;
         byte[]? path = Pathfinder.FindPath(ally.HexTile, moveTo,
-            tile => _host.IsBlocked(tile), t => _host.IsPassableClosedDoor(ally, t)); // P113 (4.1)
+            tile => _host.IsBlocked(tile), t => _host.IsPassableClosedDoor(ally, t), inCombat: InCombatPath); // P113 (4.1)
         if (path is null || path.Length <= 1)
             return false;
         // P117: allies approach through the same _ai_move_steps_closer, so the same
@@ -4329,7 +4330,7 @@ public sealed class CombatEngine
             _moveTauntPending = false;
             _host.Taunt(ally, CombatTaunt.Type.Move); // _ai_move_steps_closer, combat_ai.cc:2382
         }
-        return _host.StartWalk(ally, walkTarget, allyRun);
+        return _host.StartWalk(ally, walkTarget, allyRun, path[..steps]);
     }
 
     /// <summary>P50: an ally heals when hurt past its chem-use threshold (combat_ai.cc _ai_check_drugs
@@ -4437,6 +4438,15 @@ public sealed class CombatEngine
                 hitLocation == CriticalTables.LocationUncalled ? 3 : hitLocation); // uncalled = torso
     }
 
+    /// <summary>A non-dude PUNCH turns into a KICK one time in four when the critter has kick art. Same
+    /// 1-2 damage and 3 AP (combat.cc gUnarmedHitDescriptions), so only the draw + the animation differ.</summary>
+    // ported from fallout2-ce src/combat.cc _combat_attack() (attacker != gDude && HIT_MODE_PUNCH)
+    /// <summary>fo2ce isInCombat() for the pathfinder's turn penalty.</summary>
+    private bool InCombatPath => _phase != CombatPhase.Idle;
+
+    private bool RollKick(MapObject attacker, ProtoInfo? weaponProto) =>
+        weaponProto is null && _rng.Next(1, 5) == 1 && _host.HasKickArt(attacker);
+
     private void EnemyAttack(MapObject enemy, MapObject defenderObj, ProtoInfo? weaponProto,
         MapObject? weaponItem, int distance, int crittersInPath)
     {
@@ -4448,6 +4458,7 @@ public sealed class CombatEngine
 
         bool isGun = weaponProto?.Weapon is { } w && w.IsGun(weaponProto.ExtendedFlags);
         int hitLoc = AiHitLocation(enemy, attacker, defender, weaponProto, weaponItem, distance, crittersInPath);
+        bool kick = RollKick(enemy, weaponProto);
         (int chance, bool hit, int damage, int critFlags, int delta) = RollAttack(attacker, defender, weaponProto, weaponItem,
             distance, crittersInPath, attackerIsDude: false, defenderIsDude: defenderObj == _host.Dude,
             hitLoc, DiffDmgMod(enemy)); // P75-M4 + P84
@@ -4459,12 +4470,12 @@ public sealed class CombatEngine
         _pendingAttack = new PendingAttack(enemy, defenderObj, chance, hit, damage, critFlags, CanKnockback: !isGun,
             KnockbackPerk: weaponProto?.Weapon is { WeaponPerk: WeaponProtoStats.PerkKnockback }, // P74-M2
             DamageType: weaponProto?.Weapon?.DamageType ?? 0,
-            AttackerAnim: DeathAnims.AttackAnimFor(isGun, weaponProto?.Weapon is not null));
+            AttackerAnim: kick ? DeathAnims.KickLeg : DeathAnims.AttackAnimFor(isGun, weaponProto?.Weapon is not null));
         TraceAttack(enemy, defenderObj, chance, hit, damage, critFlags);
         _host.Transcript($"enemy-attack {_host.ObjectName(enemy)}@{enemy.HexTile}"
             + $"{(weaponProto is null ? "" : $" [{_host.ObjectNameByPid(weaponProto.Pid)}{(isGun ? $" d{distance}" : "")}]")}: chance={chance}% hit={hit} damage={damage}{CritTag(critFlags)}");
 
-        _host.OnAttackStarted(enemy, defenderObj, weaponProto);
+        _host.OnAttackStarted(enemy, defenderObj, weaponProto, kick);
         TauntAttackOutcome(enemy, defenderObj, isGun || IsThrowWeapon(weaponProto), hit, damage, hitLoc);
     }
 

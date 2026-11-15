@@ -15,7 +15,7 @@ namespace Hexwaste.Viewer;
 /// </summary>
 public sealed class DudeController(MapObject dude, FrmCache frmCache, Func<int, bool> isBlocked,
     Func<int>? movementAnimCode = null,
-    Func<int, bool>? isUsableClosedDoor = null, Action<int>? openDoorAt = null)
+    Func<int, bool>? isUsableClosedDoor = null, Action<int>? openDoorAt = null, Func<bool>? inCombat = null)
 {
     private const int AnimWalk = 1;
 
@@ -49,7 +49,8 @@ public sealed class DudeController(MapObject dude, FrmCache frmCache, Func<int, 
     /// is NOT refused up-front; the walk proceeds and the final blocked step fails its a5=1 re-path
     /// (animation.cc:2582), leaving the dude standing NEXT TO the target. Clicking furniture/a critter's
     /// tile walks you over instead of doing nothing. False = the strict a5=1 semantics (NPC walks).</param>
-    public bool WalkTo(int targetTile, bool allowBlockedGoal = false)
+    /// <param name="path">A precomputed rotation list to walk instead of pathing (combat AI approach).</param>
+    public bool WalkTo(int targetTile, bool allowBlockedGoal = false, byte[]? path = null)
     {
         // The pathfinder deliberately exempts the goal tile from its blocking check (so paths can end
         // at an occupied target); strict callers refuse a blocked goal like _make_path(..., a5=1)
@@ -59,8 +60,8 @@ public sealed class DudeController(MapObject dude, FrmCache frmCache, Func<int, 
 
         // P109: closed-but-usable doors are passable — the engine's pathfinder routes through
         // them (canUseDoor, animation.cc:1802-1808) and the walker opens them on contact.
-        byte[]? rotations = Pathfinder.FindPath(Dude.HexTile, targetTile, isBlocked, isUsableClosedDoor);
-        if (rotations is null)
+        byte[]? rotations = path ?? Pathfinder.FindPath(Dude.HexTile, targetTile, isBlocked, isUsableClosedDoor, inCombat: inCombat?.Invoke() ?? false);
+        if (rotations is null || rotations.Length == 0)
             return false;
 
         _targetTile = targetTile;
@@ -80,7 +81,7 @@ public sealed class DudeController(MapObject dude, FrmCache frmCache, Func<int, 
     /// Returns false when there is no path or the dude is already adjacent.</summary>
     public bool WalkToward(int targetTile)
     {
-        byte[]? rotations = Pathfinder.FindPath(Dude.HexTile, targetTile, isBlocked, isUsableClosedDoor);
+        byte[]? rotations = Pathfinder.FindPath(Dude.HexTile, targetTile, isBlocked, isUsableClosedDoor, inCombat: inCombat?.Invoke() ?? false);
         if (rotations is null || rotations.Length < 2)
             return false;
 
@@ -158,7 +159,7 @@ public sealed class DudeController(MapObject dude, FrmCache frmCache, Func<int, 
                 {
                     byte[]? repath = isBlocked(_targetTile)
                         ? null // a5=1 re-path refuses a blocked goal (animation.cc:1718-1722)
-                        : Pathfinder.FindPath(Dude.HexTile, _targetTile, isBlocked, isUsableClosedDoor);
+                        : Pathfinder.FindPath(Dude.HexTile, _targetTile, isBlocked, isUsableClosedDoor, inCombat: inCombat?.Invoke() ?? false);
                     if (repath is null)
                     {
                         Stop();

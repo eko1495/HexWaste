@@ -336,9 +336,9 @@ SCENARIOS=(
   "addict-miss|--character combat --map arcaves.map --addict-probe 87 2 9000 --rng-seed 1"
   # P38 kill counters (killsIncByType / GET_KILL_COUNT — the faithful adjacency to the dropped
   # karma auto-award; the engine tracks kills by type beside the XP award, gated on the dude/team
-  # kill). The seed-7 arcaves fight kills 2 Radscorpions (KILL_TYPE 6); --kills-probe -1 reports the
+  # kill). The seed-42 arcaves fight kills 2 Radscorpions (KILL_TYPE 6); --kills-probe -1 reports the
   # tally. No RNG / no Console output added → the combat goldens stay byte-identical.
-  "kill-counter|--map arcaves.map --fight 20529 --rng-seed 7 --kills-probe -1"
+  "kill-counter|--map arcaves.map --fight 20529 --rng-seed 42 --kills-probe -1"
   # P39 skill books (item.cc booksInitVanilla + proto_instance.cc _obj_use_book): reading a book raises
   # its skill by (100-effective)/10 points (diminishing returns, nothing at effective 100), ×1.5 with
   # Comprehension. --use-book gives+reads one book. Guns and Bullets (102→Small Guns, TAGGED for Narg so
