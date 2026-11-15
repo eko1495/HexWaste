@@ -1664,7 +1664,9 @@ MISC-charges branch. A third gap — two further readout sites that also hide th
 absent for every weapon rather than a regression — is recorded as an addendum to F40 below.
 
 **F39 — Hexwaste's HUD ammo readout is `NUMBERS.FRM` digits; vanilla paints a dithered gauge, not
-numbers.** *Effort S-M · changes the HUD for every gun, needs its own decision + visual verification
+numbers.** **CLOSED 2026-11-15** (branch `feat/hud-fo2ce-parity`): the digits are replaced by the
+`interfaceUpdateAmmoBar` column, checked against a fo2ce frame together with the item button, AP lights
+and counters. Original entry: *Effort S-M · changes the HUD for every gun, needs its own decision + visual verification
 · found grounding F38 (2026-08-22).* The paint loops at `interface.cc:1985-2007` (inside
 `interfaceUpdateAmmoBar`, which itself runs `:1985-2016`, the extra lines being the
 `windowRefreshRect` tail) draw a

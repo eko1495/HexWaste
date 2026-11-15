@@ -72,13 +72,16 @@ public sealed class InterfaceBar : IDisposable
 
     /// <summary>Load a loose-path intrface FRM (frame 0) as an RGBA texture — the
     /// WorldmapScreen pattern. Index 0 is the FRM transparent colour, so it maps to
-    /// transparent black via the palette's alpha. Returns null if the file is absent.</summary>
-    public static Texture2D? LoadFrm(GraphicsDevice graphicsDevice, GameFileSystem vfs, Palette palette, string path)
+    /// transparent black via the palette's alpha. Returns null if the file is absent.
+    /// <paramref name="lastFrame"/> picks the final frame of an animation instead of the first.</summary>
+    public static Texture2D? LoadFrm(GraphicsDevice graphicsDevice, GameFileSystem vfs, Palette palette, string path,
+        bool lastFrame = false)
     {
         if (!vfs.Exists(path))
             return null;
 
-        FrmFrame frame = FrmFile.Load(vfs.ReadAllBytes(path)).GetFrame(0);
+        FrmFile frm = FrmFile.Load(vfs.ReadAllBytes(path));
+        FrmFrame frame = frm.GetFrame(lastFrame ? frm.FrameCount - 1 : 0);
         byte[] paletteRgba = palette.ToRgba();
         byte[] rgba = new byte[frame.Pixels.Length * 4];
         for (int p = 0; p < frame.Pixels.Length; p++)
