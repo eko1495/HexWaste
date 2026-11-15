@@ -26,7 +26,7 @@ public sealed partial class ViewerGame
     // GaugeMsPerSlice, then holds 200 ms (inputPauseForTocks, elevator.cc:463) before the teleport.
     private (int Type, int Button, int StartButton, double Gauge, double TargetGauge, double PauseMs)? _elevatorRide;
 
-    private Texture2D? InterfaceFrm(int intrfaceId)
+    private Texture2D? InterfaceFrm(int intrfaceId, bool lastFrame = false)
     {
         if (intrfaceId < 0)
             return null;
@@ -35,7 +35,7 @@ public sealed partial class ViewerGame
             try
             {
                 tex = InterfaceBar.LoadFrm(GraphicsDevice, _vfs, _palette,
-                    _artIndex.GetFrmPath(Fid.Build(ObjectType.Interface, intrfaceId)));
+                    _artIndex.GetFrmPath(Fid.Build(ObjectType.Interface, intrfaceId)), lastFrame);
             }
             catch (Exception) { tex = null; }
             _intrfaceFrms[intrfaceId] = tex;

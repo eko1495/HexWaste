@@ -190,8 +190,7 @@ public sealed partial class ViewerGame
     // ported from fallout2-ce src/interface.cc _intface_update_ammo_lights() (:1357-1359): the
     // readout is gated on ammoGetCapacity(item) > 0, NOT on weapon class, so the five non-gun
     // capacity weapons (Ripper, Cattle Prod, Power Fist, Super/Mega variants) show their charges.
-    // NOTE: vanilla draws a 70px dithered gauge here (interfaceUpdateAmmoBar, :1985-2007) rather
-    // than digits; that display-shape divergence predates this change and is tracked separately.
+    // The HUD draws it as vanilla's 70px gauge (interfaceUpdateAmmoBar, :1985-2007).
     // Shared with --awareness-probe (F38) so the probe exercises the real gate, not a re-statement of it.
     private static bool ShowsAmmoReadout(ProtoInfo? weaponProto) => weaponProto?.Weapon is { } w && w.AmmoCapacity > 0;
 

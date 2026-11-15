@@ -224,7 +224,7 @@ public sealed class CombatEngine
     /// blocks any weapon attack and one crippled arm blocks a TWO-HANDED weapon. Unarmed
     /// (no weapon) is never gated here — you can still punch. Returns the block reason, or
     /// null if the attack is allowed (phase-18 M2). Doctor heals the crip-arm bit (P14-M5).</summary>
-    private static string? WeaponBlockedByCrippledArms(MapObject attacker, ProtoInfo? weaponProto)
+    public static string? WeaponBlockedByCrippledArms(MapObject attacker, ProtoInfo? weaponProto)
     {
         if (weaponProto?.Weapon is null)
             return null;
@@ -311,6 +311,25 @@ public sealed class CombatEngine
             0, 95);
     }
 
+    /// <summary>The AP the dude's single (non-burst) attack with this weapon costs. TryAttack charges it
+    /// and the HUD item button shows it.</summary>
+    // ported from fallout2-ce src/item.cc weaponGetActionPointCost()
+    public int DudeAttackApCost(ProtoInfo? weaponProto, bool aimed)
+    {
+        bool isGun = weaponProto?.Weapon is { } wstats && wstats.IsGun(weaponProto.ExtendedFlags);
+        int range = isGun ? weaponProto!.Weapon!.MaxRange1
+            : Math.Min(weaponProto?.Weapon?.MaxRange1 ?? 1, 2); // throwers melee-capped until rung (a)
+        return Math.Max(1, (weaponProto?.Weapon?.ApCost ?? CombatMath.PunchApCost)
+            + (aimed ? 1 : 0) // aimed shot +1 AP (item.cc:1706)
+            // P28-M3: Bonus Rate of Fire (−1 ranged) / Bonus HtH Attacks (−1 melee/unarmed) — item.cc:1693.
+            - (isGun
+                ? (_host.DudePerkRank(Perks.PerkId.BonusRateOfFire) > 0 ? 1 : 0)
+                : (_host.DudePerkRank(Perks.PerkId.BonusHthAttacks) > 0 ? 1 : 0))
+            // P29-M1: Fast Shot − 1 AP for a long-range weapon (range > 2; item.cc:1679). Inert
+            // without the trait; the Math.Max(1) floor mirrors the engine's "actionPoints < 1 → 1".
+            - (range > 2 && _host.DudeHasTrait(TraitModifiers.FastShot) ? 1 : 0));
+    }
+
     /// <summary>
     /// Attacks an adjacent/in-range critter. The outcome is rolled HERE, before
     /// any animation — damage waits for the swing to finish (ported from
@@ -341,15 +360,7 @@ public sealed class CombatEngine
         bool isGun = weaponProto?.Weapon is { } wstats && wstats.IsGun(weaponProto.ExtendedFlags);
         int range = isGun ? weaponProto!.Weapon!.MaxRange1
             : Math.Min(weaponProto?.Weapon?.MaxRange1 ?? 1, 2); // throwers melee-capped until rung (a)
-        int apCost = Math.Max(1, (weaponProto?.Weapon?.ApCost ?? CombatMath.PunchApCost)
-            + (hitLocation != CriticalTables.LocationUncalled ? 1 : 0) // aimed shot +1 AP (item.cc:1706)
-            // P28-M3: Bonus Rate of Fire (−1 ranged) / Bonus HtH Attacks (−1 melee/unarmed) — item.cc:1693.
-            - (isGun
-                ? (_host.DudePerkRank(Perks.PerkId.BonusRateOfFire) > 0 ? 1 : 0)
-                : (_host.DudePerkRank(Perks.PerkId.BonusHthAttacks) > 0 ? 1 : 0))
-            // P29-M1: Fast Shot − 1 AP for a long-range weapon (range > 2; item.cc:1679). Inert
-            // without the trait; the Math.Max(1) floor mirrors the engine's "actionPoints < 1 → 1".
-            - (range > 2 && _host.DudeHasTrait(TraitModifiers.FastShot) ? 1 : 0));
+        int apCost = DudeAttackApCost(weaponProto, hitLocation != CriticalTables.LocationUncalled);
         int distance = HexGrid.Distance(dude.HexTile, target.HexTile);
         if (distance > range)
         {

@@ -133,6 +133,11 @@ public sealed partial class ViewerGame
 
         Rectangle viewport = VirtualViewport();
         bar.Draw(_spriteBatch, viewport);
+        // The bar window's 100th row keeps its black fill: iface.frm covers only 99 rows
+        // (interface.cc interfaceInit: windowCreate(..., _colorTable[0]) + the 99-row background blit).
+        _panelPixel ??= CreatePixel();
+        _spriteBatch.Draw(_panelPixel, new Rectangle(bar.Origin(viewport).X, bar.Origin(viewport).Y + InterfaceBar.Height,
+            InterfaceBar.Width, InterfaceBar.WindowHeight - InterfaceBar.Height), Color.Black);
 
         if (_dude is null || GetCritterState(_dude.Dude) is not { } stats)
         {
@@ -145,8 +150,45 @@ public sealed partial class ViewerGame
         }
         Point o = bar.Origin(viewport); // bar-local coords (interface.cc) -> screen = o + coord
 
-        // --- M2: equipped-weapon slot (centre, bar-local 267,26 188x67; interface.cc:505,315) ---
+        // --- the item button (188x67 at bar-local 267,26; interface.cc:505) ---
+        // ported from fallout2-ce src/interface.cc interfaceBarRefreshMainAction()
+        // Not covered: a non-weapon item in hand (USE / USE ON text), the reload action, the special
+        // unarmed attacks and the right-hand kick, none of which the dude's attack path has.
+        // shortcut: the pressed (sattkbdn) look is the generic darken tint below. Upgrade with the down art + darkened text if it matters.
+        int bx = o.X + 267, by = o.Y + 26;
         (Formats.Proto.ProtoInfo? weaponProto, MapObject? weaponItem) = EquippedWeapon(_dude.Dude);
+        bool burstGun = Formats.Combat.CombatEngine.IsBurstWeapon(weaponProto);
+        bool burst = burstGun && _weaponMode == WeaponMode.Burst;
+        // Burst can't be aimed (item.cc:1830); Fast Shot can't aim at all (TryAttack coerces the same way).
+        bool aimed = !burst && AimLocation != Formats.Combat.CriticalTables.LocationUncalled
+            && !DudeHasTrait(Formats.Combat.TraitModifiers.FastShot);
+        int apCost = Formats.Combat.CombatEngine.WeaponBlockedByCrippledArms(_dude.Dude, weaponProto) is not null ? -1
+            : burst ? (weaponProto!.Weapon!.ApCost2 > 0 ? weaponProto.Weapon.ApCost2 : weaponProto.Weapon.ApCost)
+            : _combat.DudeAttackApCost(weaponProto, aimed);
+        if (apCost is >= 0 and < 10)
+        {
+            if (InterfaceFrm(32) is { } buttonUp) // sattkbup.frm
+                _spriteBatch.Draw(buttonUp, new Vector2(bx, by), Color.White);
+            // The attack's name art, top right: the LIVE mode for a burst-capable gun, else the proto's
+            // attack-anim nibble (unarmed = punch).
+            int anim = burstGun ? (burst ? 7 : 6) : weaponProto is null ? 1 : weaponProto.ExtendedFlags & 0xF;
+            if (anim < ActionTextFrm.Length && InterfaceFrm(ActionTextFrm[anim]) is { } actionText)
+                _spriteBatch.Draw(actionText, new Vector2(bx + 181 - actionText.Width, by + 7), Color.White);
+            if (aimed && InterfaceFrm(288) is { } bullseye) // bullseye.frm, bottom right
+                _spriteBatch.Draw(bullseye, new Vector2(bx + 181 - bullseye.Width, by + 60 - bullseye.Height), Color.White);
+            // "AP" (mvepnt.frm) + one digit (mvenum.frm: ten 10px digits), bottom left.
+            if (InterfaceFrm(289) is { } apLabel)
+            {
+                _spriteBatch.Draw(apLabel, new Vector2(bx + 7, by + 60 - apLabel.Height), Color.White);
+                if (InterfaceFrm(290) is { } apDigits)
+                    _spriteBatch.Draw(apDigits, new Vector2(bx + 7 + apLabel.Width + 7, by + 60 - apDigits.Height),
+                        new Rectangle(apCost * 10, 0, 10, apDigits.Height), Color.White);
+            }
+        }
+        else if (InterfaceFrm(73) is { } buttonOff) // saturbup.frm: weapon unusable
+        {
+            _spriteBatch.Draw(buttonOff, new Vector2(bx, by), Color.White);
+        }
         if (weaponItem is not null)
         {
             try
@@ -158,59 +200,69 @@ public sealed partial class ViewerGame
                     // native size, downscaled only if larger than the slot, centred
                     float s = Math.Min(1f, Math.Min(188f / tex.Width, 67f / tex.Height));
                     int dw = (int)(tex.Width * s), dh = (int)(tex.Height * s);
-                    _spriteBatch.Draw(tex, new Rectangle(o.X + 267 + (188 - dw) / 2, o.Y + 26 + (67 - dh) / 2, dw, dh), Color.White);
+                    _spriteBatch.Draw(tex, new Rectangle(bx + (188 - dw) / 2, by + (67 - dh) / 2, dw, dh), Color.White);
                 }
             }
             catch (Exception ex) when (ex is FileNotFoundException or InvalidDataException or NotSupportedException)
             {
             }
         }
-        // Ammo/charge count over the baked ammo bar (NUMBERS.FRM, white band).
-        if (weaponProto is not null && ShowsAmmoReadout(weaponProto) && weaponItem is not null && bar.Numbers is { } numAmmo)
-            DrawCounter(numAmmo, WeaponAmmo(weaponProto, weaponItem), band: 0, xRight: o.X + 458, yTop: o.Y + 76);
-        // The active attack-mode label, bright, at the weapon-button top-left. For a
-        // burst-capable gun it reflects the LIVE _weaponMode (P15 M1 — the slot/N cycle);
-        // otherwise the proto's attack-anim nibble (SWING/THRUST/SINGLE/…).
-        if (weaponProto is not null && _fontRenderer is not null)
+        // The ammo gauge: a 1px column of 70 rows at x=463, y=26. Unlit rows are palette index 14; the
+        // loaded share (forced even) alternates lit 196 / unlit 14 from the bottom up.
+        // ported from fallout2-ce src/interface.cc _intface_update_ammo_lights() + interfaceUpdateAmmoBar()
         {
-            string mode = Formats.Combat.CombatEngine.IsBurstWeapon(weaponProto)
-                ? (_weaponMode == WeaponMode.Burst ? "BURST" : "SINGLE")
-                : AttackModeName(weaponProto);
-            _fontRenderer.Draw(_spriteBatch, mode, new Vector2(o.X + 271, o.Y + 28), new Color(252, 252, 84));
+            int ratio = 0;
+            if (ShowsAmmoReadout(weaponProto) && weaponItem is not null)
+                ratio = (int)((double)WeaponAmmo(weaponProto!, weaponItem) / weaponProto!.Weapon!.AmmoCapacity * 70.0) & ~1;
+            _panelPixel ??= CreatePixel();
+            (byte ur, byte ug, byte ub) = _palette.GetRgb(14);
+            (byte lr, byte lg, byte lb) = _palette.GetRgb(196);
+            _spriteBatch.Draw(_panelPixel, new Rectangle(o.X + 463, o.Y + 26, 1, 70), new Color(ur, ug, ub));
+            for (int row = 70 - ratio; row < 70; row += 2)
+                _spriteBatch.Draw(_panelPixel, new Rectangle(o.X + 463, o.Y + 26 + row, 1, 1), new Color(lr, lg, lb));
         }
 
-        // --- M1: HP/AC via NUMBERS.FRM. The bar has baked placeholder digits ("036"/
-        // "-258") in dark recessed fields; blank each field to its background colour
-        // first (the engine restores the field background before re-rendering), then
-        // draw the live value right-aligned over it.
+        // --- HP/AC counters via NUMBERS.FRM (interface.cc interfaceRenderHitPoints :877 /
+        // interfaceRenderArmorClass :951): a 33x17 field at x=473, y=40 / 75. The sign cell and the
+        // three digits cover the bar's baked placeholder digits completely.
         if (bar.Numbers is { } numbers)
         {
-            _panelPixel ??= CreatePixel();
-            var fieldBg = new Color(32, 32, 32); // the recessed digit-box interior colour
-            _spriteBatch.Draw(_panelPixel, new Rectangle(o.X + 474, o.Y + 40, 33, 17), fieldBg);  // HP box
-            _spriteBatch.Draw(_panelPixel, new Rectangle(o.X + 474, o.Y + 75, 33, 17), fieldBg);  // AC box
             // The counters roll toward the live stat (M5); fall back to the real value
             // until the first roll step initialises them.
             int shownHp = _hudDisplayedHp >= 0 ? _hudDisplayedHp : stats.CurrentHp;
             int shownAc = _hudDisplayedAc >= 0 ? _hudDisplayedAc : DudeHudAc(stats);
-            // HP: white band normal, yellow <50%, red <25% (interface.cc:889-894) — from
-            // the shown value so the colour tracks the rolling digits.
-            int hpBand = shownHp * 4 <= stats.MaxHp ? 2 : shownHp * 2 <= stats.MaxHp ? 1 : 0;
-            DrawCounter(numbers, shownHp, hpBand, xRight: o.X + 505, yTop: o.Y + 40);
-            DrawCounter(numbers, shownAc, band: 0, xRight: o.X + 505, yTop: o.Y + 75);
+            // HP: red below 25% of max, yellow below 50%, else white (:886-896), from the shown
+            // value so the colour tracks the rolling digits.
+            int hpBand = shownHp < (int)(stats.MaxHp * 0.25) ? 2 : shownHp < (int)(stats.MaxHp * 0.5) ? 1 : 0;
+            DrawCounter(numbers, shownHp, hpBand, o.X + 473, o.Y + 40);
+            DrawCounter(numbers, shownAc, band: 0, o.X + 473, o.Y + 75);
         }
 
-        // AP: light the green dot sockets along the top (interface.cc:974,1001 — 10 dots,
-        // x=316 step 9, y=14). A bright-green pip per current action point.
-        _panelPixel ??= CreatePixel();
-        int ap = Math.Clamp(_combat.DudeAp, 0, 10);
-        for (int i = 0; i < ap; i++)
-            _spriteBatch.Draw(_panelPixel, new Rectangle(o.X + 316 + i * 9, o.Y + 13, 6, 6), new Color(0, 252, 0));
-        // P74-M4: the Bonus Move free-move pool shows as extra (lighter-green) pips after the AP dots
-        // (interface.cc interfaceRenderActionPoints renders ap + free move). Inert when the pool is 0.
-        int free = Math.Clamp(_combat.DudeFreeMove, 0, 10 - ap);
-        for (int i = 0; i < free; i++)
-            _spriteBatch.Draw(_panelPixel, new Rectangle(o.X + 316 + (ap + i) * 9, o.Y + 13, 6, 6), new Color(132, 252, 132));
+        // --- AP lights: ten 5x5 lights at x=316 step 9, y=14 (interface.cc interfaceRenderActionPoints
+        // :966; hlgrn/hlyel/hlred.frm). combat.cc decides what they show: nothing outside combat (:2813)
+        // or before the dude's first turn, green AP + yellow free move on his turn (:3238), ten red once
+        // his turn is over (:3291, :3314).
+        Formats.Combat.CombatPhase phase = _combat.Phase;
+        if (phase == Formats.Combat.CombatPhase.Idle)
+            _hudDudeHadTurn = false;
+        else if (phase == Formats.Combat.CombatPhase.PlayerTurn)
+            _hudDudeHadTurn = true;
+        int ap = 0, free = 0;
+        Texture2D? light = InterfaceFrm(83);
+        if (phase == Formats.Combat.CombatPhase.PlayerTurn)
+        {
+            ap = Math.Clamp(_combat.DudeAp, 0, 10);
+            free = Math.Clamp(_combat.DudeFreeMove, 0, 10 - ap);
+        }
+        else if (_hudDudeHadTurn)
+        {
+            ap = 10;
+            light = InterfaceFrm(85);
+        }
+        for (int i = 0; i < ap && light is not null; i++)
+            _spriteBatch.Draw(light, new Vector2(o.X + 316 + i * 9, o.Y + 14), Color.White);
+        for (int i = ap; i < ap + free && InterfaceFrm(84) is { } yellow; i++)
+            _spriteBatch.Draw(yellow, new Vector2(o.X + 316 + i * 9, o.Y + 14), Color.White);
 
         // --- M3: the green message monitor (the left screen; bar-local MonitorLayout.X/Y
         // ~Width x Height, display_monitor.cc). Reuse font1.aaf (the engine's interface font) tinted
@@ -251,14 +303,22 @@ public sealed partial class ViewerGame
         }
 
         // M5: the combat-mode buttons over the far-right hazard panel — only during a
-        // fight (END TURN / END COMBAT, 38x22 @ 590,43 / 590,65; interface.cc:1893).
-        bool inCombat = _combat.Phase != Formats.Combat.CombatPhase.Idle;
+        // fight (END TURN / END COMBAT, 38x22 @ 590,43 / 590,65; interface.cc:1893). Under them the
+        // opened panel (endanim.frm's last frame, 57x58 at 580,38; interfaceBarEndButtonsShow :1379),
+        // over them the corner lights: green on the dude's turn (endltgrn.frm, :1493), red while
+        // others act (endltred.frm, :1513).
+        // shortcut: the panel's open/close animation (endanim's other frames) is not played. Upgrade if the snap is noticed.
+        bool inCombat = phase != Formats.Combat.CombatPhase.Idle;
         if (inCombat)
         {
+            if (InterfaceFrm(104, lastFrame: true) is { } endPanel)
+                _spriteBatch.Draw(endPanel, new Vector2(o.X + 580, o.Y + 38), Color.White);
             if (bar.EndTurn is not null)
                 _spriteBatch.Draw(bar.EndTurn, new Vector2(o.X + 590, o.Y + 43), Color.White);
             if (bar.EndCombat is not null)
                 _spriteBatch.Draw(bar.EndCombat, new Vector2(o.X + 590, o.Y + 65), Color.White);
+            if (InterfaceFrm(phase == Formats.Combat.CombatPhase.PlayerTurn ? 109 : 110) is { } endLights)
+                _spriteBatch.Draw(endLights, new Vector2(o.X + 580, o.Y + 38), Color.White);
         }
 
         // M5: press/hover feedback. While the left mouse is held on a button, overlay
@@ -350,16 +410,13 @@ public sealed partial class ViewerGame
     private Formats.Text.MessageFile? _intrfaceMsg;
     private bool _intrfaceMsgTried;
 
-    /// <summary>Weapon attack-mode label from the proto's primary attack-anim nibble
-    /// (extendedFlags &amp; 0xF; item.cc _attack_anim) — SWING/THRUST/SINGLE/BURST/etc.</summary>
-    private static readonly string[] AttackAnimNames =
-        ["", "PUNCH", "KICK", "SWING", "THRUST", "THROW", "SINGLE", "BURST", "FLAME"];
+    /// <summary>The item button's attack-name art (intrface FRM ids) by the proto's primary
+    /// attack-anim nibble (extendedFlags &amp; 0xF; item.cc _attack_anim): none, punch, kick, swing,
+    /// thrust, throw, single, burst, flame (continuous fire shows BURST). interface.cc :1634-1701.</summary>
+    private static readonly int[] ActionTextFrm = [-1, 42, 41, 44, 45, 117, 43, 40, 40];
 
-    private static string AttackModeName(Formats.Proto.ProtoInfo proto)
-    {
-        int anim = proto.ExtendedFlags & 0xF;
-        return anim >= 0 && anim < AttackAnimNames.Length ? AttackAnimNames[anim] : "";
-    }
+    /// <summary>The dude has had a turn in the current fight (the AP lights go red after it).</summary>
+    private bool _hudDudeHadTurn;
 
     /// <summary>Toggle the weapon-slot attack mode (single↔burst) for a burst-capable
     /// gun; a non-burst weapon stays single (P15 M1 — the slot click + N).</summary>
@@ -477,27 +534,20 @@ public sealed partial class ViewerGame
         return false;
     }
 
-    /// <summary>Blit a right-aligned integer from NUMBERS.FRM (the engine digit font):
-    /// 3 colour bands (band*120), digits 9px (src-x band*120+9*d), minus 6px (+108).
-    /// Ported from fallout2-ce src/interface.cc interfaceRenderCounter (:2049-2088).</summary>
-    private void DrawCounter(Texture2D numbers, int value, int band, int xRight, int yTop)
+    /// <summary>Blit a counter from NUMBERS.FRM (the engine digit font: 3 colour bands of 120px,
+    /// digits 9px at band*120+9*d, minus 6px at +108, blank sign 6px at +114): the sign cell at
+    /// <paramref name="x"/>, then hundreds, tens and ones, always all three (33x17 in all).
+    /// Ported from fallout2-ce src/interface.cc interfaceRenderCounter (:2050-2088).</summary>
+    private void DrawCounter(Texture2D numbers, int value, int band, int x, int yTop)
     {
-        bool negative = value < 0;
-        string digits = Math.Abs(value).ToString();
-        int width = digits.Length * 9 + (negative ? 6 : 0);
-        int x = xRight - width;
-        int bandX = band * 120;
-        if (negative)
-        {
-            _spriteBatch.Draw(numbers, new Rectangle(x, yTop, 6, 17), new Rectangle(bandX + 108, 0, 6, 17), Color.White);
-            x += 6;
-        }
-        foreach (char c in digits)
-        {
-            int d = c - '0';
-            _spriteBatch.Draw(numbers, new Rectangle(x, yTop, 9, 17), new Rectangle(bandX + 9 * d, 0, 9, 17), Color.White);
-            x += 9;
-        }
+        value = Math.Clamp(value, -999, 999);
+        int bandX = band * 120, abs = Math.Abs(value);
+        _spriteBatch.Draw(numbers, new Rectangle(x, yTop, 6, 17), new Rectangle(bandX + (value >= 0 ? 114 : 108), 0, 6, 17), Color.White);
+        void Digit(int cell, int d) => _spriteBatch.Draw(numbers, new Rectangle(x + 6 + 9 * cell, yTop, 9, 17),
+            new Rectangle(bandX + 9 * d, 0, 9, 17), Color.White);
+        Digit(0, abs / 100);
+        Digit(1, abs / 10 % 10);
+        Digit(2, abs % 10);
     }
 
     /// <summary>Hover name near the cursor + the message log, bottom-left, in Fallout green.</summary>
