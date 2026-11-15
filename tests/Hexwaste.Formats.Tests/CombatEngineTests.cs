@@ -3528,7 +3528,8 @@ public class CombatEngineTests
         MapObject enemy = host.AddCritter(NewCritter(HexGrid.TileInDirection(20100, 0), hp: 30, ap: 10));
         enemy.Sid = 7; // a scripted NPC: damage_p_proc can run
         enemy.Team = 1; // Important-fix side effect (Task-2 review): see RoundRolloverResetsDudeApAndEnemyRetaliates.
-        var rng = new RecordingRng(new SequenceRng(100, 1, 100, 1, 60));
+        // 2 = the enemy's punch-to-kick draw (combat.cc _combat_attack), not 1 → stays a punch.
+        var rng = new RecordingRng(new SequenceRng(100, 1, 2, 100, 1, 60));
         var engine = new CombatEngine(host, rng);
 
         Assert.True(engine.TryAttack(enemy)); // open combat

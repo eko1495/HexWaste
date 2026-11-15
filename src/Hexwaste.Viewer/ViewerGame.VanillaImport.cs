@@ -183,11 +183,14 @@ public sealed partial class ViewerGame
         _currentAreaId = save.Worldmap.CurrentArea;
 
         // 5. queueLoad (queue.cc:84): map each saved event onto the Hexwaste queue that models it.
-        //    Tie order differs: fo2ce queueLoad re-inserts the pre-existing (map_enter-created) events
-        //    AFTER saved events of equal time (queue.cc:171-184), so saved events win same-tick ties;
-        //    Hexwaste appends the imported timers behind them. Recorded as finding F10
-        //    (docs/research-notes/oracle-m1-findings-2026-10.md).
-        int imported = ImportVanillaQueue(save.Queue, save.Dude.Id);
+        //    fo2ce queueLoad re-inserts the pre-existing (map_enter-created) events AFTER saved events
+        //    of equal time (queue.cc:171-184), so saved timers win same-tick ties (finding F10).
+        int imported = 0;
+        void Import() => imported = ImportVanillaQueue(save.Queue, save.Dude.Id);
+        if (_scriptHost is null)
+            Import();
+        else
+            _scriptHost.LoadTimers(Import);
 
         int objects = _map.Elevations.Sum(e => e?.Objects.Count ?? 0);
         Console.Error.WriteLine($"vanilla-import: map={mapName} ({save.Header.MapFileName}) elev={_elevation} "

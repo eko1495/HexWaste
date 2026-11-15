@@ -77,7 +77,22 @@ public sealed partial class ViewerGame
     {
         if (!OracleRngMode)
             return;
-        OracleRng = new Fo2ceRng(RngSeed ?? throw new InvalidOperationException("--rng fo2ce needs a seed (--scenario or --rng-seed)"));
+        SeedOracleStreams(RngSeed ?? throw new InvalidOperationException("--rng fo2ce needs a seed (--scenario or --rng-seed)"));
+        OpenOracleTrace();
+    }
+
+    /// <summary>Before the startup load: the load's own draws (e.g. map_enter random() timer delays)
+    /// come from Fo2ceRng(1), untraced — the fo2ce runner calls oracleRandomSeed(1) before
+    /// lsgLoadGameHeadless, so both engines' load-time rolls match.</summary>
+    private void SeedOracleLoadStream()
+    {
+        if (OracleRngMode)
+            SeedOracleStreams(1);
+    }
+
+    private void SeedOracleStreams(int seed)
+    {
+        OracleRng = new Fo2ceRng(seed);
         _oracleCombatSlot!.Target = OracleRng;
         _combatRng = OracleRng;
         _calledShotRng = OracleRng;
@@ -95,7 +110,6 @@ public sealed partial class ViewerGame
             _scriptHost.Rng = adapter;
             _scriptHost.SharedVmRandom = adapter;
         }
-        OpenOracleTrace();
     }
 
     /// <summary>--trace: open the sink AFTER the import + seed (nothing during the load is traced — the

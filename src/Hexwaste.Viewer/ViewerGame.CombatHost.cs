@@ -404,13 +404,13 @@ public sealed partial class ViewerGame
     /// <summary>Attack art: the weapon's animation code goes into FID bits
     /// 12-15 and the attack anim comes from extendedFlags &amp; 0xF via
     /// item.cc _attack_anim[] (THRUST=41, SWING=42; fists punch at 16).</summary>
-    private void StartAttackAnimation(MapObject attacker, ProtoInfo? weaponProto)
+    private void StartAttackAnimation(MapObject attacker, ProtoInfo? weaponProto, bool kick = false)
     {
         // item.cc:116 _attack_anim, indexed by extendedFlags & 0xF
         ReadOnlySpan<int> attackAnims = [0, 16, 17, 42, 41, 18, 45, 46, 47];
         const int animThrowPunch = 16;
 
-        int anim = animThrowPunch;
+        int anim = kick ? Formats.Combat.DeathAnims.KickLeg : animThrowPunch;
         int weaponCode = 0;
         if (weaponProto?.Weapon is { } weapon)
         {
@@ -600,7 +600,6 @@ public sealed partial class ViewerGame
         }
     }
 
-    // shortcut: a map-update event due on the same tick as a script timer or the ambient event runs after them; fo2ce's single queue orders them by insertion. Upgrade if the oracle shows a same-tick difference.
     // shortcut: fo2ce's midnight event (gameTimeEventProcess -> gameTimeScheduleUpdateEvent, scripts.cc:428) queues another map-update event at midnight + 600, and whichever fires first clears the other; Hexwaste keeps one chain. Upgrade when a fixture crosses midnight.
     // shortcut: rest, skill books, AdvanceHours and multi-day game_time_advance jump the clock in one step, so one round fires where fo2ce's chunked rest loop (pipboy.cc:1990-2010) fires one per 600 ticks and opGameTimeAdvance one per day. Upgrade if an oracle scenario rests.
     // shortcut: the dialog/loot gates also apply to the inline game_time_advance call; fo2ce's queueProcessEvents there is ungated, so a round asked for from a dialog node runs when the dialog closes instead of inside it. Upgrade if a fixture advances time from dialog.
@@ -1019,6 +1018,7 @@ public sealed partial class ViewerGame
         _npcWalkers.TryGetValue(critter, out DudeController? w) && w.Moving;
     public bool IsDudeMoving => _dude is { Moving: true };
     public bool StartWalk(MapObject critter, int targetTile, bool run = false) => StartNpcWalk(critter, targetTile, run);
+    public bool StartWalk(MapObject critter, int targetTile, bool run, byte[] path) => StartNpcWalk(critter, targetTile, run, path);
 
     /// <summary>ICombatHost (P117): the critters.lst run flag (art.cc artCritterFidShouldRun) —
     /// gates the AI approach's run request.</summary>
@@ -1207,7 +1207,13 @@ public sealed partial class ViewerGame
         }
     }
 
-    public void OnAttackStarted(MapObject attacker, MapObject target, ProtoInfo? weaponProto)
+    public void OnAttackStarted(MapObject attacker, MapObject target, ProtoInfo? weaponProto) =>
+        OnAttackStarted(attacker, target, weaponProto, kick: false);
+
+    public bool HasKickArt(MapObject critter) => _vfs.Exists(_artIndex.GetFrmPath(
+        Fid.Build(ObjectType.Critter, Fid.Index(critter.Fid), Formats.Combat.DeathAnims.KickLeg, Fid.WeaponCode(critter.Fid))));
+
+    public void OnAttackStarted(MapObject attacker, MapObject target, ProtoInfo? weaponProto, bool kick)
     {
         // P45: remember THIS attack's real defender for the floating combat-text layer. The
         // outcome Log line ("...hits you for N damage.") names the defender as "you" even for
@@ -1227,7 +1233,7 @@ public sealed partial class ViewerGame
         else if (Formats.Sound.SfxName.CharName(_artIndex.CritterBaseName(attacker.Fid), 16 /*ANIM_THROW_PUNCH*/,
                      Formats.Sound.SfxName.CharacterSoundEffect.Contact, Fid.WeaponCode(attacker.Fid)) is { } swing)
             _audio?.PlaySfx(swing, SfxGain(attacker));
-        StartAttackAnimation(attacker, weaponProto);
+        StartAttackAnimation(attacker, weaponProto, kick);
         LaunchProjectile(attacker, target, weaponProto);
     }
 

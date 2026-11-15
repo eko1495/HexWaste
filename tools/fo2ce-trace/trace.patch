@@ -325,7 +325,7 @@ index 567548e4..3600151a 100644
  void lsgInit();
  int MapDirErase(const char* path, const char* extension);
 diff --git a/src/main.cc b/src/main.cc
-index ee67a0a4..d5328bb0 100644
+index ee67a0a4..eeb67b03 100644
 --- a/src/main.cc
 +++ b/src/main.cc
 @@ -1,6 +1,8 @@
@@ -354,7 +354,7 @@ index ee67a0a4..d5328bb0 100644
  static void main_unload_new();
  static void mainLoop();
  static void showDeath();
-@@ -81,6 +82,34 @@ int falloutMain(int argc, char** argv)
+@@ -81,6 +82,35 @@ int falloutMain(int argc, char** argv)
          return 1;
      }
  
@@ -371,6 +371,7 @@ index ee67a0a4..d5328bb0 100644
 +
 +    if (oracleEnabled() && oracleScenarioPath()[0] != '\0') {
 +        main_loadgame_new();
++        oracleRandomSeed(1); // the load's own draws (map_enter random() timers) from a fixed stream too
 +        if (lsgLoadGameHeadless(9) == -1) {
 +            fprintf(stderr, "oracle: cannot load SLOT10\n");
 +            exit(4);
@@ -389,7 +390,7 @@ index ee67a0a4..d5328bb0 100644
      // SFALL: Allow to skip intro movies
      int skipOpeningMovies;
      configGetInt(&gSfallConfig, SFALL_CONFIG_MISC_KEY, SFALL_CONFIG_SKIP_OPENING_MOVIES_KEY, &skipOpeningMovies);
-@@ -258,7 +287,7 @@ static void main_exit_system()
+@@ -258,7 +288,7 @@ static void main_exit_system()
  }
  
  // 0x480D4C
@@ -398,7 +399,7 @@ index ee67a0a4..d5328bb0 100644
  {
      _game_user_wants_to_quit = 0;
      _main_show_death_scene = 0;
-@@ -274,19 +303,19 @@ static int _main_load_new(char* mapFileName)
+@@ -274,19 +304,19 @@ static int _main_load_new(char* mapFileName)
      _map_init();
      gameMouseSetCursor(MOUSE_CURSOR_NONE);
      mouseShowCursor();
@@ -502,10 +503,10 @@ index 20b7aeff..f5262706 100644
  
 diff --git a/src/oracle.cc b/src/oracle.cc
 new file mode 100644
-index 00000000..f1ab4bea
+index 00000000..af77519d
 --- /dev/null
 +++ b/src/oracle.cc
-@@ -0,0 +1,498 @@
+@@ -0,0 +1,500 @@
 +#include "oracle.h"
 +
 +#include <stdio.h>
@@ -518,6 +519,7 @@ index 00000000..f1ab4bea
 +#include "object.h"
 +#include "proto.h"
 +#include "scripts.h"
++#include "svga.h"
 +#include "random.h"
 +#include "game.h"
 +#include "input.h"
@@ -951,6 +953,7 @@ index 00000000..f1ab4bea
 +            if (gOracleScnIndex >= gOracleScnCount) {
 +                fprintf(stderr, "oracle: scenario done at clock %u after %u work ticks\n", gOracleClock, gOracleScnWorkTicks);
 +                gOracleScnState = ORACLE_SCN_IDLE;
++                if (getenv("ORACLE_DUMP_BMP") != nullptr && gSdlSurface != nullptr) SDL_SaveBMP(gSdlSurface, getenv("ORACLE_DUMP_BMP")); // spike: visual compare
 +                exit(0); // atexit closes the trace
 +            }
 +            if (gOracleScnCmds[gOracleScnIndex].kind == 0) {

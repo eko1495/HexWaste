@@ -104,9 +104,10 @@ public sealed class MapList
         return tile >= 0 ? new StartPoint(elev, tile) : null;
     }
 
-    /// <summary>Parse "name:chance, name:chance, ..." → the weighted ambient list. Splits each
-    /// comma entry on its FIRST ':' (name, chance); a malformed/unparseable entry is skipped
-    /// gracefully (the one "animal:15 animal:10" quirk in the real maps.txt drops cleanly).</summary>
+    /// <summary>Parse "name:chance, name:chance, ..." → the weighted ambient list, like fo2ce: each comma
+    /// entry splits on its first ':' and the chance is atoi() of the rest, so the real maps.txt quirk
+    /// "animal:15 animal:10" (arcaves, missing comma) is ONE entry (animal, 15).</summary>
+    // ported from fallout2-ce src/string_parsers.cc strParseKeyValue() (via worldmap.cc wmMapInit ambient_sfx)
     private static IReadOnlyList<(string Name, int Chance)> ParseAmbient(string value)
     {
         var entries = new List<(string, int)>();
@@ -116,10 +117,23 @@ public sealed class MapList
             if (colon <= 0)
                 continue;
             string name = part[..colon].Trim();
-            if (name.Length > 0 && int.TryParse(part[(colon + 1)..].Trim(), out int chance) && chance > 0)
-                entries.Add((name, chance));
+            if (name.Length > 0)
+                entries.Add((name, Atoi(part[(colon + 1)..])));
         }
         return entries;
+    }
+
+    /// <summary>C atoi: skip leading whitespace, optional sign, then digits up to the first non-digit.</summary>
+    private static int Atoi(string s)
+    {
+        int i = 0, sign = 1, n = 0;
+        while (i < s.Length && char.IsWhiteSpace(s[i]))
+            i++;
+        if (i < s.Length && s[i] is '+' or '-')
+            sign = s[i++] == '-' ? -1 : 1;
+        while (i < s.Length && char.IsAsciiDigit(s[i]))
+            n = n * 10 + (s[i++] - '0');
+        return sign * n;
     }
 
     /// <summary>The map's weighted ambient sound-effect list (maps.txt ambient_sfx=), or empty.</summary>

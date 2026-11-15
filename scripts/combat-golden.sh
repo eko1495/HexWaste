@@ -22,12 +22,16 @@ mkdir -p "$FIX"
 
 # name | harness args (each is a deterministic, self-exiting --fight/--attack run)
 SCENARIOS=(
-  "arcaves-fight-42-loss|--map arcaves.map --fight 20529 --rng-seed 42"
-  "arcaves-fight-7-win|--map arcaves.map --fight 20529 --rng-seed 7"
+  # Renamed with the NPC kick draw (combat.cc _combat_attack): the RNG shift swapped the outcomes --
+  # seed 42 now wins, seed 7 now loses. Both endings stay covered.
+  "arcaves-fight-42-win|--map arcaves.map --fight 20529 --rng-seed 42"
+  "arcaves-fight-7-loss|--map arcaves.map --fight 20529 --rng-seed 7"
   "arcaves-fight-combat-1|--character combat --map arcaves.map --fight 20529 --rng-seed 1"
   "arcaves-attack-42|--map arcaves.map --attack 20529 --rng-seed 42"
   "denbus2-fight-flee|--character combat --map denbus2.map --fight 11670 --rng-seed 3"
-  "arcaves-crit-day2|--character combat --advance-days 1 --map arcaves.map --fight 20529 --rng-seed 2"
+  # Seed 24 (was 2 before the kick draw shifted the stream): the only fixture with an enemy
+  # CRITICAL(knockdown) + the dude's getup AP cost.
+  "arcaves-crit-day2|--character combat --advance-days 1 --map arcaves.map --fight 20529 --rng-seed 24"
   "arcaves-aim-eyes-day2|--character combat --advance-days 1 --aim eyes --map arcaves.map --fight 20529 --rng-seed 2"
   "arcaves-knockdown-day2|--character combat --advance-days 1 --aim right_leg --map arcaves.map --fight 20529 --rng-seed 4"
   # P41: critical FAILURE on a miss (_cf_table). The trigger fires from day 2 but the DUDE's EFFECT is
