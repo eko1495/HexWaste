@@ -40,6 +40,12 @@ self=obj#156`), arcaves line 9 (unchanged: fo2ce `t=302401 LVAR sid=0x04000008 0
 same 180 distinct ticks in both traces; the position in the tick matches except t=303000, where Hexwaste
 first runs a `kcdunton.int timed_event_p_proc` (position 4 vs fo2ce 1).
 
+Update after the combat batch (F10, F21-F26): arcaves-ambush matches on all 510 fo2ce lines (was line 47);
+Hexwaste's trace is 594 lines: fo2ce's ends as the dude's sixth turn starts (t=302651) and Hexwaste goes on
+to fire that tick's timers before it exits. This looks like where each harness stops, but was not looked
+into further. artemple IDENTICAL (6 026
+lines), klamath line 1664 (unchanged).
+
 First divergent pairs (TraceDiff, `-` fo2ce / `+` Hexwaste):
 
 ```
@@ -276,7 +282,10 @@ fire one round where fo2ce fires one per 600 ticks / per day (shortcut in code).
   `random.cc:134-172`, and it swaps a reversed range); Hexwaste returns `min` without drawing
   (`IntVm.cs:1343`). Shifts the shared stream by one draw per occurrence.
 
-### F10 — Saved-timer tie order after load
+### F10 — Saved-timer tie order after load — FIXED
+
+**FIXED.** `ScriptHost.LoadTimers` ports `queueLoad`'s old-list merge: the saved events load first and the
+map_enter-created ones are re-inserted after saved events of equal time.
 
 - Evidence (code): fo2ce `queueLoad` re-inserts pre-existing (map_enter-created) events *after* saved events
   of equal time (`queue.cc:171-184`), so saved events win same-tick ties; Hexwaste imports saved timers
@@ -485,6 +494,44 @@ Original finding:
   early end was hidden. The fixture also loses its purpose (the day-6 LOSE_TURN crit-fail no longer happens).
 - Status (before the fix): open; the fixture was left un-re-recorded.
 
+### F21 — Load-time `random()` draws were unseeded in fo2ce — FIXED (harness)
+
+map_enter scripts draw timer delays during the save load, before the scenario's `seed` line; fo2ce drew
+them from its wall-clock stream. Both engines now seed with 1 before the load (`oracleRandomSeed(1)` in
+`trace.patch` main.cc, `ViewerGame.SeedOracleLoadStream`).
+
+### F22 — `metarule(22)` IS_LOADGAME always returned 0 — FIXED
+
+`_isLoadingGame()` (`interpreter_extra.cc:3231`) is 1 during a save load; Hexwaste returned 0, so klamath's
+brahmin scheduled 15 timers at load that fo2ce does not. Now `_host.IsLoadingGame()`.
+
+### F23 — NPC punch becomes a kick one time in four — FIXED
+
+`_combat_attack` (`combat.cc`): a non-dude HIT_MODE_PUNCH draws `randomBetween(1, 4)` and kicks on 1 when
+the critter has kick art. Same damage and AP; one more RNG draw per unarmed NPC attack
+(`CombatEngine.RollKick`, `ICombatHost.HasKickArt`). Goldens: 8 combat fixtures re-recorded for the shifted
+stream. `arcaves-fight-42-loss`/`-7-win` swapped outcomes and were renamed `-42-win`/`-7-loss`;
+`arcaves-crit-day2` moved to seed 24 to keep its enemy knockdown crit + getup; `kill-counter` moved to
+seed 42 (fixture unchanged).
+
+### F24 — Pathfinder tie-break and the in-combat turn penalty — FIXED
+
+`pathfinderFindPath` (`animation.cc`) keeps a 2000-slot open list, puts a new node in the first free slot
+and takes the lowest slot among equal cost+estimate; the +10 turn penalty applies only out of combat.
+`Pathfinder.FindPath` now does the same (`inCombat` parameter). The AI approach also walks the prefix of
+the path it computed instead of re-pathing to the AP-cut tile. Not ported: the radioactive-goo cost
+(+400, gecko +100), marked `shortcut:` in the code.
+
+### F25 — Timers, ambient sfx and map_update are one queue — FIXED
+
+`ViewerGame.ProcessQueuedEvents` fires the earliest due of the three (`queueProcessEvents`). Events due on
+the same tick still run timer, ambient, map_update; fo2ce orders ties by insertion.
+
+### F26 — maps.txt `ambient_sfx` values are read with `atoi` — FIXED
+
+`strParseKeyValue` uses `atoi`, so arcaves' `animal:15 animal:10` is one entry (animal, 15) and the total
+chance is 90, not 100 (`MapList.ParseAmbient`).
+
 ## Recommended next steps
 
 1. Fix F1 (one line, `sid - 1`), re-record the goldens it moves, re-run the oracle.
@@ -525,3 +572,6 @@ Original finding:
    arcaves line 47 (fo2ce `t=302451 PROC zclscorp.int timed_event_p_proc self=obj#206` vs Hexwaste
    `t=302451 PROC zclrat.int timed_event_p_proc self=obj#96`): same-tick timer queue order after the
    vanilla-save load (map_enter timers vs imported queue), see F19. Next: that timer order, klamath's obj#26 move.
+13. After the combat batch (F10, F21-F26): arcaves-ambush matches all 510 fo2ce lines, artemple IDENTICAL,
+   klamath line 1664 unchanged. Next: klamath's obj#26 move; an oracle scenario where the dude attacks and
+   moves (the ambush only ends turns); the HUD differences seen in the 640x480 frame comparison.
